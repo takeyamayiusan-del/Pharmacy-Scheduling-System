@@ -54,29 +54,28 @@ export default function WednesdayShiftsPage() {
   };
 
   const handleToggleWednesdayOff = (employeeId: "yihsiao" | "zhenting", dateStr: string) => {
-    const targetIsZhenting = employeeId === "zhenting";
-    const selfIsZhenting = currentUser?.id === "zhenting";
+    const selfId = currentUser?.id;
+    const canTriggerConflictFlow = selfId === "yihsiao" || selfId === "zhenting";
     const yihsiaoOff = isWednesdayOff("yihsiao", dateStr);
-    const assignedNightShift = wednesdayNightShifts.find((item) => item.date === dateStr)?.employeeId;
-    const zhentingAlreadyOff = isWednesdayOff("zhenting", dateStr);
+    const zhentingOff = isWednesdayOff("zhenting", dateStr);
+    const selfAlreadyOff = selfId ? isWednesdayOff(selfId, dateStr) : false;
+    const peerId = selfId === "yihsiao" ? "zhenting" : selfId === "zhenting" ? "yihsiao" : null;
+    const peerOff = peerId ? isWednesdayOff(peerId, dateStr) : false;
 
-    // 僅在「貞葶本人設定自己不輪晚班」時，提示是否建立換班申請
-    if (targetIsZhenting && selfIsZhenting && !zhentingAlreadyOff) {
-      const needsSwapRequest = yihsiaoOff || assignedNightShift === "zhenting";
-      if (needsSwapRequest) {
-        const shouldNavigateToSwap = window.confirm(
-          "這天宜孝晚班安排會受影響，是否現在提出換班申請？"
-        );
-        if (shouldNavigateToSwap) {
-          const params = new URLSearchParams({
-            date: dateStr,
-            targetEmployeeId: "yihsiao",
-            source: "wednesday_conflict",
-            source_note: "由禮三晚班衝突引導建立",
-          });
-          router.push(`/applications/shift-swap?${params.toString()}`);
-          return;
-        }
+    // 任一參與者在「準備新增不輪晚班」且對方已選時，直接導向換班申請
+    if (canTriggerConflictFlow && employeeId === selfId && !selfAlreadyOff && peerOff && peerId) {
+      const shouldNavigateToSwap = window.confirm(
+        "這天已與對方衝突，是否現在提出換班申請？"
+      );
+      if (shouldNavigateToSwap) {
+        const params = new URLSearchParams({
+          date: dateStr,
+          targetEmployeeId: peerId,
+          source: "wednesday_conflict",
+          source_note: "由禮三晚班衝突引導建立",
+        });
+        router.push(`/applications/shift-swap?${params.toString()}`);
+        return;
       }
     }
 
