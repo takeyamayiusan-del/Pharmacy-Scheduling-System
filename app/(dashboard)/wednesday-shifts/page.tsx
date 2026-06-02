@@ -56,8 +56,6 @@ export default function WednesdayShiftsPage() {
   const handleToggleWednesdayOff = (employeeId: "yihsiao" | "zhenting", dateStr: string) => {
     const selfId = currentUser?.id;
     const canTriggerConflictFlow = selfId === "yihsiao" || selfId === "zhenting";
-    const yihsiaoOff = isWednesdayOff("yihsiao", dateStr);
-    const zhentingOff = isWednesdayOff("zhenting", dateStr);
     const selfAlreadyOff = selfId ? isWednesdayOff(selfId, dateStr) : false;
     const peerId = selfId === "yihsiao" ? "zhenting" : selfId === "zhenting" ? "yihsiao" : null;
     const peerOff = peerId ? isWednesdayOff(peerId, dateStr) : false;
