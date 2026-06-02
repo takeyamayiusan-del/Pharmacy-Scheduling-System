@@ -4,6 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { calculateMonthlyStats, calculateDuration, SHIFT_HOURS } from '@/lib/attendance/calculator';
+import type { ShiftCode } from '@/lib/types';
 
 describe('工時計算模組測試', () => {
   describe('calculateDuration 函式', () => {
@@ -54,12 +55,12 @@ describe('工時計算模組測試', () => {
 
     it('應正確計算班表工時', () => {
       const entries = [
-        { shift_code: 'A' },
-        { shift_code: 'B' },
-        { shift_code: 'C' },
-        { shift_code: 'D' },
-        { shift_code: 'E' },
-        { shift_code: 'X' },
+        { shift_code: 'A' as ShiftCode, date: '2025-01-01' },
+        { shift_code: 'B' as ShiftCode, date: '2025-01-02' },
+        { shift_code: 'C' as ShiftCode, date: '2025-01-03' },
+        { shift_code: 'D' as ShiftCode, date: '2025-01-04' },
+        { shift_code: 'E' as ShiftCode, date: '2025-01-05' },
+        { shift_code: 'X' as ShiftCode, date: '2025-01-06' },
       ];
 
       const result = calculateMonthlyStats({
@@ -150,11 +151,11 @@ describe('工時計算模組測試', () => {
         year: 2025,
         month: 1,
         scheduleEntries: [
-          { shift_code: 'A' },
-          { shift_code: 'A' },
-          { shift_code: 'B' },
-          { shift_code: 'X' },
-          { shift_code: 'E' },
+          { shift_code: 'A' as ShiftCode, date: '2025-01-01' },
+          { shift_code: 'A' as ShiftCode, date: '2025-01-02' },
+          { shift_code: 'B' as ShiftCode, date: '2025-01-03' },
+          { shift_code: 'X' as ShiftCode, date: '2025-01-04' },
+          { shift_code: 'E' as ShiftCode, date: '2025-01-05' },
         ],
         approvedOvertimes: [
           { start_time: '18:00', end_time: '20:00', compensation: 'pay' },
@@ -186,6 +187,23 @@ describe('工時計算模組測試', () => {
       });
 
       expect(result.overtimeHours).toBe(0.25);
+    });
+
+    it('國定假日有排班時，應直接計入加班費時數', () => {
+      const result = calculateMonthlyStats({
+        userId: 'test-id',
+        year: 2026,
+        month: 6,
+        scheduleEntries: [
+          { shift_code: 'A' as ShiftCode, date: '2026-06-19' }, // 端午節
+          { shift_code: 'B' as ShiftCode, date: '2026-06-20' },
+        ],
+        approvedOvertimes: [],
+        approvedLeaves: [],
+      });
+
+      expect(result.workHours).toBe(12);
+      expect(result.overtimeHours).toBe(8);
     });
   });
 });

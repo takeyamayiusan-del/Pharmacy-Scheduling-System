@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import type { Database } from '@/lib/supabase/types';
@@ -22,11 +22,7 @@ export function TardinessTable() {
   const [submitting, setSubmitting] = useState(false);
   const supabase = createClient();
 
-  useEffect(() => {
-    loadData();
-  }, []);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     const [usersRes, recordsRes] = await Promise.all([
       supabase.from('users').select('*').eq('is_active', true),
       supabase.from('tardiness_records').select('*').order('record_date', { ascending: false }),
@@ -39,7 +35,11 @@ export function TardinessTable() {
     }
     if (recordsRes.data) setRecords(recordsRes.data);
     setLoading(false);
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,8 +57,8 @@ export function TardinessTable() {
       if (error) throw error;
       await loadData();
       setShowForm(false);
-    } catch (err) {
-      console.error(err);
+    } catch (error) {
+      console.error(error);
     } finally {
       setSubmitting(false);
     }

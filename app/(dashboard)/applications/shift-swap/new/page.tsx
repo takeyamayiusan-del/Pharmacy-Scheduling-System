@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import type { Database } from '@/lib/supabase/types';
 
@@ -17,13 +17,23 @@ export default function NewShiftSwapApplicationPage() {
   const [loading, setLoading] = useState(false);
   const [usersLoading, setUsersLoading] = useState(true);
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
+  const source = searchParams.get('source');
+  const sourceNote = searchParams.get('source_note');
 
   useEffect(() => {
-    loadUsers();
-  }, []);
+    const swapDate = searchParams.get('swap_date');
+    const targetId = searchParams.get('target_id');
+    if (!swapDate && !targetId) return;
 
-  const loadUsers = async () => {
+    setFormData((prev) => ({
+      swap_date: swapDate || prev.swap_date,
+      target_id: targetId || prev.target_id,
+    }));
+  }, [searchParams]);
+
+  const loadUsers = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
@@ -36,7 +46,11 @@ export default function NewShiftSwapApplicationPage() {
 
     if (data) setUsers(data);
     setUsersLoading(false);
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -77,6 +91,11 @@ export default function NewShiftSwapApplicationPage() {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
+        {source === 'wednesday_conflict' && (
+          <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {sourceNote || '由禮三晚班衝突引導建立'}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

@@ -1,15 +1,23 @@
 'use client';
 
 import { useState } from 'react';
-import { useApp, EMPLOYEES } from '@/lib/context/AppContext';
+import { useApp } from '@/lib/context/AppContext';
+
+type LeavePeriod = '全天' | '上午' | '下午';
+type LeaveType = '事假' | '病假' | '特休' | '其他';
 
 export default function LeaveApplicationPage() {
   const { currentUser, leaveRequests, addLeaveRequest, updateLeaveRequestStatus } = useApp();
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    date: string;
+    period: LeavePeriod;
+    type: LeaveType;
+    reason: string;
+  }>({
     date: '',
-    period: '全天' as const,
-    type: '事假' as const,
+    period: '全天',
+    type: '事假',
     reason: '',
   });
 
@@ -69,7 +77,7 @@ export default function LeaveApplicationPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">時段</label>
               <select
                 value={formData.period}
-                onChange={(e) => setFormData({ ...formData, period: e.target.value as any })}
+                onChange={(e) => setFormData({ ...formData, period: e.target.value as LeavePeriod })}
                 className="w-full px-4 py-2 border rounded-lg"
               >
                 <option value="全天">全天</option>
@@ -81,7 +89,7 @@ export default function LeaveApplicationPage() {
               <label className="block text-sm font-medium text-gray-700 mb-1">假別</label>
               <select
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as LeaveType })}
                 className="w-full px-4 py-2 border rounded-lg"
               >
                 <option value="事假">事假</option>

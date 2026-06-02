@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useApp, EMPLOYEES } from "@/lib/context/AppContext";
+import { useApp } from "@/lib/context/AppContext";
 
 export default function OvertimePage() {
   const { currentUser, overtimeRequests, addOvertimeRequest, updateOvertimeRequestStatus } = useApp();
@@ -160,7 +160,7 @@ export default function OvertimePage() {
                     name="compensation"
                     value="pay"
                     checked={formData.compensationType === "pay"}
-                    onChange={e => setFormData({ ...formData, compensationType: "pay" })}
+                    onChange={() => setFormData({ ...formData, compensationType: "pay" })}
                   />
                   <span>加班費</span>
                 </label>
@@ -170,7 +170,7 @@ export default function OvertimePage() {
                     name="compensation"
                     value="time_off"
                     checked={formData.compensationType === "time_off"}
-                    onChange={e => setFormData({ ...formData, compensationType: "time_off" })}
+                    onChange={() => setFormData({ ...formData, compensationType: "time_off" })}
                   />
                   <span>補休</span>
                 </label>

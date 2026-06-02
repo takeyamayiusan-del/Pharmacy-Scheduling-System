@@ -29,9 +29,11 @@ describe('Feature: yaosheng-pharmacy-scheduling, Property 8: 晚班人力警示�
   it('0 < eveningStaffCount < minRequired 應回傳 warning', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: 2, max: 10 }), // minRequired 至少 2
-        (minRequired) => {
-          const eveningStaffCount = fc.integer({ min: 1, max: minRequired - 1 }).generate(new fc.Random());
+        fc.record({
+          minRequired: fc.integer({ min: 2, max: 10 }),
+          eveningStaffCount: fc.integer({ min: 1, max: 9 }),
+        }).filter(({ minRequired, eveningStaffCount }) => eveningStaffCount < minRequired),
+        ({ minRequired, eveningStaffCount }) => {
           const result = calculateEveningStaffingStatus(eveningStaffCount, minRequired);
           expect(result).toBe('warning');
         }
@@ -56,9 +58,11 @@ describe('Feature: yaosheng-pharmacy-scheduling, Property 8: 晚班人力警示�
   it('eveningStaffCount > minRequired 應回傳 excess', () => {
     fc.assert(
       fc.property(
-        fc.integer({ min: 1, max: 10 }),
-        (minRequired) => {
-          const eveningStaffCount = fc.integer({ min: minRequired + 1, max: 20 }).generate(new fc.Random());
+        fc.record({
+          minRequired: fc.integer({ min: 1, max: 10 }),
+          eveningStaffCount: fc.integer({ min: 2, max: 20 }),
+        }).filter(({ minRequired, eveningStaffCount }) => eveningStaffCount > minRequired),
+        ({ minRequired, eveningStaffCount }) => {
           const result = calculateEveningStaffingStatus(eveningStaffCount, minRequired);
           expect(result).toBe('excess');
         }

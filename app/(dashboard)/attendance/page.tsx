@@ -1,10 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { useApp, EMPLOYEES } from '@/lib/context/AppContext';
 
 export default function AttendancePage() {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 4, 1)); // 2026年5月
+  const [currentDate] = useState(new Date(2026, 4, 1));
   
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;

@@ -1,9 +1,9 @@
-    'use client';
+'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/types';
-import { CheckCircle2, XCircle, Clock, Calendar } from 'lucide-react';
+import { CheckCircle2, Clock, Calendar } from 'lucide-react';
 
 type Notification = Database['public']['Tables']['notifications']['Row'];
 
@@ -34,11 +34,7 @@ export function NotificationList() {
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
-  useEffect(() => {
-    loadNotifications();
-  }, []);
-
-  const loadNotifications = async () => {
+  const loadNotifications = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
@@ -53,7 +49,11 @@ export function NotificationList() {
       setNotifications(data);
     }
     setLoading(false);
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    loadNotifications();
+  }, [loadNotifications]);
 
   const markAsRead = async (id: string) => {
     await supabase

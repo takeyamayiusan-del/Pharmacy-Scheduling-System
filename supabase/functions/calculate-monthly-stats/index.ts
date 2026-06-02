@@ -12,6 +12,19 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+type CalculationResult = {
+  userId: string;
+  userName: string;
+  user_id: string;
+  year: number;
+  month: number;
+  work_days: number;
+  work_hours: number;
+  overtime_hours: number;
+  comp_leave_hours: number;
+  leave_hours: number;
+};
+
 // 各班別對應的工時（小時）
 const SHIFT_HOURS: Record<string, number> = {
   A: 8,
@@ -21,6 +34,25 @@ const SHIFT_HOURS: Record<string, number> = {
   E: 8,
   X: 0,
 };
+
+const TAIWAN_HOLIDAYS_2026 = new Set([
+  "2026-01-01",
+  "2026-01-28",
+  "2026-01-29",
+  "2026-01-30",
+  "2026-01-31",
+  "2026-02-01",
+  "2026-02-28",
+  "2026-04-04",
+  "2026-04-05",
+  "2026-05-01",
+  "2026-06-19",
+  "2026-09-28",
+  "2026-10-10",
+  "2026-10-31",
+  "2026-11-12",
+  "2026-12-25",
+]);
 
 // 計算兩個時間字串之間的時數差
 function calculateDuration(startTime: string, endTime: string): number {
@@ -100,7 +132,7 @@ serve(async (req) => {
       );
     }
 
-    const results: any[] = [];
+    const results: CalculationResult[] = [];
 
     // 逐個員工計算
     for (const user of users) {
@@ -108,7 +140,7 @@ serve(async (req) => {
         // 1. 取得該員工該月的班表
         const { data: scheduleEntries, error: scheduleError } = await supabaseAdmin
           .from("schedule_entries")
-          .select("shift_code")
+          .select("date, shift_code")
           .eq("user_id", user.id)
           .gte("date", startDate)
           .lte("date", endDate);
@@ -150,6 +182,10 @@ serve(async (req) => {
         
         const overtimeHours = overtimeApps?.filter(o => o.compensation === 'pay')
           .reduce((sum, o) => sum + calculateDuration(o.start_time, o.end_time), 0) || 0;
+
+        const holidayOvertimeHours = scheduleEntries
+          ?.filter((entry) => entry.shift_code !== "X" && TAIWAN_HOLIDAYS_2026.has(entry.date))
+          .reduce((sum, entry) => sum + (SHIFT_HOURS[entry.shift_code] || 0), 0) || 0;
         
         const compLeaveHours = overtimeApps?.filter(o => o.compensation === 'comp_leave')
           .reduce((sum, o) => sum + calculateDuration(o.start_time, o.end_time), 0) || 0;
@@ -157,7 +193,7 @@ serve(async (req) => {
         const leaveHours = leaveApps?.reduce((sum, l) => sum + (l.period === 'full_day' ? 8 : 4), 0) || 0;
 
         // 儲存或更新統計資料
-        const { data: existingStat, error: checkError } = await supabaseAdmin
+        const { data: existingStat } = await supabaseAdmin
           .from("monthly_attendance_stats")
           .select("id")
           .eq("user_id", user.id)
@@ -171,7 +207,7 @@ serve(async (req) => {
           month,
           work_days: workDays,
           work_hours: parseFloat(workHours.toFixed(2)),
-          overtime_hours: parseFloat(overtimeHours.toFixed(2)),
+          overtime_hours: parseFloat((overtimeHours + holidayOvertimeHours).toFixed(2)),
           comp_leave_hours: parseFloat(compLeaveHours.toFixed(2)),
           leave_hours: parseFloat(leaveHours.toFixed(2)),
         };

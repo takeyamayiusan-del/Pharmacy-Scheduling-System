@@ -74,13 +74,13 @@ export default function EmployeesPage() {
     }
   };
   
-  // 只有老闆可以進入此頁面
-  if (currentUser?.role !== "owner") {
+  // 店長與老闆權限一致
+  if (currentUser?.role !== "owner" && currentUser?.role !== "manager") {
     return (
       <div className="min-h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
-          <p className="text-gray-600">只有老闆可以管理員工</p>
+          <p className="text-gray-600">僅店長與老闆可以管理員工</p>
         </div>
       </div>
     );

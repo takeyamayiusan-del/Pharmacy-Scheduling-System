@@ -21,12 +21,22 @@ export default function FixedShiftsPage() {
     fixedShifts, 
     addFixedShift, 
     updateFixedShift, 
-    deleteFixedShift 
+    deleteFixedShift,
+    shiftTimeConfig,
+    updateShiftTimeConfig,
   } = useApp();
   
   const [newEmployeeId, setNewEmployeeId] = useState<string>("");
   const [newDayOfWeek, setNewDayOfWeek] = useState<number>(1);
   const [newShift, setNewShift] = useState<ShiftType>("B");
+  const [shiftTimeInputs, setShiftTimeInputs] = useState<Record<ShiftType, string>>({
+    A: shiftTimeConfig.A.join(", "),
+    B: shiftTimeConfig.B.join(", "),
+    C: shiftTimeConfig.C.join(", "),
+    D: shiftTimeConfig.D.join(", "),
+    E: shiftTimeConfig.E.join(", "),
+    X: shiftTimeConfig.X.join(", "),
+  });
   
   // 只顯示員工（不包含老闆）
   const displayEmployees = employees.filter(e => e.role !== "owner");
@@ -44,33 +54,78 @@ export default function FixedShiftsPage() {
     setNewEmployeeId("");
   };
   
-  const handleUpdate = (index: number, field: string, value: any) => {
+  const handleUpdate = (
+    index: number,
+    field: "employeeId" | "dayOfWeek" | "shift",
+    value: string | number
+  ) => {
     const updated = { ...fixedShifts[index] };
-    if (field === "employeeId") updated.employeeId = value;
-    if (field === "dayOfWeek") updated.dayOfWeek = value;
-    if (field === "shift") updated.shift = value;
+    if (field === "employeeId" && typeof value === "string") updated.employeeId = value;
+    if (field === "dayOfWeek" && typeof value === "number") updated.dayOfWeek = value;
+    if (field === "shift" && typeof value === "string") updated.shift = value as ShiftType;
     updateFixedShift(index, updated);
+  };
+
+  const handleSaveShiftTimes = (shift: ShiftType) => {
+    const ranges = shiftTimeInputs[shift]
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    updateShiftTimeConfig(shift, ranges.length > 0 ? ranges : ["未設定"]);
   };
   
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">固定班表管理</h1>
+        <h1 className="text-2xl app-title">固定班表管理</h1>
         {!canManage && (
           <p className="text-gray-500 text-sm">您無權管理固定班表</p>
         )}
       </div>
       
       {/* 說明 */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
+      <div className="app-card bg-blue-50/80 border-blue-200 p-4">
         <h3 className="font-medium text-blue-800 mb-2">📋 說明</h3>
-        <p className="text-sm text-gray-700">
-          在這裡可以設定每個員工每個星期幾固定上什麼班。
-        </p>
+        <div className="text-sm text-gray-700 space-y-1">
+          <p>在這裡可以設定每個員工每個星期幾固定上什麼班。</p>
+          <p>週日固定公休，不提供編輯。</p>
+          <p>目前預設規則：聖文一五 A、二 C、三休，宜孝五 A、貞葶一四 A、桂香二四 A。</p>
+        </div>
       </div>
+
+      {canManage && (
+        <div className="app-card p-6">
+          <h3 className="font-medium text-gray-900 mb-4">班別時段設定（可客製）</h3>
+          <div className="space-y-3">
+            {shiftOptions.map((shift) => (
+              <div key={shift} className="grid grid-cols-1 md:grid-cols-[120px_1fr_auto] gap-3 items-center">
+                <div className="text-sm font-medium text-gray-700">
+                  {shift} 班（{shiftLabels[shift]}）
+                </div>
+                <input
+                  value={shiftTimeInputs[shift]}
+                  onChange={(e) => setShiftTimeInputs((prev) => ({ ...prev, [shift]: e.target.value }))}
+                  className="w-full border rounded-lg px-3 py-2 text-sm"
+                  placeholder="例如 08:30-12:00, 13:30-17:00"
+                />
+                <button
+                  type="button"
+                  onClick={() => handleSaveShiftTimes(shift)}
+                  className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+                >
+                  儲存
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-xs text-gray-500 mt-3">
+            用逗號分隔多個時段，更新後班表下方圖例會即時顯示。
+          </p>
+        </div>
+      )}
       
       {canManage && (
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-card p-6">
           <h3 className="font-medium text-gray-900 mb-4">新增固定班表</h3>
           <div className="flex flex-wrap gap-4">
             <div className="flex flex-col">
@@ -93,7 +148,7 @@ export default function FixedShiftsPage() {
                 onChange={(e) => setNewDayOfWeek(parseInt(e.target.value))}
                 className="border rounded-lg px-4 py-2"
               >
-                {[0, 1, 2, 3, 4, 5, 6].map(day => (
+                {[1, 2, 3, 4, 5, 6].map(day => (
                   <option key={day} value={day}>{dayLabels[day]}</option>
                 ))}
               </select>
@@ -124,7 +179,7 @@ export default function FixedShiftsPage() {
       )}
       
       {/* 固定班表列表 */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="app-card overflow-hidden">
         <div className="p-6">
           <h3 className="font-medium text-gray-900 mb-4">已設定的固定班表</h3>
           {fixedShifts.length === 0 ? (
@@ -152,7 +207,7 @@ export default function FixedShiftsPage() {
                           onChange={(e) => handleUpdate(index, "dayOfWeek", parseInt(e.target.value))}
                           className="border rounded px-3 py-2"
                         >
-                          {[0, 1, 2, 3, 4, 5, 6].map(day => (
+                          {[1, 2, 3, 4, 5, 6].map(day => (
                             <option key={day} value={day}>{dayLabels[day]}</option>
                           ))}
                         </select>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { Bell } from 'lucide-react';
 import Link from 'next/link';
@@ -9,12 +9,7 @@ export function NotificationBell() {
   const [unreadCount, setUnreadCount] = useState(0);
   const supabase = createClient();
 
-  useEffect(() => {
-    loadUnreadCount();
-    subscribeToNotifications();
-  }, []);
-
-  const loadUnreadCount = async () => {
+  const loadUnreadCount = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
 
@@ -27,9 +22,11 @@ export function NotificationBell() {
     if (!error) {
       setUnreadCount(count || 0);
     }
-  };
+  }, [supabase]);
 
-  const subscribeToNotifications = () => {
+  useEffect(() => {
+    loadUnreadCount();
+
     const channel = supabase
       .channel('notifications')
       .on(
@@ -48,7 +45,7 @@ export function NotificationBell() {
     return () => {
       supabase.removeChannel(channel);
     };
-  };
+  }, [loadUnreadCount, supabase]);
 
   return (
     <Link href="/dashboard/notifications" className="relative">

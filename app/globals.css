@@ -42,6 +42,44 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+  }
+}
+
+@layer components {
+  .app-card {
+    @apply bg-white/90 rounded-3xl border border-pink-100/90 shadow-[0_8px_24px_rgba(236,72,153,0.08)] transition-all duration-200 hover:shadow-[0_12px_28px_rgba(56,189,248,0.14)] hover:border-sky-200;
+  }
+
+  .app-soft-card {
+    @apply rounded-2xl border border-pink-100 bg-gradient-to-r from-pink-50/70 to-sky-50/70;
+  }
+
+  .app-title {
+    @apply text-slate-900 font-semibold tracking-tight;
+  }
+
+  .app-subtitle {
+    @apply text-sm text-slate-600;
+  }
+
+  .app-btn {
+    @apply inline-flex items-center justify-center rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-150 hover:-translate-y-[1px] active:translate-y-0;
+  }
+
+  .app-btn-outline {
+    @apply app-btn border border-pink-200 bg-white text-slate-700 hover:bg-pink-50;
+  }
+
+  .app-btn-primary {
+    @apply app-btn bg-gradient-to-r from-sky-500 to-cyan-500 text-white hover:from-sky-600 hover:to-cyan-600 shadow-sm hover:shadow;
+  }
+
+  .app-table th {
+    @apply text-xs font-semibold uppercase tracking-wide text-slate-500;
+  }
+
+  .app-table tbody tr {
+    @apply transition-colors duration-150 hover:bg-sky-50/40;
   }
 }

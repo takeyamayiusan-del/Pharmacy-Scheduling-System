@@ -5,7 +5,6 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { overtimeApplicationSchema } from '@/lib/validation/schemas';
-import type { OvertimeApplicationInput } from '@/lib/validation/schemas';
 
 export default function NewOvertimeApplicationPage() {
   const [formData, setFormData] = useState({
@@ -48,7 +47,7 @@ export default function NewOvertimeApplicationPage() {
 
       if (error) throw error;
       router.push('/dashboard/applications/overtime');
-    } catch (err) {
+    } catch {
       setErrors({ submit: '申請失敗，請稍後再試' });
     } finally {
       setLoading(false);

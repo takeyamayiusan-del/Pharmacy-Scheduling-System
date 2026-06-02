@@ -16,6 +16,29 @@ export const SHIFT_HOURS: Record<string, number> = {
   X: 0,
 };
 
+const TAIWAN_HOLIDAYS_2026 = new Set([
+  '2026-01-01',
+  '2026-01-28',
+  '2026-01-29',
+  '2026-01-30',
+  '2026-01-31',
+  '2026-02-01',
+  '2026-02-28',
+  '2026-04-04',
+  '2026-04-05',
+  '2026-05-01',
+  '2026-06-19',
+  '2026-09-28',
+  '2026-10-10',
+  '2026-10-31',
+  '2026-11-12',
+  '2026-12-25',
+]);
+
+function isNationalHoliday(date?: string): boolean {
+  return Boolean(date && TAIWAN_HOLIDAYS_2026.has(date));
+}
+
 /**
  * 計算兩個時間字串之間的時數差（小時，十進位）。
  *
@@ -45,7 +68,7 @@ export interface MonthlyStatsParams {
   userId: string;
   year: number;
   month: number;
-  scheduleEntries: Pick<ScheduleEntry, 'shift_code'>[];
+  scheduleEntries: Array<Pick<ScheduleEntry, 'shift_code'> & { date?: string }>;
   approvedOvertimes: Pick<OvertimeApplication, 'start_time' | 'end_time' | 'compensation'>[];
   approvedLeaves: Pick<LeaveApplication, 'period'>[];
 }
@@ -56,7 +79,7 @@ export interface MonthlyStatsParams {
  * 計算邏輯：
  * - workDays:       班別代碼不為 'X' 的條目數量
  * - workHours:      各班別代碼對應時數的總和
- * - overtimeHours:  compensation === 'pay' 的加班申請時數總和
+ * - overtimeHours:  compensation === 'pay' 的加班申請時數 + 國定假日排班工時
  * - compLeaveHours: compensation === 'comp_leave' 的加班申請時數總和
  * - leaveHours:     全天假 8 小時，半天假 4 小時的總和
  *
@@ -80,6 +103,11 @@ export function calculateMonthlyStats(params: MonthlyStatsParams): MonthlyStats 
     .filter(o => o.compensation === 'pay')
     .reduce((sum, o) => sum + calculateDuration(o.start_time, o.end_time), 0);
 
+  // 國定假日排班直接視為加班費時數
+  const holidayOvertimeHoursRaw = scheduleEntries
+    .filter((e) => e.shift_code !== 'X' && isNationalHoliday(e.date))
+    .reduce((sum, e) => sum + (SHIFT_HOURS[e.shift_code] ?? 0), 0);
+
   // 補休時數（compensation === 'comp_leave'）
   const compLeaveHoursRaw = approvedOvertimes
     .filter(o => o.compensation === 'comp_leave')
@@ -97,7 +125,7 @@ export function calculateMonthlyStats(params: MonthlyStatsParams): MonthlyStats 
     month,
     workDays,
     workHours: parseFloat(workHoursRaw.toFixed(2)),
-    overtimeHours: parseFloat(overtimeHoursRaw.toFixed(2)),
+    overtimeHours: parseFloat((overtimeHoursRaw + holidayOvertimeHoursRaw).toFixed(2)),
     compLeaveHours: parseFloat(compLeaveHoursRaw.toFixed(2)),
     leaveHours: parseFloat(leaveHoursRaw.toFixed(2)),
   };

@@ -1,15 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
+import { useSearchParams } from "next/navigation";
 
 export default function ShiftSwapPage() {
   const { currentUser, employees, swapRequests, addSwapRequest, updateSwapRequestStatus } = useApp();
+  const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     date: "",
     targetEmployeeId: ""
   });
+
+  const source = searchParams.get("source");
+  const sourceNote = searchParams.get("source_note");
+
+  useEffect(() => {
+    const date = searchParams.get("date");
+    const targetEmployeeId = searchParams.get("targetEmployeeId");
+    if (!date && !targetEmployeeId) return;
+    setShowForm(true);
+    setFormData((prev) => ({
+      date: date || prev.date,
+      targetEmployeeId: targetEmployeeId || prev.targetEmployeeId,
+    }));
+  }, [searchParams]);
   
   // 提交換班申請
   const handleSubmit = (e: React.FormEvent) => {
@@ -90,6 +106,14 @@ export default function ShiftSwapPage() {
           1. 發起換班申請 → 2. 對方確認 → 3. 管理者審核 → 4. 完成
         </p>
       </div>
+
+      {source === "wednesday_conflict" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <p className="text-sm text-amber-800">
+            {sourceNote || "由禮三晚班衝突引導建立換班申請"}
+          </p>
+        </div>
+      )}
       
       {/* 新申請表單 */}
       {showForm && (
@@ -155,7 +179,6 @@ export default function ShiftSwapPage() {
             </div>
           ) : (
             swapRequests.map(req => {
-              const isRequester = currentUser?.id === req.requesterId;
               const isTarget = currentUser?.id === req.targetEmployeeId;
               const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
               

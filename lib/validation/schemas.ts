@@ -86,10 +86,10 @@ export const overtimeApplicationSchema = z
       ),
     start_time: z
       .string()
-      .regex(/^\d{2}:\d{2}$/, { message: '起始時間格式須為 HH:MM' }),
+      .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: '起始時間格式須為 HH:MM' }),
     end_time: z
       .string()
-      .regex(/^\d{2}:\d{2}$/, { message: '結束時間格式須為 HH:MM' }),
+      .regex(/^([01]\d|2[0-3]):([0-5]\d)$/, { message: '結束時間格式須為 HH:MM' }),
     reason: z.string().max(200, { message: '事由最多 200 字' }),
   })
   .refine((data) => data.end_time > data.start_time, {

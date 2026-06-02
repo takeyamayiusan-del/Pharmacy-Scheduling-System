@@ -5,12 +5,26 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { leaveApplicationSchema } from '@/lib/validation/schemas';
-import type { LeaveApplicationInput } from '@/lib/validation/schemas';
+
+type LeavePeriod = 'full_day' | 'morning' | 'afternoon';
+
+function inferLeavePeriod(startTime: string, endTime: string): LeavePeriod {
+  if (startTime === '08:30' && endTime === '12:00') return 'morning';
+  if (startTime === '13:30' && endTime === '17:00') return 'afternoon';
+  return 'full_day';
+}
 
 export default function NewLeaveApplicationPage() {
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    leave_date: string;
+    start_time: string;
+    end_time: string;
+    leave_type: string;
+    reason: string;
+  }>({
     leave_date: new Date().toISOString().split('T')[0],
-    period: 'full_day' as const,
+    start_time: '08:30',
+    end_time: '17:00',
     leave_type: '',
     reason: '',
   });
@@ -23,7 +37,20 @@ export default function NewLeaveApplicationPage() {
     e.preventDefault();
     setErrors({});
 
-    const validation = leaveApplicationSchema.safeParse(formData);
+    if (formData.end_time <= formData.start_time) {
+      setErrors({ end_time: '結束時間必須晚於開始時間' });
+      return;
+    }
+
+    const period = inferLeavePeriod(formData.start_time, formData.end_time);
+    const reasonWithTime = `${formData.reason.trim()}\n請假時段：${formData.start_time}-${formData.end_time}`.trim();
+
+    const validation = leaveApplicationSchema.safeParse({
+      leave_date: formData.leave_date,
+      period,
+      leave_type: formData.leave_type,
+      reason: reasonWithTime,
+    });
     if (!validation.success) {
       const newErrors: Record<string, string> = {};
       validation.error.errors.forEach((err) => {
@@ -42,13 +69,16 @@ export default function NewLeaveApplicationPage() {
 
       const { error } = await supabase.from('leave_applications').insert({
         user_id: session.user.id,
-        ...formData,
+        leave_date: formData.leave_date,
+        period,
+        leave_type: formData.leave_type,
+        reason: reasonWithTime,
         status: 'pending',
       });
 
       if (error) throw error;
       router.push('/dashboard/applications/leave');
-    } catch (err) {
+    } catch {
       setErrors({ submit: '申請失敗，請稍後再試' });
     } finally {
       setLoading(false);
@@ -81,17 +111,34 @@ export default function NewLeaveApplicationPage() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              時段
+              請假時段
             </label>
-            <select
-              value={formData.period}
-              onChange={(e) => setFormData({ ...formData, period: e.target.value as any })}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-            >
-              <option value="full_day">全天</option>
-              <option value="morning">上午</option>
-              <option value="afternoon">下午</option>
-            </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">開始</label>
+                <input
+                  type="time"
+                  value={formData.start_time}
+                  onChange={(e) => setFormData({ ...formData, start_time: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">結束</label>
+                <input
+                  type="time"
+                  value={formData.end_time}
+                  onChange={(e) => setFormData({ ...formData, end_time: e.target.value })}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            </div>
+            {errors.end_time && (
+              <p className="text-red-500 text-sm mt-1">{errors.end_time}</p>
+            )}
+            <p className="text-xs text-gray-500 mt-2">
+              送出後會自動判定為全天/上午/下午，並附上你填寫的起訖時段。
+            </p>
           </div>
 
           <div>

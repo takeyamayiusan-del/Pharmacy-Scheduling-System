@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ShiftCell } from './ShiftCell';
 import { validateLeaveSelection } from '@/lib/scheduling/rules';
-import { generateMonthlyEntries } from '@/lib/scheduling/monthly';
 import type { Database, LeaveSelectionContext, SchedulingRules } from '@/lib/types';
-import { ChevronLeft, ChevronRight, Lock, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Info } from 'lucide-react';
 
 type User = Database['public']['Tables']['users']['Row'];
 type ScheduleEntry = Database['public']['Tables']['schedule_entries']['Row'];
@@ -30,11 +29,7 @@ export function LeaveSelectionGrid() {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = new Date(year, month, 1).getDay();
 
-  useEffect(() => {
-    loadData();
-  }, [currentDate]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${daysInMonth}`;
@@ -59,7 +54,11 @@ export function LeaveSelectionGrid() {
     if (locksRes.data) setScheduleLocks(locksRes.data);
     if (rulesRes.data) setRules(rulesRes.data);
     setLoading(false);
-  };
+  }, [daysInMonth, month, supabase, year]);
+
+  useEffect(() => {
+    loadData();
+  }, [currentDate, loadData]);
 
   const isDateLocked = useMemo(() => {
     return (dateStr: string) => {
@@ -175,7 +174,7 @@ export function LeaveSelectionGrid() {
 
       setMessage({ text: '排休已更新', type: 'success' });
       setTimeout(() => setMessage(null), 3000);
-    } catch (err) {
+    } catch {
       setMessage({ text: '更新失敗', type: 'error' });
       setTimeout(() => setMessage(null), 3000);
     }
@@ -237,10 +236,7 @@ export function LeaveSelectionGrid() {
               <li>每月可選擇 2 天週六休假</li>
               <li>每月可選擇 2 天平日休假</li>
               {currentUser?.name === '聖文' && (
-                <>
-                  <li>聖文：週三固定休假，週二固定白班</li>
-                  <li>聖文：僅能選擇週六休假</li>
-                </>
+                <li>聖文：僅能選擇週六休假</li>
               )}
             </ul>
           </div>

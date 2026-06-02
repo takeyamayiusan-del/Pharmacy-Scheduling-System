@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ShiftCell } from './ShiftCell';
 import { StaffingAlert } from './StaffingAlert';
@@ -33,11 +33,7 @@ export function MonthlyCalendar({ editable = false }: MonthlyCalendarProps) {
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   const firstDay = new Date(year, month, 1).getDay();
 
-  useEffect(() => {
-    loadData();
-  }, [currentDate]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     const startDate = `${year}-${String(month + 1).padStart(2, '0')}-01`;
     const endDate = `${year}-${String(month + 1).padStart(2, '0')}-${daysInMonth}`;
@@ -57,12 +53,15 @@ export function MonthlyCalendar({ editable = false }: MonthlyCalendarProps) {
     if (locksRes.data) setScheduleLocks(locksRes.data);
     if (rulesRes.data) setRules(rulesRes.data);
     setLoading(false);
-  };
+  }, [daysInMonth, month, supabase, year]);
+
+  useEffect(() => {
+    loadData();
+  }, [currentDate, loadData]);
 
   const isDateLocked = useMemo(() => {
     return (dateStr: string) => {
       const date = new Date(dateStr);
-      const dateNum = parseInt(dateStr.replace(/-/g, ''), 10);
       const weekNumber = Math.ceil((date.getDate() + 6 - date.getDay()) / 7);
 
       return scheduleLocks.some(lock => {
@@ -209,9 +208,9 @@ export function MonthlyCalendar({ editable = false }: MonthlyCalendarProps) {
       <div className="p-4 border-t">
         <div className="flex flex-wrap gap-4 text-sm">
           <span className="text-gray-600 font-medium">班表圖例：</span>
-          {['A', 'B', 'C', 'D', 'E', 'X'].map((code) => (
+          {(['A', 'B', 'C', 'D', 'E', 'X'] as const).map((code) => (
             <div key={code} className="flex items-center gap-2">
-              <ShiftCell shiftCode={code as any} />
+              <ShiftCell shiftCode={code} />
               <span className="text-gray-600">
                 {code === 'A' ? '全天' : code === 'B' ? '白班' : code === 'C' ? '下午班' : code === 'D' ? '晚班' : code === 'E' ? '下午+晚班' : '休假'}
               </span>

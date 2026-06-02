@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Database } from '@/lib/supabase/types';
 
@@ -12,17 +12,12 @@ export function MonthlyStatsTable() {
   const [users, setUsers] = useState<Record<string, User>>({});
   const [currentDate, setCurrentDate] = useState(new Date());
   const [loading, setLoading] = useState(true);
-  const [isManager, setIsManager] = useState(false);
   const supabase = createClient();
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
 
-  useEffect(() => {
-    loadData();
-  }, [currentDate]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) return;
@@ -34,8 +29,6 @@ export function MonthlyStatsTable() {
       .single();
 
     const manager = currentUser?.role === 'boss' || currentUser?.role === 'manager';
-    setIsManager(manager);
-
     const [usersRes, statsRes] = await Promise.all([
       supabase.from('users').select('*').eq('is_active', true),
       supabase.from('monthly_attendance_stats').select('*').eq('year', year).eq('month', month),
@@ -53,7 +46,11 @@ export function MonthlyStatsTable() {
     }
     setStats(filteredStats);
     setLoading(false);
-  };
+  }, [month, supabase, year]);
+
+  useEffect(() => {
+    loadData();
+  }, [currentDate, loadData]);
 
   const prevMonth = () => {
     setCurrentDate(new Date(year, currentDate.getMonth() - 1, 1));

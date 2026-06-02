@@ -2,37 +2,32 @@
 
 import React, { createContext, useContext, useState, ReactNode } from "react";
 
-// 員工類型定義
 export type Employee = {
   id: string;
   name: string;
   role: "owner" | "manager" | "staff";
 };
 
-// 班別類型定義
 export type ShiftType = "A" | "B" | "C" | "D" | "E" | "X";
+export type ShiftTimeConfig = Record<ShiftType, string[]>;
 
-// 班表資料
 export type ScheduleData = {
   [date: string]: {
     [employeeId: string]: ShiftType;
   };
 };
 
-// 固定班表設定 - 禮拜幾固定上什麼班
 export type FixedShift = {
   employeeId: string;
-  dayOfWeek: number; // 0:日, 1:一, ... 6:六
+  dayOfWeek: number;
   shift: ShiftType;
 };
 
-// 禮拜三晚班輪流表
 export type WednesdayNightShift = {
   date: string;
-  employeeId: string; // "yihsiao" 或 "zhenting"
+  employeeId: string;
 };
 
-// 請假申請
 export type LeaveRequest = {
   id: string;
   employeeId: string;
@@ -45,7 +40,6 @@ export type LeaveRequest = {
   createdAt: string;
 };
 
-// 換班申請
 export type SwapRequest = {
   id: string;
   requesterId: string;
@@ -57,7 +51,6 @@ export type SwapRequest = {
   createdAt: string;
 };
 
-// 加班申請
 export type OvertimeRequest = {
   id: string;
   employeeId: string;
@@ -71,7 +64,6 @@ export type OvertimeRequest = {
   createdAt: string;
 };
 
-// 通知
 export type Notification = {
   id: string;
   userId: string;
@@ -80,9 +72,9 @@ export type Notification = {
   type: "info" | "success" | "warning" | "error";
   read: boolean;
   createdAt: string;
+  route?: string;
 };
 
-// 遲到記錄
 export type TardinessRecord = {
   id: string;
   employeeId: string;
@@ -93,7 +85,26 @@ export type TardinessRecord = {
   createdAt: string;
 };
 
-// 員工名單
+export type LeaveSummary = {
+  selectedDates: string[];
+  saturdayUsed: number;
+  saturdayLimit: number;
+  weekdayUsed: number;
+  weekdayLimit: number;
+  optionalSaturdayUsed: boolean;
+  optionalSaturdayAvailable: boolean;
+};
+
+export type LeaveMonthLock = {
+  year: number;
+  month: number;
+  lockedBy: string;
+  lockedAt: string;
+};
+
+type WednesdayOffSelections = Record<string, string[]>;
+type LeaveSelections = Record<string, string[]>;
+
 export const EMPLOYEES: Employee[] = [
   { id: "owner", name: "老闆", role: "owner" },
   { id: "yishan", name: "佾珊", role: "manager" },
@@ -103,7 +114,6 @@ export const EMPLOYEES: Employee[] = [
   { id: "guixiang", name: "桂香", role: "staff" },
 ];
 
-// 台灣國定假日（2026年版）
 export const TAIWAN_HOLIDAYS_2026: { date: string; name: string }[] = [
   { date: "2026-01-01", name: "元旦" },
   { date: "2026-01-28", name: "農曆春節" },
@@ -123,244 +133,136 @@ export const TAIWAN_HOLIDAYS_2026: { date: string; name: string }[] = [
   { date: "2026-12-25", name: "聖誕節" },
 ];
 
-// 檢查是否是假日（禮拜日）
-export const isSunday = (dateStr: string): boolean => {
-  const date = new Date(dateStr);
-  return date.getDay() === 0;
-};
+export const isSunday = (dateStr: string): boolean => new Date(dateStr).getDay() === 0;
+export const isSaturday = (dateStr: string): boolean => new Date(dateStr).getDay() === 6;
+export const isTuesday = (dateStr: string): boolean => new Date(dateStr).getDay() === 2;
+export const isWednesday = (dateStr: string): boolean => new Date(dateStr).getDay() === 3;
 
-// 檢查是否是國定假日
 export const getHolidayInfo = (dateStr: string): { isHoliday: boolean; name?: string } => {
-  const holiday = TAIWAN_HOLIDAYS_2026.find(h => h.date === dateStr);
-  return { isHoliday: !!holiday, name: holiday?.name };
+  const holiday = TAIWAN_HOLIDAYS_2026.find((item) => item.date === dateStr);
+  return { isHoliday: Boolean(holiday), name: holiday?.name };
 };
 
-// 檢查是否是禮拜六
-export const isSaturday = (dateStr: string): boolean => {
-  const date = new Date(dateStr);
-  return date.getDay() === 6;
-};
-
-// 檢查是否是禮拜二
-export const isTuesday = (dateStr: string): boolean => {
-  const date = new Date(dateStr);
-  return date.getDay() === 2;
-};
-
-// 檢查是否是禮拜三
-export const isWednesday = (dateStr: string): boolean => {
-  const date = new Date(dateStr);
-  return date.getDay() === 3;
-};
-
-// 計算某個月有幾個禮拜六
 export const countSaturdaysInMonth = (year: number, month: number): number => {
   let count = 0;
   const daysInMonth = new Date(year, month, 0).getDate();
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    if (isSaturday(dateStr)) count++;
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (isSaturday(dateStr)) {
+      count += 1;
+    }
   }
   return count;
 };
 
-// 產生初始班表
-const generateInitialSchedule = (year: number, month: number, fixedShifts: FixedShift[]): ScheduleData => {
-  const schedule: ScheduleData = {};
-  const daysInMonth = new Date(year, month, 0).getDate();
-  
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const date = new Date(dateStr);
-    const dayOfWeek = date.getDay();
-    schedule[dateStr] = {};
-    
-    EMPLOYEES.forEach((emp) => {
-      if (emp.role === "owner") return;
-      
-      // 禮拜日強制休假
-      if (isSunday(dateStr)) {
-        schedule[dateStr][emp.id] = "X";
-        return;
-      }
-      
-      // 檢查是否有固定班表
-      const fixedShift = fixedShifts.find(f => f.employeeId === emp.id && f.dayOfWeek === dayOfWeek);
-      if (fixedShift) {
-        schedule[dateStr][emp.id] = fixedShift.shift;
-        return;
-      }
-      
-      // 聖文的特殊規則
-      if (emp.id === "shengwen") {
-        if (isWednesday(dateStr)) {
-          schedule[dateStr][emp.id] = "X";
-        } else {
-          schedule[dateStr][emp.id] = day === 1 || day === 2 || day === 5 ? "A" : "B";
-        }
-        return;
-      }
-      
-      // 其他員工預設B班
-      schedule[dateStr][emp.id] = "B";
-    });
-  }
-  
-  return schedule;
+const isInMonth = (dateStr: string, year: number, month: number) => {
+  const date = new Date(dateStr);
+  return date.getFullYear() === year && date.getMonth() + 1 === month;
 };
 
-// 模擬初始資料
-const initialSchedule = generateInitialSchedule(2026, 6, []);
-const initialLeaveRequests: LeaveRequest[] = [
-  {
-    id: "1",
-    employeeId: "yihsiao",
-    employeeName: "宜孝",
-    date: "2026-06-05",
-    period: "全天",
-    type: "事假",
-    reason: "身體不舒服需要休息",
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  },
-  {
-    id: "2",
-    employeeId: "yishan",
-    employeeName: "佾珊",
-    date: "2026-06-03",
-    period: "上午",
-    type: "特休",
-    reason: "出國旅遊",
-    status: "approved",
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
-  },
-];
-
-const initialSwapRequests: SwapRequest[] = [
-  {
-    id: "1",
-    requesterId: "yihsiao",
-    requesterName: "宜孝",
-    targetEmployeeId: "zhenting",
-    targetEmployeeName: "貞葶",
-    date: "2026-06-10",
-    status: "pending_confirmation",
-    createdAt: new Date().toISOString(),
-  }
-];
-
-const initialOvertimeRequests: OvertimeRequest[] = [
-  {
-    id: "1",
-    employeeId: "shengwen",
-    employeeName: "聖文",
-    date: "2026-06-15",
-    startTime: "18:00",
-    endTime: "21:00",
-    reason: "盤點",
-    compensationType: "pay",
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  }
-];
-
-const initialNotifications: Notification[] = [
-  {
-    id: "1",
-    userId: "yishan",
-    title: "新的請假申請",
-    message: "宜孝申請 2026-06-05 事假",
-    type: "info",
-    read: false,
-    createdAt: new Date().toISOString(),
-  },
-];
-
-const initialTardinessRecords: TardinessRecord[] = [
-  {
-    id: "1",
-    employeeId: "shengwen",
-    employeeName: "聖文",
-    date: "2026-06-02",
-    minutes: 15,
-    notes: "因下雨遲到",
-    createdAt: new Date().toISOString(),
-  }
-];
-
-// 初始固定班表設定
-const initialFixedShifts: FixedShift[] = [
-  // 舊有固定班表：
-  // 宜孝5號固定A班 → 移到禮拜五
-  { employeeId: "yihsiao", dayOfWeek: 5, shift: "A" },
-  // 貞葶14號固定A班 → 移到禮拜一
-  { employeeId: "zhenting", dayOfWeek: 1, shift: "A" },
-  // 桂香2,4號固定A班 → 移到禮拜二,四
-  { employeeId: "guixiang", dayOfWeek: 2, shift: "A" },
-  { employeeId: "guixiang", dayOfWeek: 4, shift: "A" },
-];
-
-// 初始禮拜三輪流晚班
-const generateInitialWednesdayNightShifts = (year: number, month: number): WednesdayNightShift[] => {
-  const shifts: WednesdayNightShift[] = [];
+const getMonthSaturdays = (year: number, month: number) => {
+  const dates: string[] = [];
   const daysInMonth = new Date(year, month, 0).getDate();
-  let turn = "yihsiao"; // 先從宜孝開始
-  
-  for (let day = 1; day <= daysInMonth; day++) {
-    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    if (isWednesday(dateStr)) {
-      shifts.push({ date: dateStr, employeeId: turn });
-      turn = turn === "yihsiao" ? "zhenting" : "yihsiao";
+  for (let day = 1; day <= daysInMonth; day += 1) {
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    if (isSaturday(dateStr)) {
+      dates.push(dateStr);
     }
   }
-  return shifts;
+  return dates;
 };
 
-const initialWednesdayNightShifts = generateInitialWednesdayNightShifts(2026, 6);
+const normalizeFixedShifts = (shifts: FixedShift[]) => {
+  const unique = new Map<string, FixedShift>();
+  shifts.forEach((shift) => {
+    unique.set(`${shift.employeeId}-${shift.dayOfWeek}`, shift);
+  });
+  return Array.from(unique.values()).sort((left, right) => {
+    if (left.employeeId === right.employeeId) {
+      return left.dayOfWeek - right.dayOfWeek;
+    }
+    return left.employeeId.localeCompare(right.employeeId);
+  });
+};
+
+const initialLeaveRequests: LeaveRequest[] = [];
+
+const initialSwapRequests: SwapRequest[] = [];
+
+const initialOvertimeRequests: OvertimeRequest[] = [];
+
+const initialNotifications: Notification[] = [];
+
+const initialTardinessRecords: TardinessRecord[] = [];
+
+const initialFixedShifts: FixedShift[] = normalizeFixedShifts([
+  { employeeId: "shengwen", dayOfWeek: 1, shift: "A" },
+  { employeeId: "shengwen", dayOfWeek: 2, shift: "C" },
+  { employeeId: "shengwen", dayOfWeek: 5, shift: "A" },
+  { employeeId: "yihsiao", dayOfWeek: 5, shift: "A" },
+  { employeeId: "zhenting", dayOfWeek: 1, shift: "A" },
+  { employeeId: "zhenting", dayOfWeek: 4, shift: "A" },
+  { employeeId: "guixiang", dayOfWeek: 2, shift: "A" },
+  { employeeId: "guixiang", dayOfWeek: 4, shift: "A" },
+]);
+
+const initialShiftTimeConfig: ShiftTimeConfig = {
+  A: ["08:30-12:00", "13:30-17:00", "19:00-21:00"],
+  B: ["08:30-12:00"],
+  C: ["13:30-17:00"],
+  D: ["19:00-21:00"],
+  E: ["13:30-17:00", "19:00-21:00"],
+  X: ["休假"],
+};
+
+const generateInitialWednesdayNightShifts = (): WednesdayNightShift[] => {
+  // 預設不先指派，讓頁面呈現「尚未決定誰晚班」
+  return [];
+};
 
 interface AppContextType {
   currentUser: Employee | null;
   loginEmployee: (employeeId: string) => void;
   loginManager: (username: string, password: string) => boolean;
   logout: () => void;
-  
   employees: Employee[];
   addEmployee: (employee: Omit<Employee, "id">) => void;
   updateEmployee: (id: string, employee: Partial<Employee>) => void;
   deleteEmployee: (id: string) => void;
-  
   schedule: ScheduleData;
   updateShift: (date: string, employeeId: string, shift: ShiftType) => void;
-  
-  // 固定班表
+  getShiftForDate: (date: string, employeeId: string) => ShiftType;
   fixedShifts: FixedShift[];
-  addFixedShift: (shift: Omit<FixedShift, "id">) => void;
+  addFixedShift: (shift: FixedShift) => void;
   updateFixedShift: (index: number, shift: FixedShift) => void;
   deleteFixedShift: (index: number) => void;
-  
-  // 禮拜三輪流晚班
+  shiftTimeConfig: ShiftTimeConfig;
+  updateShiftTimeConfig: (shift: ShiftType, ranges: string[]) => void;
   wednesdayNightShifts: WednesdayNightShift[];
   setWednesdayNightShift: (date: string, employeeId: string) => void;
-  
+  getWednesdayOffDates: (employeeId: string, year: number, month: number) => string[];
+  toggleWednesdayOff: (employeeId: string, date: string) => { success: boolean; message?: string };
+  isWednesdayOff: (employeeId: string, date: string) => boolean;
+  getLeaveSummary: (employeeId: string, year: number, month: number) => LeaveSummary;
+  toggleLeaveDate: (employeeId: string, date: string) => { success: boolean; message?: string };
+  isLeaveMonthLocked: (year: number, month: number) => boolean;
+  lockLeaveMonth: (year: number, month: number, lockedBy: string) => void;
+  unlockLeaveMonth: (year: number, month: number) => void;
+  leaveMonthLocks: LeaveMonthLock[];
   leaveRequests: LeaveRequest[];
   addLeaveRequest: (request: Omit<LeaveRequest, "id" | "createdAt">) => void;
   updateLeaveRequestStatus: (id: string, status: "approved" | "rejected") => void;
-  
   swapRequests: SwapRequest[];
   addSwapRequest: (request: Omit<SwapRequest, "id" | "createdAt">) => void;
   updateSwapRequestStatus: (id: string, status: "pending_confirmation" | "pending_approval" | "approved" | "rejected") => void;
-  
   overtimeRequests: OvertimeRequest[];
   addOvertimeRequest: (request: Omit<OvertimeRequest, "id" | "createdAt">) => void;
   updateOvertimeRequestStatus: (id: string, status: "approved" | "rejected") => void;
-  
   tardinessRecords: TardinessRecord[];
   addTardinessRecord: (record: Omit<TardinessRecord, "id" | "createdAt">) => void;
   deleteTardinessRecord: (id: string) => void;
-  
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
-  
   isLoading: boolean;
   isSunday: (dateStr: string) => boolean;
   isSaturday: (dateStr: string) => boolean;
@@ -375,9 +277,18 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [employees, setEmployees] = useState<Employee[]>(EMPLOYEES);
-  const [schedule, setSchedule] = useState<ScheduleData>(initialSchedule);
+  const [schedule, setSchedule] = useState<ScheduleData>({});
   const [fixedShifts, setFixedShifts] = useState<FixedShift[]>(initialFixedShifts);
-  const [wednesdayNightShifts, setWednesdayNightShifts] = useState<WednesdayNightShift[]>(initialWednesdayNightShifts);
+  const [shiftTimeConfig, setShiftTimeConfig] = useState<ShiftTimeConfig>(initialShiftTimeConfig);
+  const [wednesdayNightShifts, setWednesdayNightShifts] = useState<WednesdayNightShift[]>(
+    generateInitialWednesdayNightShifts()
+  );
+  const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>({});
+  const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>([]);
+  const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({
+    yihsiao: [],
+    zhenting: [],
+  });
   const [leaveRequests, setLeaveRequests] = useState<LeaveRequest[]>(initialLeaveRequests);
   const [swapRequests, setSwapRequests] = useState<SwapRequest[]>(initialSwapRequests);
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>(initialOvertimeRequests);
@@ -385,53 +296,244 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
   const [isLoading] = useState(false);
 
-  // 員工登入（選擇姓名）
   const loginEmployee = (employeeId: string) => {
-    const employee = employees.find((e) => e.id === employeeId);
+    const employee = employees.find((item) => item.id === employeeId);
     if (employee) {
       setCurrentUser(employee);
     }
   };
 
-  // 管理者登入（帳號密碼）
   const loginManager = (username: string, password: string): boolean => {
-    if (username === "admin" && password === "admin123") {
-      setCurrentUser(EMPLOYEES[0]); // 老闆
+    if (username === "boss" && password === "boss123") {
+      setCurrentUser(EMPLOYEES[0]);
       return true;
     }
-    if (username === "manager" && password === "admin123") {
-      setCurrentUser(EMPLOYEES[1]); // 佾珊(店長)
+    if (username === "joy" && password === "joy123") {
+      const manager = employees.find((item) => item.id === "yishan") ?? EMPLOYEES[1];
+      setCurrentUser(manager);
       return true;
     }
     return false;
   };
 
-  // 登出
   const logout = () => {
     setCurrentUser(null);
   };
 
-  // 新增員工
   const addEmployee = (employee: Omit<Employee, "id">) => {
-    setEmployees((prev) => [
-      ...prev,
-      { ...employee, id: Date.now().toString() }
-    ]);
+    setEmployees((prev) => [...prev, { ...employee, id: Date.now().toString() }]);
   };
 
-  // 更新員工
   const updateEmployee = (id: string, updates: Partial<Employee>) => {
-    setEmployees((prev) =>
-      prev.map((emp) => (emp.id === id ? { ...emp, ...updates } : emp))
-    );
+    setEmployees((prev) => prev.map((employee) => (employee.id === id ? { ...employee, ...updates } : employee)));
+    setCurrentUser((prev) => (prev?.id === id ? { ...prev, ...updates } as Employee : prev));
   };
 
-  // 刪除員工
   const deleteEmployee = (id: string) => {
-    setEmployees((prev) => prev.filter((emp) => emp.id !== id));
+    setEmployees((prev) => prev.filter((employee) => employee.id !== id));
+    setFixedShifts((prev) => prev.filter((shift) => shift.employeeId !== id));
+    setLeaveSelections((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setWednesdayOffSelections((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+    setSchedule((prev) => {
+      const next: ScheduleData = {};
+      Object.entries(prev).forEach(([date, daySchedule]) => {
+        const { [id]: removedShift, ...rest } = daySchedule;
+        void removedShift;
+        next[date] = rest;
+      });
+      return next;
+    });
   };
 
-  // 更新班表
+  const getLeaveSummary = (employeeId: string, year: number, month: number): LeaveSummary => {
+    const selectedDates = (leaveSelections[employeeId] ?? []).filter((date) => isInMonth(date, year, month));
+    const saturdayDates = getMonthSaturdays(year, month);
+    const optionalSaturday = saturdayDates[4];
+    const selectedSaturdayDates = selectedDates.filter((date) => isSaturday(date));
+    const saturdayCoreDates = selectedSaturdayDates.filter((date) => date !== optionalSaturday);
+    const weekdayDates = selectedDates.filter((date) => !isSaturday(date) && !isSunday(date));
+    const isShengwen = employeeId === "shengwen";
+
+    return {
+      selectedDates,
+      saturdayUsed: isShengwen ? selectedSaturdayDates.length : saturdayCoreDates.length,
+      saturdayLimit: 2,
+      weekdayUsed: isShengwen ? 0 : weekdayDates.length,
+      weekdayLimit: isShengwen ? 0 : 2,
+      optionalSaturdayUsed: Boolean(optionalSaturday && selectedDates.includes(optionalSaturday) && !isShengwen),
+      optionalSaturdayAvailable: !isShengwen && saturdayDates.length >= 5,
+    };
+  };
+
+  const toggleLeaveDate = (employeeId: string, date: string) => {
+    const dateObject = new Date(date);
+    const year = dateObject.getFullYear();
+    const month = dateObject.getMonth() + 1;
+    if (leaveMonthLocks.some((lock) => lock.year === year && lock.month === month)) {
+      return { success: false, message: "本月份排休已鎖定，僅可選擇後續月份" };
+    }
+    const summary = getLeaveSummary(employeeId, year, month);
+    const isSelected = summary.selectedDates.includes(date);
+    const isShengwen = employeeId === "shengwen";
+
+    if (isSelected) {
+      setLeaveSelections((prev) => ({
+        ...prev,
+        [employeeId]: (prev[employeeId] ?? []).filter((item) => item !== date),
+      }));
+      return { success: true };
+    }
+
+    if (isSunday(date)) {
+      return { success: false, message: "禮拜日固定公休，不需要另外選擇" };
+    }
+
+    if (isShengwen && !isSaturday(date)) {
+      return { success: false, message: "聖文只能選擇兩個禮拜六排休" };
+    }
+
+    if (isSaturday(date)) {
+      if (isShengwen && summary.saturdayUsed >= summary.saturdayLimit) {
+        return { success: false, message: "聖文的禮拜六排休已達 2 天上限" };
+      }
+
+      const saturdayDates = getMonthSaturdays(year, month);
+      const optionalSaturday = saturdayDates[4];
+      if (date === optionalSaturday) {
+        setLeaveSelections((prev) => ({
+          ...prev,
+          [employeeId]: [...(prev[employeeId] ?? []), date],
+        }));
+        return { success: true };
+      }
+
+      if (summary.saturdayUsed >= summary.saturdayLimit) {
+        return { success: false, message: "禮拜六排休已達 2 天上限" };
+      }
+    } else if (summary.weekdayUsed >= summary.weekdayLimit) {
+      return { success: false, message: "平日排休已達 2 天上限" };
+    }
+
+    setLeaveSelections((prev) => ({
+      ...prev,
+      [employeeId]: [...(prev[employeeId] ?? []), date],
+    }));
+    return { success: true };
+  };
+
+  const isLeaveMonthLocked = (year: number, month: number) =>
+    leaveMonthLocks.some((lock) => lock.year === year && lock.month === month);
+
+  const lockLeaveMonth = (year: number, month: number, lockedBy: string) => {
+    setLeaveMonthLocks((prev) => {
+      if (prev.some((lock) => lock.year === year && lock.month === month)) return prev;
+      return [
+        ...prev,
+        {
+          year,
+          month,
+          lockedBy,
+          lockedAt: new Date().toISOString(),
+        },
+      ];
+    });
+  };
+
+  const unlockLeaveMonth = (year: number, month: number) => {
+    setLeaveMonthLocks((prev) => prev.filter((lock) => !(lock.year === year && lock.month === month)));
+  };
+
+  const getWednesdayOffDates = (employeeId: string, year: number, month: number) =>
+    (wednesdayOffSelections[employeeId] ?? []).filter((date) => isInMonth(date, year, month));
+
+  const isWednesdayOff = (employeeId: string, date: string) => (wednesdayOffSelections[employeeId] ?? []).includes(date);
+
+  const toggleWednesdayOff = (employeeId: string, date: string) => {
+    if (!["yihsiao", "zhenting"].includes(employeeId)) {
+      return { success: false, message: "只有宜孝與貞葶可以設定禮拜三晚班排休" };
+    }
+    if (!isWednesday(date)) {
+      return { success: false, message: "只能設定禮拜三的晚班排休" };
+    }
+
+    const year = new Date(date).getFullYear();
+    const month = new Date(date).getMonth() + 1;
+    const selectedDates = getWednesdayOffDates(employeeId, year, month);
+    const selected = selectedDates.includes(date);
+
+    if (selected) {
+      setWednesdayOffSelections((prev) => ({
+        ...prev,
+        [employeeId]: (prev[employeeId] ?? []).filter((item) => item !== date),
+      }));
+      return { success: true };
+    }
+
+    if (selectedDates.length >= 2) {
+      return { success: false, message: "每月最多只能選擇 2 個禮拜三不輪晚班" };
+    }
+
+    setWednesdayOffSelections((prev) => ({
+      ...prev,
+      [employeeId]: [...(prev[employeeId] ?? []), date],
+    }));
+    return { success: true };
+  };
+
+  const getShiftForDate = (date: string, employeeId: string): ShiftType => {
+    const override = schedule[date]?.[employeeId];
+    if (override) {
+      return override;
+    }
+
+    if (isSunday(date)) {
+      return "X";
+    }
+
+    if (employeeId === "shengwen" && isWednesday(date)) {
+      return "X";
+    }
+
+    if ((leaveSelections[employeeId] ?? []).includes(date)) {
+      return "X";
+    }
+
+    const dayOfWeek = new Date(date).getDay();
+    const isWednesdayNightEmployee = employeeId === "yihsiao" || employeeId === "zhenting";
+    const fixedShift =
+      isWednesday(date) && isWednesdayNightEmployee
+        ? undefined
+        : fixedShifts.find((shift) => shift.employeeId === employeeId && shift.dayOfWeek === dayOfWeek);
+
+    let shift: ShiftType = fixedShift?.shift ?? "B";
+
+    if (isWednesday(date) && isWednesdayNightEmployee) {
+      const yihsiaoOff = isWednesdayOff("yihsiao", date);
+      const zhentingOff = isWednesdayOff("zhenting", date);
+
+      // 禮三晚班規則：
+      // - 兩人都沒選不輪晚班：本日晚班未決，兩人都維持 B
+      // - 兩人都選不輪晚班：衝突狀態，兩人都維持 B（等待換班）
+      // - 僅一人選不輪晚班：另一人連晚班為 A
+      if (yihsiaoOff === zhentingOff) {
+        shift = "B";
+      } else {
+        const onDutyEmployeeId = yihsiaoOff ? "zhenting" : "yihsiao";
+        shift = employeeId === onDutyEmployeeId ? "A" : "B";
+      }
+    }
+
+    return shift;
+  };
+
   const updateShift = (date: string, employeeId: string, shift: ShiftType) => {
     setSchedule((prev) => ({
       ...prev,
@@ -442,53 +544,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
   };
 
-  // 新增固定班表
-  const addFixedShift = (shift: Omit<FixedShift, "id">) => {
-    setFixedShifts((prev) => [...prev, shift]);
-    // 重新產生班表
-    setSchedule(generateInitialSchedule(2026, 6, [...fixedShifts, shift]));
+  const addFixedShift = (shift: FixedShift) => {
+    setFixedShifts((prev) => normalizeFixedShifts([...prev, shift]));
   };
 
-  // 更新固定班表
   const updateFixedShift = (index: number, shift: FixedShift) => {
-    const newFixedShifts = [...fixedShifts];
-    newFixedShifts[index] = shift;
-    setFixedShifts(newFixedShifts);
-    setSchedule(generateInitialSchedule(2026, 6, newFixedShifts));
+    setFixedShifts((prev) => {
+      const next = [...prev];
+      next[index] = shift;
+      return normalizeFixedShifts(next);
+    });
   };
 
-  // 刪除固定班表
   const deleteFixedShift = (index: number) => {
-    const newFixedShifts = fixedShifts.filter((_, i) => i !== index);
-    setFixedShifts(newFixedShifts);
-    setSchedule(generateInitialSchedule(2026, 6, newFixedShifts));
+    setFixedShifts((prev) => prev.filter((_, currentIndex) => currentIndex !== index));
   };
 
-  // 設定禮拜三輪流晚班
+  const updateShiftTimeConfig = (shift: ShiftType, ranges: string[]) => {
+    setShiftTimeConfig((prev) => ({
+      ...prev,
+      [shift]: ranges,
+    }));
+  };
+
   const setWednesdayNightShift = (date: string, employeeId: string) => {
     setWednesdayNightShifts((prev) => {
-      const existingIndex = prev.findIndex(s => s.date === date);
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        updated[existingIndex] = { date, employeeId };
-        return updated;
+      const index = prev.findIndex((item) => item.date === date);
+      if (index >= 0) {
+        const next = [...prev];
+        next[index] = { date, employeeId };
+        return next;
       }
       return [...prev, { date, employeeId }];
     });
   };
 
-  // 新增請假申請
   const addLeaveRequest = (request: Omit<LeaveRequest, "id" | "createdAt">) => {
     setLeaveRequests((prev) => [
       {
         ...request,
         id: Date.now().toString(),
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       },
       ...prev,
     ]);
-    
-    const manager = EMPLOYEES.find((e) => e.role === "manager");
+
+    const manager = employees.find((employee) => employee.role === "manager");
     if (manager) {
       setNotifications((prev) => [
         {
@@ -499,19 +600,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           type: "info",
           read: false,
           createdAt: new Date().toISOString(),
+          route: "/applications/leave",
         },
         ...prev,
       ]);
     }
   };
 
-  // 更新請假申請狀態
   const updateLeaveRequestStatus = (id: string, status: "approved" | "rejected") => {
-    setLeaveRequests((prev) =>
-      prev.map((req) => (req.id === id ? { ...req, status } : req))
-    );
-    
-    const request = leaveRequests.find((r) => r.id === id);
+    const request = leaveRequests.find((item) => item.id === id);
+    setLeaveRequests((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)));
     if (request) {
       setNotifications((prev) => [
         {
@@ -522,24 +620,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
           type: status === "approved" ? "success" : "warning",
           read: false,
           createdAt: new Date().toISOString(),
+          route: "/applications/leave",
         },
         ...prev,
       ]);
     }
   };
 
-  // 新增換班申請
   const addSwapRequest = (request: Omit<SwapRequest, "id" | "createdAt">) => {
     setSwapRequests((prev) => [
       {
         ...request,
         id: Date.now().toString(),
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       },
       ...prev,
     ]);
-    
-    // 通知對方
     setNotifications((prev) => [
       {
         id: Date.now().toString(),
@@ -549,23 +645,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         type: "info",
         read: false,
         createdAt: new Date().toISOString(),
+        route: "/applications/shift-swap",
       },
       ...prev,
     ]);
   };
 
-  // 更新換班申請狀態
-  const updateSwapRequestStatus = (id: string, status: "pending_confirmation" | "pending_approval" | "approved" | "rejected") => {
-    setSwapRequests((prev) =>
-      prev.map((req) => (req.id === id ? { ...req, status } : req))
-    );
-    
-    const request = swapRequests.find((r) => r.id === id);
-    if (request) {
-      let newNotification = null;
-      
-      if (status === "pending_approval") {
-        newNotification = {
+  const updateSwapRequestStatus = (
+    id: string,
+    status: "pending_confirmation" | "pending_approval" | "approved" | "rejected"
+  ) => {
+    const request = swapRequests.find((item) => item.id === id);
+    setSwapRequests((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)));
+    if (!request) {
+      return;
+    }
+    if (status === "pending_approval") {
+      setNotifications((prev) => [
+        {
           id: Date.now().toString(),
           userId: "yishan",
           title: "收到換班審核",
@@ -573,9 +670,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
           type: "info",
           read: false,
           createdAt: new Date().toISOString(),
-        };
-      } else if (status === "approved" || status === "rejected") {
-        newNotification = {
+          route: "/applications/shift-swap",
+        },
+        ...prev,
+      ]);
+      return;
+    }
+    if (status === "approved" || status === "rejected") {
+      if (status === "approved" && request) {
+        const requestDate = new Date(request.date);
+        const isWednesdaySwap = requestDate.getDay() === 3;
+        const isPairSwap =
+          [request.requesterId, request.targetEmployeeId].includes("yihsiao") &&
+          [request.requesterId, request.targetEmployeeId].includes("zhenting");
+
+        const requesterShiftBeforeSwap = getShiftForDate(request.date, request.requesterId);
+        const targetShiftBeforeSwap = getShiftForDate(request.date, request.targetEmployeeId);
+
+        // 禮三衝突核准後：
+        // - 申請人(requester)直接設為不輪晚班
+        // - 對方(target)當天取消不輪晚班，確保有人可連晚班
+        if (isWednesdaySwap && isPairSwap) {
+          setWednesdayOffSelections((prev) => ({
+            ...prev,
+            [request.requesterId]: Array.from(new Set([...(prev[request.requesterId] ?? []), request.date])),
+            [request.targetEmployeeId]: (prev[request.targetEmployeeId] ?? []).filter(
+              (item) => item !== request.date
+            ),
+          }));
+        } else {
+          // 一般換班（例如休假 X 與正常班 B/A/C...互換）：
+          // 核准後直接交換當日班別覆寫，確保班表可見變更。
+          setSchedule((prev) => ({
+            ...prev,
+            [request.date]: {
+              ...prev[request.date],
+              [request.requesterId]: targetShiftBeforeSwap,
+              [request.targetEmployeeId]: requesterShiftBeforeSwap,
+            },
+          }));
+        }
+      }
+
+      setNotifications((prev) => [
+        {
           id: Date.now().toString(),
           userId: request.requesterId,
           title: status === "approved" ? "換班已核准" : "換班已駁回",
@@ -583,27 +721,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
           type: status === "approved" ? "success" : "warning",
           read: false,
           createdAt: new Date().toISOString(),
-        };
-      }
-      
-      if (newNotification) {
-        setNotifications((prev) => [newNotification, ...prev]);
-      }
+          route: "/applications/shift-swap",
+        },
+        ...prev,
+      ]);
     }
   };
 
-  // 新增加班申請
   const addOvertimeRequest = (request: Omit<OvertimeRequest, "id" | "createdAt">) => {
     setOvertimeRequests((prev) => [
       {
         ...request,
         id: Date.now().toString(),
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
       },
       ...prev,
     ]);
-    
-    const manager = EMPLOYEES.find((e) => e.role === "manager");
+    const manager = employees.find((employee) => employee.role === "manager");
     if (manager) {
       setNotifications((prev) => [
         {
@@ -614,19 +748,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           type: "info",
           read: false,
           createdAt: new Date().toISOString(),
+          route: "/applications/overtime",
         },
         ...prev,
       ]);
     }
   };
 
-  // 更新加班申請狀態
   const updateOvertimeRequestStatus = (id: string, status: "approved" | "rejected") => {
-    setOvertimeRequests((prev) =>
-      prev.map((req) => (req.id === id ? { ...req, status } : req))
-    );
-    
-    const request = overtimeRequests.find((r) => r.id === id);
+    const request = overtimeRequests.find((item) => item.id === id);
+    setOvertimeRequests((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)));
     if (request) {
       setNotifications((prev) => [
         {
@@ -637,34 +768,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
           type: status === "approved" ? "success" : "warning",
           read: false,
           createdAt: new Date().toISOString(),
+          route: "/applications/overtime",
         },
         ...prev,
       ]);
     }
   };
 
-  // 新增遲到記錄
   const addTardinessRecord = (record: Omit<TardinessRecord, "id" | "createdAt">) => {
     setTardinessRecords((prev) => [
       ...prev,
       {
         ...record,
         id: Date.now().toString(),
-        createdAt: new Date().toISOString()
-      }
+        createdAt: new Date().toISOString(),
+      },
     ]);
   };
 
-  // 刪除遲到記錄
   const deleteTardinessRecord = (id: string) => {
-    setTardinessRecords((prev) => prev.filter(r => r.id !== id));
+    setTardinessRecords((prev) => prev.filter((record) => record.id !== id));
   };
 
-  // 標記通知已讀
   const markNotificationRead = (id: string) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, read: true } : n))
-    );
+    setNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, read: true } : item)));
   };
 
   return (
@@ -680,12 +807,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteEmployee,
         schedule,
         updateShift,
+        getShiftForDate,
         fixedShifts,
         addFixedShift,
         updateFixedShift,
         deleteFixedShift,
+        shiftTimeConfig,
+        updateShiftTimeConfig,
         wednesdayNightShifts,
         setWednesdayNightShift,
+        getWednesdayOffDates,
+        toggleWednesdayOff,
+        isWednesdayOff,
+        getLeaveSummary,
+        toggleLeaveDate,
+        isLeaveMonthLocked,
+        lockLeaveMonth,
+        unlockLeaveMonth,
+        leaveMonthLocks,
         leaveRequests,
         addLeaveRequest,
         updateLeaveRequestStatus,

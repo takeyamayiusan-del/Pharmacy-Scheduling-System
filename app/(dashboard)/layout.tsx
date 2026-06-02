@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { useApp, EMPLOYEES } from '@/lib/context/AppContext';
+import { useApp } from '@/lib/context/AppContext';
 import {
   Calendar,
   Clock,
@@ -13,6 +13,12 @@ import {
   Repeat,
   TrendingUp,
   Bell,
+  Settings,
+  MoonStar,
+  Menu,
+  X,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -26,6 +32,8 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -54,7 +62,6 @@ export default function DashboardLayout({
   }
 
   const isManager = currentUser.role === 'owner' || currentUser.role === 'manager';
-  const isBoss = currentUser.role === 'owner';
   
   const unreadCount = notifications.filter(
     (n) => n.userId === currentUser.id && !n.read
@@ -63,17 +70,33 @@ export default function DashboardLayout({
   const navItems = [
     { href: '/schedule', label: '班表', icon: Calendar, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
+    { href: '/fixed-shifts', label: '固定班表', icon: Settings, allowed: isManager },
+    { href: '/wednesday-shifts', label: '禮三晚班', icon: MoonStar, allowed: true },
     { href: '/applications/leave', label: '請假申請', icon: FileText, allowed: true },
     { href: '/applications/shift-swap', label: '換班申請', icon: Repeat, allowed: true },
     { href: '/applications/overtime', label: '加班申請', icon: Clock, allowed: true },
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
     { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: isManager },
-    { href: '/employees', label: '員工管理', icon: UserPlus, allowed: isBoss },
+    { href: '/employees', label: '員工管理', icon: UserPlus, allowed: isManager },
   ];
+
+  const handleNotificationClick = (notificationId: string, route?: string) => {
+    markNotificationRead(notificationId);
+    setShowNotifications(false);
+    if (route) {
+      router.push(route);
+      return;
+    }
+    router.push('/notifications');
+  };
 
   const handleLogout = () => {
     logout();
     router.push('/login');
+  };
+
+  const closeMobileSidebar = () => {
+    setIsMobileSidebarOpen(false);
   };
 
   const roleLabel = 
@@ -81,16 +104,34 @@ export default function DashboardLayout({
     currentUser.role === 'manager' ? '店長' : '員工';
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gradient-to-br from-pink-50/60 via-sky-50/40 to-white">
       {/* 頂部導航欄 */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <header className="bg-white/85 backdrop-blur shadow-sm border-b border-pink-100 sticky top-0 z-40">
+        <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-4">
+              <button
+                onClick={() => setIsMobileSidebarOpen(true)}
+                className="lg:hidden p-2 text-gray-600 hover:text-gray-900 hover:bg-pink-50 rounded-full"
+                aria-label="開啟選單"
+              >
+                <Menu className="h-5 w-5" />
+              </button>
+              <button
+                onClick={() => setIsSidebarCollapsed((prev) => !prev)}
+                className="hidden lg:inline-flex p-2 text-gray-600 hover:text-gray-900 hover:bg-pink-50 rounded-full"
+                aria-label="收合側邊欄"
+              >
+                {isSidebarCollapsed ? (
+                  <PanelLeftOpen className="h-5 w-5" />
+                ) : (
+                  <PanelLeftClose className="h-5 w-5" />
+                )}
+              </button>
               <h1 className="text-xl font-bold text-gray-900">耀聖藥局</h1>
             </div>
             <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-600">
+              <span className="hidden sm:inline text-sm text-gray-600">
                 {currentUser.name} ({roleLabel})
               </span>
               
@@ -98,7 +139,7 @@ export default function DashboardLayout({
               <div className="relative">
                 <button
                   onClick={() => setShowNotifications(!showNotifications)}
-                  className="p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg"
+                className="p-2 text-gray-600 hover:text-gray-900 hover:bg-pink-50 rounded-full"
                 >
                   <Bell className="h-5 w-5" />
                   {unreadCount > 0 && (
@@ -121,7 +162,7 @@ export default function DashboardLayout({
                         .map((notification) => (
                           <div
                             key={notification.id}
-                            onClick={() => markNotificationRead(notification.id)}
+                            onClick={() => handleNotificationClick(notification.id, notification.route)}
                             className={`p-4 border-b cursor-pointer hover:bg-gray-50 ${
                               !notification.read ? 'bg-blue-50' : ''
                             }`}
@@ -145,10 +186,10 @@ export default function DashboardLayout({
               
               <button
                 onClick={handleLogout}
-                className="flex items-center gap-2 text-gray-600 hover:text-gray-900"
+                className="flex items-center gap-2 text-gray-600 hover:text-gray-900 px-2 py-1.5 rounded-full hover:bg-pink-50"
               >
                 <LogOut className="h-5 w-5" />
-                <span className="text-sm">登出</span>
+                <span className="hidden sm:inline text-sm">登出</span>
               </button>
             </div>
           </div>
@@ -156,9 +197,33 @@ export default function DashboardLayout({
       </header>
 
       <div className="flex">
+        {/* 手機側邊欄遮罩 */}
+        {isMobileSidebarOpen && (
+          <button
+            onClick={closeMobileSidebar}
+            className="lg:hidden fixed inset-0 bg-black/40 z-40"
+            aria-label="關閉側邊欄遮罩"
+          />
+        )}
+
         {/* 側邊欄 */}
-        <aside className="w-64 bg-white shadow-sm min-h-screen border-r">
-          <nav className="p-4 space-y-1">
+        <aside
+          className={`fixed lg:sticky top-0 z-50 lg:z-30 h-screen bg-white/95 backdrop-blur border-r border-pink-100 shadow-sm transition-all duration-300
+            ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
+            ${isMobileSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full w-72 lg:translate-x-0'}
+          `}
+        >
+          <div className="flex items-center justify-between p-4 border-b lg:hidden">
+            <span className="font-semibold text-gray-900">功能選單</span>
+            <button
+              onClick={closeMobileSidebar}
+              className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg"
+              aria-label="關閉選單"
+            >
+              <X className="h-5 w-5" />
+            </button>
+          </div>
+          <nav className="p-3 space-y-1">
             {navItems.filter(item => item.allowed).map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
@@ -166,14 +231,22 @@ export default function DashboardLayout({
                 <Link
                   key={item.href}
                   href={item.href}
+                  onClick={closeMobileSidebar}
                   className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
                     isActive
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'text-gray-700 hover:bg-gray-50'
+                      ? 'bg-gradient-to-r from-pink-50 to-sky-50 text-sky-700 shadow-sm'
+                      : 'text-gray-700 hover:bg-pink-50'
                   }`}
+                  title={isSidebarCollapsed ? item.label : undefined}
                 >
-                  <Icon className="h-5 w-5" />
-                  <span>{item.label}</span>
+                  <Icon className="h-5 w-5 shrink-0" />
+                  <span
+                    className={`transition-opacity duration-200 ${
+                      isSidebarCollapsed ? 'lg:hidden' : ''
+                    }`}
+                  >
+                    {item.label}
+                  </span>
                 </Link>
               );
             })}
@@ -181,8 +254,10 @@ export default function DashboardLayout({
         </aside>
 
         {/* 主要內容 */}
-        <main className="flex-1 p-6">
-          {children}
+        <main className="flex-1 min-w-0">
+          <div className="p-4 sm:p-6 lg:p-8">
+            {children}
+          </div>
         </main>
       </div>
     </div>

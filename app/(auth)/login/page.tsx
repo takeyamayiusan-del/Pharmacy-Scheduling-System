@@ -32,7 +32,7 @@ export default function LoginPage() {
   };
 
   // 非管理者的員工列表
-  const staffEmployees = employees.filter((e) => e.role !== "owner");
+  const staffEmployees = employees.filter((e) => e.role === "staff");
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -69,7 +69,7 @@ export default function LoginPage() {
                   : "text-gray-500 hover:text-gray-700"
               }`}
             >
-              管理員登入
+              店長/老闆登入
             </button>
           </div>
 
@@ -108,7 +108,6 @@ export default function LoginPage() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   placeholder="請輸入帳號"
                 />
-                <p className="text-xs text-gray-400 mt-1">測試帳號：admin 或 manager</p>
               </div>
 
               <div>
@@ -122,7 +121,6 @@ export default function LoginPage() {
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   placeholder="請輸入密碼"
                 />
-                <p className="text-xs text-gray-400 mt-1">測試密碼：admin123</p>
               </div>
 
               {error && (

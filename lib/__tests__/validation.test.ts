@@ -113,10 +113,9 @@ describe('Feature: yaosheng-pharmacy-scheduling, Property 13: 加班時間驗證
         fc.integer({ min: 0, max: 23 }), // endHour (早於或等於 startHour)
         fc.integer({ min: 0, max: 59 }), // endMinute
         (startHour, startMinute, endHour, endMinute) => {
-          fc.precondition(
-            endHour < startHour ||
-            (endHour === startHour && endMinute <= startMinute)
-          );
+          if (!(endHour < startHour || (endHour === startHour && endMinute <= startMinute))) {
+            return;
+          }
 
           const startTime = `${String(startHour).padStart(2, '0')}:${String(startMinute).padStart(2, '0')}`;
           const endTime = `${String(endHour).padStart(2, '0')}:${String(endMinute).padStart(2, '0')}`;
