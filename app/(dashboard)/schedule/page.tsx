@@ -16,8 +16,8 @@ const shiftColors: Record<ShiftType, { bg: string; text: string; border: string 
 const shiftLabels: Record<ShiftType, string> = {
   A: "全天",
   B: "白班",
-  C: "下午",
-  D: "晚班",
+  C: "上午",
+  D: "下午",
   E: "下午+晚",
   X: "休假",
 };

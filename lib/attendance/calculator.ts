@@ -9,9 +9,9 @@ import type { ScheduleEntry, OvertimeApplication, LeaveApplication, MonthlyStats
  */
 export const SHIFT_HOURS: Record<string, number> = {
   A: 8,
-  B: 4,
-  C: 4,
-  D: 4,
+  B: 8,
+  C: 3.5,
+  D: 4.5,
   E: 8,
   X: 0,
 };

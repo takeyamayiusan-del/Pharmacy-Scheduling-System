@@ -197,7 +197,7 @@ const initialTardinessRecords: TardinessRecord[] = [];
 
 const initialFixedShifts: FixedShift[] = normalizeFixedShifts([
   { employeeId: "shengwen", dayOfWeek: 1, shift: "A" },
-  { employeeId: "shengwen", dayOfWeek: 2, shift: "C" },
+  { employeeId: "shengwen", dayOfWeek: 2, shift: "D" },
   { employeeId: "shengwen", dayOfWeek: 5, shift: "A" },
   { employeeId: "yihsiao", dayOfWeek: 5, shift: "A" },
   { employeeId: "zhenting", dayOfWeek: 1, shift: "A" },
@@ -208,9 +208,9 @@ const initialFixedShifts: FixedShift[] = normalizeFixedShifts([
 
 const initialShiftTimeConfig: ShiftTimeConfig = {
   A: ["08:30-12:00", "13:30-17:00", "19:00-21:00"],
-  B: ["08:30-12:00"],
-  C: ["13:30-17:00"],
-  D: ["19:00-21:00"],
+  B: ["08:30-12:00", "13:30-18:00"],
+  C: ["08:30-12:00"],
+  D: ["13:30-18:00"],
   E: ["13:30-17:00", "19:00-21:00"],
   X: ["休假"],
 };

@@ -212,7 +212,7 @@ export function MonthlyCalendar({ editable = false }: MonthlyCalendarProps) {
             <div key={code} className="flex items-center gap-2">
               <ShiftCell shiftCode={code} />
               <span className="text-gray-600">
-                {code === 'A' ? '全天' : code === 'B' ? '白班' : code === 'C' ? '下午班' : code === 'D' ? '晚班' : code === 'E' ? '下午+晚班' : '休假'}
+                {code === 'A' ? '全天' : code === 'B' ? '白班' : code === 'C' ? '上午班' : code === 'D' ? '下午班' : code === 'E' ? '下午+晚班' : '休假'}
               </span>
             </div>
           ))}

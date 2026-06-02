@@ -24,9 +24,9 @@ describe('工時計算模組測試', () => {
   describe('SHIFT_HOURS 常數', () => {
     it('各班別時數應正確', () => {
       expect(SHIFT_HOURS.A).toBe(8);
-      expect(SHIFT_HOURS.B).toBe(4);
-      expect(SHIFT_HOURS.C).toBe(4);
-      expect(SHIFT_HOURS.D).toBe(4);
+      expect(SHIFT_HOURS.B).toBe(8);
+      expect(SHIFT_HOURS.C).toBe(3.5);
+      expect(SHIFT_HOURS.D).toBe(4.5);
       expect(SHIFT_HOURS.E).toBe(8);
       expect(SHIFT_HOURS.X).toBe(0);
     });
@@ -73,7 +73,7 @@ describe('工時計算模組測試', () => {
       });
 
       expect(result.workDays).toBe(5); // X 不算
-      expect(result.workHours).toBe(8 + 4 + 4 + 4 + 8);
+      expect(result.workHours).toBe(8 + 8 + 3.5 + 4.5 + 8);
     });
 
     it('應正確計算加班工時（轉換為加班費）', () => {
@@ -168,7 +168,7 @@ describe('工時計算模組測試', () => {
       });
 
       expect(result.workDays).toBe(4);
-      expect(result.workHours).toBe(8 + 8 + 4 + 8);
+      expect(result.workHours).toBe(8 + 8 + 8 + 8);
       expect(result.overtimeHours).toBe(2);
       expect(result.compLeaveHours).toBe(2);
       expect(result.leaveHours).toBe(8 + 4);
@@ -202,7 +202,7 @@ describe('工時計算模組測試', () => {
         approvedLeaves: [],
       });
 
-      expect(result.workHours).toBe(12);
+      expect(result.workHours).toBe(16);
       expect(result.overtimeHours).toBe(8);
     });
   });

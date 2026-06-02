@@ -7,8 +7,8 @@ const shiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
 const shiftLabels: Record<ShiftType, string> = {
   A: "全天",
   B: "白班",
-  C: "下午",
-  D: "晚班",
+  C: "上午",
+  D: "下午",
   E: "下午+晚",
   X: "休假"
 };
@@ -89,7 +89,7 @@ export default function FixedShiftsPage() {
         <div className="text-sm text-gray-700 space-y-1">
           <p>在這裡可以設定每個員工每個星期幾固定上什麼班。</p>
           <p>週日固定公休，不提供編輯。</p>
-          <p>目前預設規則：聖文一五 A、二 C、三休，宜孝五 A、貞葶一四 A、桂香二四 A。</p>
+          <p>目前預設規則：聖文一五 A、二 D、三休，宜孝五 A、貞葶一四 A、桂香二四 A。</p>
         </div>
       </div>
 
