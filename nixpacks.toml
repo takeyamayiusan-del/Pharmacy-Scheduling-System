@@ -2,7 +2,7 @@
 # 耀聖藥局智慧排班系統
 
 [phases.setup]
-  nixLibs = ["nodejs_20", "npm"]
+  nixLibs = ["nodejs_20"]
 
 [phases.install]
   cmds = ["npm install"]
