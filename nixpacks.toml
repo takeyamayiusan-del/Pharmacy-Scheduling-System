@@ -2,7 +2,6 @@
 # 耀聖藥局智慧排班系統
 
 [phases.setup]
-  nixpkgsArchive = "77e746c99400f292e2b4f2647763575586b098f6"
   nixLibs = ["nodejs_20", "npm"]
 
 [phases.install]
