@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { generateMonthlyEntries } from './monthly';
-import type { ShiftCode } from '@/lib/types';
+import { validateLeaveSelection } from './rules';
 
 describe('Property 7: 聖文固定班規則', () => {
   /**
@@ -85,8 +85,6 @@ describe('Property 7: 聖文固定班規則', () => {
   });
 
   it('should enforce 聖文 can only select Saturday leave, not weekdays', () => {
-    const { validateLeaveSelection } = require('./rules');
-    
     // Test weekday rejection for 聖文
     const mondayDate = new Date(2025, 0, 6); // Monday, Jan 6, 2025
     
@@ -116,8 +114,6 @@ describe('Property 7: 聖文固定班規則', () => {
   });
 
   it('should allow 聖文 to select Saturday leave within quota', () => {
-    const { validateLeaveSelection } = require('./rules');
-    
     // Test Saturday acceptance for 聖文
     const saturdayDate = new Date(2025, 0, 11); // Saturday, Jan 11, 2025
     
@@ -146,8 +142,6 @@ describe('Property 7: 聖文固定班規則', () => {
   });
 
   it('should reject 聖文 Saturday leave when quota is exceeded', () => {
-    const { validateLeaveSelection } = require('./rules');
-    
     const saturdayDate = new Date(2025, 0, 11); // Saturday, Jan 11, 2025
     
     const ctx = {
