@@ -17,12 +17,22 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const success = await loginEmployee(username, password);
-    setLoading(false);
-    if (success) {
-      router.push("/attendance/punch");
-    } else {
-      setError("帳號或密碼錯誤");
+    try {
+      const success = await Promise.race([
+        loginEmployee(username, password),
+        new Promise<boolean>((_, reject) =>
+          setTimeout(() => reject(new Error("登入逾時，請重試")), 10000)
+        ),
+      ]);
+      if (success) {
+        router.push("/attendance/punch");
+      } else {
+        setError("帳號或密碼錯誤");
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "登入失敗，請重試");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -30,12 +40,22 @@ export default function LoginPage() {
     e.preventDefault();
     setError("");
     setLoading(true);
-    const success = await loginManager(username, password);
-    setLoading(false);
-    if (success) {
-      router.push("/attendance/punch");
-    } else {
-      setError("帳號或密碼錯誤");
+    try {
+      const success = await Promise.race([
+        loginManager(username, password),
+        new Promise<boolean>((_, reject) =>
+          setTimeout(() => reject(new Error("登入逾時，請重試")), 10000)
+        ),
+      ]);
+      if (success) {
+        router.push("/attendance/punch");
+      } else {
+        setError("帳號或密碼錯誤");
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "登入失敗，請重試");
+    } finally {
+      setLoading(false);
     }
   };
 

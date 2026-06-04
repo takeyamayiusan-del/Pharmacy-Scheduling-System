@@ -587,17 +587,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loginEmployee = async (username: string, password: string): Promise<boolean> => {
     const email = `${username.trim().toLowerCase()}@yaosheng.app`;
     console.log("[login] attempting:", email);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) console.error("[login] error:", error.message, error.status);
-    return !error;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      console.log("[login] result:", data?.user?.id, "error:", error?.message);
+      if (error) console.error("[login] error:", error.message, error.status);
+      return !error;
+    } catch (e) {
+      console.error("[login] exception:", e);
+      return false;
+    }
   };
 
   const loginManager = async (username: string, password: string): Promise<boolean> => {
     const email = `${username.trim().toLowerCase()}@yaosheng.app`;
     console.log("[login] attempting:", email);
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) console.error("[login] error:", error.message, error.status);
-    return !error;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      console.log("[login] result:", data?.user?.id, "error:", error?.message);
+      if (error) console.error("[login] error:", error.message, error.status);
+      return !error;
+    } catch (e) {
+      console.error("[login] exception:", e);
+      return false;
+    }
   };
 
   const logout = async () => {
