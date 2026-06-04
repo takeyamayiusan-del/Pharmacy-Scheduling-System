@@ -235,13 +235,16 @@ interface AppContextType {
   leaveMonthLocks: LeaveMonthLock[];
   leaveRequests: LeaveRequest[];
   addLeaveRequest: (request: Omit<LeaveRequest, "id" | "createdAt">) => Promise<void>;
-  updateLeaveRequestStatus: (id: string, status: "approved" | "rejected") => Promise<void>;
+  updateLeaveRequestStatus: (id: string, status: "approved" | "rejected", rejectReason?: string) => Promise<void>;
+  deleteLeaveRequest: (id: string) => Promise<void>;
   swapRequests: SwapRequest[];
   addSwapRequest: (request: Omit<SwapRequest, "id" | "createdAt">) => Promise<void>;
-  updateSwapRequestStatus: (id: string, status: "pending_confirmation" | "pending_approval" | "approved" | "rejected") => Promise<void>;
+  updateSwapRequestStatus: (id: string, status: "pending_confirmation" | "pending_approval" | "approved" | "rejected", rejectReason?: string) => Promise<void>;
+  deleteSwapRequest: (id: string) => Promise<void>;
   overtimeRequests: OvertimeRequest[];
   addOvertimeRequest: (request: Omit<OvertimeRequest, "id" | "createdAt">) => Promise<void>;
-  updateOvertimeRequestStatus: (id: string, status: "approved" | "rejected") => Promise<void>;
+  updateOvertimeRequestStatus: (id: string, status: "approved" | "rejected", rejectReason?: string) => Promise<void>;
+  deleteOvertimeRequest: (id: string) => Promise<void>;
   tardinessRecords: TardinessRecord[];
   addTardinessRecord: (record: Omit<TardinessRecord, "id" | "createdAt">) => Promise<void>;
   deleteTardinessRecord: (id: string) => Promise<void>;
@@ -398,14 +401,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadLeaveRequests = useCallback(async () => {
     const { data } = await supabase
       .from("leave_applications")
-      .select("*")
+      .select("*, users!leave_applications_user_id_fkey(name)")
       .order("created_at", { ascending: false });
     if (data) {
       setLeaveRequests(
         data.map((r) => ({
           id: r.id,
           employeeId: r.user_id,
-          employeeName: "",
+          employeeName: (r.users as { name?: string } | null)?.name ?? "",
           startDate: r.leave_date,
           endDate: r.leave_date,
           startTime: r.period === "morning" ? "08:30" : "13:30",
@@ -422,16 +425,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadSwapRequests = useCallback(async () => {
     const { data } = await supabase
       .from("shift_swap_applications")
-      .select("*")
+      .select("*, requester:users!shift_swap_applications_requester_id_fkey(name), target:users!shift_swap_applications_target_id_fkey(name)")
       .order("created_at", { ascending: false });
     if (data) {
       setSwapRequests(
         data.map((r) => ({
           id: r.id,
           requesterId: r.requester_id,
-          requesterName: "",
+          requesterName: (r.requester as { name?: string } | null)?.name ?? "",
           targetEmployeeId: r.target_id,
-          targetEmployeeName: "",
+          targetEmployeeName: (r.target as { name?: string } | null)?.name ?? "",
           requesterDate: r.swap_date,
           targetDate: r.swap_date,
           status: r.status as SwapRequest["status"],
@@ -444,14 +447,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadOvertimeRequests = useCallback(async () => {
     const { data } = await supabase
       .from("overtime_applications")
-      .select("*")
+      .select("*, users!overtime_applications_user_id_fkey(name)")
       .order("created_at", { ascending: false });
     if (data) {
       setOvertimeRequests(
         data.map((r) => ({
           id: r.id,
           employeeId: r.user_id,
-          employeeName: "",
+          employeeName: (r.users as { name?: string } | null)?.name ?? "",
           date: r.overtime_date,
           startTime: r.start_time,
           endTime: r.end_time,
@@ -1031,11 +1034,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadLeaveRequests();
   };
 
-  const updateLeaveRequestStatus = async (id: string, status: "approved" | "rejected") => {
+  const updateLeaveRequestStatus = async (id: string, status: "approved" | "rejected", rejectReason?: string) => {
     await supabase
       .from("leave_applications")
-      .update({ status, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
+      .update({
+        status,
+        reviewed_by: currentUser?.id,
+        reviewed_at: new Date().toISOString(),
+        ...(rejectReason ? { reject_reason: rejectReason } : {}),
+      })
       .eq("id", id);
+    await loadLeaveRequests();
+  };
+
+  const deleteLeaveRequest = async (id: string) => {
+    await supabase.from("leave_applications").delete().eq("id", id);
     await loadLeaveRequests();
   };
 
@@ -1054,15 +1067,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const updateSwapRequestStatus = async (
     id: string,
-    status: "pending_confirmation" | "pending_approval" | "approved" | "rejected"
+    status: "pending_confirmation" | "pending_approval" | "approved" | "rejected",
+    rejectReason?: string
   ) => {
     const dbStatus =
       status === "pending_confirmation" ? "pending_confirm" :
       status === "pending_approval" ? "pending_review" : status;
     await supabase
       .from("shift_swap_applications")
-      .update({ status: dbStatus, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
+      .update({
+        status: dbStatus,
+        reviewed_by: currentUser?.id,
+        reviewed_at: new Date().toISOString(),
+        ...(rejectReason ? { reject_reason: rejectReason } : {}),
+      })
       .eq("id", id);
+    await loadSwapRequests();
+  };
+
+  const deleteSwapRequest = async (id: string) => {
+    await supabase.from("shift_swap_applications").delete().eq("id", id);
     await loadSwapRequests();
   };
 
@@ -1080,11 +1104,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadOvertimeRequests();
   };
 
-  const updateOvertimeRequestStatus = async (id: string, status: "approved" | "rejected") => {
+  const updateOvertimeRequestStatus = async (id: string, status: "approved" | "rejected", rejectReason?: string) => {
     await supabase
       .from("overtime_applications")
-      .update({ status, reviewed_by: currentUser?.id, reviewed_at: new Date().toISOString() })
+      .update({
+        status,
+        reviewed_by: currentUser?.id,
+        reviewed_at: new Date().toISOString(),
+        ...(rejectReason ? { reject_reason: rejectReason } : {}),
+      })
       .eq("id", id);
+    await loadOvertimeRequests();
+  };
+
+  const deleteOvertimeRequest = async (id: string) => {
+    await supabase.from("overtime_applications").delete().eq("id", id);
     await loadOvertimeRequests();
   };
 
@@ -1194,12 +1228,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         leaveRequests,
         addLeaveRequest,
         updateLeaveRequestStatus,
+        deleteLeaveRequest,
         swapRequests,
         addSwapRequest,
         updateSwapRequestStatus,
+        deleteSwapRequest,
         overtimeRequests,
         addOvertimeRequest,
         updateOvertimeRequestStatus,
+        deleteOvertimeRequest,
         tardinessRecords,
         addTardinessRecord,
         deleteTardinessRecord,

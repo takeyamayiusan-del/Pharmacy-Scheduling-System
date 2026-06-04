@@ -191,32 +191,52 @@ export default function DashboardLayout({
                 {/* 通知下拉選單 */}
                 {showNotifications && (
                   <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border z-50">
-                    <div className="p-4 border-b">
+                    <div className="p-4 border-b flex items-center justify-between">
                       <h3 className="font-semibold text-gray-900">通知</h3>
+                      <button
+                        onClick={() => { setShowNotifications(false); router.push('/notifications'); }}
+                        className="text-xs text-blue-600 hover:underline"
+                      >
+                        全部查看
+                      </button>
                     </div>
                     <div className="max-h-96 overflow-y-auto">
                       {notifications
                         .filter((n) => n.userId === currentUser.id)
                         .slice(0, 10)
-                        .map((notification) => (
-                          <div
-                            key={notification.id}
-                            onClick={() => handleNotificationClick(notification.id, notification.route)}
-                            className={`p-4 border-b cursor-pointer hover:bg-gray-50 ${
-                              !notification.read ? 'bg-blue-50' : ''
-                            }`}
-                          >
-                            <div className="font-medium text-gray-900">{notification.title}</div>
-                            <div className="text-sm text-gray-600 mt-1">{notification.message}</div>
-                            <div className="text-xs text-gray-400 mt-2">
-                              {new Date(notification.createdAt).toLocaleString()}
+                        .map((notification) => {
+                          // 根據通知類型自動判斷跳轉頁面
+                          const autoRoute = notification.route ?? (() => {
+                            if (notification.title.includes('請假')) return '/applications/leave';
+                            if (notification.title.includes('加班')) return '/applications/overtime';
+                            if (notification.title.includes('換班')) return '/applications/shift-swap';
+                            return '/notifications';
+                          })();
+                          return (
+                            <div
+                              key={notification.id}
+                              className={`p-4 border-b hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-medium text-gray-900 text-sm">{notification.title}</div>
+                                  <div className="text-sm text-gray-600 mt-0.5 truncate">{notification.message}</div>
+                                  <div className="text-xs text-gray-400 mt-1">
+                                    {new Date(notification.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => handleNotificationClick(notification.id, autoRoute)}
+                                  className="shrink-0 text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                >
+                                  查看
+                                </button>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       {notifications.filter((n) => n.userId === currentUser.id).length === 0 && (
-                        <div className="p-4 text-center text-gray-500">
-                          沒有通知
-                        </div>
+                        <div className="p-4 text-center text-gray-500">沒有通知</div>
                       )}
                     </div>
                   </div>

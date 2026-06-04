@@ -241,8 +241,8 @@ function renderToCanvas(options: DrawScheduleOptions): {
 export async function exportSchedulePdf(options: DrawScheduleOptions): Promise<void> {
   const { canvas, width, height } = renderToCanvas(options);
   const imageData = canvas.toDataURL("image/png");
-  const orientation = options.layout === "portrait" ? "portrait" : "landscape";
-  const pdf = new jsPDF({ orientation, unit: "mm", format: "a4" });
+  // 直式排版 → 橫向A4紙（landscape），讓內容不被壓縮
+  const pdf = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
   const pageWidth = pdf.internal.pageSize.getWidth();
   const pageHeight = pdf.internal.pageSize.getHeight();
   const margin = 8;
