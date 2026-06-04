@@ -58,6 +58,13 @@ export default function PunchPage() {
     askOvertime: boolean;
   } | null>(null);
 
+  // 提早下班兩層 modal
+  const [earlyLeaveModal, setEarlyLeaveModal] = useState<{
+    slot: PunchSlot;
+    earlyMinutes: number;
+    step: 1 | 2; // step1: 是否申請早退，step2: 確認是否強制打卡
+  } | null>(null);
+
   const today = todayDateStr();
   const shift: ShiftType = currentUser
     ? getShiftForDate(today, currentUser.id)
@@ -213,6 +220,12 @@ export default function PunchPage() {
           askLeave: false,
           askOvertime: true,
         });
+        return;
+      }
+      // 提早下班（尚未到下班時間）
+      if (minutesPastEnd < 0) {
+        const earlyMinutes = Math.abs(minutesPastEnd);
+        setEarlyLeaveModal({ slot, earlyMinutes, step: 1 });
         return;
       }
       finalizePunch(slot);
@@ -474,6 +487,78 @@ export default function PunchPage() {
                   申請加班
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 提早下班 Modal - 第一層：是否申請早退 */}
+      {earlyLeaveModal?.step === 1 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+            <div className="flex items-start gap-2 text-amber-800 mb-4">
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">提早下班</p>
+                <p className="text-sm mt-1">
+                  您提早 {earlyLeaveModal.earlyMinutes} 分鐘下班，是否申請早退（請假）？
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setEarlyLeaveModal((prev) => prev ? { ...prev, step: 2 } : null)}
+                className="flex-1 py-2 border rounded-lg text-gray-700"
+              >
+                否
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  finalizePunch(earlyLeaveModal.slot, "提早下班申請早退", earlyLeaveModal.earlyMinutes);
+                  setEarlyLeaveModal(null);
+                  router.push("/applications/leave");
+                }}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                是，申請早退
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 提早下班 Modal - 第二層：確認是否仍要提早打卡 */}
+      {earlyLeaveModal?.step === 2 && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+            <div className="flex items-start gap-2 text-amber-800 mb-4">
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">確認提早下班</p>
+                <p className="text-sm mt-1">仍要提早下班嗎？</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setEarlyLeaveModal(null)}
+                className="flex-1 py-2 border rounded-lg text-gray-700"
+              >
+                否
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  finalizePunch(earlyLeaveModal.slot, "提早下班", earlyLeaveModal.earlyMinutes);
+                  setEarlyLeaveModal(null);
+                  setSuccessModal({ message: "下班打卡成功！", askLeave: false, askOvertime: false });
+                }}
+                className="flex-1 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+              >
+                是，打卡下班
+              </button>
             </div>
           </div>
         </div>

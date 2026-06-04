@@ -28,17 +28,53 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { currentUser, logout, notifications, markNotificationRead } = useApp();
+  const { currentUser, logout, notifications, markNotificationRead, getLeaveSummary } = useApp();
   const router = useRouter();
   const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [showLeaveReminder, setShowLeaveReminder] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  // 每月20號以後，若下個月尚未排休則顯示提醒（本月關閉後不再顯示）
+  useEffect(() => {
+    if (!isMounted || !currentUser || currentUser.role === 'owner') return;
+
+    const today = new Date();
+    const day = today.getDate();
+    if (day < 20) return; // 20號以前不提醒
+
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1; // 當前月份
+    // 計算下個月
+    const nextYear = month === 12 ? year + 1 : year;
+    const nextMonth = month === 12 ? 1 : month + 1;
+
+    // 檢查本月是否已關閉提醒（存在 localStorage）
+    const dismissKey = `leaveReminder_dismissed_${year}_${month}_${currentUser.id}`;
+    if (localStorage.getItem(dismissKey)) return;
+
+    // 檢查下個月是否已有排休選擇
+    const summary = getLeaveSummary(currentUser.id, nextYear, nextMonth);
+    if (summary.selectedDates.length === 0) {
+      setShowLeaveReminder(true);
+    }
+  }, [isMounted, currentUser, getLeaveSummary]);
+
+  const dismissLeaveReminder = () => {
+    if (!currentUser) return;
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1;
+    const dismissKey = `leaveReminder_dismissed_${year}_${month}_${currentUser.id}`;
+    localStorage.setItem(dismissKey, '1');
+    setShowLeaveReminder(false);
+  };
 
   // 等待掛載後再進行路由跳轉
   useEffect(() => {
@@ -262,6 +298,50 @@ export default function DashboardLayout({
           </div>
         </main>
       </div>
+
+      {/* 排休提醒 Modal */}
+      {showLeaveReminder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-sm w-full relative">
+            <button
+              type="button"
+              onClick={dismissLeaveReminder}
+              className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100"
+              aria-label="關閉提醒"
+            >
+              <X className="h-5 w-5" />
+            </button>
+            <div className="flex items-start gap-3 mb-4">
+              <Calendar className="h-6 w-6 text-blue-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-gray-900">記得排休下個月班表！</p>
+                <p className="text-sm text-gray-600 mt-1">
+                  已到每月排休提醒時間，您尚未選擇下個月的排休日期，請記得前往排休選擇頁面完成選擇。
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={dismissLeaveReminder}
+                className="flex-1 py-2 border rounded-lg text-gray-600 text-sm"
+              >
+                本月不再提醒
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  dismissLeaveReminder();
+                  router.push('/leave-selection');
+                }}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+              >
+                前往排休選擇
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
