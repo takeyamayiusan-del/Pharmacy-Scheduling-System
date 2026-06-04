@@ -2,8 +2,8 @@
 export const PHARMACY_LOCATION = {
   name: "耀聖藥局",
   address: "南投縣竹山鎮集山路三段816之5號",
-  latitude: 23.7574,
-  longitude: 120.6821,
+  latitude: 23.7591767,
+  longitude: 120.6864422,
   radiusMeters: 150,
 };
 
