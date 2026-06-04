@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, type PunchRecord, type ShiftType } from "@/lib/context/AppContext";
 import {
@@ -43,6 +43,7 @@ export default function PunchPage() {
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
   const [distance, setDistance] = useState<number | null>(null);
   const [nowLabel, setNowLabel] = useState(formatNowTime());
+  const watchIdRef = useRef<number | null>(null);
   const [lateModal, setLateModal] = useState<{
     slot: PunchSlot;
     lateMinutes: number;
@@ -75,39 +76,53 @@ export default function PunchPage() {
   useEffect(() => {
     if (!navigator.geolocation) {
       setGpsState("denied");
-      alert("您的瀏覽器不支援 GPS 定位功能");
       return;
     }
 
-    const watchId = navigator.geolocation.watchPosition(
-      (position) => {
-        const lat = position.coords.latitude;
-        const lng = position.coords.longitude;
-        setCoords({ lat, lng });
-        const dist = distanceMeters(
-          lat,
-          lng,
-          PHARMACY_LOCATION.latitude,
-          PHARMACY_LOCATION.longitude
+    const handlePosition = (position: GeolocationPosition) => {
+      const lat = position.coords.latitude;
+      const lng = position.coords.longitude;
+      setCoords({ lat, lng });
+      const dist = distanceMeters(
+        lat,
+        lng,
+        PHARMACY_LOCATION.latitude,
+        PHARMACY_LOCATION.longitude
+      );
+      setDistance(Math.round(dist));
+      setGpsState(isWithinPharmacyGeofence(lat, lng) ? "inside" : "outside");
+    };
+
+    const handleError = (error: GeolocationPositionError, highAccuracy: boolean) => {
+      console.error("GPS error:", error.code, error.message);
+      // 高精度失敗（POSITION_UNAVAILABLE 或 TIMEOUT），改用低精度（WiFi/基地台定位）
+      if (highAccuracy && (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT)) {
+        const fallbackId = navigator.geolocation.watchPosition(
+          handlePosition,
+          (fallbackError) => {
+            console.error("Fallback GPS error:", fallbackError.code);
+            setGpsState("denied");
+          },
+          { enableHighAccuracy: false, maximumAge: 30_000, timeout: 20_000 }
         );
-        setDistance(Math.round(dist));
-        setGpsState(isWithinPharmacyGeofence(lat, lng) ? "inside" : "outside");
-      },
-      (error) => {
-        console.error("GPS error:", error);
+        // 儲存 fallback watchId 供 cleanup 用
+        watchIdRef.current = fallbackId;
+      } else {
         setGpsState("denied");
-        if (error.code === error.PERMISSION_DENIED) {
-          alert("GPS 權限被拒絕。請到瀏覽器設定中允許此網站使用定位功能。");
-        } else if (error.code === error.POSITION_UNAVAILABLE) {
-          alert("無法取得 GPS 位置，請確認已開啟手機定位功能。");
-        } else if (error.code === error.TIMEOUT) {
-          alert("GPS 定位逾時，請確認網路連線正常。");
-        }
-      },
-      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 }
+      }
+    };
+
+    watchIdRef.current = navigator.geolocation.watchPosition(
+      handlePosition,
+      (error) => handleError(error, true),
+      { enableHighAccuracy: true, maximumAge: 10_000, timeout: 10_000 }
     );
 
-    return () => navigator.geolocation.clearWatch(watchId);
+    return () => {
+      if (watchIdRef.current !== null) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+      }
+    };
   }, []);
 
   const finalizePunch = useCallback(
