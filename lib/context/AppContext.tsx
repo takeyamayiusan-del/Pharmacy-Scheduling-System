@@ -741,17 +741,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isSunday(date)) return "X";
 
     const emp = employees.find((e) => e.id === employeeId);
-    const isWeekdayOffRule = emp?.isWeekdayOffRule ?? false;
     const isWednesdayRotation = emp?.isWednesdayRotation ?? false;
-
-    // 平日不排班規則：只排週六（上午班C），其餘平日不安排
-    if (isWeekdayOffRule) {
-      if (isSaturday(date)) {
-        return (leaveSelections[employeeId] ?? []).includes(date) ? "X" : "C";
-      }
-      // 週三特殊處理：如果也是輪值員工就走輪值邏輯，否則休假
-      if (!isWednesdayRotation) return "X";
-    }
+    // 注意：isWeekdayOffRule 只影響「排休選擇」，不影響班表邏輯
+    // 平日不排休規則 = 平日正常上班，不能選平日排休（只能選週六）
 
     // 週六：有排休選 X，否則 C
     if (isSaturday(date)) {
@@ -966,7 +958,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     if (isSunday(date)) return { success: false, message: "禮拜日固定公休，不需要另外選擇" };
-    if (isWeekdayOffRule && !isSaturday(date)) return { success: false, message: "此員工套用平日不排班規則，只能選擇禮拜六排休" };
+    if (isWeekdayOffRule && !isSaturday(date)) return { success: false, message: "此員工套用平日不排休規則，排休只能選擇週六" };
 
     if (isSaturday(date)) {
       if (isWeekdayOffRule && summary.saturdayUsed >= summary.saturdayLimit)

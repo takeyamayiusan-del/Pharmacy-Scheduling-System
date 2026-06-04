@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useApp, type ShiftType } from "@/lib/context/AppContext";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
+import { createClient } from "@/lib/supabase/client";
 
 // 班別顏色設定
 const shiftColors: Record<ShiftType, { bg: string; text: string; border: string }> = {
@@ -48,6 +49,39 @@ export default function SchedulePage() {
   
   const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
   const [editingCell, setEditingCell] = useState<{ date: string; employeeId: string } | null>(null);
+
+  // 班表規則說明（可編輯）
+  const supabase = createClient();
+  const [schedulingNotes, setSchedulingNotes] = useState("");
+  const [notesId, setNotesId] = useState<string | null>(null);
+  const [isEditingNotes, setIsEditingNotes] = useState(false);
+  const [notesDraft, setNotesDraft] = useState("");
+
+  useEffect(() => {
+    supabase.from("scheduling_notes").select("id, content").limit(1).single()
+      .then(({ data }) => {
+        if (data) {
+          setSchedulingNotes(data.content);
+          setNotesId(data.id);
+        }
+      });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const saveNotes = async () => {
+    if (notesId) {
+      await supabase.from("scheduling_notes")
+        .update({ content: notesDraft, updated_by: currentUser?.id })
+        .eq("id", notesId);
+    } else {
+      const { data } = await supabase.from("scheduling_notes")
+        .insert({ content: notesDraft, updated_by: currentUser?.id })
+        .select().single();
+      if (data) setNotesId(data.id);
+    }
+    setSchedulingNotes(notesDraft);
+    setIsEditingNotes(false);
+  };
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [activeLegendShift, setActiveLegendShift] = useState<ShiftType | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
@@ -62,6 +96,7 @@ export default function SchedulePage() {
   
   // 過濾掉老闆（不顯示在班表）
   const displayEmployees = employees.filter(e => e.role !== "owner");
+  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
 
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 2, 1));
@@ -298,15 +333,41 @@ export default function SchedulePage() {
       </div>
 
       <div className="app-card p-4">
-        <h3 className="font-medium text-gray-900 mb-3">📌 班表規則總覽</h3>
-        <div className="space-y-2 text-sm text-gray-700">
-          <p>• 全員預設 B 班，A 班代表全天＋晚班。</p>
-          <p>• 禮拜日固定公休，不提供編輯。</p>
-          <p>• 禮拜六固定上 C 班（上午班），排休選擇仍依個人配額。</p>
-          <p>• 每人每月固定 8 天休：4 天禮拜日、2 天禮拜六、2 天平日。</p>
-          <p>• 聖文禮拜二早上、禮拜三整天固定休息，只能另外選 2 天禮拜六。</p>
-          <p>• 宜孝與貞葶的禮拜三預設 B 班，再由其中一人連晚班變 A 班。</p>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="font-medium text-gray-900">📌 班表規則總覽</h3>
+          {isManager && !isEditingNotes && (
+            <button
+              onClick={() => { setNotesDraft(schedulingNotes); setIsEditingNotes(true); }}
+              className="text-xs px-3 py-1 border rounded-lg text-gray-600 hover:bg-gray-50"
+            >
+              編輯
+            </button>
+          )}
         </div>
+        {isEditingNotes ? (
+          <div className="space-y-2">
+            <textarea
+              value={notesDraft}
+              onChange={(e) => setNotesDraft(e.target.value)}
+              rows={6}
+              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 resize-y"
+              placeholder="每行一條規則說明..."
+            />
+            <div className="flex gap-2">
+              <button onClick={saveNotes} className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">儲存</button>
+              <button onClick={() => setIsEditingNotes(false)} className="px-4 py-1.5 border text-sm rounded-lg">取消</button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1 text-sm text-gray-700">
+            {schedulingNotes
+              ? schedulingNotes.split("\n").filter(Boolean).map((line, i) => (
+                  <p key={i}>• {line}</p>
+                ))
+              : <p className="text-gray-400 italic">尚未設定規則說明</p>
+            }
+          </div>
+        )}
       </div>
 
       {/* 員工固定班表說明 */}

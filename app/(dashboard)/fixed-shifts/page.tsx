@@ -128,9 +128,9 @@ export default function FixedShiftsPage() {
                     </div>
                   </th>
                   <th className="px-4 py-3 text-center font-medium text-gray-700">
-                    <div>平日不排班規則</div>
+                    <div>平日不排休規則</div>
                     <div className="text-xs font-normal text-gray-500 mt-0.5">
-                      僅排週六上午（C 班）
+                      平日正常上班，排休只能選週六
                     </div>
                   </th>
                 </tr>
@@ -165,7 +165,7 @@ export default function FixedShiftsPage() {
                         )}
                       </td>
 
-                      {/* 平日不排班 */}
+                      {/* 平日不排休 */}
                       <td className="px-4 py-3 text-center">
                         <button
                           type="button"
@@ -174,7 +174,7 @@ export default function FixedShiftsPage() {
                           className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
                             emp.isWeekdayOffRule ? "bg-purple-600" : "bg-gray-200"
                           } ${savingRule === dKey ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                          aria-label={`${emp.name} 平日不排班規則`}
+                          aria-label={`${emp.name} 平日不排休規則`}
                         >
                           <span
                             className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
@@ -345,7 +345,7 @@ export default function FixedShiftsPage() {
                     )}
                     {emp?.isWeekdayOffRule && (
                       <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                        平日不排班
+                        平日不排休
                       </span>
                     )}
                     <button
