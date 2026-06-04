@@ -17,7 +17,7 @@ export default function LoginPage() {
     setError("");
     const success = loginEmployee(username, password);
     if (success) {
-      router.push("/schedule");
+      router.push("/attendance/punch");
     } else {
       setError("帳號或密碼錯誤");
     }
@@ -29,7 +29,7 @@ export default function LoginPage() {
 
     const success = loginManager(username, password);
     if (success) {
-      router.push("/schedule");
+      router.push("/attendance/punch");
     } else {
       setError("帳號或密碼錯誤");
     }
