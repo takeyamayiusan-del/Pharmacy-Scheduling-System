@@ -9,13 +9,16 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const { loginEmployee, loginManager } = useApp();
   const router = useRouter();
 
-  const handleEmployeeLogin = (e: React.FormEvent) => {
+  const handleEmployeeLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    const success = loginEmployee(username, password);
+    setLoading(true);
+    const success = await loginEmployee(username, password);
+    setLoading(false);
     if (success) {
       router.push("/attendance/punch");
     } else {
@@ -23,11 +26,12 @@ export default function LoginPage() {
     }
   };
 
-  const handleManagerLogin = (e: React.FormEvent) => {
+  const handleManagerLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-
-    const success = loginManager(username, password);
+    setLoading(true);
+    const success = await loginManager(username, password);
+    setLoading(false);
     if (success) {
       router.push("/attendance/punch");
     } else {
@@ -46,10 +50,7 @@ export default function LoginPage() {
         <div className="bg-white rounded-2xl shadow-xl p-8">
           <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
             <button
-              onClick={() => {
-                setActiveTab("employee");
-                setError("");
-              }}
+              onClick={() => { setActiveTab("employee"); setError(""); }}
               className={`flex-1 py-3 rounded-md font-medium transition-colors ${
                 activeTab === "employee"
                   ? "bg-white text-blue-600 shadow-sm"
@@ -59,10 +60,7 @@ export default function LoginPage() {
               員工登入
             </button>
             <button
-              onClick={() => {
-                setActiveTab("manager");
-                setError("");
-              }}
+              onClick={() => { setActiveTab("manager"); setError(""); }}
               className={`flex-1 py-3 rounded-md font-medium transition-colors ${
                 activeTab === "manager"
                   ? "bg-white text-blue-600 shadow-sm"
@@ -73,78 +71,48 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {activeTab === "employee" && (
-            <form onSubmit={handleEmployeeLogin} className="space-y-4">
+          <form
+            onSubmit={activeTab === "employee" ? handleEmployeeLogin : handleManagerLogin}
+            className="space-y-4"
+          >
+            {activeTab === "employee" && (
               <p className="text-center text-gray-500 mb-2">請輸入店長為您設定的帳號與密碼</p>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="請輸入帳號"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="請輸入密碼"
-                  required
-                />
-              </div>
-              {error && (
-                <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
-              )}
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-              >
-                登入
-              </button>
-            </form>
-          )}
-
-          {activeTab === "manager" && (
-            <form onSubmit={handleManagerLogin} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
-                <input
-                  type="text"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="請輸入帳號"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
-                <input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-                  placeholder="請輸入密碼"
-                  required
-                />
-              </div>
-              {error && (
-                <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
-              )}
-              <button
-                type="submit"
-                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-              >
-                登入
-              </button>
-            </form>
-          )}
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                placeholder="請輸入帳號"
+                required
+                autoComplete="username"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                placeholder="請輸入密碼"
+                required
+                autoComplete="current-password"
+              />
+            </div>
+            {error && (
+              <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
+            )}
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {loading ? "登入中…" : "登入"}
+            </button>
+          </form>
         </div>
       </div>
     </div>
