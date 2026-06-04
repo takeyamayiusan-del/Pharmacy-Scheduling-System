@@ -20,6 +20,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Fingerprint,
+  DollarSign,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -28,7 +29,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { currentUser, logout, notifications, markNotificationRead, getLeaveSummary } = useApp();
+  const { currentUser, logout, notifications, markNotificationRead, getLeaveSummary, isLoading } = useApp();
   const router = useRouter();
   const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -78,15 +79,13 @@ export default function DashboardLayout({
 
   // 等待掛載後再進行路由跳轉
   useEffect(() => {
-    if (isMounted && !currentUser && pathname !== '/login') {
-      // 使用 setTimeout 避免立即跳轉
-      setTimeout(() => {
-        router.push('/login');
-      }, 100);
+    if (!isMounted) return;
+    if (!currentUser && !isLoading && pathname !== '/login') {
+      router.push('/login');
     }
-  }, [currentUser, router, isMounted, pathname]);
+  }, [currentUser, isLoading, router, isMounted, pathname]);
 
-  if (!isMounted) {
+  if (!isMounted || isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-gray-500">載入中...</div>
@@ -117,6 +116,7 @@ export default function DashboardLayout({
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
     { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: isManager },
     { href: '/employees', label: '員工管理', icon: UserPlus, allowed: isManager },
+    { href: '/payroll', label: '薪資結算', icon: DollarSign, allowed: isManager },
   ];
 
   const handleNotificationClick = (notificationId: string, route?: string) => {

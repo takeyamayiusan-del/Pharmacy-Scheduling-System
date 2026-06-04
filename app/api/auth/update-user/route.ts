@@ -2,15 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 
 // POST /api/auth/update-user
-// Body: { userId, password?, name?, role? }
+// Body: { userId, password?, name?, role?, isWednesdayRotation?, isWeekdayOffRule? }
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { userId, password, name, role } = body as {
+    const { userId, password, name, role, isWednesdayRotation, isWeekdayOffRule } = body as {
       userId: string;
       password?: string;
       name?: string;
       role?: string;
+      isWednesdayRotation?: boolean;
+      isWeekdayOffRule?: boolean;
     };
 
     if (!userId) {
@@ -19,15 +21,16 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminClient();
 
-    // Update public.users if name or role provided
-    if (name !== undefined || role !== undefined) {
-      const updates: Record<string, string> = {};
-      if (name) updates.name = name;
-      if (role) {
-        // Map AppContext role to Supabase role
-        updates.role = role === "staff" ? "employee" : role === "owner" ? "boss" : role;
-      }
+    // Update public.users fields
+    const updates: Record<string, unknown> = {};
+    if (name !== undefined) updates.name = name;
+    if (role !== undefined) {
+      updates.role = role === "staff" ? "employee" : role === "owner" ? "boss" : role;
+    }
+    if (isWednesdayRotation !== undefined) updates.is_wednesday_rotation = isWednesdayRotation;
+    if (isWeekdayOffRule !== undefined) updates.is_weekday_off_rule = isWeekdayOffRule;
 
+    if (Object.keys(updates).length > 0) {
       const { error } = await admin.from("users").update(updates).eq("id", userId);
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
@@ -36,9 +39,7 @@ export async function POST(req: NextRequest) {
 
     // Update password in auth.users if provided
     if (password) {
-      const { error: authError } = await admin.auth.admin.updateUserById(userId, {
-        password,
-      });
+      const { error: authError } = await admin.auth.admin.updateUserById(userId, { password });
       if (authError) {
         return NextResponse.json({ error: authError.message }, { status: 500 });
       }
@@ -46,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     const { data: updated, error: fetchError } = await admin
       .from("users")
-      .select("id, name, role, is_active, created_at, updated_at")
+      .select("id, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, created_at, updated_at")
       .eq("id", userId)
       .single();
 

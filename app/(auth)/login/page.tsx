@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 
@@ -10,20 +10,22 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const { loginEmployee, loginManager } = useApp();
+  const { loginEmployee, loginManager, currentUser, isLoading } = useApp();
   const router = useRouter();
+
+  // 已登入則直接跳轉
+  useEffect(() => {
+    if (!isLoading && currentUser) {
+      router.replace("/schedule");
+    }
+  }, [currentUser, isLoading, router]);
 
   const handleEmployeeLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      const success = await Promise.race([
-        loginEmployee(username, password),
-        new Promise<boolean>((_, reject) =>
-          setTimeout(() => reject(new Error("登入逾時，請重試")), 10000)
-        ),
-      ]);
+      const success = await loginEmployee(username, password);
       if (success) {
         router.push("/attendance/punch");
       } else {
@@ -41,14 +43,9 @@ export default function LoginPage() {
     setError("");
     setLoading(true);
     try {
-      const success = await Promise.race([
-        loginManager(username, password),
-        new Promise<boolean>((_, reject) =>
-          setTimeout(() => reject(new Error("登入逾時，請重試")), 10000)
-        ),
-      ]);
+      const success = await loginManager(username, password);
       if (success) {
-        router.push("/attendance/punch");
+        router.push("/schedule");
       } else {
         setError("帳號或密碼錯誤");
       }
@@ -58,6 +55,14 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
+        <div className="text-gray-500">載入中...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">

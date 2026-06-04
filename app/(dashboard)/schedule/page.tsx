@@ -71,13 +71,13 @@ export default function SchedulePage() {
     setCurrentDate(new Date(year, month, 1));
   };
 
-  const toggleMonthLock = () => {
+  const toggleMonthLock = async () => {
     if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) return;
     if (monthLocked) {
-      unlockLeaveMonth(year, month);
+      await unlockLeaveMonth(year, month);
       return;
     }
-    lockLeaveMonth(year, month, currentUser.id);
+    await lockLeaveMonth(year, month, currentUser.id);
   };
 
   const handleExportPdf = async (layout: ExportLayout) => {
