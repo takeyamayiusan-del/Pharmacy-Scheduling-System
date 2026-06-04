@@ -500,18 +500,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     const initAuth = async () => {
+      // 5 秒 timeout 保護，防止永遠 loading
+      const timeoutId = setTimeout(() => {
+        if (mounted) {
+          console.warn("[initAuth] timeout - forcing isLoading=false");
+          setIsLoading(false);
+        }
+      }, 5000);
+
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session?.user && mounted) {
-          const { data: userRow } = await supabase
+          const { data: userRow, error: userError } = await supabase
             .from("users")
             .select("id, name, role")
             .eq("id", session.user.id)
-            .single();
+            .maybeSingle();
+          console.log("[initAuth] userRow:", userRow, "error:", userError);
           if (userRow && mounted) {
             const emp: Employee = { id: userRow.id, name: userRow.name, role: mapRole(userRow.role) };
             setCurrentUser(emp);
-            // Load data in parallel but don't let any failure block the UI
             await Promise.allSettled([
               loadEmployees(),
               loadLeaveRequests(),
@@ -526,6 +534,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch (e) {
         console.error("[initAuth] error:", e);
       } finally {
+        clearTimeout(timeoutId);
         if (mounted) setIsLoading(false);
       }
     };
@@ -541,12 +550,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (event === "SIGNED_IN" && session?.user) {
+        const signInTimeout = setTimeout(() => {
+          if (mounted) {
+            console.warn("[SIGNED_IN] timeout - forcing isLoading=false");
+            setIsLoading(false);
+          }
+        }, 5000);
         try {
-          const { data: userRow } = await supabase
+          const { data: userRow, error: userError } = await supabase
             .from("users")
             .select("id, name, role")
             .eq("id", session.user.id)
-            .single();
+            .maybeSingle(); // maybeSingle won't error if no row found
+          console.log("[SIGNED_IN] userRow:", userRow, "error:", userError);
           if (userRow && mounted) {
             const emp: Employee = { id: userRow.id, name: userRow.name, role: mapRole(userRow.role) };
             setCurrentUser(emp);
@@ -559,10 +575,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
               loadPunchRecords(),
               loadNotifications(userRow.id),
             ]);
+          } else {
+            console.warn("[SIGNED_IN] no user row found for", session.user.id);
           }
         } catch (e) {
           console.error("[SIGNED_IN] error:", e);
         } finally {
+          clearTimeout(signInTimeout);
           if (mounted) setIsLoading(false);
         }
       }
