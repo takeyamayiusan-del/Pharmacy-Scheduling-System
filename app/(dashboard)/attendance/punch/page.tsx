@@ -51,6 +51,13 @@ export default function PunchPage() {
   const [lateReason, setLateReason] = useState("");
   const [pendingSlot, setPendingSlot] = useState<PunchSlot | null>(null);
 
+  // 打卡成功後的提示 modal（遲到超30分鐘先打卡再詢問請假）
+  const [successModal, setSuccessModal] = useState<{
+    message: string;
+    askLeave: boolean;
+    askOvertime: boolean;
+  } | null>(null);
+
   const today = todayDateStr();
   const shift: ShiftType = currentUser
     ? getShiftForDate(today, currentUser.id)
@@ -95,7 +102,6 @@ export default function PunchPage() {
 
     const handleError = (error: GeolocationPositionError, highAccuracy: boolean) => {
       console.error("GPS error:", error.code, error.message);
-      // 高精度失敗（POSITION_UNAVAILABLE 或 TIMEOUT），改用低精度（WiFi/基地台定位）
       if (highAccuracy && (error.code === error.POSITION_UNAVAILABLE || error.code === error.TIMEOUT)) {
         const fallbackId = navigator.geolocation.watchPosition(
           handlePosition,
@@ -105,7 +111,6 @@ export default function PunchPage() {
           },
           { enableHighAccuracy: false, maximumAge: 30_000, timeout: 20_000 }
         );
-        // 儲存 fallback watchId 供 cleanup 用
         watchIdRef.current = fallbackId;
       } else {
         setGpsState("denied");
@@ -175,11 +180,15 @@ export default function PunchPage() {
 
       const minutesLate = minutesDiff(actual, scheduled);
       const lateMinutes = calcLateMinutes(actual, scheduled);
+
       if (minutesLate >= 30) {
-        const go = window.confirm(
-          `您已遲到 ${minutesLate} 分鐘，請改申請請假。是否前往請假申請頁面？`
-        );
-        if (go) router.push("/applications/leave");
+        // 遲到30分鐘以上：先打卡，再提示是否請假
+        finalizePunch(slot, "遲到超過30分鐘", minutesLate);
+        setSuccessModal({
+          message: `打卡成功！您已遲到 ${minutesLate} 分鐘，建議申請請假。`,
+          askLeave: true,
+          askOvertime: false,
+        });
         return;
       }
 
@@ -190,19 +199,24 @@ export default function PunchPage() {
       }
 
       finalizePunch(slot);
+      setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
       return;
     }
 
     if (slot.action === "work_out") {
       const minutesPastEnd = minutesDiff(actual, scheduled);
       if (minutesPastEnd >= 10) {
-        const go = window.confirm(
-          `已超過下班時間 ${minutesPastEnd} 分鐘，請申請加班。是否前往加班申請頁面？`
-        );
-        if (go) router.push("/applications/overtime");
+        // 超過下班時間10分鐘以上：先打卡，再提示是否申請加班
+        finalizePunch(slot, "加班", minutesPastEnd);
+        setSuccessModal({
+          message: `打卡成功！已超過下班時間 ${minutesPastEnd} 分鐘，建議申請加班。`,
+          askLeave: false,
+          askOvertime: true,
+        });
         return;
       }
       finalizePunch(slot);
+      setSuccessModal({ message: "下班打卡成功！", askLeave: false, askOvertime: false });
     }
   };
 
@@ -216,6 +230,7 @@ export default function PunchPage() {
     setLateModal(null);
     setLateReason("");
     setPendingSlot(null);
+    setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
   };
 
   if (!currentUser) return null;
@@ -226,6 +241,7 @@ export default function PunchPage() {
     <div className="space-y-6 max-w-lg mx-auto">
       <h2 className="text-2xl font-bold text-gray-900">上下班打卡</h2>
 
+      {/* GPS 狀態 */}
       <div
         className={`rounded-xl border p-4 ${
           gpsState === "inside"
@@ -265,6 +281,7 @@ export default function PunchPage() {
         </div>
       </div>
 
+      {/* 今日資訊 */}
       <div className="app-card p-4">
         <div className="flex items-center justify-between mb-3">
           <span className="text-gray-600">今日 {today}</span>
@@ -283,7 +300,7 @@ export default function PunchPage() {
         </p>
         {shift !== "X" && (
           <p className="text-xs text-gray-500 mt-2">
-            可提早 10 分鐘打卡；遲到第 6 分鐘起算；遲到 30 分鐘請改請假；下班後第 10 分鐘起請申請加班
+            可提早 10 分鐘打卡；遲到第 6 分鐘起算；遲到 30 分鐘仍可打卡但建議請假；下班後第 10 分鐘起建議申請加班
           </p>
         )}
       </div>
@@ -292,58 +309,76 @@ export default function PunchPage() {
         <div className="app-card p-6 text-center text-gray-600">今日為休假，無需打卡</div>
       ) : (
         <>
-          {nextSlot ? (
-            <button
-              type="button"
-              onClick={() => validateAndPunch(nextSlot)}
-              disabled={gpsState !== "inside"}
-              className="w-full py-4 rounded-xl bg-blue-600 text-white text-lg font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {nextSlot.label}
-              <span className="block text-sm font-normal opacity-90">
-                預定 {nextSlot.scheduledTime}
-              </span>
-            </button>
-          ) : (
-            <div className="app-card p-6 text-center text-emerald-700 font-medium">
-              今日打卡已完成
+          {/* 打卡按鈕 + 今日進度：左右並排 */}
+          <div className="flex gap-4 items-start">
+            {/* 左：打卡按鈕 */}
+            <div className="flex-1">
+              {nextSlot ? (
+                <button
+                  type="button"
+                  onClick={() => validateAndPunch(nextSlot)}
+                  disabled={gpsState !== "inside"}
+                  className="w-full py-6 rounded-xl bg-blue-600 text-white text-lg font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {nextSlot.label}
+                  <span className="block text-sm font-normal opacity-90 mt-1">
+                    預定 {nextSlot.scheduledTime}
+                  </span>
+                </button>
+              ) : (
+                <div className="app-card p-6 text-center text-emerald-700 font-medium">
+                  今日打卡已完成
+                </div>
+              )}
             </div>
-          )}
 
-          <div className="app-card p-4">
-            <h3 className="font-medium text-gray-900 mb-3">今日打卡進度</h3>
-            <ul className="space-y-2">
-              {slots.map((slot) => {
-                const done = completedKeys.has(punchKey(slot));
-                return (
-                  <li
-                    key={punchKey(slot)}
-                    className={`flex justify-between text-sm rounded-lg px-3 py-2 ${
-                      done ? "bg-emerald-50 text-emerald-800" : "bg-gray-50 text-gray-600"
-                    }`}
-                  >
-                    <span>{slot.label}</span>
-                    <span>
-                      {slot.scheduledTime}
-                      {done ? " ✓" : ""}
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+            {/* 右：今日打卡進度 */}
+            <div className="flex-1 app-card p-3">
+              <h3 className="font-medium text-gray-900 mb-2 text-sm">今日進度</h3>
+              <ul className="space-y-1">
+                {slots.map((slot) => {
+                  const done = completedKeys.has(punchKey(slot));
+                  const punch = todayPunches.find(
+                    (p) => p.action === slot.action && p.segmentIndex === slot.segmentIndex
+                  );
+                  return (
+                    <li
+                      key={punchKey(slot)}
+                      className={`text-xs rounded-lg px-2 py-1.5 ${
+                        done ? "bg-emerald-50 text-emerald-800" : "bg-gray-50 text-gray-500"
+                      }`}
+                    >
+                      <div className="flex justify-between">
+                        <span>{slot.label}</span>
+                        <span>{done && punch ? punch.time : slot.scheduledTime}</span>
+                      </div>
+                      {done && punch && punch.lateMinutes > 0 && (
+                        <div className="text-amber-600 mt-0.5">遲到 {punch.lateMinutes} 分</div>
+                      )}
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
 
+          {/* 今日打卡紀錄（詳細） */}
           {todayPunches.length > 0 && (
             <div className="app-card p-4">
               <h3 className="font-medium text-gray-900 mb-2">打卡紀錄</h3>
               <ul className="space-y-2 text-sm text-gray-700">
                 {todayPunches.map((p: PunchRecord) => (
-                  <li key={p.id} className="border-b pb-2 last:border-0">
-                    {p.time} {p.action === "work_in" ? "上班" : "下班"}（{p.shift} 段
-                    {p.segmentIndex + 1}）
-                    {p.lateMinutes > 0 && (
-                      <span className="text-amber-700 block">遲到 {p.lateMinutes} 分鐘</span>
-                    )}
+                  <li key={p.id} className="flex items-start justify-between border-b pb-2 last:border-0">
+                    <div>
+                      <span className="font-medium">
+                        {p.action === "work_in" ? "🟢 上班" : "🔵 下班"}
+                      </span>
+                      <span className="ml-2 text-gray-500">段 {p.segmentIndex + 1}</span>
+                      {p.lateMinutes > 0 && (
+                        <div className="text-amber-600 text-xs mt-0.5">遲到 {p.lateMinutes} 分鐘</div>
+                      )}
+                    </div>
+                    <span className="font-mono text-gray-900">{p.time}</span>
                   </li>
                 ))}
               </ul>
@@ -352,6 +387,7 @@ export default function PunchPage() {
         </>
       )}
 
+      {/* 遲到原因 Modal（遲到5分鐘以上、未達30分鐘） */}
       {lateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
@@ -390,6 +426,54 @@ export default function PunchPage() {
               >
                 確認打卡
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 打卡成功 Modal（含請假/加班提示） */}
+      {successModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+            <div className="flex items-start gap-2 mb-4">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-gray-900">打卡成功</p>
+                <p className="text-sm text-gray-600 mt-1">{successModal.message}</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setSuccessModal(null)}
+                className="flex-1 py-2 border rounded-lg text-gray-700"
+              >
+                關閉
+              </button>
+              {successModal.askLeave && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuccessModal(null);
+                    router.push("/applications/leave");
+                  }}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  申請請假
+                </button>
+              )}
+              {successModal.askOvertime && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSuccessModal(null);
+                    router.push("/applications/overtime");
+                  }}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                >
+                  申請加班
+                </button>
+              )}
             </div>
           </div>
         </div>
