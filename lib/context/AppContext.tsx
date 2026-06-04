@@ -319,6 +319,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [tardinessRecords, setTardinessRecords] = useState<TardinessRecord[]>([]);
   const [punchRecords, setPunchRecords] = useState<PunchRecord[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>({});
+  const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({ yihsiao: [], zhenting: [] });
+  const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>([]);
 
   // localStorage-backed state (configs that don't need multi-user sync)
   const [schedule, setSchedule] = useState<ScheduleData>(() => LS.get("schedule", {}));
@@ -331,24 +334,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [wednesdayNightShifts, setWednesdayNightShifts] = useState<WednesdayNightShift[]>(() =>
     LS.get("wednesdayNightShifts", [])
   );
-  const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>(() =>
-    LS.get("leaveSelections", {})
-  );
-  const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>(() =>
-    LS.get("leaveMonthLocks", [])
-  );
-  const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>(() =>
-    LS.get("wednesdayOffSelections", { yihsiao: [], zhenting: [] })
-  );
 
   // Persist localStorage-backed state
   useEffect(() => { LS.set("schedule", schedule); }, [schedule]);
   useEffect(() => { LS.set("fixedShifts", fixedShifts); }, [fixedShifts]);
   useEffect(() => { LS.set("shiftTimeConfig", shiftTimeConfig); }, [shiftTimeConfig]);
   useEffect(() => { LS.set("wednesdayNightShifts", wednesdayNightShifts); }, [wednesdayNightShifts]);
-  useEffect(() => { LS.set("leaveSelections", leaveSelections); }, [leaveSelections]);
-  useEffect(() => { LS.set("leaveMonthLocks", leaveMonthLocks); }, [leaveMonthLocks]);
-  useEffect(() => { LS.set("wednesdayOffSelections", wednesdayOffSelections); }, [wednesdayOffSelections]);
 
   // ─── Load data from Supabase ────────────────────────────────────────────────
 
@@ -437,14 +428,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadTardinessRecords = useCallback(async () => {
     const { data } = await supabase
       .from("tardiness_records")
-      .select("*, users!tardiness_records_user_id_fkey(name)")
+      .select("*")
       .order("record_date", { ascending: false });
     if (data) {
       setTardinessRecords(
         data.map((r) => ({
           id: r.id,
           employeeId: r.user_id,
-          employeeName: (r.users as { name: string } | null)?.name ?? "",
+          employeeName: "",
           date: r.record_date,
           minutes: r.minutes_late,
           notes: r.note ?? "",
@@ -509,28 +500,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let mounted = true;
 
     const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user && mounted) {
-        const { data: userRow } = await supabase
-          .from("users")
-          .select("id, name, role")
-          .eq("id", session.user.id)
-          .single();
-        if (userRow && mounted) {
-          const emp: Employee = { id: userRow.id, name: userRow.name, role: mapRole(userRow.role) };
-          setCurrentUser(emp);
-          await Promise.all([
-            loadEmployees(),
-            loadLeaveRequests(),
-            loadSwapRequests(),
-            loadOvertimeRequests(),
-            loadTardinessRecords(),
-            loadPunchRecords(),
-            loadNotifications(userRow.id),
-          ]);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.user && mounted) {
+          const { data: userRow } = await supabase
+            .from("users")
+            .select("id, name, role")
+            .eq("id", session.user.id)
+            .single();
+          if (userRow && mounted) {
+            const emp: Employee = { id: userRow.id, name: userRow.name, role: mapRole(userRow.role) };
+            setCurrentUser(emp);
+            // Load data in parallel but don't let any failure block the UI
+            await Promise.allSettled([
+              loadEmployees(),
+              loadLeaveRequests(),
+              loadSwapRequests(),
+              loadOvertimeRequests(),
+              loadTardinessRecords(),
+              loadPunchRecords(),
+              loadNotifications(userRow.id),
+            ]);
+          }
         }
+      } catch (e) {
+        console.error("[initAuth] error:", e);
+      } finally {
+        if (mounted) setIsLoading(false);
       }
-      if (mounted) setIsLoading(false);
     };
 
     initAuth();
@@ -544,25 +541,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return;
       }
       if (event === "SIGNED_IN" && session?.user) {
-        const { data: userRow } = await supabase
-          .from("users")
-          .select("id, name, role")
-          .eq("id", session.user.id)
-          .single();
-        if (userRow && mounted) {
-          const emp: Employee = { id: userRow.id, name: userRow.name, role: mapRole(userRow.role) };
-          setCurrentUser(emp);
-          await Promise.all([
-            loadEmployees(),
-            loadLeaveRequests(),
-            loadSwapRequests(),
-            loadOvertimeRequests(),
-            loadTardinessRecords(),
-            loadPunchRecords(),
-            loadNotifications(userRow.id),
-          ]);
+        try {
+          const { data: userRow } = await supabase
+            .from("users")
+            .select("id, name, role")
+            .eq("id", session.user.id)
+            .single();
+          if (userRow && mounted) {
+            const emp: Employee = { id: userRow.id, name: userRow.name, role: mapRole(userRow.role) };
+            setCurrentUser(emp);
+            await Promise.allSettled([
+              loadEmployees(),
+              loadLeaveRequests(),
+              loadSwapRequests(),
+              loadOvertimeRequests(),
+              loadTardinessRecords(),
+              loadPunchRecords(),
+              loadNotifications(userRow.id),
+            ]);
+          }
+        } catch (e) {
+          console.error("[SIGNED_IN] error:", e);
+        } finally {
+          if (mounted) setIsLoading(false);
         }
-        setIsLoading(false);
       }
     });
 
