@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 import { createClient } from "@/lib/supabase/client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -306,7 +306,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 // ─── Provider ─────────────────────────────────────────────────────────────────
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
 
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
   const [employees, setEmployees] = useState<Employee[]>([]);
