@@ -286,7 +286,10 @@ interface AppContextType {
   deleteTardinessRecord: (id: string) => void;
   punchRecords: PunchRecord[];
   addPunchRecord: (record: Omit<PunchRecord, "id" | "createdAt">) => void;
+  updatePunchRecord: (id: string, updates: Partial<Pick<PunchRecord, "time" | "action" | "segmentIndex">>) => void;
+  deletePunchRecord: (id: string) => void;
   getTodayPunchRecords: (employeeId: string, date: string) => PunchRecord[];
+  getPunchRecordsByDate: (employeeId: string, date: string) => PunchRecord[];
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
   isLoading: boolean;
@@ -866,6 +869,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .filter((item) => item.employeeId === employeeId && item.date === date)
       .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
+  const getPunchRecordsByDate = (employeeId: string, date: string) =>
+    punchRecords
+      .filter((item) => item.employeeId === employeeId && item.date === date)
+      .sort((a, b) => a.time.localeCompare(b.time));
+
+  const updatePunchRecord = (id: string, updates: Partial<Pick<PunchRecord, "time" | "action" | "segmentIndex">>) => {
+    setPunchRecords((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+  };
+
+  const deletePunchRecord = (id: string) => {
+    setPunchRecords((prev) => prev.filter((item) => item.id !== id));
+  };
+
   const markNotificationRead = (id: string) => {
     setNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, read: true } : item)));
   };
@@ -915,7 +933,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteTardinessRecord,
         punchRecords,
         addPunchRecord,
+        updatePunchRecord,
+        deletePunchRecord,
         getTodayPunchRecords,
+        getPunchRecordsByDate,
         notifications,
         markNotificationRead,
         isLoading,
