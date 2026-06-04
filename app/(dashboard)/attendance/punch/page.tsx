@@ -75,6 +75,7 @@ export default function PunchPage() {
   useEffect(() => {
     if (!navigator.geolocation) {
       setGpsState("denied");
+      alert("您的瀏覽器不支援 GPS 定位功能");
       return;
     }
 
@@ -92,7 +93,17 @@ export default function PunchPage() {
         setDistance(Math.round(dist));
         setGpsState(isWithinPharmacyGeofence(lat, lng) ? "inside" : "outside");
       },
-      () => setGpsState("denied"),
+      (error) => {
+        console.error("GPS error:", error);
+        setGpsState("denied");
+        if (error.code === error.PERMISSION_DENIED) {
+          alert("GPS 權限被拒絕。請到瀏覽器設定中允許此網站使用定位功能。");
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          alert("無法取得 GPS 位置，請確認已開啟手機定位功能。");
+        } else if (error.code === error.TIMEOUT) {
+          alert("GPS 定位逾時，請確認網路連線正常。");
+        }
+      },
       { enableHighAccuracy: true, maximumAge: 10_000, timeout: 15_000 }
     );
 
