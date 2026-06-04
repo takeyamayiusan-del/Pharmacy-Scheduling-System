@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const email = `${username.trim().toLowerCase()}@yaosheng.local`;
+    const email = `${username.trim().toLowerCase()}@yaosheng.app`;
     const admin = createAdminClient();
 
     // Map AppContext role to Supabase role
