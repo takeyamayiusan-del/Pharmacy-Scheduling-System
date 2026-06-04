@@ -19,6 +19,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  Fingerprint,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -70,6 +71,7 @@ export default function DashboardLayout({
   const navItems = [
     { href: '/schedule', label: '班表', icon: Calendar, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
+    { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
     { href: '/fixed-shifts', label: '固定班表', icon: Settings, allowed: isManager },
     { href: '/wednesday-shifts', label: '禮三晚班', icon: MoonStar, allowed: true },
     { href: '/applications/leave', label: '請假申請', icon: FileText, allowed: true },

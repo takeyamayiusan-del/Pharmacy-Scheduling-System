@@ -6,6 +6,8 @@ export type Employee = {
   id: string;
   name: string;
   role: "owner" | "manager" | "staff";
+  username?: string;
+  password?: string;
 };
 
 export type ShiftType = "A" | "B" | "C" | "D" | "E" | "X";
@@ -32,8 +34,10 @@ export type LeaveRequest = {
   id: string;
   employeeId: string;
   employeeName: string;
-  date: string;
-  period: "全天" | "上午" | "下午";
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
   type: "事假" | "病假" | "特休" | "其他";
   reason: string;
   status: "pending" | "approved" | "rejected";
@@ -46,7 +50,8 @@ export type SwapRequest = {
   requesterName: string;
   targetEmployeeId: string;
   targetEmployeeName: string;
-  date: string;
+  requesterDate: string;
+  targetDate: string;
   status: "pending_confirmation" | "pending_approval" | "approved" | "rejected";
   createdAt: string;
 };
@@ -85,6 +90,22 @@ export type TardinessRecord = {
   createdAt: string;
 };
 
+export type PunchRecord = {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  date: string;
+  action: "work_in" | "work_out";
+  segmentIndex: number;
+  time: string;
+  shift: ShiftType;
+  lateMinutes: number;
+  reason?: string;
+  latitude: number;
+  longitude: number;
+  createdAt: string;
+};
+
 export type LeaveSummary = {
   selectedDates: string[];
   saturdayUsed: number;
@@ -107,11 +128,11 @@ type LeaveSelections = Record<string, string[]>;
 
 export const EMPLOYEES: Employee[] = [
   { id: "owner", name: "老闆", role: "owner" },
-  { id: "yishan", name: "佾珊", role: "manager" },
-  { id: "yihsiao", name: "宜孝", role: "staff" },
-  { id: "zhenting", name: "貞葶", role: "staff" },
-  { id: "shengwen", name: "聖文", role: "staff" },
-  { id: "guixiang", name: "桂香", role: "staff" },
+  { id: "yishan", name: "佾珊", role: "manager", username: "joy", password: "joy123" },
+  { id: "yihsiao", name: "宜孝", role: "staff", username: "yihsiao", password: "yihsiao123" },
+  { id: "zhenting", name: "貞葶", role: "staff", username: "zhenting", password: "zhenting123" },
+  { id: "shengwen", name: "聖文", role: "staff", username: "shengwen", password: "shengwen123" },
+  { id: "guixiang", name: "桂香", role: "staff", username: "guixiang", password: "guixiang123" },
 ];
 
 export const TAIWAN_HOLIDAYS_2026: { date: string; name: string }[] = [
@@ -195,6 +216,8 @@ const initialNotifications: Notification[] = [];
 
 const initialTardinessRecords: TardinessRecord[] = [];
 
+const initialPunchRecords: PunchRecord[] = [];
+
 const initialFixedShifts: FixedShift[] = normalizeFixedShifts([
   { employeeId: "shengwen", dayOfWeek: 1, shift: "A" },
   { employeeId: "shengwen", dayOfWeek: 2, shift: "D" },
@@ -222,7 +245,7 @@ const generateInitialWednesdayNightShifts = (): WednesdayNightShift[] => {
 
 interface AppContextType {
   currentUser: Employee | null;
-  loginEmployee: (employeeId: string) => void;
+  loginEmployee: (username: string, password: string) => boolean;
   loginManager: (username: string, password: string) => boolean;
   logout: () => void;
   employees: Employee[];
@@ -261,6 +284,9 @@ interface AppContextType {
   tardinessRecords: TardinessRecord[];
   addTardinessRecord: (record: Omit<TardinessRecord, "id" | "createdAt">) => void;
   deleteTardinessRecord: (id: string) => void;
+  punchRecords: PunchRecord[];
+  addPunchRecord: (record: Omit<PunchRecord, "id" | "createdAt">) => void;
+  getTodayPunchRecords: (employeeId: string, date: string) => PunchRecord[];
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
   isLoading: boolean;
@@ -293,14 +319,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [swapRequests, setSwapRequests] = useState<SwapRequest[]>(initialSwapRequests);
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>(initialOvertimeRequests);
   const [tardinessRecords, setTardinessRecords] = useState<TardinessRecord[]>(initialTardinessRecords);
+  const [punchRecords, setPunchRecords] = useState<PunchRecord[]>(initialPunchRecords);
   const [notifications, setNotifications] = useState<Notification[]>(initialNotifications);
   const [isLoading] = useState(false);
 
-  const loginEmployee = (employeeId: string) => {
-    const employee = employees.find((item) => item.id === employeeId);
+  const loginEmployee = (username: string, password: string): boolean => {
+    const employee = employees.find(
+      (item) =>
+        item.role === "staff" &&
+        item.username?.trim().toLowerCase() === username.trim().toLowerCase() &&
+        item.password === password
+    );
     if (employee) {
       setCurrentUser(employee);
+      return true;
     }
+    return false;
   };
 
   const loginManager = (username: string, password: string): boolean => {
@@ -498,6 +532,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return "X";
     }
 
+    if (isSaturday(date) && !(leaveSelections[employeeId] ?? []).includes(date)) {
+      return "C";
+    }
+
     if (employeeId === "shengwen" && isWednesday(date)) {
       return "X";
     }
@@ -596,7 +634,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: Date.now().toString(),
           userId: manager.id,
           title: "新的請假申請",
-          message: `${request.employeeName} 申請 ${request.date} ${request.type}`,
+          message: `${request.employeeName} 申請 ${request.startDate}～${request.endDate} ${request.type}`,
           type: "info",
           read: false,
           createdAt: new Date().toISOString(),
@@ -616,7 +654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: Date.now().toString(),
           userId: request.employeeId,
           title: status === "approved" ? "請假已核准" : "請假已駁回",
-          message: `您的 ${request.date} 請假申請${status === "approved" ? "已核准" : "已駁回"}`,
+          message: `您的 ${request.startDate}～${request.endDate} 請假申請${status === "approved" ? "已核准" : "已駁回"}`,
           type: status === "approved" ? "success" : "warning",
           read: false,
           createdAt: new Date().toISOString(),
@@ -628,20 +666,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addSwapRequest = (request: Omit<SwapRequest, "id" | "createdAt">) => {
+    const isSelfSwap = request.requesterId === request.targetEmployeeId;
+    const initialStatus: SwapRequest["status"] = isSelfSwap ? "pending_approval" : "pending_confirmation";
     setSwapRequests((prev) => [
       {
         ...request,
+        status: initialStatus,
         id: Date.now().toString(),
         createdAt: new Date().toISOString(),
       },
       ...prev,
     ]);
+    if (isSelfSwap) {
+      const manager = employees.find((employee) => employee.role === "manager");
+      if (manager) {
+        setNotifications((prev) => [
+          {
+            id: Date.now().toString(),
+            userId: manager.id,
+            title: "收到換班審核",
+            message: `${request.requesterName} 申請自行換班：${request.requesterDate} ↔ ${request.targetDate}`,
+            type: "info",
+            read: false,
+            createdAt: new Date().toISOString(),
+            route: "/applications/shift-swap",
+          },
+          ...prev,
+        ]);
+      }
+      return;
+    }
     setNotifications((prev) => [
       {
         id: Date.now().toString(),
         userId: request.targetEmployeeId,
         title: "收到換班申請",
-        message: `${request.requesterName} 想跟您換班，日期：${request.date}`,
+        message: `${request.requesterName} 想跟您換班：${request.requesterDate} ↔ ${request.targetDate}`,
         type: "info",
         read: false,
         createdAt: new Date().toISOString(),
@@ -666,7 +726,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: Date.now().toString(),
           userId: "yishan",
           title: "收到換班審核",
-          message: `${request.requesterName} 與 ${request.targetEmployeeName} 換班待審核，日期：${request.date}`,
+          message: `${request.requesterName} 與 ${request.targetEmployeeName} 換班待審核：${request.requesterDate} ↔ ${request.targetDate}`,
           type: "info",
           read: false,
           createdAt: new Date().toISOString(),
@@ -678,35 +738,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     if (status === "approved" || status === "rejected") {
       if (status === "approved" && request) {
-        const requestDate = new Date(request.date);
-        const isWednesdaySwap = requestDate.getDay() === 3;
-        const isPairSwap =
+        const requesterShiftOnRequesterDate = getShiftForDate(request.requesterDate, request.requesterId);
+        const targetShiftOnTargetDate = getShiftForDate(request.targetDate, request.targetEmployeeId);
+
+        const isWednesdayPairSwap =
+          request.requesterDate === request.targetDate &&
+          new Date(request.requesterDate).getDay() === 3 &&
           [request.requesterId, request.targetEmployeeId].includes("yihsiao") &&
           [request.requesterId, request.targetEmployeeId].includes("zhenting");
 
-        const requesterShiftBeforeSwap = getShiftForDate(request.date, request.requesterId);
-        const targetShiftBeforeSwap = getShiftForDate(request.date, request.targetEmployeeId);
-
-        // 禮三衝突核准後：
-        // - 申請人(requester)直接設為不輪晚班
-        // - 對方(target)當天取消不輪晚班，確保有人可連晚班
-        if (isWednesdaySwap && isPairSwap) {
+        if (isWednesdayPairSwap) {
           setWednesdayOffSelections((prev) => ({
             ...prev,
-            [request.requesterId]: Array.from(new Set([...(prev[request.requesterId] ?? []), request.date])),
+            [request.requesterId]: Array.from(
+              new Set([...(prev[request.requesterId] ?? []), request.requesterDate])
+            ),
             [request.targetEmployeeId]: (prev[request.targetEmployeeId] ?? []).filter(
-              (item) => item !== request.date
+              (item) => item !== request.requesterDate
             ),
           }));
         } else {
-          // 一般換班（例如休假 X 與正常班 B/A/C...互換）：
-          // 核准後直接交換當日班別覆寫，確保班表可見變更。
           setSchedule((prev) => ({
             ...prev,
-            [request.date]: {
-              ...prev[request.date],
-              [request.requesterId]: targetShiftBeforeSwap,
-              [request.targetEmployeeId]: requesterShiftBeforeSwap,
+            [request.requesterDate]: {
+              ...prev[request.requesterDate],
+              [request.requesterId]: targetShiftOnTargetDate,
+            },
+            [request.targetDate]: {
+              ...prev[request.targetDate],
+              [request.targetEmployeeId]: requesterShiftOnRequesterDate,
             },
           }));
         }
@@ -717,7 +777,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: Date.now().toString(),
           userId: request.requesterId,
           title: status === "approved" ? "換班已核准" : "換班已駁回",
-          message: `您的換班申請${status === "approved" ? "已核准" : "已駁回"}，日期：${request.date}`,
+          message: `您的換班申請${status === "approved" ? "已核准" : "已駁回"}：${request.requesterDate} ↔ ${request.targetDate}`,
           type: status === "approved" ? "success" : "warning",
           read: false,
           createdAt: new Date().toISOString(),
@@ -790,6 +850,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTardinessRecords((prev) => prev.filter((record) => record.id !== id));
   };
 
+  const addPunchRecord = (record: Omit<PunchRecord, "id" | "createdAt">) => {
+    setPunchRecords((prev) => [
+      {
+        ...record,
+        id: Date.now().toString(),
+        createdAt: new Date().toISOString(),
+      },
+      ...prev,
+    ]);
+  };
+
+  const getTodayPunchRecords = (employeeId: string, date: string) =>
+    punchRecords
+      .filter((item) => item.employeeId === employeeId && item.date === date)
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
   const markNotificationRead = (id: string) => {
     setNotifications((prev) => prev.map((item) => (item.id === id ? { ...item, read: true } : item)));
   };
@@ -837,6 +913,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         tardinessRecords,
         addTardinessRecord,
         deleteTardinessRecord,
+        punchRecords,
+        addPunchRecord,
+        getTodayPunchRecords,
         notifications,
         markNotificationRead,
         isLoading,

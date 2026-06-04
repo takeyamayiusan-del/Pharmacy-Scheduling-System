@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useApp, type ShiftType } from "@/lib/context/AppContext";
+import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 
 // 班別顏色設定
 const shiftColors: Record<ShiftType, { bg: string; text: string; border: string }> = {
@@ -25,14 +26,6 @@ const shiftLabels: Record<ShiftType, string> = {
 const shiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
-const exportShiftPalette: Record<ShiftType, { bg: string; text: string; border: string }> = {
-  A: { bg: "#dbeafe", text: "#1d4ed8", border: "#93c5fd" },
-  B: { bg: "#dcfce7", text: "#15803d", border: "#86efac" },
-  C: { bg: "#fef9c3", text: "#a16207", border: "#fde68a" },
-  D: { bg: "#ede9fe", text: "#6d28d9", border: "#c4b5fd" },
-  E: { bg: "#fce7f3", text: "#be185d", border: "#f9a8d4" },
-  X: { bg: "#f1f5f9", text: "#64748b", border: "#cbd5e1" },
-};
 
 export default function SchedulePage() {
   const { 
@@ -57,6 +50,7 @@ export default function SchedulePage() {
   const [editingCell, setEditingCell] = useState<{ date: string; employeeId: string } | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [activeLegendShift, setActiveLegendShift] = useState<ShiftType | null>(null);
+  const [showExportModal, setShowExportModal] = useState(false);
   
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -86,130 +80,17 @@ export default function SchedulePage() {
     lockLeaveMonth(year, month, currentUser.id);
   };
 
-  const exportScheduleAsImage = async () => {
-    const headerHeight = 86;
-    const rowHeight = 46;
-    const dayColWidth = 54;
-    const nameColWidth = 110;
-    const tableWidth = nameColWidth + daysInMonth * dayColWidth;
-    const tableHeight = (displayEmployees.length + 1) * rowHeight;
-    const width = Math.max(1100, tableWidth + 40);
-    const height = headerHeight + tableHeight + 40;
-    const scale = 2;
-
-    const canvas = document.createElement("canvas");
-    canvas.width = width * scale;
-    canvas.height = height * scale;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) {
-      alert("匯出失敗：無法建立圖片");
-      return;
-    }
-    ctx.scale(scale, scale);
-
-    // 匯出用乾淨白底
-    ctx.fillStyle = "#ffffff";
-    ctx.fillRect(0, 0, width, height);
-
-    // 標題
-    ctx.fillStyle = "#0f172a";
-    ctx.font = "bold 28px 'Microsoft JhengHei', sans-serif";
-    ctx.fillText(`${year}年${month}月 班表`, 20, 42);
-    ctx.font = "12px 'Microsoft JhengHei', sans-serif";
-    ctx.fillStyle = "#94a3b8";
-    ctx.fillText(`匯出日期：${year}/${month}`, 20, 64);
-
-    const tableX = 20;
-    const tableY = 90;
-
-    // 表格底
-    ctx.fillStyle = "#ffffff";
-    ctx.strokeStyle = "#e2e8f0";
-    ctx.lineWidth = 1;
-    ctx.fillRect(tableX, tableY, tableWidth, tableHeight);
-    ctx.strokeRect(tableX, tableY, tableWidth, tableHeight);
-
-    // 表頭背景
-    ctx.fillStyle = "#f8fafc";
-    ctx.fillRect(tableX, tableY, tableWidth, rowHeight);
-
-    // 左上角 header
-    ctx.fillStyle = "#334155";
-    ctx.font = "bold 13px 'Microsoft JhengHei', sans-serif";
-    ctx.fillText("員工", tableX + 14, tableY + 28);
-
-    // 日期 header
-    for (let day = 1; day <= daysInMonth; day += 1) {
-      const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const dayOfWeek = new Date(dateStr).getDay();
-      const holidayInfo = getHolidayInfo(dateStr);
-      const x = tableX + nameColWidth + (day - 1) * dayColWidth;
-      const textColor = dayOfWeek === 0 ? "#dc2626" : dayOfWeek === 6 ? "#c2410c" : "#334155";
-
-      // 匯出仍保留假日/國定假日欄位底色
-      if (dayOfWeek === 0) {
-        ctx.fillStyle = "#fee2e2"; // 週日
-        ctx.fillRect(x, tableY, dayColWidth, tableHeight);
-      } else if (dayOfWeek === 6) {
-        ctx.fillStyle = "#ffedd5"; // 週六
-        ctx.fillRect(x, tableY, dayColWidth, tableHeight);
-      } else if (holidayInfo.isHoliday) {
-        ctx.fillStyle = "#fef9c3"; // 國定假日
-        ctx.fillRect(x, tableY, dayColWidth, tableHeight);
-      }
-
-      ctx.strokeStyle = "#e2e8f0";
-      ctx.strokeRect(x, tableY, dayColWidth, rowHeight);
-      ctx.fillStyle = textColor;
-      ctx.font = "bold 12px 'Microsoft JhengHei', sans-serif";
-      ctx.fillText(String(day), x + 20, tableY + 18);
-      ctx.font = "11px 'Microsoft JhengHei', sans-serif";
-      ctx.fillStyle = "#64748b";
-      ctx.fillText(dayLabels[dayOfWeek], x + 21, tableY + 34);
-      if (holidayInfo.isHoliday && dayOfWeek !== 0) {
-        ctx.font = "bold 10px 'Microsoft JhengHei', sans-serif";
-        ctx.fillStyle = "#a16207";
-        ctx.fillText("國", x + 22, tableY + 44);
-      }
-    }
-
-    // 員工列
-    displayEmployees.forEach((emp, rowIndex) => {
-      const rowY = tableY + rowHeight + rowIndex * rowHeight;
-
-      // 名字欄
-      ctx.strokeStyle = "#e2e8f0";
-      ctx.strokeRect(tableX, rowY, nameColWidth, rowHeight);
-      ctx.fillStyle = "#0f172a";
-      ctx.font = "bold 13px 'Microsoft JhengHei', sans-serif";
-      ctx.fillText(emp.name, tableX + 10, rowY + 28);
-
-      for (let day = 1; day <= daysInMonth; day += 1) {
-        const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        const shift = getShiftForDate(dateStr, emp.id);
-        const x = tableX + nameColWidth + (day - 1) * dayColWidth;
-        const palette = exportShiftPalette[shift];
-
-        ctx.strokeStyle = "#e2e8f0";
-        ctx.strokeRect(x, rowY, dayColWidth, rowHeight);
-
-        ctx.fillStyle = palette.bg;
-        ctx.fillRect(x + 8, rowY + 8, dayColWidth - 16, rowHeight - 16);
-        ctx.strokeStyle = palette.border;
-        ctx.strokeRect(x + 8, rowY + 8, dayColWidth - 16, rowHeight - 16);
-
-        ctx.fillStyle = palette.text;
-        ctx.font = "bold 12px 'Microsoft JhengHei', sans-serif";
-        ctx.fillText(shift, x + 23, rowY + 28);
-      }
+  const handleExportPdf = async (layout: ExportLayout) => {
+    await exportSchedulePdf({
+      year,
+      month,
+      daysInMonth,
+      employees: displayEmployees.map((e) => ({ id: e.id, name: e.name })),
+      getShiftForDate,
+      getHolidayInfo,
+      layout,
     });
-
-    const dataUrl = canvas.toDataURL("image/png");
-    const link = document.createElement("a");
-    link.href = dataUrl;
-    link.download = `班表-${year}-${String(month).padStart(2, "0")}.png`;
-    link.click();
+    setShowExportModal(false);
   };
 
   const dateModalWorkers = selectedDate
@@ -316,7 +197,7 @@ export default function SchedulePage() {
           </div>
         )}
         {!isSun && holidayInfo.isHoliday && (
-          <div className="absolute -top-1 -right-1 bg-yellow-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
+          <div className="absolute -top-2 -right-2 bg-yellow-400 text-yellow-900 text-sm font-bold rounded-md min-w-[22px] h-[22px] flex items-center justify-center shadow border border-yellow-600">
             國
           </div>
         )}
@@ -331,6 +212,37 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-6">
+      {showExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">匯出班表 PDF</h3>
+            <p className="text-sm text-gray-600 mb-4">請選擇版面。直式為 A4 直向，較適合列印；橫式維持原本寬版檢視。</p>
+            <div className="flex flex-col gap-3">
+              <button
+                onClick={() => handleExportPdf("landscape")}
+                className="w-full px-4 py-3 border-2 border-blue-200 rounded-lg hover:bg-blue-50 text-left"
+              >
+                <span className="font-medium text-gray-900">橫式（寬版）</span>
+                <span className="block text-xs text-gray-500 mt-1">員工為列、日期為欄，適合螢幕檢視</span>
+              </button>
+              <button
+                onClick={() => handleExportPdf("portrait")}
+                className="w-full px-4 py-3 border-2 border-emerald-200 rounded-lg hover:bg-emerald-50 text-left"
+              >
+                <span className="font-medium text-gray-900">直式（A4 列印用）</span>
+                <span className="block text-xs text-gray-500 mt-1">上半月 1–15、下半月 16–月底，適合 A4 直向列印</span>
+              </button>
+              <button
+                onClick={() => setShowExportModal(false)}
+                className="w-full px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 頁頭 */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-4">
@@ -341,8 +253,8 @@ export default function SchedulePage() {
           <button onClick={nextMonth} className="app-btn-outline">
             ▶
           </button>
-          <button onClick={exportScheduleAsImage} className="app-btn-primary">
-            匯出班表圖片
+          <button onClick={() => setShowExportModal(true)} className="app-btn-primary">
+            匯出班表
           </button>
           {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
             <button onClick={toggleMonthLock} className={monthLocked ? "app-btn-outline border-red-300 text-red-700" : "app-btn-outline"}>
@@ -390,6 +302,7 @@ export default function SchedulePage() {
         <div className="space-y-2 text-sm text-gray-700">
           <p>• 全員預設 B 班，A 班代表全天＋晚班。</p>
           <p>• 禮拜日固定公休，不提供編輯。</p>
+          <p>• 禮拜六固定上 C 班（上午班），排休選擇仍依個人配額。</p>
           <p>• 每人每月固定 8 天休：4 天禮拜日、2 天禮拜六、2 天平日。</p>
           <p>• 聖文禮拜二早上、禮拜三整天固定休息，只能另外選 2 天禮拜六。</p>
           <p>• 宜孝與貞葶的禮拜三預設 B 班，再由其中一人連晚班變 A 班。</p>

@@ -11,24 +11,28 @@ export default function EmployeesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: "",
-    role: "staff" as Role
+    role: "staff" as Role,
+    username: "",
+    password: "",
   });
   
-  // 如果是編輯模式，先加載員工數據
   const loadEmployee = (employee: Employee) => {
     setEditingId(employee.id);
     setFormData({
       name: employee.name,
-      role: employee.role
+      role: employee.role,
+      username: employee.username ?? "",
+      password: "",
     });
     setShowForm(true);
   };
   
-  // 重置表單
   const resetForm = () => {
     setFormData({
       name: "",
-      role: "staff"
+      role: "staff",
+      username: "",
+      password: "",
     });
     setEditingId(null);
     setShowForm(false);
@@ -39,10 +43,27 @@ export default function EmployeesPage() {
     e.preventDefault();
     
     if (editingId) {
-      updateEmployee(editingId, formData);
+      const updates: Partial<Employee> = {
+        name: formData.name,
+        role: formData.role,
+        username: formData.username.trim() || undefined,
+      };
+      if (formData.password) {
+        updates.password = formData.password;
+      }
+      updateEmployee(editingId, updates);
       alert("員工資料已更新！");
     } else {
-      addEmployee(formData);
+      if (!formData.username.trim() || !formData.password) {
+        alert("新增員工請設定登入帳號與密碼");
+        return;
+      }
+      addEmployee({
+        name: formData.name,
+        role: formData.role,
+        username: formData.username.trim(),
+        password: formData.password,
+      });
       alert("員工已新增！");
     }
     
@@ -154,6 +175,36 @@ export default function EmployeesPage() {
                 <option value="manager">店長</option>
               </select>
             </div>
+            {formData.role === "staff" && (
+              <>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    登入帳號
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.username}
+                    onChange={e => setFormData({ ...formData, username: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder="員工登入用"
+                    required={!editingId}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    登入密碼{editingId ? "（留空則不變更）" : ""}
+                  </label>
+                  <input
+                    type="password"
+                    value={formData.password}
+                    onChange={e => setFormData({ ...formData, password: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg"
+                    placeholder={editingId ? "不變更請留空" : "請設定密碼"}
+                    required={!editingId}
+                  />
+                </div>
+              </>
+            )}
             <div className="flex gap-3">
               <button
                 type="submit"
@@ -183,6 +234,7 @@ export default function EmployeesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">員工姓名</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">登入帳號</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">角色</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">動作</th>
               </tr>
@@ -192,6 +244,9 @@ export default function EmployeesPage() {
                 <tr key={employee.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
                     {employee.name}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {employee.role === "staff" ? employee.username ?? "—" : "店長/老闆專用帳號"}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(employee.role)}`}>

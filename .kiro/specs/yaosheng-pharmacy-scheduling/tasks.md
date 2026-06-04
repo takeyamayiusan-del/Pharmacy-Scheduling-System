@@ -46,7 +46,7 @@
   - 為 `leave-attachments` Storage bucket 設定 RLS 政策（員工只能存取自己申請的附件）
   - **Requirement:** 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12
 
-- [-] 4. 通知 Database Triggers 建立
+- [ ] 4. 通知 Database Triggers 建立
   - 建立 `notify_leave_submitted()` trigger function，請假申請提交後通知所有 manager/boss
   - 建立 `notify_shift_swap_requested()` trigger function，換班申請提交後通知目標員工
   - 建立 `notify_shift_swap_confirmed()` trigger function，換班申請狀態變為 `pending_review` 後通知 manager/boss

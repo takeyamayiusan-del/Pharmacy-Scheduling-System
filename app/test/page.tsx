@@ -12,13 +12,13 @@ export default function TestPage() {
         <div className="space-y-4">
           <h2 className="text-xl font-semibold">員工登入</h2>
           <div className="flex flex-wrap gap-2">
-            {employees.filter(e => e.role !== "owner").map(emp => (
+            {employees.filter(e => e.role === "staff" && e.username).map(emp => (
               <button
                 key={emp.id}
-                onClick={() => loginEmployee(emp.id)}
+                onClick={() => loginEmployee(emp.username!, emp.password!)}
                 className="px-4 py-2 bg-white border rounded-lg hover:bg-blue-100"
               >
-                {emp.name}
+                {emp.name} ({emp.username})
               </button>
             ))}
           </div>
@@ -26,16 +26,16 @@ export default function TestPage() {
           <h2 className="text-xl font-semibold">管理員登入</h2>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => loginManager("admin", "admin123")}
+              onClick={() => loginManager("boss", "boss123")}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
             >
-              老闆 (admin/admin123)
+              老闆 (boss/boss123)
             </button>
             <button
-              onClick={() => loginManager("manager", "admin123")}
+              onClick={() => loginManager("joy", "joy123")}
               className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700"
             >
-              店長 (manager/admin123)
+              店長 (joy/joy123)
             </button>
           </div>
         </div>

@@ -9,6 +9,7 @@ export default function AttendancePage() {
     currentUser,
     employees,
     getShiftForDate,
+    getHolidayInfo,
     overtimeRequests,
     leaveRequests,
     tardinessRecords,
@@ -33,11 +34,16 @@ export default function AttendancePage() {
       let workDays = 0;
       let workHours = 0;
 
+      let holidayOvertimeHours = 0;
+
       for (let day = 1; day <= daysInMonth; day += 1) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const shift = getShiftForDate(dateStr, emp.id);
         if (shift !== 'X') {
           workDays += 1;
+          if (getHolidayInfo(dateStr).isHoliday) {
+            holidayOvertimeHours += SHIFT_HOURS[shift] ?? 0;
+          }
         }
         workHours += SHIFT_HOURS[shift] ?? 0;
       }
@@ -60,12 +66,21 @@ export default function AttendancePage() {
           const [sh, sm] = item.startTime.split(':').map(Number);
           const [eh, em] = item.endTime.split(':').map(Number);
           return sum + ((eh * 60 + em) - (sh * 60 + sm)) / 60;
-        }, 0);
+        }, 0) + holidayOvertimeHours;
 
       const leaveHours = leaveRequests
         .filter((item) => item.employeeId === emp.id && item.status === 'approved')
-        .filter((item) => item.date >= startDate && item.date <= endDate)
-        .reduce((sum, item) => sum + (item.period === '全天' ? 8 : 4), 0);
+        .filter(
+          (item) => item.endDate >= startDate && item.startDate <= endDate
+        )
+        .reduce((sum, item) => {
+          const [sh, sm] = item.startTime.split(':').map(Number);
+          const [eh, em] = item.endTime.split(':').map(Number);
+          const start = new Date(`${item.startDate}T${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}`);
+          const end = new Date(`${item.endDate}T${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`);
+          const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
+          return sum + (hours > 0 ? hours : 0);
+        }, 0);
 
       const tardy = tardinessRecords
         .filter((item) => item.employeeId === emp.id)
@@ -80,13 +95,14 @@ export default function AttendancePage() {
         workDays,
         workHours: Number(workHours.toFixed(2)),
         overtimeHours: Number(overtimeHours.toFixed(2)),
+        holidayOvertimeHours: Number(holidayOvertimeHours.toFixed(2)),
         compensatoryHours: Number(compensatoryHours.toFixed(2)),
         leaveHours: Number(leaveHours.toFixed(2)),
         tardyCount,
         tardyMinutes,
       };
     });
-  }, [daysInMonth, displayEmployees, getShiftForDate, leaveRequests, month, overtimeRequests, tardinessRecords, year]);
+  }, [daysInMonth, displayEmployees, getShiftForDate, getHolidayInfo, leaveRequests, month, overtimeRequests, tardinessRecords, year]);
 
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 2, 1));
@@ -102,6 +118,7 @@ export default function AttendancePage() {
       '上班天數',
       '上班時數',
       '加班費時數',
+      '國定假日加班',
       '補休時數',
       '請假時數',
       '遲到次數',
@@ -112,6 +129,7 @@ export default function AttendancePage() {
       item.workDays,
       item.workHours,
       item.overtimeHours,
+      item.holidayOvertimeHours,
       item.compensatoryHours,
       item.leaveHours,
       item.tardyCount,
@@ -151,6 +169,7 @@ export default function AttendancePage() {
               <th className="p-4 text-center text-sm font-medium text-gray-700">上班天數</th>
               <th className="p-4 text-center text-sm font-medium text-gray-700">上班時數</th>
               <th className="p-4 text-center text-sm font-medium text-gray-700">加班費</th>
+              <th className="p-4 text-center text-sm font-medium text-gray-700">國定假日</th>
               <th className="p-4 text-center text-sm font-medium text-gray-700">補休</th>
               <th className="p-4 text-center text-sm font-medium text-gray-700">請假</th>
               <th className="p-4 text-center text-sm font-medium text-gray-700">遲到次數</th>
@@ -164,6 +183,7 @@ export default function AttendancePage() {
                 <td className="p-4 text-center text-gray-600">{stat.workDays}天</td>
                 <td className="p-4 text-center text-gray-600">{stat.workHours}小時</td>
                 <td className="p-4 text-center text-blue-600 font-medium">{stat.overtimeHours}小時</td>
+                <td className="p-4 text-center text-indigo-600 font-medium">{stat.holidayOvertimeHours}小時</td>
                 <td className="p-4 text-center text-green-600 font-medium">{stat.compensatoryHours}小時</td>
                 <td className="p-4 text-center text-red-600 font-medium">{stat.leaveHours}小時</td>
                 <td className="p-4 text-center text-amber-700 font-medium">{stat.tardyCount}次</td>

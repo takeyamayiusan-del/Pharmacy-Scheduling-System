@@ -9,21 +9,13 @@ export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const { employees, loginEmployee, loginManager } = useApp();
+  const { loginEmployee, loginManager } = useApp();
   const router = useRouter();
 
-  // 員工登入
-  const handleEmployeeLogin = (employeeId: string) => {
-    loginEmployee(employeeId);
-    router.push("/schedule");
-  };
-
-  // 管理者登入
-  const handleManagerLogin = (e: React.FormEvent) => {
+  const handleEmployeeLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    
-    const success = loginManager(username, password);
+    const success = loginEmployee(username, password);
     if (success) {
       router.push("/schedule");
     } else {
@@ -31,8 +23,17 @@ export default function LoginPage() {
     }
   };
 
-  // 非管理者的員工列表
-  const staffEmployees = employees.filter((e) => e.role === "staff");
+  const handleManagerLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    const success = loginManager(username, password);
+    if (success) {
+      router.push("/schedule");
+    } else {
+      setError("帳號或密碼錯誤");
+    }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
@@ -43,7 +44,6 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-8">
-          {/* Tab 切換 */}
           <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
             <button
               onClick={() => {
@@ -73,62 +73,70 @@ export default function LoginPage() {
             </button>
           </div>
 
-          {/* 員工登入 */}
           {activeTab === "employee" && (
-            <div className="space-y-4">
-              <p className="text-center text-gray-500 mb-4">請選擇您的姓名進行登入</p>
-              <div className="grid grid-cols-2 gap-3">
-                {staffEmployees.map((emp) => (
-                  <button
-                    key={emp.id}
-                    onClick={() => handleEmployeeLogin(emp.id)}
-                    className="p-4 border border-gray-200 rounded-xl hover:border-blue-400 hover:bg-blue-50 transition-all text-left"
-                  >
-                    <div className="font-medium text-gray-800">{emp.name}</div>
-                    <div className="text-sm text-gray-500">
-                      {emp.role === "manager" ? "店長" : "員工"}
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 管理者登入 */}
-          {activeTab === "manager" && (
-            <form onSubmit={handleManagerLogin} className="space-y-4">
+            <form onSubmit={handleEmployeeLogin} className="space-y-4">
+              <p className="text-center text-gray-500 mb-2">請輸入店長為您設定的帳號與密碼</p>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  帳號
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
                 <input
                   type="text"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   placeholder="請輸入帳號"
+                  required
                 />
               </div>
-
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  密碼
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
                 <input
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
                   placeholder="請輸入密碼"
+                  required
                 />
               </div>
-
               {error && (
-                <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">
-                  {error}
-                </div>
+                <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
               )}
+              <button
+                type="submit"
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+              >
+                登入
+              </button>
+            </form>
+          )}
 
+          {activeTab === "manager" && (
+            <form onSubmit={handleManagerLogin} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  placeholder="請輸入帳號"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                  placeholder="請輸入密碼"
+                  required
+                />
+              </div>
+              {error && (
+                <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
+              )}
               <button
                 type="submit"
                 className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors"

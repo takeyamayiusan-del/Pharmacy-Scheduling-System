@@ -13,7 +13,7 @@ export default function RootPage() {
     if (!hasRedirected) {
       setHasRedirected(true);
       if (currentUser) {
-        router.replace('/schedule');
+        router.replace('/attendance/punch');
       } else {
         router.replace('/login');
       }

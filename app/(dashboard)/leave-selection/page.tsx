@@ -260,8 +260,8 @@ export default function LeaveSelectionPage() {
                   {isFifthSat && !isSelected && <span className="text-xs text-purple-600">第5</span>}
                   {isShengwenRest && !isSelected && <span className="text-xs">休息</span>}
                   {holidayInfo.isHoliday && !isSun && (
-                    <div className="absolute -top-1 -right-1 bg-yellow-400 text-yellow-800 text-[10px] rounded-full w-4 h-4 flex items-center justify-center">
-                      國
+                    <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-yellow-400 text-yellow-950 text-lg font-black leading-tight py-1 text-center border-t-2 border-amber-600 shadow-sm">
+                      國定
                     </div>
                   )}
                 </div>
@@ -286,6 +286,10 @@ export default function LeaveSelectionPage() {
               第5個禮拜六
             </span>
           )}
+          <span className="flex items-center gap-2">
+            <span className="px-2 py-0.5 bg-yellow-400 text-yellow-950 text-sm font-black rounded border-2 border-amber-600">國定</span>
+            國定假日
+          </span>
         </div>
       </div>
       
