@@ -576,13 +576,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const loginEmployee = async (username: string, password: string): Promise<boolean> => {
     const email = `${username.trim().toLowerCase()}@yaosheng.local`;
+    console.log("[login] attempting:", email);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) console.error("[login] error:", error.message, error.status);
     return !error;
   };
 
   const loginManager = async (username: string, password: string): Promise<boolean> => {
     const email = `${username.trim().toLowerCase()}@yaosheng.local`;
+    console.log("[login] attempting:", email);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) console.error("[login] error:", error.message, error.status);
     return !error;
   };
 
