@@ -238,7 +238,12 @@ export default function TardinessPage() {
                       <td className="px-4 py-3 text-sm">
                         {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
                           <button
-                            onClick={() => deleteTardinessRecord(record.id)}
+                            onClick={async () => {
+                              if (confirm("確定要刪除這筆遲到記錄嗎？")) {
+                                await deleteTardinessRecord(record.id);
+                                alert("紀錄已刪除");
+                              }
+                            }}
                             className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
                           >
                             刪除

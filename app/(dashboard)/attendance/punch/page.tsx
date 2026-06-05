@@ -143,10 +143,10 @@ export default function PunchPage() {
   }, []);
 
   const finalizePunch = useCallback(
-    (slot: PunchSlot, reason?: string, lateMinutes = 0) => {
+    async (slot: PunchSlot, reason?: string, lateMinutes = 0) => {
       if (!currentUser || !coords) return;
 
-      addPunchRecord({
+      await addPunchRecord({
         employeeId: currentUser.id,
         employeeName: currentUser.name,
         date: today,
@@ -161,12 +161,12 @@ export default function PunchPage() {
       });
 
       if (lateMinutes > 0 && reason) {
-        addTardinessRecord({
+        await addTardinessRecord({
           employeeId: currentUser.id,
           employeeName: currentUser.name,
           date: today,
           minutes: lateMinutes,
-          notes: `打卡遲到（${slot.label} ${slot.scheduledTime}）：${reason}`,
+          notes: reason, // 直接存原因，不加前綴以保持簡潔
         });
       }
     },

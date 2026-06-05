@@ -246,6 +246,7 @@ export default function PunchAdminPage() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">段次</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">時間</th>
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">遲到</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">原因/備註</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">操作</th>
               </tr>
             </thead>
@@ -288,6 +289,9 @@ export default function PunchAdminPage() {
                     ) : (
                       <span className="text-gray-400">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-500 truncate max-w-[150px]" title={p.reason || ""}>
+                    {p.reason || <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {editingId === p.id ? (
