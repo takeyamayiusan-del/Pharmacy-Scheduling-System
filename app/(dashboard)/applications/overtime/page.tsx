@@ -122,12 +122,13 @@ export default function OvertimePage() {
                 <th className="px-4 py-3 text-left font-medium text-gray-700">原因</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-700">補償</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-700">狀態</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-700">審核說明</th>
                 {isManager && <th className="px-4 py-3 text-left font-medium text-gray-700">操作</th>}
               </tr>
             </thead>
             <tbody className="divide-y">
               {visibleRequests.length === 0 && (
-                <tr><td colSpan={8} className="p-8 text-center text-gray-500">沒有加班申請記錄</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center text-gray-500">沒有加班申請記錄</td></tr>
               )}
               {visibleRequests.map(req => {
                 const st = statusLabels[req.status];
@@ -143,6 +144,13 @@ export default function OvertimePage() {
                     <td className="px-4 py-3 text-gray-600">{req.compensationType === "pay" ? "加班費" : "補休"}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm max-w-xs">
+                      {req.status === "rejected" && req.rejectReason ? (
+                        <span className="text-red-700">{req.rejectReason}</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     {isManager && (
                       <td className="px-4 py-3">

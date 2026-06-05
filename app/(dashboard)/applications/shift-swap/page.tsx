@@ -146,8 +146,10 @@ export default function ShiftSwapPage() {
             const targetName = req.targetEmployeeName || getEmpName(req.targetEmployeeId);
             const isSelfSwap = req.requesterId === req.targetEmployeeId;
             const isTarget = currentUser?.id === req.targetEmployeeId && !isSelfSwap;
+            const isRequester = currentUser?.id === req.requesterId;
             const canConfirm = isTarget && req.status === "pending_confirmation";
             const canManagerAct = isManager && req.status === "pending_approval";
+            const waitingTarget = isRequester && req.status === "pending_confirmation" && !isSelfSwap;
 
             return (
               <div key={req.id} className="p-4 hover:bg-gray-50">
@@ -162,15 +164,31 @@ export default function ShiftSwapPage() {
                     <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-1 ${getStatusClass(req.status)}`}>
                       {getStatusLabel(req.status)}
                     </span>
+                    {req.status === "rejected" && req.rejectReason && (
+                      <p className="text-sm text-red-700 mt-2">駁回／拒絕原因：{req.rejectReason}</p>
+                    )}
+                    {waitingTarget && (
+                      <p className="text-sm text-amber-700 mt-2">已送出邀請，等待 {targetName} 確認後店長才能審核。</p>
+                    )}
                   </div>
                   <div className="flex gap-1 flex-wrap">
                     {/* 對方確認/拒絕 */}
                     {canConfirm && (
                       <>
-                        <button onClick={() => updateSwapRequestStatus(req.id, "pending_approval")}
-                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">確認換班</button>
-                        <button onClick={() => setRejectModal({ id: req.id, reason: "" })}
-                          className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700">拒絕</button>
+                        <button
+                          onClick={async () => {
+                            await updateSwapRequestStatus(req.id, "pending_approval");
+                          }}
+                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                        >
+                          確認換班
+                        </button>
+                        <button
+                          onClick={() => setRejectModal({ id: req.id, reason: "" })}
+                          className="px-3 py-1 bg-red-600 text-white rounded text-sm hover:bg-red-700"
+                        >
+                          拒絕邀請
+                        </button>
                       </>
                     )}
                     {/* 管理者審核 */}

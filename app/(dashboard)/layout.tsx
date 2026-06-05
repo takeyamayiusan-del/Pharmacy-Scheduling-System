@@ -29,7 +29,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { currentUser, logout, notifications, markNotificationRead, getLeaveSummary, isLoading } = useApp();
+  const { currentUser, logout, notifications, markNotificationRead, refreshNotifications, getLeaveSummary, isLoading } = useApp();
   const router = useRouter();
   const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -41,6 +41,14 @@ export default function DashboardLayout({
   useEffect(() => {
     setIsMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+    const timer = setInterval(() => {
+      refreshNotifications();
+    }, 45000);
+    return () => clearInterval(timer);
+  }, [currentUser?.id, refreshNotifications]);
 
   // 每月20號以後，若下個月尚未排休則顯示提醒（本月關閉後不再顯示）
   useEffect(() => {

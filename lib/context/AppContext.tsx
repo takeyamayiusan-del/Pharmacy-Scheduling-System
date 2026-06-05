@@ -1,6 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
+import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedType } from "@/lib/applications/statusMaps";
 import { createClient } from "@/lib/supabase/client";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -58,6 +59,7 @@ export type LeaveRequest = {
   leaveHours: number;
   type: LeaveType;
   reason: string;
+  rejectReason?: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
 };
@@ -82,6 +84,7 @@ export type SwapRequest = {
   requesterDate: string;
   targetDate: string;
   status: "pending_confirmation" | "pending_approval" | "approved" | "rejected";
+  rejectReason?: string;
   createdAt: string;
 };
 
@@ -94,6 +97,7 @@ export type OvertimeRequest = {
   endTime: string;
   reason: string;
   compensationType: "pay" | "time_off";
+  rejectReason?: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
 };
@@ -287,6 +291,7 @@ interface AppContextType {
   getPunchRecordsByDate: (employeeId: string, date: string) => PunchRecord[];
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
+  refreshNotifications: () => Promise<void>;
   isLoading: boolean;
   isSunday: (dateStr: string) => boolean;
   isSaturday: (dateStr: string) => boolean;
@@ -513,6 +518,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             leaveHours: Number(r.leave_hours ?? 0),
             type: r.leave_type as LeaveType,
             reason: r.reason,
+            rejectReason: r.reject_reason ?? undefined,
             status: r.status as LeaveRequest["status"],
             createdAt: r.created_at,
           };
@@ -536,7 +542,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           targetEmployeeName: (r.target as { name?: string } | null)?.name ?? "",
           requesterDate: r.swap_date,
           targetDate: r.swap_date,
-          status: r.status as SwapRequest["status"],
+          status: mapSwapStatusFromDb(r.status),
+          rejectReason: r.reject_reason ?? undefined,
           createdAt: r.created_at,
         }))
       );
@@ -558,7 +565,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           startTime: r.start_time,
           endTime: r.end_time,
           reason: r.reason,
-          compensationType: (r.compensation ?? "pay") as OvertimeRequest["compensationType"],
+          compensationType:
+            r.compensation === "comp_leave" || r.compensation === "time_off" ? "time_off" : "pay",
+          rejectReason: r.reject_reason ?? undefined,
           status: r.status as OvertimeRequest["status"],
           createdAt: r.created_at,
         }))
@@ -630,10 +639,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
           type: "info" as Notification["type"],
           read: n.is_read,
           createdAt: n.created_at,
+          route: notificationRouteFromRelatedType(n.related_type ?? null),
         }))
       );
     }
   }, [supabase]);
+
+  const insertNotification = useCallback(
+    async (params: {
+      recipientId: string;
+      type: string;
+      title: string;
+      body: string;
+      relatedId?: string;
+      relatedType?: string;
+    }) => {
+      await supabase.from("notifications").insert({
+        recipient_id: params.recipientId,
+        type: params.type,
+        title: params.title,
+        body: params.body,
+        related_id: params.relatedId ?? null,
+        related_type: params.relatedType ?? null,
+        is_read: false,
+      });
+    },
+    [supabase]
+  );
+
+  const notifyManagers = useCallback(
+    async (params: {
+      type: string;
+      title: string;
+      body: string;
+      relatedId?: string;
+      relatedType?: string;
+    }) => {
+      const managers = employees.filter((e) => e.role === "owner" || e.role === "manager");
+      await Promise.all(
+        managers.map((m) =>
+          insertNotification({
+            recipientId: m.id,
+            type: params.type,
+            title: params.title,
+            body: params.body,
+            relatedId: params.relatedId,
+            relatedType: params.relatedType,
+          })
+        )
+      );
+    },
+    [employees, insertNotification]
+  );
 
   // ─── Auth state ──────────────────────────────────────────────────────────────
 
@@ -1150,6 +1207,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reason: request.reason,
       status: "pending",
     });
+    await notifyManagers({
+      type: "leave_submitted",
+      title: "新請假申請",
+      body: `${request.employeeName} 提交請假（${request.startDate}～${request.endDate}），請審核。`,
+      relatedType: "leave",
+    });
+
     await loadLeaveRequests();
   };
 
@@ -1203,8 +1267,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    if (request && (status === "approved" || status === "rejected")) {
+      const statusText = status === "approved" ? "已核准" : "已駁回";
+      let body = `您的請假申請（${request.startDate}${
+        request.endDate !== request.startDate ? `～${request.endDate}` : ""
+      }）${statusText}。`;
+      if (status === "rejected" && rejectReason?.trim()) {
+        body += ` 駁回原因：${rejectReason.trim()}`;
+      }
+      await insertNotification({
+        recipientId: request.employeeId,
+        type: "leave_reviewed",
+        title: `請假申請${statusText}`,
+        body,
+        relatedId: id,
+        relatedType: "leave",
+      });
+    }
+
     await loadLeaveRequests();
     await loadCompLeaveLedger();
+    if (currentUser?.id) await loadNotifications(currentUser.id);
   };
 
   const deleteLeaveRequest = async (id: string) => {
@@ -1216,13 +1299,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">) => {
     const isSelfSwap = request.requesterId === request.targetEmployeeId;
-    await supabase.from("shift_swap_applications").insert({
-      requester_id: request.requesterId,
-      target_id: request.targetEmployeeId,
-      swap_date: request.requesterDate,
-      status: isSelfSwap ? "pending_review" : "pending_confirm",
-    });
+    const { data } = await supabase
+      .from("shift_swap_applications")
+      .insert({
+        requester_id: request.requesterId,
+        target_id: request.targetEmployeeId,
+        swap_date: request.requesterDate,
+        status: isSelfSwap ? "pending_review" : "pending_confirm",
+      })
+      .select("id")
+      .single();
+
+    if (!isSelfSwap) {
+      await insertNotification({
+        recipientId: request.targetEmployeeId,
+        type: "shift_swap_requested",
+        title: "換班邀請",
+        body: `${request.requesterName} 邀請您換班：${request.requesterDate} ↔ ${request.targetDate}，請確認。`,
+        relatedId: data?.id,
+        relatedType: "shift_swap",
+      });
+    } else {
+      await notifyManagers({
+        type: "shift_swap_confirmed",
+        title: "換班申請待審核",
+        body: `${request.requesterName} 申請自行換班（${request.requesterDate} ↔ ${request.targetDate}），請審核。`,
+        relatedId: data?.id,
+        relatedType: "shift_swap",
+      });
+    }
+
     await loadSwapRequests();
+    if (currentUser?.id) await loadNotifications(currentUser.id);
   };
 
   const updateSwapRequestStatus = async (
@@ -1230,9 +1338,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     status: "pending_confirmation" | "pending_approval" | "approved" | "rejected",
     rejectReason?: string
   ) => {
-    const dbStatus =
-      status === "pending_confirmation" ? "pending_confirm" :
-      status === "pending_approval" ? "pending_review" : status;
+    const request = swapRequests.find((item) => item.id === id);
+    const prevStatus = request?.status;
+    const dbStatus = mapSwapStatusToDb(status);
+
     await supabase
       .from("shift_swap_applications")
       .update({
@@ -1242,7 +1351,71 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(rejectReason ? { reject_reason: rejectReason } : {}),
       })
       .eq("id", id);
+
+    if (request) {
+      if (
+        status === "pending_approval" &&
+        prevStatus === "pending_confirmation"
+      ) {
+        await insertNotification({
+          recipientId: request.requesterId,
+          type: "shift_swap_confirmed",
+          title: "對方已確認換班",
+          body: `${request.targetEmployeeName} 已同意換班，等待店長審核。`,
+          relatedId: id,
+          relatedType: "shift_swap",
+        });
+        await notifyManagers({
+          type: "shift_swap_confirmed",
+          title: "換班申請待審核",
+          body: `${request.requesterName} 與 ${request.targetEmployeeName} 的換班（${request.requesterDate}）待審核。`,
+          relatedId: id,
+          relatedType: "shift_swap",
+        });
+      }
+
+      if (status === "rejected" && prevStatus === "pending_confirmation") {
+        await insertNotification({
+          recipientId: request.requesterId,
+          type: "shift_swap_reviewed",
+          title: "換班申請已拒絕",
+          body: `${request.targetEmployeeName} 拒絕了您的換班邀請。${
+            rejectReason?.trim() ? ` 原因：${rejectReason.trim()}` : ""
+          }`,
+          relatedId: id,
+          relatedType: "shift_swap",
+        });
+      }
+
+      if (status === "approved" || (status === "rejected" && prevStatus === "pending_approval")) {
+        const statusText = status === "approved" ? "已核准" : "已駁回";
+        let body = `換班申請（${request.requesterDate} ↔ ${request.targetDate}）${statusText}。`;
+        if (status === "rejected" && rejectReason?.trim()) {
+          body += ` 原因：${rejectReason.trim()}`;
+        }
+        await insertNotification({
+          recipientId: request.requesterId,
+          type: "shift_swap_reviewed",
+          title: `換班申請${statusText}`,
+          body,
+          relatedId: id,
+          relatedType: "shift_swap",
+        });
+        if (request.requesterId !== request.targetEmployeeId) {
+          await insertNotification({
+            recipientId: request.targetEmployeeId,
+            type: "shift_swap_reviewed",
+            title: `換班申請${statusText}`,
+            body,
+            relatedId: id,
+            relatedType: "shift_swap",
+          });
+        }
+      }
+    }
+
     await loadSwapRequests();
+    if (currentUser?.id) await loadNotifications(currentUser.id);
   };
 
   const deleteSwapRequest = async (id: string) => {
@@ -1262,6 +1435,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       compensation: request.compensationType === "time_off" ? "comp_leave" : "pay",
       status: "pending",
     });
+    await notifyManagers({
+      type: "overtime_submitted",
+      title: "新加班申請",
+      body: `${request.employeeName} 提交加班（${request.date}），請審核。`,
+      relatedType: "overtime",
+    });
+
     await loadOvertimeRequests();
   };
 
@@ -1304,8 +1484,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    if (request && (status === "approved" || status === "rejected")) {
+      const statusText = status === "approved" ? "已核准" : "已駁回";
+      let body = `您的加班申請（${request.date}）${statusText}。`;
+      if (status === "rejected" && rejectReason?.trim()) {
+        body += ` 駁回原因：${rejectReason.trim()}`;
+      }
+      await insertNotification({
+        recipientId: request.employeeId,
+        type: "overtime_reviewed",
+        title: `加班申請${statusText}`,
+        body,
+        relatedId: id,
+        relatedType: "overtime",
+      });
+    }
+
     await loadOvertimeRequests();
     await loadCompLeaveLedger();
+    if (currentUser?.id) await loadNotifications(currentUser.id);
   };
 
   const deleteOvertimeRequest = async (id: string) => {
@@ -1376,6 +1573,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Notifications ────────────────────────────────────────────────────────────
 
+  const refreshNotifications = useCallback(async () => {
+    if (currentUser?.id) {
+      await loadNotifications(currentUser.id);
+    }
+  }, [currentUser?.id, loadNotifications]);
+
   const markNotificationRead = async (id: string) => {
     await supabase.from("notifications").update({ is_read: true }).eq("id", id);
     setNotifications((prev) =>
@@ -1442,6 +1645,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         getPunchRecordsByDate,
         notifications,
         markNotificationRead,
+        refreshNotifications,
         isLoading,
         isSunday,
         isSaturday,

@@ -366,13 +366,14 @@ export default function LeaveApplicationPage() {
                 <th className="p-4 text-left font-medium text-gray-700">假別</th>
                 <th className="p-4 text-left font-medium text-gray-700">事由</th>
                 <th className="p-4 text-left font-medium text-gray-700">狀態</th>
+                <th className="p-4 text-left font-medium text-gray-700">審核說明</th>
                 {isManager && <th className="p-4 text-left font-medium text-gray-700">操作</th>}
               </tr>
             </thead>
             <tbody className="divide-y">
               {visibleRequests.length === 0 && (
                 <tr>
-                  <td colSpan={8} className="p-8 text-center text-gray-500">
+                  <td colSpan={9} className="p-8 text-center text-gray-500">
                     沒有請假申請
                   </td>
                 </tr>
@@ -380,6 +381,20 @@ export default function LeaveApplicationPage() {
               {visibleRequests.map((req) => {
                 const status = statusLabels[req.status];
                 const empName = req.employeeName || getEmpName(req.employeeId);
+                const displayHours =
+                  req.leaveHours > 0
+                    ? req.leaveHours
+                    : calculateLeaveWorkHours({
+                        startDate: req.startDate,
+                        endDate: req.endDate,
+                        startTime: req.startTime,
+                        endTime: req.endTime,
+                        period: req.period,
+                        shiftMode: req.shiftMode,
+                        employeeId: req.employeeId,
+                        getShiftForDate,
+                        shiftTimeConfig,
+                      });
                 return (
                   <tr key={req.id} className="hover:bg-gray-50">
                     <td className="p-4 font-medium text-gray-900">{empName}</td>
@@ -393,13 +408,20 @@ export default function LeaveApplicationPage() {
                         {req.startTime}–{req.endTime}
                       </span>
                     </td>
-                    <td className="p-4 text-gray-600">{req.leaveHours} 小時</td>
+                    <td className="p-4 text-gray-600">{displayHours} 小時</td>
                     <td className="p-4 text-gray-600">{req.type}</td>
                     <td className="p-4 text-gray-600 max-w-xs truncate">{req.reason}</td>
                     <td className="p-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
                         {status.label}
                       </span>
+                    </td>
+                    <td className="p-4 text-sm text-gray-600 max-w-xs">
+                      {req.status === 'rejected' && req.rejectReason ? (
+                        <span className="text-red-700">{req.rejectReason}</span>
+                      ) : (
+                        <span className="text-gray-400">—</span>
+                      )}
                     </td>
                     {isManager && (
                       <td className="p-4">
