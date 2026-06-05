@@ -51,14 +51,21 @@ export default function BulletinBoard() {
           <Megaphone className="h-5 w-5 text-blue-600" />
           店內佈告欄
         </h3>
-        {isManager && (
-          <button
-            onClick={() => setShowAddForm(!showAddForm)}
-            className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            {showAddForm ? "取消" : "發布公告"}
-          </button>
-        )}
+        <button
+          onClick={() => {
+            setShowAddForm(!showAddForm);
+            // 預設為換班需求，如果是管理員則預設為公告
+            setFormData({
+              title: "",
+              content: "",
+              type: isManager ? "announcement" : "shift_swap_request",
+              isUrgent: false
+            });
+          }}
+          className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          {showAddForm ? "取消" : isManager ? "發布公告" : "發布換班需求"}
+        </button>
       </div>
 
       {showAddForm && (
@@ -101,7 +108,8 @@ export default function BulletinBoard() {
               <select
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value as BulletinItem["type"] })}
-                className="text-sm border rounded px-2 py-1 outline-none"
+                disabled={!isManager}
+                className={`text-sm border rounded px-2 py-1 outline-none ${!isManager ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
               >
                 <option value="announcement">一般公告</option>
                 <option value="shift_swap_request">換班/代班需求</option>
@@ -146,7 +154,7 @@ export default function BulletinBoard() {
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
-                  {isManager && (
+                  {(isManager || currentUser?.id === item.authorId) && (
                     <>
                       <button
                         onClick={() => handleStatusChange(item.id, "archived")}
