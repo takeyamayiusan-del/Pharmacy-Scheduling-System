@@ -279,7 +279,7 @@ interface AppContextType {
   deleteLeaveRequest: (id: string) => Promise<void>;
   compLeaveLedger: CompLeaveLedgerEntry[];
   getCompLeaveBalance: (employeeId: string) => number;
-  getAnnualLeaveQuota: (employee: Employee, year: number) => number;
+  getAnnualLeaveQuota: (employee: Employee) => number;
   getAnnualLeaveBalance: (employeeId: string, year: number) => number;
   getAvailableCompLeave: (employeeId: string) => { balance: number; expiring: Array<Record<string, unknown>> };
   loadCompLeaveLedger: () => Promise<void>;
@@ -488,7 +488,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [compLeaveLedger]
   );
 
-  const getAnnualLeaveQuota = useCallback((employee: Employee, year: number) => {
+  const getAnnualLeaveQuota = useCallback((employee: Employee) => {
     const hireDate = new Date(employee.hireDate);
     
     // 邏輯說明：
@@ -522,7 +522,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const emp = employees.find(e => e.id === employeeId);
     if (!emp) return 0;
     
-    const quota = getAnnualLeaveQuota(emp, year);
+    const quota = getAnnualLeaveQuota(emp);
     const used = leaveRequests
       .filter(r => 
         r.employeeId === employeeId && 
@@ -1726,18 +1726,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 
   // 取得可用補休假（已過期的自動排除）
-  const getAvailableCompLeave = useCallback((employeeId: string): { balance: number; expiring: Array<Record<string, unknown>> } => {
+  const getAvailableCompLeave = useCallback((employeeId: string): { balance: number; expiring: Array<CompLeaveLedgerEntry & { daysLeft: number; isExpired: boolean }> } => {
     const balance = getCompLeaveBalance(employeeId);
     
     // 找出即將過期的補休假（30 天內提醒）
     const expiring = compLeaveLedger
-      .filter((entry) => (entry as any).user_id === employeeId && entry.hours > 0)
+      .filter((entry) => entry.employeeId === employeeId && entry.hours > 0)
       .map((entry) => ({
         ...entry,
-        ...getCompLeaveExpiry((entry as any).created_at as string || (entry as any).createdAt),
+        ...getCompLeaveExpiry(entry.createdAt),
       }))
-      .filter((entry) => (entry as any).daysLeft > 0 && (entry as any).daysLeft <= 30)
-      .sort((a, b) => (a as any).daysLeft - (b as any).daysLeft);
+      .filter((entry) => entry.daysLeft > 0 && entry.daysLeft <= 30)
+      .sort((a, b) => a.daysLeft - b.daysLeft);
     
     return { balance, expiring };
   }, [compLeaveLedger, getCompLeaveBalance, getCompLeaveExpiry]);
@@ -1750,7 +1750,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { expiring } = getAvailableCompLeave(currentUser.id);
       
       for (const entry of expiring) {
-        const daysLeft = (entry as any).daysLeft;
+        const daysLeft = entry.daysLeft;
         // 在剩下 30 天、7 天、1 天時提醒
         if (daysLeft === 30 || daysLeft === 7 || daysLeft === 1) {
           const notificationId = `comp-leave-expiry-${entry.id}-${daysLeft}`;
@@ -1761,7 +1761,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               recipientId: currentUser.id,
               type: "warning",
               title: "補休即將過期提醒",
-              body: `您有一筆 ${(entry as any).hours} 小時的補休將在 ${daysLeft} 天後過期，請盡快使用。`,
+              body: `您有一筆 ${entry.hours} 小時的補休將在 ${daysLeft} 天後過期，請盡快使用。`,
               relatedId: entry.id,
               relatedType: "overtime",
             });

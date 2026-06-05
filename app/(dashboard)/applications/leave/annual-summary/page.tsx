@@ -51,7 +51,7 @@ export default function AnnualLeaveSummaryPage() {
             </thead>
             <tbody className="divide-y divide-gray-100">
               {displayEmployees.map((emp) => {
-                const quota = getAnnualLeaveQuota(emp, selectedYear);
+                const quota = getAnnualLeaveQuota(emp);
                 const balance = getAnnualLeaveBalance(emp.id, selectedYear);
                 const used = quota - balance;
                 

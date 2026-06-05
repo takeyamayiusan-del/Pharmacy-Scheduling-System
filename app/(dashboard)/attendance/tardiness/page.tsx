@@ -48,17 +48,16 @@ export default function TardinessPage() {
   
   type LinkedTardinessRecord = TardinessRecord & { sourcePunchId?: string };
 
-  // 檢查是否有已核准的加班可抵銷遲到
-  const shouldCancelTardiness = (employeeId: string, date: string): boolean => {
-    return overtimeRequests.some(
-      (req) =>
-        req.employeeId === employeeId &&
-        req.date === date &&
-        req.status === "approved"
-    );
-  };
-
   const linkedTardinessRecords = useMemo<LinkedTardinessRecord[]>(() => {
+    // 檢查是否有已核准的加班可抵銷遲到
+    const shouldCancelTardiness = (employeeId: string, date: string): boolean => {
+      return overtimeRequests.some(
+        (req) =>
+          req.employeeId === employeeId &&
+          req.date === date &&
+          req.status === "approved"
+      );
+    };
     const records: LinkedTardinessRecord[] = tardinessRecords
       .filter((record) => !shouldCancelTardiness(record.employeeId, record.date))
       .map((record) => ({
