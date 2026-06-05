@@ -19,23 +19,38 @@ export default function BulletinBoard() {
     isUrgent: false,
   });
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager" || currentUser?.role === "boss";
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) return;
+    if (!currentUser || isSubmitting) return;
     
-    await addBulletinItem({
-      authorId: currentUser.id,
-      title: formData.title,
-      content: formData.content,
-      type: formData.type,
-      status: "active",
-      isUrgent: formData.isUrgent,
-    });
-    
-    setFormData({ title: "", content: "", type: "announcement", isUrgent: false });
-    setShowAddForm(false);
+    setIsSubmitting(true);
+    try {
+      await addBulletinItem({
+        authorId: currentUser.id,
+        title: formData.title,
+        content: formData.content,
+        type: formData.type,
+        status: "active",
+        isUrgent: formData.isUrgent,
+      });
+      
+      setFormData({ 
+        title: "", 
+        content: "", 
+        type: isManager ? "announcement" : "shift_swap_request", 
+        isUrgent: false 
+      });
+      setShowAddForm(false);
+    } catch (error) {
+      console.error("發布失敗:", error);
+      alert("發布失敗，請稍後再試");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleStatusChange = async (id: string, status: BulletinItem["status"]) => {
@@ -78,7 +93,7 @@ export default function BulletinBoard() {
               value={formData.title}
               onChange={(e) => setFormData({ ...formData, title: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
-              placeholder="例如：颱風天停班通知"
+              placeholder={isManager ? "例如：颱風天停班通知" : "例如：6/10 晚班求代班"}
             />
           </div>
           <div>
@@ -88,7 +103,7 @@ export default function BulletinBoard() {
               value={formData.content}
               onChange={(e) => setFormData({ ...formData, content: e.target.value })}
               className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none h-24"
-              placeholder="請輸入公告詳細內容..."
+              placeholder={isManager ? "請輸入公告詳細內容..." : "請說明想換班的時間或原因..."}
             />
           </div>
           <div className="flex items-center gap-6">
@@ -118,9 +133,12 @@ export default function BulletinBoard() {
           </div>
           <button
             type="submit"
-            className="w-full py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+            disabled={isSubmitting}
+            className={`w-full py-2 text-white rounded-lg font-medium transition-colors ${
+              isSubmitting ? "bg-gray-400 cursor-not-allowed" : "bg-blue-600 hover:bg-blue-700"
+            }`}
           >
-            確認發布
+            {isSubmitting ? "發布中..." : "確認發布"}
           </button>
         </form>
       )}
