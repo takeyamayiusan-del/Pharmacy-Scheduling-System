@@ -93,20 +93,20 @@ function drawScheduleSegment(
     ctx.fillStyle = "#64748b";
     ctx.fillText(dayLabels[dayOfWeek], x + 19, tableY + 30);
     if (holidayInfo.isHoliday && dayOfWeek !== 0) {
-      // 繪記國定假日標記的圓形背景
+      // 繪記國定假日標記的圓形背景 (位於日期方格的右上角)
       ctx.fillStyle = "#fbbf24";
       ctx.beginPath();
-      ctx.arc(x + 37, tableY + 8, 6, 0, Math.PI * 2);
+      ctx.arc(x + dayColWidth - 6, tableY + 6, 5, 0, Math.PI * 2);
       ctx.fill();
       ctx.strokeStyle = "#d97706";
-      ctx.lineWidth = 1;
+      ctx.lineWidth = 1.5;
       ctx.stroke();
       // 繪記國字
-      ctx.font = "bold 9px 'Microsoft JhengHei', sans-serif";
+      ctx.font = "bold 8px 'Microsoft JhengHei', sans-serif";
       ctx.fillStyle = "#92400e";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText("國", x + 37, tableY + 8);
+      ctx.fillText("國", x + dayColWidth - 6, tableY + 6);
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
     }
