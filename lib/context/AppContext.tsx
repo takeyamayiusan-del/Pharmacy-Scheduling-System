@@ -489,14 +489,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getAnnualLeaveQuota = useCallback((employee: Employee, year: number) => {
     const hireDate = new Date(employee.hireDate);
-    const targetDate = new Date(year, 11, 31); // 該年年底
+    const yearStart = new Date(year, 0, 1); // 該年 1 月 1 日
+    const yearEnd = new Date(year, 11, 31); // 該年 12 月 31 日
     
-    // 計算年資（月數）
-    const months = (targetDate.getFullYear() - hireDate.getFullYear()) * 12 + (targetDate.getMonth() - hireDate.getMonth());
+    // 計算在該年度內滿半年和滿一年的日期
+    const sixMonthsDate = new Date(hireDate.getFullYear(), hireDate.getMonth() + 6, hireDate.getDate());
+    const oneYearDate = new Date(hireDate.getFullYear() + 1, hireDate.getMonth(), hireDate.getDate());
     
-    if (months >= 12) return 7;
-    if (months >= 6) return 3;
-    return 0;
+    // 判斷該年度內是否達到相應條件
+    if (oneYearDate <= yearEnd) {
+      // 該年度內滿一年，給予 7 天
+      return 7;
+    } else if (sixMonthsDate <= yearEnd) {
+      // 該年度內滿半年但未滿一年，給予 3 天
+      return 3;
+    } else {
+      // 該年度內未滿半年，給予 0 天
+      return 0;
+    }
   }, []);
 
   const getAnnualLeaveBalance = useCallback((employeeId: string, year: number) => {
