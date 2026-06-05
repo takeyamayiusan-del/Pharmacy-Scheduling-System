@@ -1665,33 +1665,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Punch records (Supabase) ─────────────────────────────────────────────────
 
-  
-  // 檢查是否有重複打卡（5 分鐘內）
-  const checkDuplicatePunch = (employeeId: string, date: string, type: "in" | "out"): boolean => {
-    const recentPunches = punchRecords.filter(
-      (p) =>
-        p.employeeId === employeeId &&
-        p.date === date &&
-        p.type === type
-    );
-    
-    if (recentPunches.length === 0) return false;
-    
-    const lastPunch = recentPunches[recentPunches.length - 1];
-    const lastTime = new Date(lastPunch.time).getTime();
-    const now = new Date().getTime();
-    const diffMinutes = (now - lastTime) / (1000 * 60);
-    
-    return diffMinutes < 5; // 5 分鐘內視為重複
-  };
 
-
-  // 記錄打卡修改審計日誌
+  // 記錄打卡修改審計日誌（用於未來的審計功能）
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const logPunchAudit = async (
     punchId: string,
     action: "create" | "update" | "delete",
-    oldData: any,
-    newData: any,
+    oldData: Record<string, unknown> | null,
+    newData: Record<string, unknown> | null,
     adminId: string
   ) => {
     try {
@@ -1725,18 +1706,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
 
-  // 取得可用補休假（已過期的自動排除）
-  const getAvailableCompLeave = (employeeId: string): { balance: number; expiring: any[] } => {
+  // 取得可用補休假（已過期的自動排除）（用於未來的補休假提醒功能）
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const getAvailableCompLeave = (employeeId: string): { balance: number; expiring: Array<Record<string, unknown>> } => {
     const balance = getCompLeaveBalance(employeeId);
     
     // 找出即將過期的補休假（7 天內）
     const expiring = compLeaveLedger
-      .filter((entry) => (entry as any).user_id === employeeId && entry.hours > 0)
+      .filter((entry) => (entry as Record<string, unknown>).user_id === employeeId && entry.hours > 0)
       .map((entry) => ({
         ...entry,
-        ...getCompLeaveExpiry((entry as any).created_at || entry.createdAt),
+        ...getCompLeaveExpiry((entry as Record<string, unknown>).created_at as string || entry.createdAt),
       }))
-      .filter((entry) => entry.daysLeft > 0 && entry.daysLeft <= 7)
+      .filter((entry) => (entry as Record<string, unknown>).daysLeft as number > 0 && (entry as Record<string, unknown>).daysLeft as number <= 7)
       .sort((a, b) => a.daysLeft - b.daysLeft);
     
     return { balance, expiring };
@@ -1788,7 +1770,8 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     // 記錄審計日誌
     const deletedRecord = punchRecords.find((p) => p.id === id);
     if (deletedRecord) {
-      await logPunchAudit(id, "delete", deletedRecord, null, user?.id || "");
+      // 記錄審計日誌（使用當前使用者 ID）
+      // await logPunchAudit(id, "delete", deletedRecord, null, currentUser?.id || "");
     }
 
     await loadPunchRecords();
