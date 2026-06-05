@@ -85,9 +85,9 @@ export default function AnnualLeaveSummaryPage() {
         <h3 className="text-sm font-semibold text-blue-800 mb-2">特休計算規則說明：</h3>
         <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
           <li>入職滿 6 個月：給予 3 天特休。</li>
-          <li>入職滿 1 年：再給予 4 天（總計 7 天）。</li>
-          <li>計算基準：以入職日期（預設 2026/04/01）計算至該年度年底。</li>
-          <li>每年刷新：特休天數於每年 1 月 1 日重新計算，不累加至隔年。</li>
+          <li>入職滿 1 年：給予 7 天特休。</li>
+          <li>滿 2 年及以上：維持 7 天特休。</li>
+          <li>每年重置：特休採週年制重置，不管有沒有用完，均不累積至隔年。</li>
         </ul>
       </div>
     </div>

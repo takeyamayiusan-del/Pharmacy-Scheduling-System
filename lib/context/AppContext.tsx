@@ -281,6 +281,7 @@ interface AppContextType {
   getCompLeaveBalance: (employeeId: string) => number;
   getAnnualLeaveQuota: (employee: Employee, year: number) => number;
   getAnnualLeaveBalance: (employeeId: string, year: number) => number;
+  getAvailableCompLeave: (employeeId: string) => { balance: number; expiring: Array<Record<string, unknown>> };
   loadCompLeaveLedger: () => Promise<void>;
   swapRequests: SwapRequest[];
   addSwapRequest: (request: Omit<SwapRequest, "id" | "createdAt">) => Promise<void>;
@@ -489,23 +490,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getAnnualLeaveQuota = useCallback((employee: Employee, year: number) => {
     const hireDate = new Date(employee.hireDate);
-    const yearStart = new Date(year, 0, 1); // 該年 1 月 1 日
-    const yearEnd = new Date(year, 11, 31); // 該年 12 月 31 日
     
-    // 計算在該年度內滿半年和滿一年的日期
-    const sixMonthsDate = new Date(hireDate.getFullYear(), hireDate.getMonth() + 6, hireDate.getDate());
-    const oneYearDate = new Date(hireDate.getFullYear() + 1, hireDate.getMonth(), hireDate.getDate());
+    // 邏輯說明：
+    // 1. 滿半年（入職日 + 6個月）給 3 天
+    // 2. 滿一年（入職日 + 12個月）給 7 天
+    // 3. 滿兩年及以上一樣維持 7 天
+    // 4. 每年重置（週年制重置），不累積
     
-    // 判斷該年度內是否達到相應條件
-    if (oneYearDate <= yearEnd) {
-      // 該年度內滿一年，給予 7 天
-      return 7;
-    } else if (sixMonthsDate <= yearEnd) {
-      // 該年度內滿半年但未滿一年，給予 3 天
-      return 3;
+    // 計算該查詢年份中的週年紀念日
+    const sixMonthsAnniversary = new Date(hireDate);
+    sixMonthsAnniversary.setMonth(sixMonthsAnniversary.getMonth() + 6);
+    
+    const oneYearAnniversary = new Date(hireDate);
+    oneYearAnniversary.setFullYear(oneYearAnniversary.getFullYear() + 1);
+
+    const now = new Date();
+    // 如果查詢的是過去年份，邏輯較複雜，通常以當前狀態為主
+    // 如果查詢的是當前或未來年份：
+    
+    // 判斷當前時間點相對於入職週年的狀態
+    if (now < sixMonthsAnniversary) {
+      return 0; // 未滿半年
+    } else if (now < oneYearAnniversary) {
+      return 3; // 滿半年未滿一年
     } else {
-      // 該年度內未滿半年，給予 0 天
-      return 0;
+      return 7; // 滿一年以上（包含滿兩年）
     }
   }, []);
 
@@ -1701,7 +1710,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
 
   // 計算補休假過期日期（6 個月後）
-  const getCompLeaveExpiry = (createdDate: string): { daysLeft: number; isExpired: boolean } => {
+  const getCompLeaveExpiry = useCallback((createdDate: string): { daysLeft: number; isExpired: boolean } => {
     const created = new Date(createdDate);
     const expiry = new Date(created);
     expiry.setMonth(expiry.getMonth() + 6);
@@ -1713,26 +1722,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
       daysLeft: Math.max(0, daysLeft),
       isExpired: daysLeft < 0,
     };
-  };
+  }, []);
 
 
-  // 取得可用補休假（已過期的自動排除）（用於未來的補休假提醒功能）
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const getAvailableCompLeave = (employeeId: string): { balance: number; expiring: Array<Record<string, unknown>> } => {
+  // 取得可用補休假（已過期的自動排除）
+  const getAvailableCompLeave = useCallback((employeeId: string): { balance: number; expiring: Array<Record<string, unknown>> } => {
     const balance = getCompLeaveBalance(employeeId);
     
-    // 找出即將過期的補休假（7 天內）
+    // 找出即將過期的補休假（30 天內提醒）
     const expiring = compLeaveLedger
-      .filter((entry) => (entry as Record<string, unknown>).user_id === employeeId && entry.hours > 0)
+      .filter((entry) => (entry as any).user_id === employeeId && entry.hours > 0)
       .map((entry) => ({
         ...entry,
-        ...getCompLeaveExpiry((entry as Record<string, unknown>).created_at as string || entry.createdAt),
+        ...getCompLeaveExpiry((entry as any).created_at as string || (entry as any).createdAt),
       }))
-      .filter((entry) => (entry as Record<string, unknown>).daysLeft as number > 0 && (entry as Record<string, unknown>).daysLeft as number <= 7)
-      .sort((a, b) => a.daysLeft - b.daysLeft);
+      .filter((entry) => (entry as any).daysLeft > 0 && (entry as any).daysLeft <= 30)
+      .sort((a, b) => (a as any).daysLeft - (b as any).daysLeft);
     
     return { balance, expiring };
-  };
+  }, [compLeaveLedger, getCompLeaveBalance, getCompLeaveExpiry]);
+
+  // 自動檢查補休過期並發送通知
+  useEffect(() => {
+    if (!currentUser || isLoading) return;
+
+    const checkExpiringCompLeave = async () => {
+      const { expiring } = getAvailableCompLeave(currentUser.id);
+      
+      for (const entry of expiring) {
+        const daysLeft = (entry as any).daysLeft;
+        // 在剩下 30 天、7 天、1 天時提醒
+        if (daysLeft === 30 || daysLeft === 7 || daysLeft === 1) {
+          const notificationId = `comp-leave-expiry-${entry.id}-${daysLeft}`;
+          // 檢查是否已經發送過此提醒（簡單透過 localStorage 或狀態，這裡示範邏輯）
+          const hasNotified = localStorage.getItem(notificationId);
+          if (!hasNotified) {
+            await insertNotification({
+              recipientId: currentUser.id,
+              type: "warning",
+              title: "補休即將過期提醒",
+              body: `您有一筆 ${(entry as any).hours} 小時的補休將在 ${daysLeft} 天後過期，請盡快使用。`,
+              relatedId: entry.id,
+              relatedType: "overtime",
+            });
+            localStorage.setItem(notificationId, "true");
+          }
+        }
+      }
+    };
+
+    checkExpiringCompLeave();
+  }, [currentUser, isLoading, getAvailableCompLeave, insertNotification]);
 
 
   // 批量核准申請
@@ -1853,6 +1893,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         getCompLeaveBalance,
         getAnnualLeaveQuota,
         getAnnualLeaveBalance,
+        getAvailableCompLeave,
         loadCompLeaveLedger,
         swapRequests,
         addSwapRequest,
