@@ -5,8 +5,10 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { overtimeApplicationSchema } from '@/lib/validation/schemas';
+import { useApp } from '@/lib/context/AppContext';
 
 export default function NewOvertimeApplicationPage() {
+  const { currentUser, getPunchRecordsByDate } = useApp();
   const [formData, setFormData] = useState({
     overtime_date: new Date().toISOString().split('T')[0],
     start_time: '09:00',
@@ -64,9 +66,35 @@ export default function NewOvertimeApplicationPage() {
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              加班日期
-            </label>
+            <div className="flex justify-between items-center mb-1">
+              <label className="block text-sm font-medium text-gray-700">
+                加班日期
+              </label>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  if (!currentUser) return;
+                  const records = getPunchRecordsByDate(currentUser.id, formData.overtime_date);
+                  if (records.length >= 2) {
+                    const firstIn = records.find(r => r.action === 'work_in');
+                    const lastOut = [...records].reverse().find(r => r.action === 'work_out');
+                    if (firstIn && lastOut) {
+                      setFormData({
+                        ...formData,
+                        start_time: firstIn.time.substring(0, 5),
+                        end_time: lastOut.time.substring(0, 5)
+                      });
+                    }
+                  } else {
+                    alert('當日打卡紀錄不足（需包含上班與下班）');
+                  }
+                }}
+              >
+                帶入打卡時間
+              </Button>
+            </div>
             <input
               type="date"
               value={formData.overtime_date}

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { leaveApplicationSchema } from '@/lib/validation/schemas';
+import { useApp } from '@/lib/context/AppContext';
 
 type LeavePeriod = 'full_day' | 'morning' | 'afternoon';
 
@@ -32,6 +33,9 @@ export default function NewLeaveApplicationPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const supabase = createClient();
+  const { currentUser, getAnnualLeaveBalance, getCompLeaveBalance } = useApp();
+  const compBalance = currentUser ? getCompLeaveBalance(currentUser.id) : 0;
+  const annualBalance = currentUser ? getAnnualLeaveBalance(currentUser.id, new Date().getFullYear()) : 0;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,6 +164,20 @@ export default function NewLeaveApplicationPage() {
               <p className="text-red-500 text-sm mt-1">{errors.leave_type}</p>
             )}
           </div>
+
+          {/* 餘額顯示 */}
+          {formData.leave_type === '補休假' && (
+            <div className="p-3 bg-blue-50 border border-blue-100 rounded-lg flex items-center justify-between">
+              <span className="text-sm text-blue-700 font-medium">可用補休餘額</span>
+              <span className="text-lg font-bold text-blue-700">{compBalance} 小時</span>
+            </div>
+          )}
+          {formData.leave_type === '特休' && (
+            <div className="p-3 bg-green-50 border border-green-100 rounded-lg flex items-center justify-between">
+              <span className="text-sm text-green-700 font-medium">本年度剩餘特休</span>
+              <span className="text-lg font-bold text-green-700">{annualBalance} 天</span>
+            </div>
+          )}
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">

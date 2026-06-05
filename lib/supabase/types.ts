@@ -59,6 +59,7 @@ export interface User {
   name: string; // VARCHAR(10), UNIQUE
   role: UserRole;
   is_active: boolean;
+  hire_date: string; // DATE (YYYY-MM-DD)
   created_at: string; // TIMESTAMPTZ (ISO 8601 string)
   updated_at: string; // TIMESTAMPTZ (ISO 8601 string)
 }

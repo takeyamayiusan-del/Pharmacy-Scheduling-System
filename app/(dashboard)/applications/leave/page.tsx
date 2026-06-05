@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useApp, type LeaveType, type ShiftType } from '@/lib/context/AppContext';
 import {
   calculateLeaveWorkHours,
@@ -26,6 +27,7 @@ const SHIFT_OPTIONS: { label: string; value: 'schedule' | ShiftType }[] = [
 ];
 
 export default function LeaveApplicationPage() {
+  const router = useRouter();
   const {
     currentUser,
     employees,
@@ -188,14 +190,22 @@ export default function LeaveApplicationPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h2 className="text-2xl font-bold text-gray-900">請假申請</h2>
-        {currentUser?.role !== 'owner' && (
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowForm(!showForm)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            onClick={() => router.push('/dashboard/applications/leave/annual-summary')}
+            className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
           >
-            + 新增申請
+            📅 年度特休總表
           </button>
-        )}
+          {currentUser?.role !== 'owner' && (
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              + 新增申請
+            </button>
+          )}
+        </div>
       </div>
 
       {currentUser && currentUser.role !== 'owner' && (

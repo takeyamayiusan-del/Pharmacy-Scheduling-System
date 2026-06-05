@@ -14,6 +14,7 @@ export default function EmployeesPage() {
     role: "staff" as Role,
     username: "",
     password: "",
+    hireDate: new Date().toISOString().split('T')[0],
   });
   
   const loadEmployee = (employee: Employee) => {
@@ -23,6 +24,7 @@ export default function EmployeesPage() {
       role: employee.role,
       username: employee.username ?? "",
       password: "",
+      hireDate: employee.hireDate || new Date().toISOString().split('T')[0],
     });
     setShowForm(true);
   };
@@ -33,6 +35,7 @@ export default function EmployeesPage() {
       role: "staff",
       username: "",
       password: "",
+      hireDate: new Date().toISOString().split('T')[0],
     });
     setEditingId(null);
     setShowForm(false);
@@ -47,6 +50,7 @@ export default function EmployeesPage() {
         name: formData.name,
         role: formData.role,
         username: formData.username.trim() || undefined,
+        hireDate: formData.hireDate,
       };
       if (formData.password) {
         updates.password = formData.password;
@@ -63,6 +67,7 @@ export default function EmployeesPage() {
         role: formData.role,
         username: formData.username.trim(),
         password: formData.password,
+        hireDate: formData.hireDate,
       });
       alert("員工已新增！");
     }
@@ -162,18 +167,32 @@ export default function EmployeesPage() {
                 required
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                角色
-              </label>
-              <select
-                value={formData.role}
-                onChange={e => setFormData({ ...formData, role: e.target.value as Role })}
-                className="w-full px-3 py-2 border rounded-lg"
-              >
-                <option value="staff">員工</option>
-                <option value="manager">店長</option>
-              </select>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  角色
+                </label>
+                <select
+                  value={formData.role}
+                  onChange={e => setFormData({ ...formData, role: e.target.value as Role })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="staff">員工</option>
+                  <option value="manager">店長</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  入職日期
+                </label>
+                <input
+                  type="date"
+                  value={formData.hireDate}
+                  onChange={e => setFormData({ ...formData, hireDate: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
+              </div>
             </div>
             {formData.role === "staff" && (
               <>
@@ -234,6 +253,7 @@ export default function EmployeesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">員工姓名</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">入職日期</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">登入帳號</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">角色</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">動作</th>
@@ -244,6 +264,9 @@ export default function EmployeesPage() {
                 <tr key={employee.id} className="hover:bg-gray-50">
                   <td className="px-4 py-3 text-sm font-medium text-gray-900">
                     {employee.name}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {employee.hireDate}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {employee.role === "staff" ? employee.username ?? "—" : "店長/老闆專用帳號"}

@@ -466,10 +466,55 @@ export default function PayrollPage() {
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
 
+      // ── 樣式設定 (透過 XLSX 物件直接修改單元格) ──
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:G50');
+      
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cell_ref = XLSX.utils.encode_cell({ r: R, c: C });
+          if (!ws[cell_ref]) continue;
+          
+          if (!ws[cell_ref].s) ws[cell_ref].s = {};
+          
+          // 預設邊框：細線
+          ws[cell_ref].s.border = {
+            top: { style: 'thin' },
+            bottom: { style: 'thin' },
+            left: { style: 'thin' },
+            right: { style: 'thin' }
+          };
+          
+          // 表頭 (AOA 第 5, 6 行，索引 4, 5) 加粗與背景色
+          if (R === 4 || R === 5) {
+            ws[cell_ref].s.font = { bold: true };
+            ws[cell_ref].s.fill = { fgColor: { rgb: "F2F2F2" } };
+          }
+          
+          // 欄位間粗框線邏輯：每兩欄一個大項 (A, B, C 區塊)
+          // A區(0,1), B區(2,3), C區(4,5)
+          if (C === 1 || C === 3 || C === 5) {
+            ws[cell_ref].s.border.right = { style: 'medium' };
+          }
+          if (C === 0 || C === 2 || C === 4) {
+            ws[cell_ref].s.border.left = { style: 'medium' };
+          }
+
+          // 標題行加粗 (R=0)
+          if (R === 0) {
+            ws[cell_ref].s.font = { bold: true, sz: 14 };
+          }
+
+          // 實領金額加粗 (偵測內容包含 "實領金額")
+          if (ws[cell_ref].v === "實領金額") {
+            ws[cell_ref].s.font = { bold: true, color: { rgb: "0000FF" } };
+          }
+        }
+      }
+
       // 欄寬
       ws["!cols"] = [
-        { wch: 16 }, { wch: 10 }, { wch: 16 }, { wch: 10 },
-        { wch: 20 }, { wch: 10 }, { wch: 18 },
+        { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 12 },
+        { wch: 16 }, { wch: 12 }, { wch: 18 },
       ];
 
       // Sheet 名稱：姓名（避免特殊字元問題，最多 31 字）

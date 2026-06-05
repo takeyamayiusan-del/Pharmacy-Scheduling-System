@@ -12,6 +12,7 @@ export type Employee = {
   role: "owner" | "manager" | "staff";
   username?: string;
   password?: string;
+  hireDate: string;               // 入職日期
   isWednesdayRotation?: boolean;  // 禮拜三晚班輪值
   isWeekdayOffRule?: boolean;     // 平日不排班規則
 };
@@ -271,6 +272,8 @@ interface AppContextType {
   deleteLeaveRequest: (id: string) => Promise<void>;
   compLeaveLedger: CompLeaveLedgerEntry[];
   getCompLeaveBalance: (employeeId: string) => number;
+  getAnnualLeaveQuota: (employee: Employee, year: number) => number;
+  getAnnualLeaveBalance: (employeeId: string, year: number) => number;
   loadCompLeaveLedger: () => Promise<void>;
   swapRequests: SwapRequest[];
   addSwapRequest: (request: Omit<SwapRequest, "id" | "createdAt">) => Promise<void>;
@@ -420,19 +423,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase
       .from("users")
-      .select("id, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule")
+      .select("id, name, role, is_active, hire_date, is_wednesday_rotation, is_weekday_off_rule")
       .eq("is_active", true);
-    if (data) {
-      setEmployees(
-        data.map((u) => ({
-          id: u.id,
-          name: u.name,
-          role: mapRole(u.role),
-          isWednesdayRotation: u.is_wednesday_rotation ?? false,
-          isWeekdayOffRule: u.is_weekday_off_rule ?? false,
-        }))
-      );
-    }
+      if (data) {
+        setEmployees(
+          data.map((r) => ({
+            id: r.id,
+            name: r.name,
+            role: mapRole(r.role),
+            hireDate: r.hire_date || '2026-04-01',
+            isWednesdayRotation: r.is_wednesday_rotation,
+            isWeekdayOffRule: r.is_weekday_off_rule,
+          }))
+        );
+      }
   }, [supabase]);
 
   const formatDbTime = (value: string | null | undefined, fallback: string) => {
@@ -475,6 +479,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
     },
     [compLeaveLedger]
   );
+
+  const getAnnualLeaveQuota = useCallback((employee: Employee, year: number) => {
+    const hireDate = new Date(employee.hireDate);
+    const targetDate = new Date(year, 11, 31); // 該年年底
+    
+    // 計算年資（月數）
+    const months = (targetDate.getFullYear() - hireDate.getFullYear()) * 12 + (targetDate.getMonth() - hireDate.getMonth());
+    
+    if (months >= 12) return 7;
+    if (months >= 6) return 3;
+    return 0;
+  }, []);
+
+  const getAnnualLeaveBalance = useCallback((employeeId: string, year: number) => {
+    const emp = employees.find(e => e.id === employeeId);
+    if (!emp) return 0;
+    
+    const quota = getAnnualLeaveQuota(emp, year);
+    const used = leaveRequests
+      .filter(r => 
+        r.employeeId === employeeId && 
+        r.type === "特休" && 
+        r.status === "approved" && 
+        new Date(r.startDate).getFullYear() === year
+      )
+      .reduce((acc, r) => acc + r.leaveHours, 0);
+      
+    return Math.max(0, quota - (used / 8)); // 假設一天 8 小時，特休以天為單位
+  }, [employees, leaveRequests, getAnnualLeaveQuota]);
 
   const loadLeaveRequests = useCallback(async () => {
     const { data } = await supabase
@@ -706,14 +739,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
           return;
         }
         if (mounted) {
-          const { data: userRow } = await supabase
-            .from("users")
-            .select("id, name, role")
-            .eq("id", session.user.id)
-            .maybeSingle();
-          console.log("[initAuth] userRow:", userRow);
-          if (userRow && mounted) {
-            const emp: Employee = { id: userRow.id, name: userRow.name, role: mapRole(userRow.role) };
+            const { data: userRow } = await supabase
+              .from("users")
+              .select("id, name, role, hire_date")
+              .eq("id", session.user.id)
+              .maybeSingle();
+            console.log("[initAuth] userRow:", userRow);
+            if (userRow && mounted) {
+              const emp: Employee = { 
+                id: userRow.id, 
+                name: userRow.name, 
+                role: mapRole(userRow.role),
+                hireDate: userRow.hire_date || "2026-04-01"
+              };
             setCurrentUser(emp);
             // Load data in background without awaiting
             Promise.allSettled([
@@ -761,12 +799,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const { data: userRow } = await supabase
               .from("users")
-              .select("id, name, role")
+              .select("id, name, role, hire_date")
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[SIGNED_IN] userRow:", userRow);
             if (userRow && mounted) {
-              const emp: Employee = { id: userRow.id, name: userRow.name, role: mapRole(userRow.role) };
+              const emp: Employee = { 
+                id: userRow.id, 
+                name: userRow.name, 
+                role: mapRole(userRow.role),
+                hireDate: userRow.hire_date || "2026-04-01"
+              };
               setCurrentUser(emp);
               // Load data in background without awaiting
               Promise.allSettled([
@@ -860,6 +903,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         password: employee.password,
         name: employee.name,
         role: employee.role,
+        hire_date: employee.hireDate,
       }),
     });
     await loadEmployees();
@@ -876,6 +920,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         password: updates.password,
         isWednesdayRotation: updates.isWednesdayRotation,
         isWeekdayOffRule: updates.isWeekdayOffRule,
+        hire_date: updates.hireDate,
       }),
     });
     await loadEmployees();
@@ -949,6 +994,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateShift = async (date: string, employeeId: string, shift: ShiftType) => {
+    // 檢查是否有已核准的請假
+    const approvedLeave = leaveRequests.find(
+      (r) =>
+        r.employeeId === employeeId &&
+        r.status === "approved" &&
+        date >= r.startDate &&
+        date <= r.endDate
+    );
+
+    if (approvedLeave && shift !== "X") {
+      const confirmMsg = `員工 ${approvedLeave.employeeName} 在 ${date} 已有核准的請假（${approvedLeave.type}），確定要安排班表嗎？`;
+      if (!window.confirm(confirmMsg)) return;
+    }
+
     // Optimistic update
     setSchedule((prev) => ({ ...prev, [date]: { ...prev[date], [employeeId]: shift } }));
     await supabase.from("schedule_overrides").upsert(
@@ -1625,6 +1684,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         deleteLeaveRequest,
         compLeaveLedger,
         getCompLeaveBalance,
+        getAnnualLeaveQuota,
+        getAnnualLeaveBalance,
         loadCompLeaveLedger,
         swapRequests,
         addSwapRequest,
