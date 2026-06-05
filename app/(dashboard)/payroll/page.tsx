@@ -137,6 +137,9 @@ export default function PayrollPage() {
     tardinessRecords,
     getShiftForDate,
     shiftTimeConfig,
+    payrollRecords,
+    publishPayrollRecord,
+    loadPayrollRecords,
   } = useApp();
   const supabase = createClient();
 
@@ -207,7 +210,12 @@ export default function PayrollPage() {
     }
   }, [supabase, year, month]);
 
-  useEffect(() => { if (isManager) loadData(); }, [isManager, loadData]);
+  useEffect(() => { 
+    if (isManager) {
+      loadData(); 
+      loadPayrollRecords(year, month);
+    }
+  }, [isManager, loadData, loadPayrollRecords, year, month]);
 
   // ─── Compute payroll ────────────────────────────────────────────────────────
 
@@ -312,6 +320,42 @@ export default function PayrollPage() {
   }, [displayEmployees, salaryConfigs, rateConfigs, adjustments, leaveRequests, overtimeRequests, tardinessRecords, year, month, getShiftForDate, shiftTimeConfig]);
 
   const payrollData = computePayroll();
+
+  // ─── Publish Payroll ────────────────────────────────────────────────────────
+  const handlePublish = async (employeeId: string) => {
+    const p = payrollData.find(d => d.userId === employeeId);
+    if (!p) return;
+
+    if (!confirm(`確定要發布 ${p.name} 的 ${year} 年 ${month} 月薪資單嗎？發布後員工將收到通知並可查看詳情。`)) return;
+
+    // 先存檔到資料庫
+    const { data, error } = await supabase.from("payroll_records").upsert({
+      user_id: p.userId,
+      year,
+      month,
+      base_salary: p.baseSalary,
+      labor_insurance: p.laborInsurance,
+      health_insurance: p.healthInsurance,
+      pension_deduction: p.pensionDeduction,
+      leave_deduction: p.leaveDeduction,
+      overtime_pay: p.overtimePay,
+      tardiness_deduction: p.tardinessDeduction,
+      bonus_total: p.bonusTotal,
+      final_pay: p.finalPay,
+      note: "",
+      created_by: currentUser?.id,
+    }, { onConflict: "user_id,year,month" }).select().single();
+
+    if (error) {
+      alert("儲存失敗：" + error.message);
+      return;
+    }
+
+    if (data) {
+      await publishPayrollRecord(data.id);
+      alert(`${p.name} 的薪資單已發布並通知員工！`);
+    }
+  };
 
   // ─── Save salary config ─────────────────────────────────────────────────────
 
@@ -724,29 +768,45 @@ export default function PayrollPage() {
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-                    {["姓名", "職位", "底薪", "勞保", "健保", "退休金", "請假扣", "加班費", "遲到扣", "異動", "實領"].map((h) => (
-                      <th key={h} className="px-3 py-3 text-right font-medium text-gray-700 first:text-left">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {payrollData.map((p) => (
-                    <tr key={p.userId} className="hover:bg-gray-50">
-                      <td className="px-3 py-3 font-medium">{p.name}</td>
-                      <td className="px-3 py-3 text-right text-gray-500">{p.position || "—"}</td>
-                      <td className="px-3 py-3 text-right">${p.baseSalary.toLocaleString()}</td>
-                      <td className="px-3 py-3 text-right text-red-600">-${p.laborInsurance.toLocaleString()}</td>
-                      <td className="px-3 py-3 text-right text-red-600">-${p.healthInsurance.toLocaleString()}</td>
-                      <td className="px-3 py-3 text-right text-red-600">-${p.pensionDeduction.toLocaleString()}</td>
-                      <td className="px-3 py-3 text-right text-red-600">{p.leaveDeduction > 0 ? `-$${p.leaveDeduction}` : "—"}</td>
-                      <td className="px-3 py-3 text-right text-green-600">{p.overtimePay > 0 ? `+$${p.overtimePay}` : "—"}</td>
-                      <td className="px-3 py-3 text-right text-red-600">{p.tardinessDeduction > 0 ? `-$${p.tardinessDeduction}` : "—"}</td>
-                      <td className="px-3 py-3 text-right">
-                        {p.bonusTotal !== 0 ? <span className={p.bonusTotal > 0 ? "text-green-600" : "text-red-600"}>{p.bonusTotal > 0 ? "+" : ""}${p.bonusTotal.toLocaleString()}</span> : "—"}
-                      </td>
-                      <td className="px-3 py-3 text-right font-bold text-blue-700 bg-blue-50">${p.finalPay.toLocaleString()}</td>
-                    </tr>
-                  ))}
+	                    {["姓名", "職位", "底薪", "勞保", "健保", "退休金", "請假扣", "加班費", "遲到扣", "異動", "實領", "狀態"].map((h) => (
+	                      <th key={h} className="px-3 py-3 text-right font-medium text-gray-700 first:text-left">{h}</th>
+	                    ))}
+	                  </tr>
+	                </thead>
+	                <tbody className="divide-y">
+	                  {payrollData.map((p) => {
+                      const record = payrollRecords.find(r => r.userId === p.userId && r.year === year && r.month === month);
+                      const isPublished = record?.isPublished;
+                      return (
+                        <tr key={p.userId} className="hover:bg-gray-50">
+                          <td className="px-3 py-3 font-medium">{p.name}</td>
+                          <td className="px-3 py-3 text-right text-gray-500">{p.position || "—"}</td>
+                          <td className="px-3 py-3 text-right">${p.baseSalary.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-right text-red-600">-${p.laborInsurance.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-right text-red-600">-${p.healthInsurance.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-right text-red-600">-${p.pensionDeduction.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-right text-red-600">{p.leaveDeduction > 0 ? `-$${p.leaveDeduction}` : "—"}</td>
+                          <td className="px-3 py-3 text-right text-green-600">{p.overtimePay > 0 ? `+$${p.overtimePay}` : "—"}</td>
+                          <td className="px-3 py-3 text-right text-red-600">{p.tardinessDeduction > 0 ? `-$${p.tardinessDeduction}` : "—"}</td>
+                          <td className="px-3 py-3 text-right">
+                            {p.bonusTotal !== 0 ? <span className={p.bonusTotal > 0 ? "text-green-600" : "text-red-600"}>{p.bonusTotal > 0 ? "+" : ""}${p.bonusTotal.toLocaleString()}</span> : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-right font-bold text-blue-600">${p.finalPay.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-right">
+                            {isPublished ? (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">已發布</span>
+                            ) : (
+                              <button
+                                onClick={() => handlePublish(p.userId)}
+                                className="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded-full hover:bg-blue-700 transition-colors"
+                              >
+                                發布
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>

@@ -115,6 +115,39 @@ export type Notification = {
   route?: string;
 };
 
+export type BulletinItem = {
+  id: string;
+  authorId: string;
+  authorName: string;
+  title: string;
+  content: string;
+  type: "announcement" | "shift_swap_request";
+  status: "active" | "archived" | "completed";
+  relatedId?: string;
+  isUrgent: boolean;
+  createdAt: string;
+};
+
+export type PayrollRecord = {
+  id: string;
+  userId: string;
+  year: number;
+  month: number;
+  baseSalary: number;
+  laborInsurance: number;
+  healthInsurance: number;
+  pensionDeduction: number;
+  leaveDeduction: number;
+  overtimePay: number;
+  tardinessDeduction: number;
+  bonusTotal: number;
+  finalPay: number;
+  note?: string;
+  isPublished: boolean;
+  publishedAt?: string;
+  createdAt: string;
+};
+
 export type TardinessRecord = {
   id: string;
   employeeId: string;
@@ -303,6 +336,14 @@ interface AppContextType {
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
   refreshNotifications: () => Promise<void>;
+  bulletinItems: BulletinItem[];
+  addBulletinItem: (item: Omit<BulletinItem, "id" | "authorName" | "createdAt">) => Promise<void>;
+  updateBulletinItem: (id: string, updates: Partial<BulletinItem>) => Promise<void>;
+  deleteBulletinItem: (id: string) => Promise<void>;
+  loadBulletinItems: () => Promise<void>;
+  payrollRecords: PayrollRecord[];
+  publishPayrollRecord: (id: string) => Promise<void>;
+  loadPayrollRecords: (year: number, month: number) => Promise<void>;
   isLoading: boolean;
   isSunday: (dateStr: string) => boolean;
   isSaturday: (dateStr: string) => boolean;
@@ -330,6 +371,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [tardinessRecords, setTardinessRecords] = useState<TardinessRecord[]>([]);
   const [punchRecords, setPunchRecords] = useState<PunchRecord[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [bulletinItems, setBulletinItems] = useState<BulletinItem[]>([]);
+  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>({});
   const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({});
   const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>([]);
@@ -795,6 +838,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               loadShiftTimeConfig(),
               loadWednesdayOffSelections(),
               loadLeaveMonthLocks(),
+              loadBulletinItems(),
             ]).catch((e) => console.error("[initAuth] background load error:", e));
           }
         }
@@ -853,6 +897,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 loadShiftTimeConfig(),
                 loadWednesdayOffSelections(),
                 loadLeaveMonthLocks(),
+                loadBulletinItems(),
               ]).catch((e) => console.error("[SIGNED_IN] background load error:", e));
             } else if (mounted) {
               console.warn("[SIGNED_IN] no user row found for", session.user.id);
@@ -1839,6 +1884,112 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
 
   // ─── Notifications ────────────────────────────────────────────────────────────
 
+  const loadBulletinItems = useCallback(async () => {
+    const { data } = await supabase
+      .from("bulletin_board")
+      .select("*, users!bulletin_board_author_id_fkey(name)")
+      .order("created_at", { ascending: false });
+    if (data) {
+      setBulletinItems(
+        data.map((r) => ({
+          id: r.id,
+          authorId: r.author_id,
+          authorName: (r.users as { name?: string } | null)?.name ?? "未知",
+          title: r.title,
+          content: r.content,
+          type: r.type as BulletinItem["type"],
+          status: r.status as BulletinItem["status"],
+          relatedId: r.related_id,
+          isUrgent: r.is_urgent,
+          createdAt: r.created_at,
+        }))
+      );
+    }
+  }, [supabase]);
+
+  const addBulletinItem = async (item: Omit<BulletinItem, "id" | "authorName" | "createdAt">) => {
+    await supabase.from("bulletin_board").insert({
+      author_id: item.authorId,
+      title: item.title,
+      content: item.content,
+      type: item.type,
+      status: item.status,
+      related_id: item.relatedId,
+      is_urgent: item.isUrgent,
+    });
+    await loadBulletinItems();
+  };
+
+  const updateBulletinItem = async (id: string, updates: Partial<BulletinItem>) => {
+    const dbUpdates: Record<string, unknown> = {};
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.content !== undefined) dbUpdates.content = updates.content;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.isUrgent !== undefined) dbUpdates.is_urgent = updates.isUrgent;
+    await supabase.from("bulletin_board").update(dbUpdates).eq("id", id);
+    await loadBulletinItems();
+  };
+
+  const deleteBulletinItem = async (id: string) => {
+    await supabase.from("bulletin_board").delete().eq("id", id);
+    await loadBulletinItems();
+  };
+
+  const loadPayrollRecords = useCallback(async (year: number, month: number) => {
+    const { data } = await supabase
+      .from("payroll_records")
+      .select("*")
+      .eq("year", year)
+      .eq("month", month);
+    if (data) {
+      setPayrollRecords(
+        data.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          year: r.year,
+          month: r.month,
+          baseSalary: Number(r.base_salary),
+          laborInsurance: Number(r.labor_insurance),
+          healthInsurance: Number(r.health_insurance),
+          pensionDeduction: Number(r.pension_deduction),
+          leaveDeduction: Number(r.leave_deduction),
+          overtimePay: Number(r.overtime_pay),
+          tardinessDeduction: Number(r.tardiness_deduction),
+          bonusTotal: Number(r.bonus_total),
+          finalPay: Number(r.final_pay),
+          note: r.note,
+          isPublished: r.is_published,
+          publishedAt: r.published_at,
+          createdAt: r.created_at,
+        }))
+      );
+    }
+  }, [supabase]);
+
+  const publishPayrollRecord = async (id: string) => {
+    const now = new Date().toISOString();
+    await supabase.from("payroll_records").update({
+      is_published: true,
+      published_at: now
+    }).eq("id", id);
+    
+    // 找出該筆記錄的員工資訊
+    const record = payrollRecords.find(r => r.id === id);
+    if (record) {
+      await insertNotification({
+        recipientId: record.userId,
+        type: "success",
+        title: "薪資單已發布",
+        body: `您的 ${record.year} 年 ${record.month} 月薪資單已發布，請前往首頁查看。`,
+        relatedId: record.id,
+        relatedType: "payroll"
+      });
+    }
+    
+    // 重新加載資料（假設我們還在當前選擇的年月）
+    if (record) await loadPayrollRecords(record.year, record.month);
+  };
+
   const refreshNotifications = useCallback(async () => {
     if (currentUser?.id) {
       await loadNotifications(currentUser.id);
@@ -1915,6 +2066,14 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         notifications,
         markNotificationRead,
         refreshNotifications,
+        bulletinItems,
+        addBulletinItem,
+        updateBulletinItem,
+        deleteBulletinItem,
+        loadBulletinItems,
+        payrollRecords,
+        publishPayrollRecord,
+        loadPayrollRecords,
         isLoading,
         isSunday,
         isSaturday,

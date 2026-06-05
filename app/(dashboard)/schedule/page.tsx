@@ -4,6 +4,8 @@ import { useState, useEffect } from "react";
 import { useApp, type ShiftType } from "@/lib/context/AppContext";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { createClient } from "@/lib/supabase/client";
+import BulletinBoard from "@/components/BulletinBoard";
+import PersonalPayslip from "@/components/PersonalPayslip";
 
 // 班別顏色設定
 const shiftColors: Record<ShiftType, { bg: string; text: string; border: string }> = {
@@ -268,6 +270,38 @@ export default function SchedulePage() {
 
   return (
     <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <BulletinBoard />
+        </div>
+        <div className="space-y-6">
+          <PersonalPayslip />
+          
+          {/* 原有的說明區移至此處 */}
+          <div className="app-card bg-blue-50/80 border-blue-200 p-4">
+            <h3 className="font-medium text-blue-800 mb-3">📋 說明</h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-orange-400"></div>
+                <span className="text-gray-600">橘色框 - 固定班表</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-red-500"></div>
+                <span className="text-gray-600">禮拜日 - 不可編輯</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
+                <span className="text-gray-600">國定假日 - 可編輯</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-pink-500"></div>
+                <span className="text-gray-600">禮拜三晚班輪流</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {showExportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
@@ -326,32 +360,7 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* 說明區 */}
-      <div className="app-card bg-blue-50/80 border-blue-200 p-4">
-        <h3 className="font-medium text-blue-800 mb-3">📋 說明</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-          <div className="text-gray-600">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 rounded-full bg-orange-400"></div>
-              <span>橘色框 - 固定班表</span>
-            </div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 rounded-full bg-red-500"></div>
-              <span>禮拜日 - 不可編輯</span>
-            </div>
-          </div>
-          <div className="text-gray-600">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-              <span>國定假日 - 可編輯</span>
-            </div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-3 h-3 rounded-full bg-pink-500"></div>
-              <span>禮拜三晚班輪流</span>
-            </div>
-          </div>
-        </div>
-      </div>
+
 
       <div className="app-card p-4">
         <div className="flex items-center justify-between mb-3">
