@@ -38,6 +38,7 @@ export default function LeaveApplicationPage() {
     shiftTimeConfig,
     getShiftForDate,
     getCompLeaveBalance,
+    getAnnualLeaveBalance,
   } = useApp();
 
   const [showForm, setShowForm] = useState(false);
@@ -85,6 +86,7 @@ export default function LeaveApplicationPage() {
   }, [currentUser, formData, previewShiftForCalc, getShiftForDate, shiftTimeConfig]);
 
   const compBalance = currentUser ? getCompLeaveBalance(currentUser.id) : 0;
+  const annualBalance = currentUser ? getAnnualLeaveBalance(currentUser.id, new Date().getFullYear()) : 0;
 
   const applyPeriodPreset = (period: LeavePeriod) => {
     const times = periodToTimes(period, previewShiftForCalc, shiftTimeConfig);
@@ -192,7 +194,7 @@ export default function LeaveApplicationPage() {
         <h2 className="text-2xl font-bold text-gray-900">請假申請</h2>
         <div className="flex items-center gap-3">
           <button
-            onClick={() => router.push('/dashboard/applications/leave/annual-summary')}
+            onClick={() => router.push('/applications/leave/annual-summary')}
             className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
           >
             📅 年度特休總表
@@ -209,9 +211,17 @@ export default function LeaveApplicationPage() {
       </div>
 
       {currentUser && currentUser.role !== 'owner' && (
-        <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-900">
-          可用補休時數：<span className="font-bold text-lg">{compBalance}</span> 小時
-          <span className="text-emerald-700 ml-2">（加班選擇「補休」累積，半年內有效）</span>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
+            <div className="font-semibold mb-2">年度特休時數</div>
+            <div className="text-3xl font-bold text-blue-600">{annualBalance.toFixed(1)}</div>
+            <div className="text-xs text-blue-700 mt-1">天數</div>
+          </div>
+          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-900">
+            <div className="font-semibold mb-2">可用補休時數</div>
+            <div className="text-3xl font-bold text-emerald-600">{compBalance}</div>
+            <div className="text-xs text-emerald-700 mt-1">小時（加班選擇「補休」累積，半年內有效）</div>
+          </div>
         </div>
       )}
 
