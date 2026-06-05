@@ -290,7 +290,7 @@ export default function DashboardLayout({
               <X className="h-5 w-5" />
             </button>
           </div>
-          <nav className="p-3 space-y-1">
+          <nav className="p-3 space-y-1 h-[calc(100vh-64px)] overflow-y-auto scrollbar-hide">
             {navItems.filter(item => item.allowed).map((item) => {
               const Icon = item.icon;
               const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
