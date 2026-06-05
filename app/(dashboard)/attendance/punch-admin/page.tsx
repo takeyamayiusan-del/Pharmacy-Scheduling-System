@@ -2,17 +2,26 @@
 
 import { useState } from "react";
 import { useApp, type PunchRecord, type ShiftType } from "@/lib/context/AppContext";
-import { getPunchSlotsForShift } from "@/lib/attendance/punchSchedule";
+import { calcLateMinutes, getPunchSlotsForShift, minutesDiff, timeToMinutes } from "@/lib/attendance/punchSchedule";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
+
+type EditablePunchFields = {
+  action: "work_in" | "work_out";
+  segmentIndex: number;
+  time: string;
+};
 
 export default function PunchAdminPage() {
   const {
     currentUser,
     employees,
     punchRecords,
+    tardinessRecords,
     addPunchRecord,
     updatePunchRecord,
     deletePunchRecord,
+    addTardinessRecord,
+    deleteTardinessRecord,
     getShiftForDate,
     shiftTimeConfig,
   } = useApp();
@@ -26,11 +35,11 @@ export default function PunchAdminPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTime, setEditTime] = useState<string>("");
   const [showAddForm, setShowAddForm] = useState(false);
-  const [newRecord, setNewRecord] = useState<{
-    action: "work_in" | "work_out";
-    segmentIndex: number;
-    time: string;
-  }>({ action: "work_in", segmentIndex: 0, time: "" });
+  const [newRecord, setNewRecord] = useState<EditablePunchFields>({
+    action: "work_in",
+    segmentIndex: 0,
+    time: "",
+  });
 
   if (!isManager) {
     return (
@@ -55,26 +64,115 @@ export default function PunchAdminPage() {
   const slots =
     shift !== "X" ? getPunchSlotsForShift(shift, shiftTimeConfig) : [];
 
+  const findSlot = (record: EditablePunchFields) =>
+    slots.find(
+      (slot) =>
+        slot.action === record.action && slot.segmentIndex === record.segmentIndex
+    );
+
+  const getLateInfo = (record: EditablePunchFields) => {
+    const slot = findSlot(record);
+    if (!slot || record.action !== "work_in") {
+      return { lateMinutes: 0, reason: undefined as string | undefined };
+    }
+
+    const actual = timeToMinutes(record.time);
+    const scheduled = timeToMinutes(slot.scheduledTime);
+    const diff = minutesDiff(actual, scheduled);
+    const lateMinutes = diff >= 30 ? diff : calcLateMinutes(actual, scheduled);
+
+    if (lateMinutes <= 0) {
+      return { lateMinutes: 0, reason: undefined as string | undefined };
+    }
+
+    return {
+      lateMinutes,
+      reason: `打卡管理校正（${slot.label} ${slot.scheduledTime}）：${diff >= 30 ? "遲到超過30分鐘" : "遲到"}`,
+    };
+  };
+
+  const deleteMatchingTardiness = async (record: Pick<PunchRecord, "employeeId" | "date" | "lateMinutes" | "reason">) => {
+    if (record.lateMinutes <= 0) return;
+
+    const exactMatches = tardinessRecords.filter(
+      (t) =>
+        t.employeeId === record.employeeId &&
+        t.date === record.date &&
+        t.minutes === record.lateMinutes &&
+        (!record.reason || t.notes === record.reason)
+    );
+
+    if (exactMatches.length > 0) {
+      await Promise.all(exactMatches.map((t) => deleteTardinessRecord(t.id)));
+      return;
+    }
+
+    await fetch("/api/attendance/tardiness", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        match: {
+          employeeId: record.employeeId,
+          date: record.date,
+          minutes: record.lateMinutes,
+          notes: record.reason,
+        },
+      }),
+    });
+  };
+
   const handleEdit = (record: PunchRecord) => {
     setEditingId(record.id);
     setEditTime(record.time);
   };
 
-  const handleSaveEdit = (id: string) => {
+  const handleSaveEdit = async (record: PunchRecord) => {
     if (!editTime.match(/^\d{2}:\d{2}$/)) {
       alert("請輸入正確格式 HH:MM");
       return;
     }
-    updatePunchRecord(id, { time: editTime });
-    setEditingId(null);
+
+    const lateInfo = getLateInfo({
+      action: record.action,
+      segmentIndex: record.segmentIndex,
+      time: editTime,
+    });
+
+    try {
+      await deleteMatchingTardiness(record);
+      await updatePunchRecord(record.id, {
+        time: editTime,
+        lateMinutes: lateInfo.lateMinutes,
+        reason: lateInfo.reason ?? null,
+      });
+      if (lateInfo.lateMinutes > 0 && lateInfo.reason) {
+        await addTardinessRecord({
+          employeeId: record.employeeId,
+          employeeName: record.employeeName,
+          date: record.date,
+          minutes: lateInfo.lateMinutes,
+          notes: lateInfo.reason,
+        });
+      }
+      setEditingId(null);
+    } catch (error) {
+      console.error("[punch-admin] save edit failed", error);
+      alert(error instanceof Error ? error.message : "儲存失敗");
+    }
   };
 
-  const handleDelete = (id: string) => {
-    if (!confirm("確定要刪除這筆打卡紀錄？")) return;
-    deletePunchRecord(id);
+  const handleDelete = async (record: PunchRecord) => {
+    if (!confirm("確定要刪除這筆打卡紀錄？對應的遲到記錄也會一併移除。")) return;
+    try {
+      await deleteMatchingTardiness(record);
+      await deletePunchRecord(record.id);
+    } catch (error) {
+      console.error("[punch-admin] delete failed", error);
+      alert(error instanceof Error ? error.message : "刪除失敗");
+    }
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!selectedEmpId) {
       alert("請先選擇員工");
       return;
@@ -86,20 +184,39 @@ export default function PunchAdminPage() {
     const emp = employees.find((e) => e.id === selectedEmpId);
     if (!emp) return;
 
-    addPunchRecord({
-      employeeId: selectedEmpId,
-      employeeName: emp.name,
-      date: selectedDate,
-      action: newRecord.action,
-      segmentIndex: newRecord.segmentIndex,
-      time: newRecord.time,
-      shift,
-      lateMinutes: 0,
-      latitude: 0,
-      longitude: 0,
-    });
-    setShowAddForm(false);
-    setNewRecord({ action: "work_in", segmentIndex: 0, time: "" });
+    const lateInfo = getLateInfo(newRecord);
+
+    try {
+      await addPunchRecord({
+        employeeId: selectedEmpId,
+        employeeName: emp.name,
+        date: selectedDate,
+        action: newRecord.action,
+        segmentIndex: newRecord.segmentIndex,
+        time: newRecord.time,
+        shift,
+        lateMinutes: lateInfo.lateMinutes,
+        reason: lateInfo.reason,
+        latitude: 0,
+        longitude: 0,
+      });
+
+      if (lateInfo.lateMinutes > 0 && lateInfo.reason) {
+        await addTardinessRecord({
+          employeeId: selectedEmpId,
+          employeeName: emp.name,
+          date: selectedDate,
+          minutes: lateInfo.lateMinutes,
+          notes: lateInfo.reason,
+        });
+      }
+
+      setShowAddForm(false);
+      setNewRecord({ action: "work_in", segmentIndex: 0, time: "" });
+    } catch (error) {
+      console.error("[punch-admin] add failed", error);
+      alert(error instanceof Error ? error.message : "新增失敗");
+    }
   };
 
   return (
@@ -212,7 +329,7 @@ export default function PunchAdminPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={handleAdd}
+                onClick={() => void handleAdd()}
                 className="flex items-center gap-1 px-3 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700"
               >
                 <Check className="h-4 w-4" /> 確認新增
@@ -298,7 +415,7 @@ export default function PunchAdminPage() {
                       <div className="flex justify-end gap-1">
                         <button
                           type="button"
-                          onClick={() => handleSaveEdit(p.id)}
+                          onClick={() => void handleSaveEdit(p)}
                           className="p-1.5 bg-emerald-100 text-emerald-700 rounded hover:bg-emerald-200"
                           title="儲存"
                         >
@@ -325,7 +442,7 @@ export default function PunchAdminPage() {
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleDelete(p.id)}
+                          onClick={() => void handleDelete(p)}
                           className="p-1.5 bg-red-50 text-red-600 rounded hover:bg-red-100"
                           title="刪除"
                         >

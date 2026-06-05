@@ -140,6 +140,12 @@ export type PunchRecord = {
   createdAt: string;
 };
 
+type PunchRecordUpdate = Partial<
+  Pick<PunchRecord, "time" | "action" | "segmentIndex" | "lateMinutes">
+> & {
+  reason?: string | null;
+};
+
 export type LeaveSummary = {
   selectedDates: string[];
   saturdayUsed: number;
@@ -288,7 +294,7 @@ interface AppContextType {
   deleteTardinessRecord: (id: string) => Promise<void>;
   punchRecords: PunchRecord[];
   addPunchRecord: (record: Omit<PunchRecord, "id" | "createdAt">) => Promise<void>;
-  updatePunchRecord: (id: string, updates: Partial<Pick<PunchRecord, "time" | "action" | "segmentIndex">>) => Promise<void>;
+  updatePunchRecord: (id: string, updates: PunchRecordUpdate) => Promise<void>;
   deletePunchRecord: (id: string) => Promise<void>;
   getTodayPunchRecords: (employeeId: string, date: string) => PunchRecord[];
   getPunchRecordsByDate: (employeeId: string, date: string) => PunchRecord[];
@@ -611,14 +617,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadTardinessRecords = useCallback(async () => {
     const { data } = await supabase
       .from("tardiness_records")
-      .select("*")
+      .select("*, users(name)")
       .order("record_date", { ascending: false });
     if (data) {
       setTardinessRecords(
         data.map((r) => ({
           id: r.id,
           employeeId: r.user_id,
-          employeeName: "",
+          employeeName: (r.users as { name?: string } | null)?.name ?? "",
           date: r.record_date,
           minutes: r.minutes_late,
           notes: r.note ?? "",
@@ -1572,18 +1578,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Tardiness records (Supabase) ─────────────────────────────────────────────
 
   const addTardinessRecord = async (record: Omit<TardinessRecord, "id" | "createdAt">) => {
-    await supabase.from("tardiness_records").insert({
+    const { error } = await supabase.from("tardiness_records").insert({
       user_id: record.employeeId,
       record_date: record.date,
       minutes_late: record.minutes,
       note: record.notes,
       recorded_by: currentUser?.id ?? record.employeeId,
     });
+    if (error) throw error;
     await loadTardinessRecords();
   };
 
   const deleteTardinessRecord = async (id: string) => {
-    await supabase.from("tardiness_records").delete().eq("id", id);
+    const { data, error } = await supabase
+      .from("tardiness_records")
+      .delete()
+      .eq("id", id)
+      .select("id");
+
+    if (error || !data || data.length === 0) {
+      const response = await fetch("/api/attendance/tardiness", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new Error(result.error || error?.message || "刪除遲到記錄失敗");
+      }
+    }
     await loadTardinessRecords();
   };
 
@@ -1606,12 +1629,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadPunchRecords();
   };
 
-  const updatePunchRecord = async (id: string, updates: Partial<Pick<PunchRecord, "time" | "action" | "segmentIndex">>) => {
+  const updatePunchRecord = async (id: string, updates: PunchRecordUpdate) => {
     const dbUpdates: Record<string, unknown> = {};
     if (updates.time !== undefined) dbUpdates.time = updates.time;
     if (updates.action !== undefined) dbUpdates.action = updates.action;
     if (updates.segmentIndex !== undefined) dbUpdates.segment_index = updates.segmentIndex;
-    await supabase.from("punch_records").update(dbUpdates).eq("id", id);
+    if (updates.lateMinutes !== undefined) dbUpdates.late_minutes = updates.lateMinutes;
+    if (updates.reason !== undefined) dbUpdates.reason = updates.reason;
+    const { error } = await supabase.from("punch_records").update(dbUpdates).eq("id", id);
+    if (error) throw error;
     await loadPunchRecords();
   };
 

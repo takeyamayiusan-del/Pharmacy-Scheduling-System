@@ -1,10 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { useApp } from "@/lib/context/AppContext";
+import { useMemo, useState } from "react";
+import { useApp, type TardinessRecord } from "@/lib/context/AppContext";
 
 export default function TardinessPage() {
-  const { currentUser, employees, tardinessRecords, addTardinessRecord, deleteTardinessRecord } = useApp();
+  const {
+    currentUser,
+    employees,
+    tardinessRecords,
+    punchRecords,
+    addTardinessRecord,
+    deleteTardinessRecord,
+    updatePunchRecord,
+  } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
     employeeId: "",
@@ -37,10 +45,53 @@ export default function TardinessPage() {
     alert("遲到記錄已新增！");
   };
   
+  type LinkedTardinessRecord = TardinessRecord & { sourcePunchId?: string };
+
+  const linkedTardinessRecords = useMemo<LinkedTardinessRecord[]>(() => {
+    const records: LinkedTardinessRecord[] = tardinessRecords.map((record) => ({
+      ...record,
+      employeeName:
+        record.employeeName ||
+        employees.find((employee) => employee.id === record.employeeId)?.name ||
+        "",
+    }));
+
+    punchRecords
+      .filter((punch) => punch.action === "work_in" && punch.lateMinutes > 0)
+      .forEach((punch) => {
+        const alreadyExists = records.some(
+          (record) =>
+            record.employeeId === punch.employeeId &&
+            record.date === punch.date
+        );
+        if (!alreadyExists) {
+          records.push({
+            id: `punch:${punch.id}`,
+            sourcePunchId: punch.id,
+            employeeId: punch.employeeId,
+            employeeName:
+              punch.employeeName ||
+              employees.find((employee) => employee.id === punch.employeeId)?.name ||
+              "",
+            date: punch.date,
+            minutes: punch.lateMinutes,
+            notes: punch.reason || "由打卡管理自動同步",
+            createdAt: punch.createdAt,
+          });
+        }
+      });
+
+    return records.sort(
+      (a, b) =>
+        new Date(b.date).getTime() - new Date(a.date).getTime() ||
+        b.createdAt.localeCompare(a.createdAt)
+    );
+  }, [employees, punchRecords, tardinessRecords]);
+
   // 計算統計數據
   const getStats = () => {
     const stats: Record<string, { count: number; totalMinutes: number }> = {};
-    tardinessRecords.forEach(r => {
+    linkedTardinessRecords.forEach(r => {
       if (!stats[r.employeeId]) {
         stats[r.employeeId] = { count: 0, totalMinutes: 0 };
       }
@@ -49,8 +100,27 @@ export default function TardinessPage() {
     });
     return stats;
   };
-  
+
   const stats = getStats();
+
+  const handleDeleteRecord = async (record: LinkedTardinessRecord) => {
+    if (!confirm("確定要刪除這筆遲到記錄嗎？")) return;
+
+    try {
+      if (record.sourcePunchId) {
+        await updatePunchRecord(record.sourcePunchId, {
+          lateMinutes: 0,
+          reason: null,
+        });
+      } else {
+        await deleteTardinessRecord(record.id);
+      }
+      alert("紀錄已刪除");
+    } catch (error) {
+      console.error("[tardiness] delete failed", error);
+      alert(error instanceof Error ? error.message : "刪除失敗");
+    }
+  };
   
   return (
     <div className="space-y-6">
@@ -71,19 +141,19 @@ export default function TardinessPage() {
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm border p-4">
           <h3 className="font-medium text-gray-900 mb-2">總遲到次數</h3>
-          <p className="text-2xl font-bold text-blue-600">{tardinessRecords.length}次</p>
+          <p className="text-2xl font-bold text-blue-600">{linkedTardinessRecords.length}次</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-4">
           <h3 className="font-medium text-gray-900 mb-2">總遲到分鐘</h3>
           <p className="text-2xl font-bold text-orange-600">
-            {tardinessRecords.reduce((sum, r) => sum + r.minutes, 0)}分鐘
+            {linkedTardinessRecords.reduce((sum, r) => sum + r.minutes, 0)}分鐘
           </p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-4">
           <h3 className="font-medium text-gray-900 mb-2">平均每次遲到</h3>
           <p className="text-2xl font-bold text-green-600">
-            {tardinessRecords.length > 0 
-              ? Math.round(tardinessRecords.reduce((sum, r) => sum + r.minutes, 0) / tardinessRecords.length) 
+            {linkedTardinessRecords.length > 0 
+              ? Math.round(linkedTardinessRecords.reduce((sum, r) => sum + r.minutes, 0) / linkedTardinessRecords.length) 
               : 0}分鐘
           </p>
         </div>
@@ -212,15 +282,14 @@ export default function TardinessPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {tardinessRecords.length === 0 ? (
+              {linkedTardinessRecords.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
                     沒有遲到記錄
                   </td>
                 </tr>
               ) : (
-                tardinessRecords
-                  .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                linkedTardinessRecords
                   .map(record => (
                     <tr key={record.id} className="hover:bg-gray-50">
                       <td className="px-4 py-3 text-sm font-medium text-gray-900">
@@ -238,12 +307,7 @@ export default function TardinessPage() {
                       <td className="px-4 py-3 text-sm">
                         {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
                           <button
-                            onClick={async () => {
-                              if (confirm("確定要刪除這筆遲到記錄嗎？")) {
-                                await deleteTardinessRecord(record.id);
-                                alert("紀錄已刪除");
-                              }
-                            }}
+                            onClick={() => void handleDeleteRecord(record)}
                             className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
                           >
                             刪除
