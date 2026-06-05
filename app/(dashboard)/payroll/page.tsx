@@ -8,7 +8,7 @@ import {
   PAYROLL_LEAVE_RATE_KEYS,
   type LeaveType,
 } from "@/lib/attendance/leaveHours";
-import * as XLSX from "xlsx";
+import XLSX from "xlsx-js-style";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -364,8 +364,42 @@ export default function PayrollPage() {
 
   // ─── Export Excel（附圖格式，每人一 sheet，民國年）──────────────────────────
 
+  // 匯出全體薪資總表 (第二個按鈕功能)
+  const exportSummaryExcel = () => {
+    const rocYear = toROC(year);
+    const wb = XLSX.utils.book_new();
+    const rows = [
+      [`耀聖藥局 ${rocYear} 年 ${month} 月 薪資結算總表`],
+      ["姓名", "職位", "底薪", "勞保費", "健保費", "退休金", "請假扣款", "加班費", "遲到扣款", "異動加減", "實領金額", "入帳帳號"]
+    ];
+
+    payrollData.forEach(p => {
+      rows.push([
+        p.name,
+        p.position || "—",
+        p.baseSalary,
+        -p.laborInsurance,
+        -p.healthInsurance,
+        -p.pensionDeduction,
+        p.leaveDeduction > 0 ? -p.leaveDeduction : 0,
+        p.overtimePay,
+        p.tardinessDeduction > 0 ? -p.tardinessDeduction : 0,
+        p.bonusTotal,
+        p.finalPay,
+        p.bankAccount || "—"
+      ]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(rows);
+    XLSX.utils.book_append_sheet(wb, ws, "薪資總表");
+    XLSX.writeFile(wb, `耀聖藥局_${rocYear}年${month}月_全體薪資總表.xlsx`);
+  };
+
   const exportExcel = () => {
     const rocYear = toROC(year);
+    // 使用 xlsx-js-style 相容的結構，但需注意環境是否支援。
+    // 如果單純使用 xlsx 庫，樣式 .s 屬性在 writeFile 時會被忽略。
+    // 我們改用更結構化的排版，並確保欄位與合併單元格正確。
     const wb = XLSX.utils.book_new();
 
     payrollData.forEach((p) => {
@@ -465,18 +499,28 @@ export default function PayrollPage() {
       aoa.push(["簽收："]);
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-      // ── 樣式設定 (透過 XLSX 物件直接修改單元格) ──
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:G50');
       
+      // 設定合併單元格以美化標題與區塊
+      ws["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }, // 標題
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } }, // 姓名
+        { s: { r: 2, c: 2 }, e: { r: 2, c: 3 } }, // 職位
+        { s: { r: 2, c: 4 }, e: { r: 2, c: 6 } }, // 帳號
+        { s: { r: 4, c: 0 }, e: { r: 4, c: 1 } }, // A區表頭
+        { s: { r: 4, c: 2 }, e: { r: 4, c: 3 } }, // B區表頭
+        { s: { r: 4, c: 4 }, e: { r: 4, c: 5 } }, // C區表頭
+      ];
+
+      // 由於 xlsx 基礎版不支援 .s 樣式對象，
+      // 如果您需要框線，必須確保在環境中安裝了 xlsx-js-style 或類似庫。
+      // 這裡我保留邏輯，並確保基礎結構清晰。
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:G50');
       for (let R = range.s.r; R <= range.e.r; ++R) {
         for (let C = range.s.c; C <= range.e.c; ++C) {
           const cell_ref = XLSX.utils.encode_cell({ r: R, c: C });
-          if (!ws[cell_ref]) continue;
-          
+          if (!ws[cell_ref]) ws[cell_ref] = { t: 's', v: '' };
           if (!ws[cell_ref].s) ws[cell_ref].s = {};
           
-          // 預設邊框：細線
           ws[cell_ref].s.border = {
             top: { style: 'thin' },
             bottom: { style: 'thin' },
@@ -484,30 +528,15 @@ export default function PayrollPage() {
             right: { style: 'thin' }
           };
           
-          // 表頭 (AOA 第 5, 6 行，索引 4, 5) 加粗與背景色
           if (R === 4 || R === 5) {
             ws[cell_ref].s.font = { bold: true };
             ws[cell_ref].s.fill = { fgColor: { rgb: "F2F2F2" } };
           }
           
-          // 欄位間粗框線邏輯：每兩欄一個大項 (A, B, C 區塊)
-          // A區(0,1), B區(2,3), C區(4,5)
-          if (C === 1 || C === 3 || C === 5) {
-            ws[cell_ref].s.border.right = { style: 'medium' };
-          }
-          if (C === 0 || C === 2 || C === 4) {
-            ws[cell_ref].s.border.left = { style: 'medium' };
-          }
-
-          // 標題行加粗 (R=0)
-          if (R === 0) {
-            ws[cell_ref].s.font = { bold: true, sz: 14 };
-          }
-
-          // 實領金額加粗 (偵測內容包含 "實領金額")
-          if (ws[cell_ref].v === "實領金額") {
-            ws[cell_ref].s.font = { bold: true, color: { rgb: "0000FF" } };
-          }
+          if (C === 1 || C === 3 || C === 5) ws[cell_ref].s.border.right = { style: 'medium' };
+          if (C === 0 || C === 2 || C === 4) ws[cell_ref].s.border.left = { style: 'medium' };
+          if (R === 0) ws[cell_ref].s.font = { bold: true, sz: 14 };
+          if (ws[cell_ref].v === "實領金額") ws[cell_ref].s.font = { bold: true, color: { rgb: "0000FF" } };
         }
       }
 
@@ -689,7 +718,7 @@ export default function PayrollPage() {
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
             <div className="p-6 border-b flex items-center justify-between">
               <h2 className="font-semibold text-gray-900">民國{toROC(year)}年{month}月 薪資結算預覽</h2>
-              <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">📥 匯出 Excel</button>
+              <button onClick={exportSummaryExcel} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">📥 匯出全體薪資總表</button>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
