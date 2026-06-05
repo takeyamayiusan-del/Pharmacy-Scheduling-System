@@ -1,8 +1,13 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useApp } from "@/lib/context/AppContext";
+import { useApp, type LeaveRequest } from "@/lib/context/AppContext";
 import { createClient } from "@/lib/supabase/client";
+import {
+  calculateLeaveWorkHours,
+  PAYROLL_LEAVE_RATE_KEYS,
+  type LeaveType,
+} from "@/lib/attendance/leaveHours";
 import * as XLSX from "xlsx";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -87,8 +92,52 @@ const toROC = (westernYear: number) => westernYear - 1911;
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
+function getMonthBounds(year: number, month: number) {
+  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
+  const lastDay = new Date(year, month, 0).getDate();
+  return {
+    monthStart: `${monthStr}-01`,
+    monthEnd: `${monthStr}-${String(lastDay).padStart(2, "0")}`,
+  };
+}
+
+function getApprovedLeaveHoursInMonth(
+  request: LeaveRequest,
+  year: number,
+  month: number,
+  getShiftForDate: (date: string, employeeId: string) => import("@/lib/context/AppContext").ShiftType,
+  shiftTimeConfig: import("@/lib/context/AppContext").ShiftTimeConfig
+): number {
+  const { monthStart, monthEnd } = getMonthBounds(year, month);
+  if (request.endDate < monthStart || request.startDate > monthEnd) return 0;
+  if (request.startDate >= monthStart && request.endDate <= monthEnd && request.leaveHours > 0) {
+    return request.leaveHours;
+  }
+  const startDate = request.startDate < monthStart ? monthStart : request.startDate;
+  const endDate = request.endDate > monthEnd ? monthEnd : request.endDate;
+  return calculateLeaveWorkHours({
+    startDate,
+    endDate,
+    startTime: request.startTime,
+    endTime: request.endTime,
+    period: request.period,
+    shiftMode: request.shiftMode,
+    employeeId: request.employeeId,
+    getShiftForDate,
+    shiftTimeConfig,
+  });
+}
+
 export default function PayrollPage() {
-  const { currentUser, employees, leaveRequests, overtimeRequests, tardinessRecords } = useApp();
+  const {
+    currentUser,
+    employees,
+    leaveRequests,
+    overtimeRequests,
+    tardinessRecords,
+    getShiftForDate,
+    shiftTimeConfig,
+  } = useApp();
   const supabase = createClient();
 
   const today = new Date();
@@ -164,24 +213,49 @@ export default function PayrollPage() {
 
   const computePayroll = useCallback((): EmployeePayroll[] => {
     const monthStr = `${year}-${String(month).padStart(2, "0")}`;
-    const leaveRate = rateConfigs.find((r) => r.itemKey === "leave_hourly")?.amount ?? 0;
     const overtimeRate = rateConfigs.find((r) => r.itemKey === "overtime_hourly")?.amount ?? 0;
     const tardinessRate = rateConfigs.find((r) => r.itemKey === "tardiness_per_min")?.amount ?? 0;
+
+    const leaveRateByType = (type: LeaveType) => {
+      if (type === "補休假") return 0;
+      const key = PAYROLL_LEAVE_RATE_KEYS[type as Exclude<LeaveType, "補休假">];
+      return rateConfigs.find((r) => r.itemKey === key)?.amount ?? 0;
+    };
 
     return displayEmployees.map((emp) => {
       const cfg = salaryConfigs[emp.id] ?? { ...emptySalaryForm, userId: emp.id };
 
       const empLeaves = leaveRequests.filter(
-        (r) => r.employeeId === emp.id && r.status === "approved" && r.startDate.startsWith(monthStr)
+        (r) =>
+          r.employeeId === emp.id &&
+          r.status === "approved" &&
+          r.type !== "補休假" &&
+          r.endDate >= `${monthStr}-01` &&
+          r.startDate <= `${monthStr}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
       );
-      const leaveHours = empLeaves.reduce((acc, r) => {
-        const s = r.startTime.split(":").map(Number);
-        const e = r.endTime.split(":").map(Number);
-        return acc + (e[0] * 60 + e[1] - (s[0] * 60 + s[1])) / 60;
-      }, 0);
+
+      let leaveHours = 0;
+      let leaveDeduction = 0;
+      for (const r of empLeaves) {
+        const hours = getApprovedLeaveHoursInMonth(
+          r,
+          year,
+          month,
+          getShiftForDate,
+          shiftTimeConfig
+        );
+        leaveHours += hours;
+        leaveDeduction += hours * leaveRateByType(r.type);
+      }
+      leaveHours = Math.round(leaveHours * 100) / 100;
+      leaveDeduction = Math.round(leaveDeduction * 100) / 100;
 
       const empOvertimes = overtimeRequests.filter(
-        (r) => r.employeeId === emp.id && r.status === "approved" && r.date.startsWith(monthStr)
+        (r) =>
+          r.employeeId === emp.id &&
+          r.status === "approved" &&
+          r.compensationType === "pay" &&
+          r.date.startsWith(monthStr)
       );
       const overtimeHours = empOvertimes.reduce((acc, r) => {
         const s = r.startTime.split(":").map(Number);
@@ -196,7 +270,6 @@ export default function PayrollPage() {
       const empAdj = adjustments.filter((a) => a.userId === emp.id);
       const bonusTotal = empAdj.reduce((acc, a) => acc + (a.isDeduction ? -a.amount : a.amount), 0);
 
-      const leaveDeduction = Math.round(leaveHours * leaveRate * 100) / 100;
       const overtimePay = Math.round(overtimeHours * overtimeRate * 100) / 100;
       const tardinessDeduction = Math.round(tardinessMinutes * tardinessRate * 100) / 100;
 
@@ -236,7 +309,7 @@ export default function PayrollPage() {
         finalPay: Math.round(finalPay * 100) / 100,
       };
     });
-  }, [displayEmployees, salaryConfigs, rateConfigs, adjustments, leaveRequests, overtimeRequests, tardinessRecords, year, month]);
+  }, [displayEmployees, salaryConfigs, rateConfigs, adjustments, leaveRequests, overtimeRequests, tardinessRecords, year, month, getShiftForDate, shiftTimeConfig]);
 
   const payrollData = computePayroll();
 
@@ -270,18 +343,6 @@ export default function PayrollPage() {
       .update({ amount: rateForm.amount, updated_by: currentUser?.id }).eq("id", id);
     setRateConfigs((prev) => prev.map((r) => (r.id === id ? { ...r, amount: rateForm.amount } : r)));
     setEditingRate(null);
-  };
-
-  const addCustomRate = async () => {
-    if (!rateForm.label) return;
-    const { data } = await supabase.from("payroll_rate_config").insert({
-      item_key: `custom_${Date.now()}`,
-      label: rateForm.label, amount: rateForm.amount, unit: rateForm.unit,
-      is_deduction: rateForm.isDeduction, sort_order: rateConfigs.length + 1,
-      updated_by: currentUser?.id,
-    }).select().single();
-    if (data) setRateConfigs((prev) => [...prev, { id: data.id, itemKey: data.item_key, label: data.label, amount: Number(data.amount), unit: data.unit, isDeduction: data.is_deduction, sortOrder: data.sort_order }]);
-    setRateForm({ label: "", amount: 0, unit: "元/小時", isDeduction: true });
   };
 
   // ─── Adjustments ───────────────────────────────────────────────────────────
@@ -454,8 +515,14 @@ export default function PayrollPage() {
           {/* ── 費率設定 ── */}
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <h2 className="font-semibold text-gray-900 mb-4">計算費率設定</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              請假依假別分項計算扣薪；補休假不計費率（由補休時數帳本抵扣）。加班費僅計「選擇加班費」且已核准的申請。
+            </p>
             <div className="space-y-3">
-              {rateConfigs.map((rate) => (
+              {rateConfigs
+                .filter((rate) => rate.itemKey !== "leave_hourly")
+                .sort((a, b) => a.sortOrder - b.sortOrder)
+                .map((rate) => (
                 <div key={rate.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
                   <span className="flex-1 text-sm font-medium text-gray-700">{rate.label}</span>
                   {editingRate === rate.id ? (
@@ -474,19 +541,6 @@ export default function PayrollPage() {
                   )}
                 </div>
               ))}
-            </div>
-            <div className="mt-4 pt-4 border-t">
-              <p className="text-sm font-medium text-gray-700 mb-2">新增自訂費率項目</p>
-              <div className="flex flex-wrap gap-2">
-                <input type="text" placeholder="項目名稱" value={rateForm.label} onChange={(e) => setRateForm({ ...rateForm, label: e.target.value })} className="border rounded px-3 py-1.5 text-sm w-36" />
-                <input type="number" placeholder="金額" value={rateForm.amount} onChange={(e) => setRateForm({ ...rateForm, amount: Number(e.target.value) })} className="border rounded px-3 py-1.5 text-sm w-24" />
-                <input type="text" placeholder="單位" value={rateForm.unit} onChange={(e) => setRateForm({ ...rateForm, unit: e.target.value })} className="border rounded px-3 py-1.5 text-sm w-28" />
-                <select value={rateForm.isDeduction ? "true" : "false"} onChange={(e) => setRateForm({ ...rateForm, isDeduction: e.target.value === "true" })} className="border rounded px-3 py-1.5 text-sm">
-                  <option value="true">扣款</option>
-                  <option value="false">加項</option>
-                </select>
-                <button onClick={addCustomRate} className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded">新增</button>
-              </div>
             </div>
           </div>
 

@@ -66,21 +66,13 @@ export default function AttendancePage() {
           const [sh, sm] = item.startTime.split(':').map(Number);
           const [eh, em] = item.endTime.split(':').map(Number);
           return sum + ((eh * 60 + em) - (sh * 60 + sm)) / 60;
-        }, 0) + holidayOvertimeHours;
+        }, 0);
 
       const leaveHours = leaveRequests
         .filter((item) => item.employeeId === emp.id && item.status === 'approved')
-        .filter(
-          (item) => item.endDate >= startDate && item.startDate <= endDate
-        )
-        .reduce((sum, item) => {
-          const [sh, sm] = item.startTime.split(':').map(Number);
-          const [eh, em] = item.endTime.split(':').map(Number);
-          const start = new Date(`${item.startDate}T${String(sh).padStart(2, '0')}:${String(sm).padStart(2, '0')}`);
-          const end = new Date(`${item.endDate}T${String(eh).padStart(2, '0')}:${String(em).padStart(2, '0')}`);
-          const hours = (end.getTime() - start.getTime()) / (1000 * 60 * 60);
-          return sum + (hours > 0 ? hours : 0);
-        }, 0);
+        .filter((item) => item.type !== '補休假')
+        .filter((item) => item.endDate >= startDate && item.startDate <= endDate)
+        .reduce((sum, item) => sum + (item.leaveHours > 0 ? item.leaveHours : 0), 0);
 
       const tardy = tardinessRecords
         .filter((item) => item.employeeId === emp.id)

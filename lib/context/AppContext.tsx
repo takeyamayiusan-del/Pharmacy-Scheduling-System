@@ -35,6 +35,16 @@ export type WednesdayNightShift = {
   employeeId: string;
 };
 
+export type LeaveType =
+  | "事假"
+  | "病假"
+  | "特休"
+  | "喪假"
+  | "補休假"
+  | "其他";
+
+export type LeavePeriodMode = "full_day" | "morning" | "afternoon" | "custom";
+
 export type LeaveRequest = {
   id: string;
   employeeId: string;
@@ -43,9 +53,23 @@ export type LeaveRequest = {
   endDate: string;
   startTime: string;
   endTime: string;
-  type: "事假" | "病假" | "特休" | "其他";
+  period: LeavePeriodMode;
+  shiftMode: "schedule" | ShiftType;
+  leaveHours: number;
+  type: LeaveType;
   reason: string;
   status: "pending" | "approved" | "rejected";
+  createdAt: string;
+};
+
+export type CompLeaveLedgerEntry = {
+  id: string;
+  employeeId: string;
+  hours: number;
+  sourceType: string;
+  sourceId?: string;
+  expiresAt?: string;
+  note?: string;
   createdAt: string;
 };
 
@@ -235,8 +259,15 @@ interface AppContextType {
   leaveMonthLocks: LeaveMonthLock[];
   leaveRequests: LeaveRequest[];
   addLeaveRequest: (request: Omit<LeaveRequest, "id" | "createdAt">) => Promise<void>;
-  updateLeaveRequestStatus: (id: string, status: "approved" | "rejected", rejectReason?: string) => Promise<void>;
+  updateLeaveRequestStatus: (
+    id: string,
+    status: "approved" | "rejected" | "pending",
+    rejectReason?: string
+  ) => Promise<void>;
   deleteLeaveRequest: (id: string) => Promise<void>;
+  compLeaveLedger: CompLeaveLedgerEntry[];
+  getCompLeaveBalance: (employeeId: string) => number;
+  loadCompLeaveLedger: () => Promise<void>;
   swapRequests: SwapRequest[];
   addSwapRequest: (request: Omit<SwapRequest, "id" | "createdAt">) => Promise<void>;
   updateSwapRequestStatus: (id: string, status: "pending_confirmation" | "pending_approval" | "approved" | "rejected", rejectReason?: string) => Promise<void>;
@@ -286,6 +317,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>({});
   const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({});
   const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>([]);
+  const [compLeaveLedger, setCompLeaveLedger] = useState<CompLeaveLedgerEntry[]>([]);
 
   // Supabase-backed state (previously in localStorage)
   const [schedule, setSchedule] = useState<ScheduleData>({});
@@ -398,6 +430,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase]);
 
+  const formatDbTime = (value: string | null | undefined, fallback: string) => {
+    if (!value) return fallback;
+    return value.length >= 5 ? value.slice(0, 5) : fallback;
+  };
+
+  const loadCompLeaveLedger = useCallback(async () => {
+    const { data } = await supabase
+      .from("comp_leave_ledger")
+      .select("*")
+      .order("created_at", { ascending: false });
+    if (data) {
+      setCompLeaveLedger(
+        data.map((r) => ({
+          id: r.id,
+          employeeId: r.user_id,
+          hours: Number(r.hours),
+          sourceType: r.source_type,
+          sourceId: r.source_id ?? undefined,
+          expiresAt: r.expires_at ?? undefined,
+          note: r.note ?? undefined,
+          createdAt: r.created_at,
+        }))
+      );
+    }
+  }, [supabase]);
+
+  const getCompLeaveBalance = useCallback(
+    (employeeId: string) => {
+      const now = Date.now();
+      return compLeaveLedger
+        .filter((entry) => entry.employeeId === employeeId)
+        .reduce((sum, entry) => {
+          if (entry.hours > 0 && entry.expiresAt && new Date(entry.expiresAt).getTime() < now) {
+            return sum;
+          }
+          return sum + entry.hours;
+        }, 0);
+    },
+    [compLeaveLedger]
+  );
+
   const loadLeaveRequests = useCallback(async () => {
     const { data } = await supabase
       .from("leave_applications")
@@ -405,19 +478,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .order("created_at", { ascending: false });
     if (data) {
       setLeaveRequests(
-        data.map((r) => ({
-          id: r.id,
-          employeeId: r.user_id,
-          employeeName: (r.users as { name?: string } | null)?.name ?? "",
-          startDate: r.leave_date,
-          endDate: r.leave_date,
-          startTime: r.period === "morning" ? "08:30" : "13:30",
-          endTime: r.period === "full_day" ? "21:00" : r.period === "morning" ? "12:00" : "18:00",
-          type: r.leave_type as LeaveRequest["type"],
-          reason: r.reason,
-          status: r.status as LeaveRequest["status"],
-          createdAt: r.created_at,
-        }))
+        data.map((r) => {
+          const startTime = formatDbTime(
+            r.start_time,
+            r.period === "morning" ? "08:30" : r.period === "afternoon" ? "13:30" : "08:30"
+          );
+          const endTime = formatDbTime(
+            r.end_time,
+            r.period === "full_day" ? "18:00" : r.period === "morning" ? "12:00" : "18:00"
+          );
+          let period: LeavePeriodMode = "full_day";
+          if (r.period === "morning") period = "morning";
+          else if (r.period === "afternoon") period = "afternoon";
+          else if (startTime && endTime) {
+            if (startTime === "08:30" && endTime === "12:00") period = "morning";
+            else if (startTime === "13:30" && endTime === "18:00") period = "afternoon";
+            else if (startTime === "08:30" && (endTime === "18:00" || endTime === "21:00")) period = "full_day";
+            else period = "custom";
+          }
+          const shiftRaw = r.shift_mode as string | null;
+          const shiftMode: LeaveRequest["shiftMode"] =
+            shiftRaw && shiftRaw !== "schedule" ? (shiftRaw as ShiftType) : "schedule";
+
+          return {
+            id: r.id,
+            employeeId: r.user_id,
+            employeeName: (r.users as { name?: string } | null)?.name ?? "",
+            startDate: r.leave_date,
+            endDate: r.end_date ?? r.leave_date,
+            startTime,
+            endTime,
+            period,
+            shiftMode,
+            leaveHours: Number(r.leave_hours ?? 0),
+            type: r.leave_type as LeaveType,
+            reason: r.reason,
+            status: r.status as LeaveRequest["status"],
+            createdAt: r.created_at,
+          };
+        })
       );
     }
   }, [supabase]);
@@ -563,6 +662,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             Promise.allSettled([
               loadEmployees(),
               loadLeaveRequests(),
+              loadCompLeaveLedger(),
               loadSwapRequests(),
               loadOvertimeRequests(),
               loadTardinessRecords(),
@@ -615,6 +715,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               Promise.allSettled([
                 loadEmployees(),
                 loadLeaveRequests(),
+              loadCompLeaveLedger(),
                 loadSwapRequests(),
                 loadOvertimeRequests(),
                 loadTardinessRecords(),
@@ -641,7 +742,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [supabase, loadEmployees, loadLeaveRequests, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks]);
+  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks]);
 
   // ─── Auth functions ──────────────────────────────────────────────────────────
 
@@ -1022,11 +1123,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Leave requests (Supabase) ───────────────────────────────────────────────
 
+  const overtimeHoursBetween = (startTime: string, endTime: string) => {
+    const [sh, sm] = startTime.split(":").map(Number);
+    const [eh, em] = endTime.split(":").map(Number);
+    return Math.round((((eh * 60 + em) - (sh * 60 + sm)) / 60) * 100) / 100;
+  };
+
   const addLeaveRequest = async (request: Omit<LeaveRequest, "id" | "createdAt">) => {
+    const dbPeriod =
+      request.period === "morning"
+        ? "morning"
+        : request.period === "afternoon"
+          ? "afternoon"
+          : "full_day";
+
     await supabase.from("leave_applications").insert({
       user_id: request.employeeId,
       leave_date: request.startDate,
-      period: "full_day",
+      end_date: request.endDate,
+      start_time: request.startTime,
+      end_time: request.endTime,
+      leave_hours: request.leaveHours,
+      shift_mode: request.shiftMode,
+      period: dbPeriod,
       leave_type: request.type,
       reason: request.reason,
       status: "pending",
@@ -1034,7 +1153,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadLeaveRequests();
   };
 
-  const updateLeaveRequestStatus = async (id: string, status: "approved" | "rejected", rejectReason?: string) => {
+  const updateLeaveRequestStatus = async (
+    id: string,
+    status: "approved" | "rejected" | "pending",
+    rejectReason?: string
+  ) => {
+    const request = leaveRequests.find((item) => item.id === id);
+    const prevStatus = request?.status;
+
+    if (status === "approved" && request?.type === "補休假") {
+      const balance = getCompLeaveBalance(request.employeeId);
+      if (balance < request.leaveHours) {
+        throw new Error(`補休餘額不足（可用 ${balance} 小時，需要 ${request.leaveHours} 小時）`);
+      }
+    }
+
     await supabase
       .from("leave_applications")
       .update({
@@ -1044,7 +1177,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(rejectReason ? { reject_reason: rejectReason } : {}),
       })
       .eq("id", id);
+
+    if (request) {
+      if (status === "approved" && prevStatus !== "approved" && request.type === "補休假") {
+        await supabase.from("comp_leave_ledger").insert({
+          user_id: request.employeeId,
+          hours: -request.leaveHours,
+          source_type: "leave_debit",
+          source_id: id,
+          note: `請假使用補休 ${request.startDate}～${request.endDate}`,
+        });
+      }
+      if (
+        prevStatus === "approved" &&
+        status !== "approved" &&
+        request.type === "補休假"
+      ) {
+        await supabase.from("comp_leave_ledger").insert({
+          user_id: request.employeeId,
+          hours: request.leaveHours,
+          source_type: "reversal",
+          source_id: id,
+          note: "請假審核取消，補休時數退回",
+        });
+      }
+    }
+
     await loadLeaveRequests();
+    await loadCompLeaveLedger();
   };
 
   const deleteLeaveRequest = async (id: string) => {
@@ -1099,12 +1259,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       start_time: request.startTime,
       end_time: request.endTime,
       reason: request.reason,
+      compensation: request.compensationType === "time_off" ? "comp_leave" : "pay",
       status: "pending",
     });
     await loadOvertimeRequests();
   };
 
   const updateOvertimeRequestStatus = async (id: string, status: "approved" | "rejected", rejectReason?: string) => {
+    const request = overtimeRequests.find((item) => item.id === id);
+    const prevStatus = request?.status;
+
     await supabase
       .from("overtime_applications")
       .update({
@@ -1114,7 +1278,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(rejectReason ? { reject_reason: rejectReason } : {}),
       })
       .eq("id", id);
+
+    if (request) {
+      const hours = overtimeHoursBetween(request.startTime, request.endTime);
+      if (status === "approved" && prevStatus !== "approved" && request.compensationType === "time_off") {
+        const expiresAt = new Date();
+        expiresAt.setMonth(expiresAt.getMonth() + 6);
+        await supabase.from("comp_leave_ledger").insert({
+          user_id: request.employeeId,
+          hours,
+          source_type: "overtime_credit",
+          source_id: id,
+          expires_at: expiresAt.toISOString(),
+          note: `加班轉補休 ${request.date}`,
+        });
+      }
+      if (prevStatus === "approved" && status !== "approved" && request.compensationType === "time_off") {
+        await supabase.from("comp_leave_ledger").insert({
+          user_id: request.employeeId,
+          hours: -hours,
+          source_type: "reversal",
+          source_id: id,
+          note: "加班補休核准取消，扣回時數",
+        });
+      }
+    }
+
     await loadOvertimeRequests();
+    await loadCompLeaveLedger();
   };
 
   const deleteOvertimeRequest = async (id: string) => {
@@ -1229,6 +1420,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         addLeaveRequest,
         updateLeaveRequestStatus,
         deleteLeaveRequest,
+        compLeaveLedger,
+        getCompLeaveBalance,
+        loadCompLeaveLedger,
         swapRequests,
         addSwapRequest,
         updateSwapRequestStatus,
