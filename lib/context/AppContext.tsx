@@ -1884,7 +1884,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
 
   // ─── Notifications ────────────────────────────────────────────────────────────
 
-  const loadBulletinItems = useCallback(async () => {
+  const loadBulletinItems = useCallback(async (): Promise<void> => {
     const { data } = await supabase
       .from("bulletin_board")
       .select("*, users!bulletin_board_author_id_fkey(name)")
@@ -1907,7 +1907,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     }
   }, [supabase]);
 
-  const addBulletinItem = async (item: Omit<BulletinItem, "id" | "authorName" | "createdAt">) => {
+  const addBulletinItem = async (item: Omit<BulletinItem, "id" | "authorName" | "createdAt">): Promise<void> => {
     await supabase.from("bulletin_board").insert({
       author_id: item.authorId,
       title: item.title,
@@ -1920,7 +1920,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     await loadBulletinItems();
   };
 
-  const updateBulletinItem = async (id: string, updates: Partial<BulletinItem>) => {
+  const updateBulletinItem = async (id: string, updates: Partial<BulletinItem>): Promise<void> => {
     const dbUpdates: Record<string, unknown> = {};
     if (updates.title !== undefined) dbUpdates.title = updates.title;
     if (updates.content !== undefined) dbUpdates.content = updates.content;
@@ -1930,12 +1930,12 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     await loadBulletinItems();
   };
 
-  const deleteBulletinItem = async (id: string) => {
+  const deleteBulletinItem = async (id: string): Promise<void> => {
     await supabase.from("bulletin_board").delete().eq("id", id);
     await loadBulletinItems();
   };
 
-  const loadPayrollRecords = useCallback(async (year: number, month: number) => {
+  const loadPayrollRecords = useCallback(async (year: number, month: number): Promise<void> => {
     const { data } = await supabase
       .from("payroll_records")
       .select("*")
@@ -1966,7 +1966,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     }
   }, [supabase]);
 
-  const publishPayrollRecord = async (id: string) => {
+  const publishPayrollRecord = async (id: string): Promise<void> => {
     const now = new Date().toISOString();
     await supabase.from("payroll_records").update({
       is_published: true,

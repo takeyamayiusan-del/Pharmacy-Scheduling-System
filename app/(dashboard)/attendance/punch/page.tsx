@@ -21,6 +21,7 @@ import {
   type PunchSlot,
 } from "@/lib/attendance/punchSchedule";
 import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X } from "lucide-react";
+import { type BulletinItem } from "@/lib/context/AppContext";
 
 type GpsState = "loading" | "denied" | "outside" | "inside";
 
@@ -41,12 +42,12 @@ export default function PunchPage() {
   } = useApp();
 
   const [announcementModal, setAnnouncementModal] = useState<boolean>(false);
-  const [latestAnnouncement, setLatestAnnouncement] = useState<any>(null);
+  const [latestAnnouncement, setLatestAnnouncement] = useState<BulletinItem | null>(null);
 
   // 檢測是否有未讀的重要公告
   useEffect(() => {
     if (bulletinItems.length > 0) {
-      const important = bulletinItems.find(item => item.isUrgent && item.status === "active");
+      const important = bulletinItems.find((item: BulletinItem) => item.isUrgent && item.status === "active");
       const latest = bulletinItems[0];
       const target = important || latest;
       
@@ -60,7 +61,7 @@ export default function PunchPage() {
     }
   }, [bulletinItems]);
 
-  const handleCloseAnnouncement = (shouldRedirect: boolean) => {
+  const handleCloseAnnouncement = (shouldRedirect: boolean): void => {
     if (latestAnnouncement) {
       localStorage.setItem("last_seen_announcement", latestAnnouncement.id);
     }
@@ -339,8 +340,8 @@ export default function PunchPage() {
               <X className="h-5 w-5" />
             </button>
             <div className="flex flex-col items-center text-center">
-              <div className={`p-3 rounded-full mb-4 ${latestAnnouncement.isUrgent ? 'bg-amber-100' : 'bg-blue-100'}`}>
-                <Megaphone className={`h-8 w-8 ${latestAnnouncement.isUrgent ? 'text-amber-600' : 'text-blue-600'}`} />
+              <div className={`p-3 rounded-full mb-4 ${latestAnnouncement?.isUrgent ? 'bg-amber-100' : 'bg-blue-100'}`}>
+                <Megaphone className={`h-8 w-8 ${latestAnnouncement?.isUrgent ? 'text-amber-600' : 'text-blue-600'}`} />
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-2">最新公告消息</h3>
               <p className="text-sm text-gray-500 mb-4">店鋪有新的重要公告或需求，請前往班表頁面查看詳細內容。</p>

@@ -7,10 +7,15 @@ import { Megaphone, MessageSquare, AlertTriangle, Trash2, CheckCircle, Clock } f
 export default function BulletinBoard() {
   const { currentUser, bulletinItems, addBulletinItem, updateBulletinItem, deleteBulletinItem } = useApp();
   const [showAddForm, setShowAddForm] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    title: string;
+    content: string;
+    type: BulletinItem["type"];
+    isUrgent: boolean;
+  }>({
     title: "",
     content: "",
-    type: "announcement" as BulletinItem["type"],
+    type: "announcement",
     isUrgent: false,
   });
 
@@ -95,7 +100,7 @@ export default function BulletinBoard() {
             <div className="flex items-center gap-2">
               <select
                 value={formData.type}
-                onChange={(e) => setFormData({ ...formData, type: e.target.value as any })}
+                onChange={(e) => setFormData({ ...formData, type: e.target.value as BulletinItem["type"] })}
                 className="text-sm border rounded px-2 py-1 outline-none"
               >
                 <option value="announcement">一般公告</option>
@@ -118,7 +123,7 @@ export default function BulletinBoard() {
             目前沒有新公告
           </div>
         ) : (
-          activeItems.map((item) => (
+          activeItems.map((item: BulletinItem) => (
             <div
               key={item.id}
               className={`app-card p-4 relative group ${
@@ -173,7 +178,7 @@ export default function BulletinBoard() {
               
               {item.type === "shift_swap_request" && currentUser?.id !== item.authorId && (
                 <button
-                  onClick={() => alert("功能開發中：將為您開啟與 " + item.authorName + " 的換班申請單")}
+                  onClick={(): void => alert("功能開發中：將為您開啟與 " + item.authorName + " 的換班申請單")}
                   className="mt-3 w-full py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors"
                 >
                   我可以代班 / 洽詢換班

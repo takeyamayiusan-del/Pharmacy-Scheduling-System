@@ -1,7 +1,7 @@
 "use client";
 
 import { useApp } from "@/lib/context/AppContext";
-import { CreditCard, Download, Eye, FileText } from "lucide-react";
+import { CreditCard, Download, FileText } from "lucide-react";
 import { exportPayslipPdf } from "@/lib/payroll/exportPayslipPdf";
 
 export default function PersonalPayslip() {
@@ -19,7 +19,7 @@ export default function PersonalPayslip() {
 
   if (!latestPublished) return null;
 
-  const handleDownload = () => {
+  const handleDownload = (): void => {
     exportPayslipPdf(latestPublished, currentUser.name);
   };
 
