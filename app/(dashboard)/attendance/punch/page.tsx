@@ -58,6 +58,11 @@ export default function PunchPage() {
     askOvertime: boolean;
   } | null>(null);
 
+  // 無班表打卡的加班詢問 Modal
+  const [noShiftOvertimeModal, setNoShiftOvertimeModal] = useState<{
+    action: "work_in" | "work_out";
+  } | null>(null);
+
   // 提早下班兩層 modal
   const [earlyLeaveModal, setEarlyLeaveModal] = useState<{
     slot: PunchSlot;
@@ -167,6 +172,46 @@ export default function PunchPage() {
     },
     [addPunchRecord, addTardinessRecord, coords, currentUser, shift, today]
   );
+
+  // 處理無班表打卡
+  const handleNoShiftPunch = (action: "work_in" | "work_out") => {
+    if (!currentUser || !coords) return;
+    if (gpsState !== "inside") {
+      alert("請在耀聖藥局 150 公尺範圍內才能打卡");
+      return;
+    }
+    setNoShiftOvertimeModal({ action });
+  };
+
+  // 確認無班表打卡為加班
+  const confirmNoShiftOvertime = () => {
+    if (!noShiftOvertimeModal || !currentUser || !coords) return;
+
+    const now = formatNowTime();
+    const action = noShiftOvertimeModal.action;
+
+    // 先打卡
+    addPunchRecord({
+      employeeId: currentUser.id,
+      employeeName: currentUser.name,
+      date: today,
+      action,
+      segmentIndex: 0,
+      time: now,
+      shift: "X",
+      lateMinutes: 0,
+      reason: "無班表打卡",
+      latitude: coords.lat,
+      longitude: coords.lng,
+    });
+
+    setNoShiftOvertimeModal(null);
+    setSuccessModal({
+      message: `${action === "work_in" ? "上班" : "下班"}打卡成功！今日無排班，建議申請加班。`,
+      askLeave: false,
+      askOvertime: true,
+    });
+  };
 
   const validateAndPunch = (slot: PunchSlot) => {
     if (!currentUser || !coords) return;
@@ -319,7 +364,30 @@ export default function PunchPage() {
       </div>
 
       {shift === "X" ? (
-        <div className="app-card p-6 text-center text-gray-600">今日為休假，無需打卡</div>
+        <div className="space-y-4">
+          <div className="app-card p-6 text-center text-gray-600">今日為休假，無需打卡</div>
+          <div className="app-card p-4">
+            <p className="text-sm text-gray-600 mb-3">如需上班打卡（加班），請使用下方按鈕：</p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => handleNoShiftPunch("work_in")}
+                disabled={gpsState !== "inside"}
+                className="flex-1 py-3 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                上班打卡（加班）
+              </button>
+              <button
+                type="button"
+                onClick={() => handleNoShiftPunch("work_out")}
+                disabled={gpsState !== "inside"}
+                className="flex-1 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                下班打卡（加班）
+              </button>
+            </div>
+          </div>
+        </div>
       ) : (
         <>
           {/* 打卡按鈕 + 今日進度：左右並排 */}
@@ -479,8 +547,11 @@ export default function PunchPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    const params = new URLSearchParams();
+                    params.set("date", today);
+                    params.set("reason", "加班打卡");
                     setSuccessModal(null);
-                    router.push("/applications/overtime");
+                    router.push(`/applications/overtime?${params.toString()}`);
                   }}
                   className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                 >
@@ -523,6 +594,39 @@ export default function PunchPage() {
                 className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
               >
                 是，申請早退
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 無班表打卡的加班詢問 Modal */}
+      {noShiftOvertimeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+            <div className="flex items-start gap-2 text-blue-800 mb-4">
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">确認加班</p>
+                <p className="text-sm mt-1">
+                  今日無排班但你要{noShiftOvertimeModal.action === "work_in" ? "上" : "下"}班，是否確認為加班？
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setNoShiftOvertimeModal(null)}
+                className="flex-1 py-2 border rounded-lg text-gray-700"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmNoShiftOvertime}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+              >
+                是，確認加班
               </button>
             </div>
           </div>

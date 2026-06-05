@@ -45,6 +45,8 @@ export default function SchedulePage() {
     isLeaveMonthLocked,
     lockLeaveMonth,
     unlockLeaveMonth,
+    leaveRequests,
+    overtimeRequests,
   } = useApp();
   
   const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
@@ -191,6 +193,23 @@ export default function SchedulePage() {
     const dayOfWeek = new Date(date).getDay();
     const hasFixedShift = fixedShifts.some(f => f.employeeId === employeeId && f.dayOfWeek === dayOfWeek);
 
+    // 檢查是否有核准的請假申請
+    const approvedLeaveRequest = leaveRequests.find(
+      (req) =>
+        req.employeeId === employeeId &&
+        req.startDate <= date &&
+        req.endDate >= date &&
+        req.status === "approved"
+    );
+
+    // 檢查是否有核准的加班申請
+    const approvedOvertimeRequest = overtimeRequests.find(
+      (req) =>
+        req.employeeId === employeeId &&
+        req.date === date &&
+        req.status === "approved"
+    );
+
     if (isEditing) {
       return (
         <div className="p-1">
@@ -219,9 +238,9 @@ export default function SchedulePage() {
       <div className="p-1 relative">
         <div
           onClick={() => editable && startEditing(date, employeeId)}
-          className={`h-10 flex items-center justify-center rounded font-medium border-2 ${colors.bg} ${colors.text} ${colors.border} ${editable ? 'cursor-pointer hover:opacity-80' : ''} ${isSun ? 'bg-red-50' : ''} ${hasFixedShift ? 'ring-2 ring-orange-400' : ''}`}
+          className={`h-10 flex items-center justify-center rounded font-medium border-2 ${approvedLeaveRequest ? 'bg-purple-200 text-purple-900 border-purple-400' : approvedOvertimeRequest ? 'bg-orange-200 text-orange-900 border-orange-400' : colors.bg + ' ' + colors.text + ' ' + colors.border} ${editable ? 'cursor-pointer hover:opacity-80' : ''} ${isSun ? 'bg-red-50' : ''} ${hasFixedShift ? 'ring-2 ring-orange-400' : ''}`}
         >
-          {shift}
+          {approvedLeaveRequest ? "請假" : approvedOvertimeRequest ? "加班" : shift}
           {editable && <span className="ml-1 text-[10px]">✏️</span>}
         </div>
         

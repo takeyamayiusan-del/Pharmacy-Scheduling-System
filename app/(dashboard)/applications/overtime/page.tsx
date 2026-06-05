@@ -1,12 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 
 export default function OvertimePage() {
   const { currentUser, employees, overtimeRequests, addOvertimeRequest, updateOvertimeRequestStatus, deleteOvertimeRequest } = useApp();
+  const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" as "pay" | "time_off" });
+
+  useEffect(() => {
+    const date = searchParams.get("date");
+    const reason = searchParams.get("reason");
+    if (date || reason) {
+      setFormData(prev => ({
+        ...prev,
+        date: date || prev.date,
+        reason: reason || prev.reason
+      }));
+      setShowForm(true);
+    }
+  }, [searchParams]);
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
