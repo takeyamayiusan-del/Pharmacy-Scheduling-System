@@ -93,9 +93,22 @@ function drawScheduleSegment(
     ctx.fillStyle = "#64748b";
     ctx.fillText(dayLabels[dayOfWeek], x + 19, tableY + 30);
     if (holidayInfo.isHoliday && dayOfWeek !== 0) {
-      ctx.font = "bold 12px 'Microsoft JhengHei', sans-serif";
-      ctx.fillStyle = "#a16207";
-      ctx.fillText("國", x + 18, tableY + 40);
+      // 繪記國定假日標記的圓形背景
+      ctx.fillStyle = "#fbbf24";
+      ctx.beginPath();
+      ctx.arc(x + 37, tableY + 8, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#d97706";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      // 繪記國字
+      ctx.font = "bold 9px 'Microsoft JhengHei', sans-serif";
+      ctx.fillStyle = "#92400e";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("國", x + 37, tableY + 8);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
     }
   }
 
@@ -145,7 +158,12 @@ function drawScheduleSegment(
       ctx.fillStyle = palette.text;
       ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
       const displayText = hasApprovedLeave ? "假" : hasApprovedOvertime ? "加" : shift;
-      ctx.fillText(displayText, x + 20, rowY + 26);
+      // 設定文字對齊方式，確保水平與垢直居中
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(displayText, x + dayColWidth / 2, rowY + rowHeight / 2);
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
     }
   });
 

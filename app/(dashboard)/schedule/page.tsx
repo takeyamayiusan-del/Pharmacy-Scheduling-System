@@ -253,7 +253,7 @@ export default function SchedulePage() {
           </div>
         )}
         {!isSun && holidayInfo.isHoliday && (
-          <div className="absolute -top-3 -left-3 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-md border-2 border-yellow-600 z-10">
+          <div className="absolute -top-2 -right-2 bg-amber-300 text-amber-900 text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow border border-amber-500 z-10">
             國
           </div>
         )}
