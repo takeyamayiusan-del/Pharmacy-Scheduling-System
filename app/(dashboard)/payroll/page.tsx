@@ -368,7 +368,7 @@ export default function PayrollPage() {
   const exportSummaryExcel = () => {
     const rocYear = toROC(year);
     const wb = XLSX.utils.book_new();
-    const rows = [
+    const rows: (string | number)[][] = [
       [`耀聖藥局 ${rocYear} 年 ${month} 月 薪資結算總表`],
       ["姓名", "職位", "底薪", "勞保費", "健保費", "退休金", "請假扣款", "加班費", "遲到扣款", "異動加減", "實領金額", "入帳帳號"]
     ];
