@@ -19,7 +19,7 @@ export default function BulletinBoard() {
     isUrgent: false,
   });
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager" || currentUser?.role === "boss";
+  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
