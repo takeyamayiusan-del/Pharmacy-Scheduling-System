@@ -13,10 +13,10 @@ export default function LoginPage() {
   const { loginEmployee, loginManager, currentUser, isLoading } = useApp();
   const router = useRouter();
 
-  // 已登入則直接跳轉
+  // 已登入則直接跳轉至上下班打卡頁面
   useEffect(() => {
     if (!isLoading && currentUser) {
-      router.replace("/schedule");
+      router.replace("/attendance/punch");
     }
   }, [currentUser, isLoading, router]);
 
@@ -45,7 +45,7 @@ export default function LoginPage() {
     try {
       const success = await loginManager(username, password);
       if (success) {
-        router.push("/schedule");
+        router.push("/attendance/punch");
       } else {
         setError("帳號或密碼錯誤");
       }
