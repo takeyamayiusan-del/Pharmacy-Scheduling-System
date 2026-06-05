@@ -39,13 +39,24 @@ export default function AttendancePage() {
       for (let day = 1; day <= daysInMonth; day += 1) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const shift = getShiftForDate(dateStr, emp.id);
-        if (shift !== 'X') {
+        // 檢查是否有核准的請假申請
+        const hasApprovedLeave = leaveRequests.some(
+          (req) =>
+            req.employeeId === emp.id &&
+            req.startDate <= dateStr &&
+            req.endDate >= dateStr &&
+            req.status === 'approved'
+        );
+        if (shift !== 'X' && !hasApprovedLeave) {
           workDays += 1;
           if (getHolidayInfo(dateStr).isHoliday) {
             holidayOvertimeHours += SHIFT_HOURS[shift] ?? 0;
           }
         }
-        workHours += SHIFT_HOURS[shift] ?? 0;
+        // 若有核准請假，則不計入班表工時
+        if (!hasApprovedLeave) {
+          workHours += SHIFT_HOURS[shift] ?? 0;
+        }
       }
 
       const overtimeHours = overtimeRequests

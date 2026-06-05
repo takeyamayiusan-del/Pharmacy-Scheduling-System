@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 
 export default function OvertimePage() {
-  const { currentUser, employees, overtimeRequests, addOvertimeRequest, updateOvertimeRequestStatus, deleteOvertimeRequest } = useApp();
+  const { currentUser, employees, overtimeRequests, addOvertimeRequest, updateOvertimeRequestStatus, deleteOvertimeRequest, punchRecords } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" as "pay" | "time_off" });
@@ -136,6 +136,7 @@ export default function OvertimePage() {
                 <th className="px-4 py-3 text-left font-medium text-gray-700">工時</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-700">原因</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-700">補償</th>
+                <th className="px-4 py-3 text-left font-medium text-gray-700">當日打卡</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-700">狀態</th>
                 <th className="px-4 py-3 text-left font-medium text-gray-700">審核說明</th>
                 {isManager && <th className="px-4 py-3 text-left font-medium text-gray-700">操作</th>}
@@ -157,6 +158,22 @@ export default function OvertimePage() {
                     <td className="px-4 py-3 text-gray-600">{h} 小時</td>
                     <td className="px-4 py-3 text-gray-600">{req.reason}</td>
                     <td className="px-4 py-3 text-gray-600">{req.compensationType === "pay" ? "加班費" : "補休"}</td>
+                    <td className="px-4 py-3 text-xs">
+                      {(() => {
+                        const dayPunches = punchRecords.filter(p => p.employeeId === req.employeeId && p.date === req.date);
+                        return dayPunches.length > 0 ? (
+                          <div className="space-y-1">
+                            {dayPunches.map((p, idx) => (
+                              <div key={idx} className="text-gray-600">
+                                {p.action === "work_in" ? "上班" : "下班"}: {p.time}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">— 無打卡</span>
+                        );
+                      })()}
+                    </td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
                     </td>

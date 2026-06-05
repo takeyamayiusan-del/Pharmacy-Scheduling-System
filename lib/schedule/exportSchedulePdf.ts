@@ -23,6 +23,8 @@ export type DrawScheduleOptions = {
   getShiftForDate: (date: string, employeeId: string) => ShiftType;
   getHolidayInfo: (date: string) => { isHoliday: boolean; name?: string };
   layout: ExportLayout;
+  leaveRequests?: Array<{ employeeId: string; startDate: string; endDate: string; status: string }>;
+  overtimeRequests?: Array<{ employeeId: string; date: string; status: string }>;
 };
 
 type SegmentOptions = DrawScheduleOptions & {
@@ -110,7 +112,30 @@ function drawScheduleSegment(
       const shift = getShiftForDate(dateStr, emp.id);
       const col = day - dayStart;
       const x = tableX + nameColWidth + col * dayColWidth;
-      const palette = exportShiftPalette[shift];
+      
+      // 檢查是否有核准的請假申請
+      const hasApprovedLeave = options.leaveRequests?.some(
+        (req) =>
+          req.employeeId === emp.id &&
+          req.startDate <= dateStr &&
+          req.endDate >= dateStr &&
+          req.status === "approved"
+      );
+      
+      // 檢查是否有核准的加班申請
+      const hasApprovedOvertime = options.overtimeRequests?.some(
+        (req) =>
+          req.employeeId === emp.id &&
+          req.date === dateStr &&
+          req.status === "approved"
+      );
+      
+      const palette = hasApprovedLeave
+        ? { bg: "#e9d5ff", text: "#6d28d9", border: "#c4b5fd" }
+        : hasApprovedOvertime
+          ? { bg: "#fed7aa", text: "#9a3412", border: "#fdba74" }
+          : exportShiftPalette[shift];
+      
       ctx.strokeStyle = "#e2e8f0";
       ctx.strokeRect(x, rowY, dayColWidth, rowHeight);
       ctx.fillStyle = palette.bg;
@@ -119,7 +144,8 @@ function drawScheduleSegment(
       ctx.strokeRect(x + 6, rowY + 6, dayColWidth - 12, rowHeight - 12);
       ctx.fillStyle = palette.text;
       ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
-      ctx.fillText(shift, x + 20, rowY + 26);
+      const displayText = hasApprovedLeave ? "請假" : hasApprovedOvertime ? "加班" : shift;
+      ctx.fillText(displayText, x + 20, rowY + 26);
     }
   });
 

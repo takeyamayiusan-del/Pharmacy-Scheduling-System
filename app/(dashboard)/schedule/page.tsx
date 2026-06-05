@@ -126,6 +126,8 @@ export default function SchedulePage() {
       getShiftForDate,
       getHolidayInfo,
       layout,
+      leaveRequests,
+      overtimeRequests,
     });
     setShowExportModal(false);
   };
@@ -251,7 +253,7 @@ export default function SchedulePage() {
           </div>
         )}
         {!isSun && holidayInfo.isHoliday && (
-          <div className="absolute -top-2 -right-2 bg-yellow-400 text-yellow-900 text-sm font-bold rounded-md min-w-[22px] h-[22px] flex items-center justify-center shadow border border-yellow-600">
+          <div className="absolute -top-3 -left-3 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center shadow-md border-2 border-yellow-600 z-10">
             國
           </div>
         )}
