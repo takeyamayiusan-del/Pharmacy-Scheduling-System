@@ -242,7 +242,7 @@ export default function SchedulePage() {
           onClick={() => editable && startEditing(date, employeeId)}
           className={`h-10 flex items-center justify-center rounded font-medium border-2 ${approvedLeaveRequest ? 'bg-purple-200 text-purple-900 border-purple-400' : approvedOvertimeRequest ? 'bg-orange-200 text-orange-900 border-orange-400' : colors.bg + ' ' + colors.text + ' ' + colors.border} ${editable ? 'cursor-pointer hover:opacity-80' : ''} ${isSun ? 'bg-red-50' : ''} ${hasFixedShift ? 'ring-2 ring-orange-400' : ''}`}
         >
-          {approvedLeaveRequest ? "請假" : approvedOvertimeRequest ? "加班" : shift}
+          {approvedLeaveRequest ? "假" : approvedOvertimeRequest ? "加" : shift}
           {editable && <span className="ml-1 text-[10px]">✏️</span>}
         </div>
         

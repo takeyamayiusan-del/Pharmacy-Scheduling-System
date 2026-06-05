@@ -144,7 +144,7 @@ function drawScheduleSegment(
       ctx.strokeRect(x + 6, rowY + 6, dayColWidth - 12, rowHeight - 12);
       ctx.fillStyle = palette.text;
       ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
-      const displayText = hasApprovedLeave ? "請假" : hasApprovedOvertime ? "加班" : shift;
+      const displayText = hasApprovedLeave ? "假" : hasApprovedOvertime ? "加" : shift;
       ctx.fillText(displayText, x + 20, rowY + 26);
     }
   });
