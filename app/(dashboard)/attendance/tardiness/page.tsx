@@ -9,6 +9,7 @@ export default function TardinessPage() {
     employees,
     tardinessRecords,
     punchRecords,
+    overtimeRequests,
     addTardinessRecord,
     deleteTardinessRecord,
     updatePunchRecord,
@@ -47,17 +48,34 @@ export default function TardinessPage() {
   
   type LinkedTardinessRecord = TardinessRecord & { sourcePunchId?: string };
 
+  // 檢查是否有已核准的加班可抵銷遲到
+  const shouldCancelTardiness = (employeeId: string, date: string): boolean => {
+    return overtimeRequests.some(
+      (req) =>
+        req.employeeId === employeeId &&
+        req.date === date &&
+        req.status === "approved"
+    );
+  };
+
   const linkedTardinessRecords = useMemo<LinkedTardinessRecord[]>(() => {
-    const records: LinkedTardinessRecord[] = tardinessRecords.map((record) => ({
-      ...record,
-      employeeName:
-        record.employeeName ||
-        employees.find((employee) => employee.id === record.employeeId)?.name ||
-        "",
-    }));
+    const records: LinkedTardinessRecord[] = tardinessRecords
+      .filter((record) => !shouldCancelTardiness(record.employeeId, record.date))
+      .map((record) => ({
+        ...record,
+        employeeName:
+          record.employeeName ||
+          employees.find((employee) => employee.id === record.employeeId)?.name ||
+          "",
+      }));
 
     punchRecords
-      .filter((punch) => punch.action === "work_in" && punch.lateMinutes > 0)
+      .filter(
+        (punch) =>
+          punch.action === "work_in" &&
+          punch.lateMinutes > 0 &&
+          !shouldCancelTardiness(punch.employeeId, punch.date)
+      )
       .forEach((punch) => {
         const alreadyExists = records.some(
           (record) =>
@@ -86,7 +104,7 @@ export default function TardinessPage() {
         new Date(b.date).getTime() - new Date(a.date).getTime() ||
         b.createdAt.localeCompare(a.createdAt)
     );
-  }, [employees, punchRecords, tardinessRecords]);
+  }, [employees, punchRecords, tardinessRecords, overtimeRequests]);
 
   // 計算統計數據
   const getStats = () => {
@@ -115,7 +133,6 @@ export default function TardinessPage() {
       } else {
         await deleteTardinessRecord(record.id);
       }
-      alert("紀錄已刪除");
     } catch (error) {
       console.error("[tardiness] delete failed", error);
       alert(error instanceof Error ? error.message : "刪除失敗");

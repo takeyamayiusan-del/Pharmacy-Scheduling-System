@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedType } from "@/lib/applications/statusMaps";
 import { createClient } from "@/lib/supabase/client";
+import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, type PunchSlot } from "@/lib/attendance/punchSchedule";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1547,6 +1548,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
           note: "加班補休核准取消，扣回時數",
         });
       }
+
+      // 加班核准時，移除當日遲到記錄
+      if (status === "approved" && prevStatus !== "approved") {
+        const tardinessToRemove = tardinessRecords.filter(
+          (t) => t.employeeId === request.employeeId && t.date === request.date
+        );
+        for (const t of tardinessToRemove) {
+          await deleteTardinessRecord(t.id);
+        }
+        
+        // 同時清除打卡紀錄中該日期的遲到標記
+        const punchesToUpdate = punchRecords.filter(
+          (p) => p.employeeId === request.employeeId && p.date === request.date && p.lateMinutes > 0
+        );
+        for (const p of punchesToUpdate) {
+          await updatePunchRecord(p.id, { lateMinutes: 0, reason: null });
+        }
+      }
+
+      // 加班取消核准時，恢復遲到記錄
+      if (prevStatus === "approved" && status !== "approved") {
+        const punchesToRestore = punchRecords.filter(
+          (p) => p.employeeId === request.employeeId && p.date === request.date && p.action === "work_in"
+        );
+        for (const p of punchesToRestore) {
+          if (p.lateMinutes === 0 && p.reason === null) {
+            // 重新計算遲到分鐘
+            const slot = getPunchSlotsForShift(p.shift, shiftTimeConfig).find(
+              (s: PunchSlot) => s.action === "work_in" && s.segmentIndex === p.segmentIndex
+            );
+            if (slot) {
+              const actual = timeToMinutes(p.time);
+              const scheduled = timeToMinutes(slot.scheduledTime);
+              const diff = minutesDiff(actual, scheduled);
+              const lateMinutes = diff >= 30 ? diff : calcLateMinutes(actual, scheduled);
+              if (lateMinutes > 0) {
+                const reason = diff >= 30 ? "遲到超過30分鐘" : "遲到";
+                await updatePunchRecord(p.id, { lateMinutes, reason });
+                await addTardinessRecord({
+                  employeeId: p.employeeId,
+                  employeeName: p.employeeName,
+                  date: p.date,
+                  minutes: lateMinutes,
+                  notes: reason,
+                });
+              }
+            }
+          }
+        }
+      }
     }
 
     if (request && (status === "approved" || status === "rejected")) {
@@ -1590,6 +1641,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteTardinessRecord = async (id: string) => {
+    setTardinessRecords((prev) => prev.filter((r) => r.id !== id));
+    
     const { data, error } = await supabase
       .from("tardiness_records")
       .delete()
@@ -1604,10 +1657,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       if (!response.ok) {
         const result = await response.json().catch(() => ({}));
+        await loadTardinessRecords();
         throw new Error(result.error || error?.message || "刪除遲到記錄失敗");
       }
     }
-    await loadTardinessRecords();
   };
 
   // ─── Punch records (Supabase) ─────────────────────────────────────────────────
