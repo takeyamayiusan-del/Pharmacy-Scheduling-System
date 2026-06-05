@@ -1665,7 +1665,96 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Punch records (Supabase) ─────────────────────────────────────────────────
 
-  const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => {
+  
+  // 檢查是否有重複打卡（5 分鐘內）
+  const checkDuplicatePunch = (employeeId: string, date: string, type: "in" | "out"): boolean => {
+    const recentPunches = punchRecords.filter(
+      (p) =>
+        p.employeeId === employeeId &&
+        p.date === date &&
+        p.type === type
+    );
+    
+    if (recentPunches.length === 0) return false;
+    
+    const lastPunch = recentPunches[recentPunches.length - 1];
+    const lastTime = new Date(lastPunch.time).getTime();
+    const now = new Date().getTime();
+    const diffMinutes = (now - lastTime) / (1000 * 60);
+    
+    return diffMinutes < 5; // 5 分鐘內視為重複
+  };
+
+
+  // 記錄打卡修改審計日誌
+  const logPunchAudit = async (
+    punchId: string,
+    action: "create" | "update" | "delete",
+    oldData: any,
+    newData: any,
+    adminId: string
+  ) => {
+    try {
+      await supabase.from("punch_audit_logs").insert({
+        punch_id: punchId,
+        action,
+        old_data: oldData,
+        new_data: newData,
+        admin_id: adminId,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      console.error("審計日誌記錄失敗:", error);
+    }
+  };
+
+
+  // 計算補休假過期日期（6 個月後）
+  const getCompLeaveExpiry = (createdDate: string): { daysLeft: number; isExpired: boolean } => {
+    const created = new Date(createdDate);
+    const expiry = new Date(created);
+    expiry.setMonth(expiry.getMonth() + 6);
+    
+    const now = new Date();
+    const daysLeft = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    
+    return {
+      daysLeft: Math.max(0, daysLeft),
+      isExpired: daysLeft < 0,
+    };
+  };
+
+
+  // 取得可用補休假（已過期的自動排除）
+  const getAvailableCompLeave = (employeeId: string): { balance: number; expiring: any[] } => {
+    const balance = getCompLeaveBalance(employeeId);
+    
+    // 找出即將過期的補休假（7 天內）
+    const expiring = compLeaveLedger
+      .filter((entry) => (entry as any).user_id === employeeId && entry.hours > 0)
+      .map((entry) => ({
+        ...entry,
+        ...getCompLeaveExpiry((entry as any).created_at || entry.createdAt),
+      }))
+      .filter((entry) => entry.daysLeft > 0 && entry.daysLeft <= 7)
+      .sort((a, b) => a.daysLeft - b.daysLeft);
+    
+    return { balance, expiring };
+  };
+
+
+  // 批量核准申請
+  
+
+
+  // 批量拒絕申請
+  
+
+
+  // 批量新增排班
+  
+
+const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => {
     await supabase.from("punch_records").insert({
       employee_id: record.employeeId,
       employee_name: record.employeeName,
@@ -1696,6 +1785,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const deletePunchRecord = async (id: string) => {
     await supabase.from("punch_records").delete().eq("id", id);
+    // 記錄審計日誌
+    const deletedRecord = punchRecords.find((p) => p.id === id);
+    if (deletedRecord) {
+      await logPunchAudit(id, "delete", deletedRecord, null, user?.id || "");
+    }
+
     await loadPunchRecords();
   };
 
