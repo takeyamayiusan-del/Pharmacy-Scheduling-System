@@ -6,11 +6,12 @@ import { createAdminClient } from "@/lib/supabase/server";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { username, password, name, role } = body as {
+    const { username, password, name, role, hire_date } = body as {
       username: string;
       password: string;
       name: string;
       role: string;
+      hire_date?: string;
     };
 
     if (!username || !password || !name || !role) {
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
         name,
         role: dbRole,
         is_active: true,
+        hire_date: hire_date || "2026-04-01",
       })
       .select()
       .single();

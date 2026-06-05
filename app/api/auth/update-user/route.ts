@@ -6,13 +6,14 @@ import { createAdminClient } from "@/lib/supabase/server";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { userId, password, name, role, isWednesdayRotation, isWeekdayOffRule } = body as {
+    const { userId, password, name, role, isWednesdayRotation, isWeekdayOffRule, hire_date } = body as {
       userId: string;
       password?: string;
       name?: string;
       role?: string;
       isWednesdayRotation?: boolean;
       isWeekdayOffRule?: boolean;
+      hire_date?: string;
     };
 
     if (!userId) {
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest) {
     }
     if (isWednesdayRotation !== undefined) updates.is_wednesday_rotation = isWednesdayRotation;
     if (isWeekdayOffRule !== undefined) updates.is_weekday_off_rule = isWeekdayOffRule;
+    if (hire_date !== undefined) updates.hire_date = hire_date;
 
     if (Object.keys(updates).length > 0) {
       const { error } = await admin.from("users").update(updates).eq("id", userId);
@@ -47,7 +49,7 @@ export async function POST(req: NextRequest) {
 
     const { data: updated, error: fetchError } = await admin
       .from("users")
-      .select("id, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, created_at, updated_at")
+      .select("id, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, hire_date, created_at, updated_at")
       .eq("id", userId)
       .single();
 
