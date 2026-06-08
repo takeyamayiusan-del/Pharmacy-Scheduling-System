@@ -47,7 +47,13 @@ export default function TardinessPage() {
       alert("遲到記錄已新增！");
     } catch (error) {
       console.error("[tardiness] add failed", error);
-      alert(error instanceof Error ? error.message : "新增遲到記錄失敗，請稍後重試");
+      const message =
+        error instanceof Error
+          ? error.message
+          : typeof error === "object" && error !== null && "message" in error
+          ? (error as { message?: string }).message || "新增遲到記錄失敗，請稍後重試"
+          : "新增遲到記錄失敗，請稍後重試";
+      alert(message);
     }
   };
   
