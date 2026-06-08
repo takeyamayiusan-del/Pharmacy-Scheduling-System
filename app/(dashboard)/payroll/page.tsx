@@ -129,8 +129,9 @@ function getApprovedLeaveHoursInMonth(
 }
 
 function isDateInMonth(dateValue: string, year: number, month: number) {
-  const date = new Date(dateValue);
-  return !Number.isNaN(date.getTime()) && date.getFullYear() === year && date.getMonth() + 1 === month;
+  const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!match) return false;
+  return Number(match[1]) === year && Number(match[2]) === month;
 }
 
 export default function PayrollPage() {

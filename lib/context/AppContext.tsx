@@ -735,9 +735,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const normalizeDateString = (value: string | Date | null | undefined) => {
     if (!value) return "";
-    const date = typeof value === "string" ? new Date(value) : value;
-    if (Number.isNaN(date.getTime())) return String(value);
-    return date.toISOString().slice(0, 10);
+    const raw = typeof value === "string" ? value : value.toISOString();
+    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : "";
   };
 
   const loadTardinessRecords = useCallback(async () => {
