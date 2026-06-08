@@ -44,11 +44,16 @@ const holidayNameMap: Record<string, string> = {
   "Republic Day": "元旦",
   "Chinese New Year": "農曆春節",
   "Lunar New Year": "農曆春節",
+  "Day before Lunar New Year's Eve": "除夕",
+  "Lunar New Year's Eve": "除夕",
+  "Lunar New Year Holiday": "春節假期",
   "Peace Memorial Day": "二二八",
+  "Peace Memorial Day (in lieu)": "二二八補假",
   "Tomb Sweeping Day": "清明節",
   "Labor Day": "勞動節",
   "Dragon Boat Festival": "端午節",
   "Mid-Autumn Festival": "中秋節",
+  "Children's Day": "兒童節",
   "National Day": "國慶日",
   "Christmas Day": "聖誕節",
   "Constitution Day": "憲法紀念日",
@@ -63,7 +68,7 @@ function normalizeHolidayName(summary: string): string {
       return value;
     }
   }
-  return name;
+  return "國定假日";
 }
 
 function parseICSHolidays(ics: string, year: number) {
@@ -155,7 +160,7 @@ export async function POST(req: NextRequest) {
     const admin = createAdminClient();
     const { error: deleteError } = await admin
       .from("holidays")
-      .delete({ returning: "minimal" })
+      .delete()
       .eq("year", year);
     if (deleteError) {
       console.error("holiday delete error", deleteError);
@@ -172,8 +177,7 @@ export async function POST(req: NextRequest) {
           holiday_date: holiday.date,
           name: holiday.name,
           year,
-        })),
-        { returning: "minimal" }
+        }))
       );
 
     if (insertError) {
