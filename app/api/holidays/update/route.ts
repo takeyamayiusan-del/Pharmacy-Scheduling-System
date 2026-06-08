@@ -1,15 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/client";
+import { createServerClient } from "@supabase/ssr";
 import { createAdminClient } from "@/lib/supabase/server";
 
-async function assertManagerAuth() {
-  const supabase = createClient();
+async function assertManagerAuth(req: NextRequest) {
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll();
+        },
+        setAll() {
+          return;
+        },
+      },
+    }
+  );
+
   const {
     data: { session },
   } = await supabase.auth.getSession();
 
   if (!session) {
-    return { error: "Unauthorized", status: 401 };
+    return { error: "尚未登入或會話已失效", status: 401 };
   }
 
   const admin = createAdminClient();
@@ -20,7 +34,7 @@ async function assertManagerAuth() {
     .single();
 
   if (error || !user || !["boss", "manager"].includes(user.role)) {
-    return { error: "Forbidden", status: 403 };
+    return { error: "此帳號沒有更新假期的權限", status: 403 };
   }
 
   return { callerId: session.user.id };
@@ -102,7 +116,7 @@ function parseICSHolidays(ics: string, year: number) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await assertManagerAuth();
+  const auth = await assertManagerAuth(req);
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
