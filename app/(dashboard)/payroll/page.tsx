@@ -128,6 +128,11 @@ function getApprovedLeaveHoursInMonth(
   });
 }
 
+function isDateInMonth(dateValue: string, year: number, month: number) {
+  const date = new Date(dateValue);
+  return !Number.isNaN(date.getTime()) && date.getFullYear() === year && date.getMonth() + 1 === month;
+}
+
 export default function PayrollPage() {
   const {
     currentUser,
@@ -272,7 +277,7 @@ export default function PayrollPage() {
       }, 0);
 
       const tardinessMinutes = tardinessRecords
-        .filter((r) => r.employeeId === emp.id && r.date.startsWith(monthStr))
+        .filter((r) => r.employeeId === emp.id && isDateInMonth(r.date, year, month))
         .reduce((acc, r) => acc + r.minutes, 0);
 
       const empAdj = adjustments.filter((a) => a.userId === emp.id);

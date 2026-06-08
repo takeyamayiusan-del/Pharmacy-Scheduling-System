@@ -733,6 +733,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase]);
 
+  const normalizeDateString = (value: string | Date | null | undefined) => {
+    if (!value) return "";
+    const date = typeof value === "string" ? new Date(value) : value;
+    if (Number.isNaN(date.getTime())) return String(value);
+    return date.toISOString().slice(0, 10);
+  };
+
   const loadTardinessRecords = useCallback(async () => {
     const { data } = await supabase
       .from("tardiness_records")
@@ -744,7 +751,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: r.id,
           employeeId: r.user_id,
           employeeName: (r.users as { name?: string } | null)?.name ?? "",
-          date: r.record_date,
+          date: normalizeDateString(r.record_date),
           minutes: r.minutes_late,
           notes: r.note ?? "",
           createdAt: r.created_at,
@@ -1802,15 +1809,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const returnedId = data[0].id;
     const employeeName =
       employees.find((emp) => emp.id === record.employeeId)?.name ?? "";
+    const normalizedDate = normalizeDateString(record.date);
     setTardinessRecords((prev) => {
       const alreadyExists = prev.some(
-        (r) => r.employeeId === record.employeeId && r.date === record.date
+        (r) => r.employeeId === record.employeeId && r.date === normalizedDate
       );
       const newRecord: TardinessRecord = {
         id: returnedId,
         employeeId: record.employeeId,
         employeeName,
-        date: record.date,
+        date: normalizedDate,
         minutes: record.minutes,
         notes: record.notes,
         createdAt: new Date().toISOString(),

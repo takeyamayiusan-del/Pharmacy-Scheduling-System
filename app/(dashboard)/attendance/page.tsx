@@ -26,6 +26,11 @@ export default function AttendancePage() {
     ? targetEmployees
     : targetEmployees.filter((emp) => emp.id === currentUser?.id);
 
+  const isDateInMonth = (dateValue: string, year: number, month: number) => {
+    const date = new Date(dateValue);
+    return !Number.isNaN(date.getTime()) && date.getFullYear() === year && date.getMonth() + 1 === month;
+  };
+
   const stats = useMemo(() => {
     const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
     const endDate = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
@@ -87,7 +92,7 @@ export default function AttendancePage() {
 
       const tardy = tardinessRecords
         .filter((item) => item.employeeId === emp.id)
-        .filter((item) => item.date >= startDate && item.date <= endDate);
+        .filter((item) => isDateInMonth(item.date, year, month));
 
       const tardyCount = tardy.length;
       const tardyMinutes = tardy.reduce((sum, item) => sum + item.minutes, 0);
