@@ -68,7 +68,7 @@ function normalizeHolidayName(summary: string): string {
       return value;
     }
   }
-  return "國定假日";
+  return "國定\n假日";
 }
 
 function parseICSHolidays(ics: string, year: number) {

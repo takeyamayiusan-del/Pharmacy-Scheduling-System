@@ -681,7 +681,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getHolidayInfo = useCallback((dateStr: string) => {
     const holiday = holidays.find((item) => item.date === dateStr) ||
       TAIWAN_HOLIDAYS_2026.find((item) => item.date === dateStr);
-    return { isHoliday: Boolean(holiday), name: holiday?.name ?? "國定\n假日" };
+    const name = holiday?.name ?? "國定\n假日";
+    return { isHoliday: Boolean(holiday), name: name === "國定假日" ? "國定\n假日" : name };
   }, [holidays]);
 
   const loadSwapRequests = useCallback(async () => {
