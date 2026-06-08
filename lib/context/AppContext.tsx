@@ -1788,10 +1788,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Tardiness records (Supabase) ─────────────────────────────────────────────
 
   const addTardinessRecord = async (record: Omit<TardinessRecord, "id" | "createdAt">) => {
+    const normalizedDate = normalizeDateString(record.date);
     const { data, error } = await supabase.from("tardiness_records").upsert(
       {
         user_id: record.employeeId,
-        record_date: record.date,
+        record_date: normalizedDate,
         minutes_late: record.minutes,
         note: record.notes,
         recorded_by: currentUser?.id ?? record.employeeId,
@@ -1809,23 +1810,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const returnedId = data[0].id;
     const employeeName =
       employees.find((emp) => emp.id === record.employeeId)?.name ?? "";
-    const normalizedDate = normalizeDateString(record.date);
+    const newRecord: TardinessRecord = {
+      id: returnedId,
+      employeeId: record.employeeId,
+      employeeName,
+      date: normalizedDate,
+      minutes: record.minutes,
+      notes: record.notes,
+      createdAt: new Date().toISOString(),
+    };
+
     setTardinessRecords((prev) => {
       const alreadyExists = prev.some(
         (r) => r.employeeId === record.employeeId && r.date === normalizedDate
       );
-      const newRecord: TardinessRecord = {
-        id: returnedId,
-        employeeId: record.employeeId,
-        employeeName,
-        date: normalizedDate,
-        minutes: record.minutes,
-        notes: record.notes,
-        createdAt: new Date().toISOString(),
-      };
       if (alreadyExists) {
         return prev.map((r) =>
-          r.employeeId === record.employeeId && r.date === record.date
+          r.employeeId === record.employeeId && r.date === normalizedDate
             ? { ...r, minutes: record.minutes, notes: record.notes, createdAt: newRecord.createdAt }
             : r
         );
