@@ -1799,6 +1799,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("新增遲到記錄失敗");
     }
 
+    const returnedId = data[0].id;
+    const employeeName =
+      employees.find((emp) => emp.id === record.employeeId)?.name ?? "";
+    setTardinessRecords((prev) => {
+      const alreadyExists = prev.some(
+        (r) => r.employeeId === record.employeeId && r.date === record.date
+      );
+      const newRecord: TardinessRecord = {
+        id: returnedId,
+        employeeId: record.employeeId,
+        employeeName,
+        date: record.date,
+        minutes: record.minutes,
+        notes: record.notes,
+        createdAt: new Date().toISOString(),
+      };
+      if (alreadyExists) {
+        return prev.map((r) =>
+          r.employeeId === record.employeeId && r.date === record.date
+            ? { ...r, minutes: record.minutes, notes: record.notes, createdAt: newRecord.createdAt }
+            : r
+        );
+      }
+      return [newRecord, ...prev];
+    });
+
     await loadTardinessRecords();
   };
 
