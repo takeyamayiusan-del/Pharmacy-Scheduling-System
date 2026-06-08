@@ -71,6 +71,81 @@ END;
 $$;
 
 -- ============================================================
+-- leave_applications: DELETE policy for manager/boss
+-- Manage application cleanup and record correction by authorized staff.
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'leave_applications'
+      AND policyname = 'leave_applications_delete_manager'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "leave_applications_delete_manager" ON public.leave_applications
+        FOR DELETE USING (
+          EXISTS (
+            SELECT 1 FROM public.users
+            WHERE id = auth.uid() AND role IN ('boss', 'manager')
+          )
+        )
+    $policy$;
+  END IF;
+END;
+$$;
+
+-- ============================================================
+-- shift_swap_applications: DELETE policy for manager/boss
+-- Allow managers to remove stale or invalid shift swap requests.
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'shift_swap_applications'
+      AND policyname = 'shift_swap_delete_manager'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "shift_swap_delete_manager" ON public.shift_swap_applications
+        FOR DELETE USING (
+          EXISTS (
+            SELECT 1 FROM public.users
+            WHERE id = auth.uid() AND role IN ('boss', 'manager')
+          )
+        )
+    $policy$;
+  END IF;
+END;
+$$;
+
+-- ============================================================
+-- overtime_applications: DELETE policy for manager/boss
+-- Allow managers to remove incorrect or cancelled overtime requests.
+-- ============================================================
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename = 'overtime_applications'
+      AND policyname = 'overtime_applications_delete_manager'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "overtime_applications_delete_manager" ON public.overtime_applications
+        FOR DELETE USING (
+          EXISTS (
+            SELECT 1 FROM public.users
+            WHERE id = auth.uid() AND role IN ('boss', 'manager')
+          )
+        )
+    $policy$;
+  END IF;
+END;
+$$;
+
+-- ============================================================
 -- scheduling_rules: DELETE policy (optional, for completeness)
 -- Only boss/manager should be able to delete scheduling rules
 -- (rare operation, but policy should exist for completeness).
@@ -226,7 +301,7 @@ $$;
 --   SELECT  : leave_select_own_or_manager       (own OR boss/manager)
 --   INSERT  : leave_insert_own                  (own user_id)
 --   UPDATE  : leave_update_manager              (boss/manager)
---   DELETE  : (none — applications are not deleted)
+--   DELETE  : leave_applications_delete_manager (boss/manager) [added here]
 --
 -- leave_attachments:
 --   SELECT  : leave_attachments_select          (own application owner OR boss/manager)
@@ -238,13 +313,13 @@ $$;
 --   SELECT  : shift_swap_select                 (requester/target/boss/manager)
 --   INSERT  : shift_swap_insert_employee        (requester = auth.uid())
 --   UPDATE  : shift_swap_update_target_or_manager (target OR boss/manager)
---   DELETE  : (none — applications are not deleted)
+--   DELETE  : shift_swap_delete_manager         (boss/manager) [added here]
 --
 -- overtime_applications:
 --   SELECT  : overtime_select_own_or_manager    (own OR boss/manager)
 --   INSERT  : overtime_insert_own               (own user_id)
 --   UPDATE  : overtime_update_manager           (boss/manager)
---   DELETE  : (none — applications are not deleted)
+--   DELETE  : overtime_applications_delete_manager (boss/manager) [added here]
 --
 -- monthly_attendance_stats:
 --   SELECT  : monthly_stats_select_own_or_manager (own OR boss/manager)

@@ -1894,7 +1894,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     const [boardResponse, swapResponse] = await Promise.all([
       supabase
         .from("bulletin_board")
-        .select("*, users!bulletin_board_author_id_fkey(name)")
+        .select("*, users(name)")
         .order("created_at", { ascending: false }),
       supabase
         .from("shift_swap_applications")
@@ -1903,6 +1903,13 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         )
         .order("created_at", { ascending: false }),
     ]);
+
+    if (boardResponse.error) {
+      console.error("[loadBulletinItems] bulletin_board error:", boardResponse.error);
+    }
+    if (swapResponse.error) {
+      console.error("[loadBulletinItems] shift_swap_applications error:", swapResponse.error);
+    }
 
     const boardData = Array.isArray(boardResponse.data) ? boardResponse.data : [];
     const swapData = Array.isArray(swapResponse.data) ? swapResponse.data : [];

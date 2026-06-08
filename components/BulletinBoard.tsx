@@ -1,10 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useApp, type BulletinItem } from "@/lib/context/AppContext";
 import { Megaphone, MessageSquare, AlertTriangle, Trash2, CheckCircle, Clock } from "lucide-react";
 
 export default function BulletinBoard() {
+  const router = useRouter();
   const { currentUser, bulletinItems, addBulletinItem, updateBulletinItem, deleteBulletinItem } = useApp();
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState<{
@@ -204,7 +206,13 @@ export default function BulletinBoard() {
               
               {item.type === "shift_swap_request" && currentUser?.id !== item.authorId && (
                 <button
-                  onClick={(): void => alert("功能開發中：將為您開啟與 " + item.authorName + " 的換班申請單")}
+                  onClick={() => {
+                    router.push(
+                      `/applications/shift-swap?source=bulletin&source_note=${encodeURIComponent(
+                        `來自公告欄 ${item.authorName} 的換班需求`
+                      )}`
+                    );
+                  }}
                   className="mt-3 w-full py-1.5 bg-purple-600 text-white text-xs rounded hover:bg-purple-700 transition-colors"
                 >
                   我可以代班 / 洽詢換班

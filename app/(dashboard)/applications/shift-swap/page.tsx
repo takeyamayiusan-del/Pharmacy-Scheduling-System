@@ -207,7 +207,15 @@ export default function ShiftSwapPage() {
                     )}
                     {/* 刪除 */}
                     {isManager && (
-                      <button onClick={() => { if (confirm("確定刪除？")) deleteSwapRequest(req.id); }}
+                      <button onClick={async () => {
+                          if (!confirm("確定刪除？")) return;
+                          try {
+                            await deleteSwapRequest(req.id);
+                          } catch (error) {
+                            console.error(error);
+                            alert('刪除失敗，請稍後再試。');
+                          }
+                        }}
                         className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200">刪除</button>
                     )}
                   </div>

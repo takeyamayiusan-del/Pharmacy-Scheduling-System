@@ -73,43 +73,35 @@ function drawScheduleSegment(
     const x = tableX + nameColWidth + col * dayColWidth;
     const textColor = dayOfWeek === 0 ? "#dc2626" : dayOfWeek === 6 ? "#c2410c" : "#334155";
 
-    if (dayOfWeek === 0) {
-      ctx.fillStyle = "#fee2e2";
-      ctx.fillRect(x, tableY, dayColWidth, tableHeight);
-    } else if (dayOfWeek === 6) {
-      ctx.fillStyle = "#ffedd5";
-      ctx.fillRect(x, tableY, dayColWidth, tableHeight);
-    } else if (holidayInfo.isHoliday) {
-      ctx.fillStyle = "#fef9c3";
-      ctx.fillRect(x, tableY, dayColWidth, tableHeight);
-    }
+    const headerBg =
+      dayOfWeek === 0
+        ? "#fee2e2"
+        : dayOfWeek === 6
+        ? "#ffedd5"
+        : holidayInfo.isHoliday
+        ? "#fef3c7"
+        : "#ffffff";
 
+    ctx.fillStyle = headerBg;
+    ctx.fillRect(x, tableY, dayColWidth, rowHeight);
     ctx.strokeStyle = "#e2e8f0";
     ctx.strokeRect(x, tableY, dayColWidth, rowHeight);
     ctx.fillStyle = textColor;
     ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
-    ctx.fillText(String(day), x + 18, tableY + 16);
+    ctx.textAlign = "center";
+    ctx.fillText(String(day), x + dayColWidth / 2, tableY + 16);
     ctx.font = "10px 'Microsoft JhengHei', sans-serif";
-    ctx.fillStyle = "#64748b";
-    ctx.fillText(dayLabels[dayOfWeek], x + 19, tableY + 30);
-    if (holidayInfo.isHoliday && dayOfWeek !== 0) {
-      // 繪記國定假日標記的圓形背景 (位於日期方格的右上角)
-      ctx.fillStyle = "#fbbf24";
-      ctx.beginPath();
-      ctx.arc(x + dayColWidth - 6, tableY + 6, 5, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = "#d97706";
-      ctx.lineWidth = 1.5;
-      ctx.stroke();
-      // 繪記國字
+    ctx.fillStyle = "#475569";
+    ctx.fillText(dayLabels[dayOfWeek], x + dayColWidth / 2, tableY + 30);
+
+    if (holidayInfo.isHoliday) {
       ctx.font = "bold 8px 'Microsoft JhengHei', sans-serif";
       ctx.fillStyle = "#92400e";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText("國", x + dayColWidth - 6, tableY + 6);
-      ctx.textAlign = "left";
-      ctx.textBaseline = "alphabetic";
+      ctx.fillText(holidayInfo.name ?? "假", x + dayColWidth / 2, tableY + 38);
     }
+
+    ctx.textAlign = "left";
+    ctx.textBaseline = "alphabetic";
   }
 
   employees.forEach((emp, rowIndex) => {
@@ -125,7 +117,17 @@ function drawScheduleSegment(
       const shift = getShiftForDate(dateStr, emp.id);
       const col = day - dayStart;
       const x = tableX + nameColWidth + col * dayColWidth;
-      
+      const dayOfWeek = new Date(dateStr).getDay();
+      const holidayInfo = getHolidayInfo(dateStr);
+      const cellBg =
+        dayOfWeek === 0
+          ? "#fef2f2"
+          : dayOfWeek === 6
+          ? "#fffbeb"
+          : holidayInfo.isHoliday
+          ? "#fffbeb"
+          : "#ffffff";
+
       // 檢查是否有核准的請假申請
       const hasApprovedLeave = options.leaveRequests?.some(
         (req) =>
@@ -149,6 +151,8 @@ function drawScheduleSegment(
           ? { bg: "#fed7aa", text: "#9a3412", border: "#fdba74" }
           : exportShiftPalette[shift];
       
+      ctx.fillStyle = cellBg;
+      ctx.fillRect(x, rowY, dayColWidth, rowHeight);
       ctx.strokeStyle = "#e2e8f0";
       ctx.strokeRect(x, rowY, dayColWidth, rowHeight);
       ctx.fillStyle = palette.bg;

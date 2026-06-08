@@ -199,7 +199,15 @@ export default function OvertimePage() {
                             <button onClick={() => updateOvertimeRequestStatus(req.id, "pending" as "approved")}
                               className="px-2 py-1 border rounded text-xs hover:bg-gray-50">取消審核</button>
                           )}
-                          <button onClick={() => { if (confirm("確定刪除？")) deleteOvertimeRequest(req.id); }}
+                          <button onClick={async () => {
+                              if (!confirm("確定刪除？")) return;
+                              try {
+                                await deleteOvertimeRequest(req.id);
+                              } catch (error) {
+                                console.error(error);
+                                alert('刪除失敗，請稍後再試。');
+                              }
+                            }}
                             className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200">刪除</button>
                         </div>
                       </td>
