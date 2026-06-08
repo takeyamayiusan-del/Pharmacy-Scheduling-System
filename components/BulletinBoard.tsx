@@ -19,7 +19,7 @@ export default function BulletinBoard() {
     isUrgent: false,
   });
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const isManager = ["owner", "manager", "boss"].includes(currentUser?.role ?? "");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -143,9 +143,9 @@ export default function BulletinBoard() {
         </form>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 gap-4">
         {activeItems.length === 0 ? (
-          <div className="col-span-full py-8 text-center text-gray-500 bg-gray-50 rounded-xl border-2 border-dashed">
+          <div className="py-8 text-center text-gray-500 bg-gray-50 rounded-xl border-2 border-dashed">
             目前沒有新公告
           </div>
         ) : (

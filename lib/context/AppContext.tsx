@@ -265,11 +265,16 @@ const normalizeFixedShifts = (shifts: FixedShift[]) => {
 };
 
 // Map Supabase role to AppContext role
-const mapRole = (dbRole: string): "owner" | "manager" | "staff" | "boss" => {
-  if (dbRole === "owner") return "owner";
+const mapRole = (dbRole: string): "owner" | "manager" | "staff" => {
+  if (dbRole === "boss" || dbRole === "owner") return "owner";
   if (dbRole === "manager") return "manager";
-  if (dbRole === "boss") return "boss";
   return "staff";
+};
+
+const mapSwapStatusToBulletinStatus = (swapStatus: string): BulletinItem["status"] => {
+  if (swapStatus === "approved") return "completed";
+  if (swapStatus === "rejected") return "archived";
+  return "active";
 };
 
 // ─── Context type ─────────────────────────────────────────────────────────────
@@ -1886,26 +1891,53 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   // ─── Notifications ────────────────────────────────────────────────────────────
 
   const loadBulletinItems = useCallback(async (): Promise<void> => {
-    const { data } = await supabase
-      .from("bulletin_board")
-      .select("*, users(name)")
-      .order("created_at", { ascending: false });
-    if (data) {
-      setBulletinItems(
-        data.map((r) => ({
-          id: r.id,
-          authorId: r.author_id,
-          authorName: (r.users as { name?: string } | null)?.name ?? "未知",
-          title: r.title,
-          content: r.content,
-          type: r.type as BulletinItem["type"],
-          status: r.status as BulletinItem["status"],
-          relatedId: r.related_id,
-          isUrgent: r.is_urgent,
-          createdAt: r.created_at,
-        }))
-      );
-    }
+    const [boardResponse, swapResponse] = await Promise.all([
+      supabase
+        .from("bulletin_board")
+        .select("*, users!bulletin_board_author_id_fkey(name)")
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("shift_swap_applications")
+        .select(
+          "*, requester:users!shift_swap_applications_requester_id_fkey(name), target:users!shift_swap_applications_target_id_fkey(name)"
+        )
+        .order("created_at", { ascending: false }),
+    ]);
+
+    const boardData = Array.isArray(boardResponse.data) ? boardResponse.data : [];
+    const swapData = Array.isArray(swapResponse.data) ? swapResponse.data : [];
+
+    const boardItems = boardData.map((r) => ({
+      id: r.id,
+      authorId: r.author_id,
+      authorName: (r.users as { name?: string } | null)?.name ?? "未知",
+      title: r.title,
+      content: r.content,
+      type: r.type as BulletinItem["type"],
+      status: r.status as BulletinItem["status"],
+      relatedId: r.related_id,
+      isUrgent: r.is_urgent,
+      createdAt: r.created_at,
+    }));
+
+    const swapItems = swapData.map((r) => ({
+      id: `swap-${r.id}`,
+      authorId: r.requester_id,
+      authorName: (r.requester as { name?: string } | null)?.name ?? "未知",
+      title: `${(r.requester as { name?: string } | null)?.name ?? "員工"} 申請 ${r.swap_date} 換班`,
+      content: `希望與 ${(r.target as { name?: string } | null)?.name ?? "同事"} 互換班次，換班日期：${r.swap_date}`,
+      type: "shift_swap_request" as BulletinItem["type"],
+      status: mapSwapStatusToBulletinStatus(r.status),
+      relatedId: r.id,
+      isUrgent: false,
+      createdAt: r.created_at,
+    }));
+
+    setBulletinItems(
+      [...boardItems, ...swapItems].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
+    );
   }, [supabase]);
 
   const addBulletinItem = async (item: Omit<BulletinItem, "id" | "authorName" | "createdAt">): Promise<void> => {
