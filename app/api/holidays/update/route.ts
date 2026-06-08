@@ -153,19 +153,28 @@ export async function POST(req: NextRequest) {
     }
 
     const admin = createAdminClient();
-    const { error: deleteError } = await admin.from("holidays").delete().eq("year", year);
+    const { error: deleteError } = await admin
+      .from("holidays")
+      .delete({ returning: "minimal" })
+      .eq("year", year);
     if (deleteError) {
       console.error("holiday delete error", deleteError);
-      return NextResponse.json({ error: "刪除舊假日資料失敗" }, { status: 500 });
+      return NextResponse.json(
+        { error: `刪除舊假日資料失敗：${deleteError.message}` },
+        { status: 500 }
+      );
     }
 
-    const { error: insertError } = await admin.from("holidays").insert(
-      holidays.map((holiday) => ({
-        holiday_date: holiday.date,
-        name: holiday.name,
-        year,
-      }))
-    );
+    const { error: insertError } = await admin
+      .from("holidays")
+      .insert(
+        holidays.map((holiday) => ({
+          holiday_date: holiday.date,
+          name: holiday.name,
+          year,
+        })),
+        { returning: "minimal" }
+      );
 
     if (insertError) {
       console.error("holiday insert error", insertError);
