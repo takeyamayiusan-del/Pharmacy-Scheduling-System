@@ -10,7 +10,7 @@ import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, typ
 export type Employee = {
   id: string;
   name: string;
-  role: "owner" | "manager" | "staff";
+  role: "owner" | "manager" | "staff" | "boss";
   username?: string;
   password?: string;
   hireDate: string;               // 入職日期
@@ -265,9 +265,10 @@ const normalizeFixedShifts = (shifts: FixedShift[]) => {
 };
 
 // Map Supabase role to AppContext role
-const mapRole = (dbRole: string): "owner" | "manager" | "staff" => {
-  if (dbRole === "boss") return "owner";
+const mapRole = (dbRole: string): "owner" | "manager" | "staff" | "boss" => {
+  if (dbRole === "owner") return "owner";
   if (dbRole === "manager") return "manager";
+  if (dbRole === "boss") return "boss";
   return "staff";
 };
 
