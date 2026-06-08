@@ -1888,7 +1888,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   const loadBulletinItems = useCallback(async (): Promise<void> => {
     const { data } = await supabase
       .from("bulletin_board")
-      .select("*, users!bulletin_board_author_id_fkey(name)")
+      .select("*, users(name)")
       .order("created_at", { ascending: false });
     if (data) {
       setBulletinItems(
