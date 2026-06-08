@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 耀聖藥局智慧排班管理系統
 
 一個功能完整的排班管理平台，支援員工排休、換班、請假、加班、工時計算及管理者審核功能。
@@ -8,13 +7,12 @@
 ### 👥 使用者角色
 - **老闆** - 最高權限，員工管理、工時統計、所有申請審核
 - **店長** - 管理者權限，班表編輯、申請審核、遲到管理
-- **員工** - 一般權限，排休選擇、申請提交、個人資訊查看
 
 ### 📅 排班功能
 - 月曆模式班表查看
 - 員工直式排休選擇介面
 - 自動配額檢查（每月2天週六、2天平日）
-- 聖文特殊規則（週二固定白班、週三固定休假）
+- 週二固定白班、週三固定休假規則
 - 晚班人力缺口警示
 - 班表鎖定功能
 
@@ -61,7 +59,7 @@
    - 至 [Supabase](https://supabase.com) 建立新專案
    - 複製 `.env.local.example` 為 `.env.local`
    - 填入您的 Supabase 資訊：
-     ```
+     ```bash
      NEXT_PUBLIC_SUPABASE_URL=your-project-url
      NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
      SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
@@ -94,7 +92,7 @@
 ```
 Pharmacy Scheduling System/
 ├── app/                          # Next.js App Router
-│   ├── (auth)/login/            # 登入頁面
+│   ├── (auth)/login/             # 登入頁面
 │   ├── (dashboard)/              # 主要功能頁面
 │   │   ├── page.tsx              # 班表頁面
 │   │   ├── leave-selection/      # 排休選擇
@@ -104,21 +102,21 @@ Pharmacy Scheduling System/
 │   │   └── notifications/        # 通知列表
 │   └── layout.tsx
 ├── components/                   # React 元件
-│   ├── schedule/                # 班表相關元件
-│   ├── attendance/              # 工時相關元件
-│   ├── notifications/           # 通知元件
-│   ├── applications/            # 申請元件
-│   └── ui/                      # 基礎 UI 元件
-├── lib/                         # 業務邏輯
-│   ├── scheduling/              # 排班規則
-│   ├── attendance/              # 工時計算
-│   ├── validation/              # 表單驗證
-│   ├── supabase/                # Supabase 設定
-│   └── __tests__/               # 測試檔案
-└── supabase/                    # Supabase 設定
-    ├── migrations/              # 資料庫遷移
-    ├── functions/               # Edge Functions
-    └── seed.sql                 # 初始資料
+│   ├── schedule/                 # 班表相關元件
+│   ├── attendance/               # 工時相關元件
+│   ├── notifications/            # 通知元件
+│   ├── applications/             # 申請元件
+│   └── ui/                       # 基礎 UI 元件
+├── lib/                          # 業務邏輯
+│   ├── scheduling/               # 排班規則
+│   ├── attendance/               # 工時計算
+│   ├── validation/               # 表單驗證
+│   ├── supabase/                 # Supabase 設定
+│   └── __tests__/                # 測試檔案
+└── supabase/                     # Supabase 設定
+    ├── migrations/               # 資料庫遷移
+    ├── functions/                # Edge Functions
+    └── seed.sql                  # 初始資料
 ```
 
 ## 🧪 執行測試
