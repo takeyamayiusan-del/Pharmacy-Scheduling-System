@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 import { SHIFT_HOURS } from '@/lib/attendance/calculator';
+import { buildEffectiveTardinessRecords } from '@/lib/tardiness';
 
 export default function AttendancePage() {
   const {
@@ -13,6 +14,7 @@ export default function AttendancePage() {
     overtimeRequests,
     leaveRequests,
     tardinessRecords,
+    punchRecords,
   } = useApp();
   const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
   
@@ -91,7 +93,13 @@ export default function AttendancePage() {
         .filter((item) => item.endDate >= startDate && item.startDate <= endDate)
         .reduce((sum, item) => sum + (item.leaveHours > 0 ? item.leaveHours : 0), 0);
 
-      const tardy = tardinessRecords
+      const effectiveTardinessRecords = buildEffectiveTardinessRecords(
+        tardinessRecords,
+        punchRecords,
+        overtimeRequests
+      );
+
+      const tardy = effectiveTardinessRecords
         .filter((item) => item.employeeId === emp.id)
         .filter((item) => isDateInMonth(item.date, year, month));
 
@@ -111,7 +119,7 @@ export default function AttendancePage() {
         tardyMinutes,
       };
     });
-  }, [daysInMonth, displayEmployees, getShiftForDate, getHolidayInfo, leaveRequests, month, overtimeRequests, tardinessRecords, year]);
+  }, [daysInMonth, displayEmployees, getShiftForDate, getHolidayInfo, leaveRequests, month, overtimeRequests, tardinessRecords, punchRecords, year]);
 
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 2, 1));

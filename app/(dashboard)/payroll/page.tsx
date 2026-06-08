@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { useApp, type LeaveRequest } from "@/lib/context/AppContext";
+import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import { createClient } from "@/lib/supabase/client";
 import {
   calculateLeaveWorkHours,
@@ -141,6 +142,7 @@ export default function PayrollPage() {
     leaveRequests,
     overtimeRequests,
     tardinessRecords,
+    punchRecords,
     getShiftForDate,
     shiftTimeConfig,
     payrollRecords,
@@ -277,7 +279,13 @@ export default function PayrollPage() {
         return acc + (e[0] * 60 + e[1] - (s[0] * 60 + s[1])) / 60;
       }, 0);
 
-      const tardinessMinutes = tardinessRecords
+      const effectiveTardinessRecords = buildEffectiveTardinessRecords(
+        tardinessRecords,
+        punchRecords,
+        overtimeRequests
+      );
+
+      const tardinessMinutes = effectiveTardinessRecords
         .filter((r) => r.employeeId === emp.id && isDateInMonth(r.date, year, month))
         .reduce((acc, r) => acc + r.minutes, 0);
 
@@ -323,7 +331,7 @@ export default function PayrollPage() {
         finalPay: Math.round(finalPay * 100) / 100,
       };
     });
-  }, [displayEmployees, salaryConfigs, rateConfigs, adjustments, leaveRequests, overtimeRequests, tardinessRecords, year, month, getShiftForDate, shiftTimeConfig]);
+  }, [displayEmployees, salaryConfigs, rateConfigs, adjustments, leaveRequests, overtimeRequests, tardinessRecords, punchRecords, year, month, getShiftForDate, shiftTimeConfig]);
 
   const payrollData = computePayroll();
 
