@@ -1781,13 +1781,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Tardiness records (Supabase) ─────────────────────────────────────────────
 
   const addTardinessRecord = async (record: Omit<TardinessRecord, "id" | "createdAt">) => {
-    const { data, error } = await supabase.from("tardiness_records").insert({
-      user_id: record.employeeId,
-      record_date: record.date,
-      minutes_late: record.minutes,
-      note: record.notes,
-      recorded_by: currentUser?.id ?? record.employeeId,
-    }).select("id");
+    const { data, error } = await supabase.from("tardiness_records").upsert(
+      {
+        user_id: record.employeeId,
+        record_date: record.date,
+        minutes_late: record.minutes,
+        note: record.notes,
+        recorded_by: currentUser?.id ?? record.employeeId,
+      },
+      { onConflict: "user_id,record_date" }
+    ).select("id");
 
     if (error) {
       throw new Error(error.message || "新增遲到記錄失敗");
