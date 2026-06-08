@@ -23,27 +23,32 @@ export default function TardinessPage() {
   });
   
   // 提交遲到記錄
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const employee = employees.find(e => e.id === formData.employeeId);
+    const employee = employees.find((emp) => emp.id === formData.employeeId);
     if (!employee) return;
-    
-    addTardinessRecord({
-      employeeId: employee.id,
-      employeeName: employee.name,
-      date: formData.date,
-      minutes: formData.minutes,
-      notes: formData.notes
-    });
-    
-    setFormData({
-      employeeId: "",
-      date: "",
-      minutes: 0,
-      notes: ""
-    });
-    setShowForm(false);
-    alert("遲到記錄已新增！");
+
+    try {
+      await addTardinessRecord({
+        employeeId: employee.id,
+        employeeName: employee.name,
+        date: formData.date,
+        minutes: formData.minutes,
+        notes: formData.notes,
+      });
+
+      setFormData({
+        employeeId: "",
+        date: "",
+        minutes: 0,
+        notes: "",
+      });
+      setShowForm(false);
+      alert("遲到記錄已新增！");
+    } catch (error) {
+      console.error("[tardiness] add failed", error);
+      alert(error instanceof Error ? error.message : "新增遲到記錄失敗，請稍後重試");
+    }
   };
   
   type LinkedTardinessRecord = TardinessRecord & { sourcePunchId?: string };
