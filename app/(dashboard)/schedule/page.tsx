@@ -38,6 +38,7 @@ export default function SchedulePage() {
     isSunday, 
     isSaturday,
     getHolidayInfo,
+    refreshHolidayCalendar,
     fixedShifts,
     wednesdayNightShifts,
     countSaturdaysInMonth,
@@ -52,6 +53,9 @@ export default function SchedulePage() {
   } = useApp();
   
   const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
+  const [holidayRefreshYear, setHolidayRefreshYear] = useState<number>(new Date().getFullYear());
+  const [isRefreshingHolidays, setIsRefreshingHolidays] = useState(false);
+  const [holidayRefreshMessage, setHolidayRefreshMessage] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ date: string; employeeId: string } | null>(null);
 
   // 班表規則說明（可編輯）
@@ -97,7 +101,26 @@ export default function SchedulePage() {
   const monthLocked = isLeaveMonthLocked(year, month);
   const today = new Date();
   const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  
+
+  useEffect(() => {
+    setHolidayRefreshYear(year);
+  }, [year]);
+
+  const refreshHolidays = async () => {
+    setIsRefreshingHolidays(true);
+    setHolidayRefreshMessage(null);
+    try {
+      await refreshHolidayCalendar(holidayRefreshYear);
+      setHolidayRefreshMessage(`${holidayRefreshYear} 年假期已更新`);
+    } catch (error) {
+      setHolidayRefreshMessage(
+        error instanceof Error ? error.message : "假期更新失敗，請稍後再試"
+      );
+    } finally {
+      setIsRefreshingHolidays(false);
+    }
+  };
+
   // 過濾掉老闆（不顯示在班表）
   const displayEmployees = employees.filter(e => e.role !== "owner");
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
@@ -351,6 +374,25 @@ export default function SchedulePage() {
               {monthLocked ? "解除排休鎖定" : "鎖定本月排休"}
             </button>
           )}
+          {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                min={2024}
+                max={2100}
+                value={holidayRefreshYear}
+                onChange={(e) => setHolidayRefreshYear(Number(e.target.value) || year)}
+                className="w-20 px-2 py-1 border rounded-lg text-sm"
+              />
+              <button
+                onClick={refreshHolidays}
+                disabled={isRefreshingHolidays}
+                className="app-btn-outline"
+              >
+                {isRefreshingHolidays ? "更新中..." : "更新假期"}
+              </button>
+            </div>
+          )}
         </div>
         <div className="text-sm text-gray-600">
           {currentUser?.role === "owner" && <span className="text-blue-600">👑 您可以編輯所有人的班表</span>}
@@ -358,6 +400,11 @@ export default function SchedulePage() {
           {currentUser?.role === "staff" && <span className="text-gray-500">👤 僅檢視班表</span>}
           {monthLocked && <span className="ml-3 text-red-600 font-medium">🔒 本月排休已鎖定</span>}
         </div>
+        {holidayRefreshMessage && (
+          <div className="mt-2 text-sm text-emerald-700">
+            {holidayRefreshMessage}
+          </div>
+        )}
       </div>
 
 

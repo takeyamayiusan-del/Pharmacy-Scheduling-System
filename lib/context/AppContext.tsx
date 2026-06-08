@@ -158,6 +158,14 @@ export type TardinessRecord = {
   createdAt: string;
 };
 
+export type Holiday = {
+  id: string;
+  date: string;
+  name: string;
+  year: number;
+  createdAt: string;
+};
+
 export type PunchRecord = {
   id: string;
   employeeId: string;
@@ -357,6 +365,9 @@ interface AppContextType {
   isWednesday: (dateStr: string) => boolean;
   getHolidayInfo: (dateStr: string) => { isHoliday: boolean; name?: string };
   countSaturdaysInMonth: (year: number, month: number) => number;
+  holidays: Holiday[];
+  loadHolidays: () => Promise<void>;
+  refreshHolidayCalendar: (year: number) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -383,6 +394,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({});
   const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>([]);
   const [compLeaveLedger, setCompLeaveLedger] = useState<CompLeaveLedgerEntry[]>([]);
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
 
   // Supabase-backed state (previously in localStorage)
   const [schedule, setSchedule] = useState<ScheduleData>({});
@@ -635,6 +647,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase]);
 
+  const loadHolidays = useCallback(async () => {
+    const { data } = await supabase
+      .from("holidays")
+      .select("id, holiday_date, name, year, created_at")
+      .order("holiday_date", { ascending: true });
+
+    if (data) {
+      setHolidays(
+        data.map((item) => ({
+          id: item.id,
+          date: item.holiday_date,
+          name: item.name,
+          year: item.year,
+          createdAt: item.created_at,
+        }))
+      );
+    }
+  }, [supabase]);
+
+  const refreshHolidayCalendar = useCallback(async (year: number) => {
+    const response = await fetch(`/api/holidays/update?year=${year}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(result?.error || "更新假期失敗");
+    }
+    await loadHolidays();
+  }, [loadHolidays]);
+
+  const getHolidayInfo = useCallback((dateStr: string) => {
+    const holiday = holidays.find((item) => item.date === dateStr) ||
+      TAIWAN_HOLIDAYS_2026.find((item) => item.date === dateStr);
+    return { isHoliday: Boolean(holiday), name: holiday?.name };
+  }, [holidays]);
+
   const loadSwapRequests = useCallback(async () => {
     const { data } = await supabase
       .from("shift_swap_applications")
@@ -845,6 +894,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               loadWednesdayOffSelections(),
               loadLeaveMonthLocks(),
               loadBulletinItems(),
+              loadHolidays(),
             ]).catch((e) => console.error("[initAuth] background load error:", e));
           }
         }
@@ -891,7 +941,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               Promise.allSettled([
                 loadEmployees(),
                 loadLeaveRequests(),
-              loadCompLeaveLedger(),
+                loadCompLeaveLedger(),
                 loadSwapRequests(),
                 loadOvertimeRequests(),
                 loadTardinessRecords(),
@@ -904,6 +954,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 loadWednesdayOffSelections(),
                 loadLeaveMonthLocks(),
                 loadBulletinItems(),
+                loadHolidays(),
               ]).catch((e) => console.error("[SIGNED_IN] background load error:", e));
             } else if (mounted) {
               console.warn("[SIGNED_IN] no user row found for", session.user.id);
@@ -919,7 +970,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks]);
+  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks, loadHolidays]);
 
   // ─── Auth functions ──────────────────────────────────────────────────────────
 
@@ -2120,6 +2171,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         isTuesday,
         isWednesday,
         getHolidayInfo,
+        holidays,
+        loadHolidays,
+        refreshHolidayCalendar,
         countSaturdaysInMonth,
       }}
     >
