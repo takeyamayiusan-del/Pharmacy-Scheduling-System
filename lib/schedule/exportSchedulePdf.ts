@@ -97,7 +97,11 @@ function drawScheduleSegment(
     if (holidayInfo.isHoliday) {
       ctx.font = "bold 8px 'Microsoft JhengHei', sans-serif";
       ctx.fillStyle = "#92400e";
-      ctx.fillText(holidayInfo.name ?? "國定假日", x + dayColWidth / 2, tableY + 38);
+      const holidayName = holidayInfo.name ?? "國定\n假日";
+      const lines = holidayName.split("\n");
+      for (let i = 0; i < lines.length; i++) {
+        ctx.fillText(lines[i], x + dayColWidth / 2, tableY + 38 + i * 9);
+      }
     }
 
     ctx.textAlign = "left";

@@ -568,7 +568,9 @@ export default function SchedulePage() {
                       <div>{day}</div>
                       <div className="text-xs text-gray-500">{dayLabels[dayOfWeek]}</div>
                       {holidayInfo.isHoliday && !isSunday(dateStr) && (
-                        <div className="text-[10px] text-yellow-700">{holidayInfo.name}</div>
+                        <div className="text-[10px] text-yellow-700 whitespace-pre-line">
+                          {holidayInfo.name}
+                        </div>
                       )}
                     </th>
                   );
