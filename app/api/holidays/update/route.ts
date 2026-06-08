@@ -108,7 +108,13 @@ function parseICSHolidays(ics: string, year: number) {
     if (current) {
       const match = line.match(/^([^:]+):(.*)$/);
       if (!match) continue;
-      current[match[1]] = match[2];
+      const fullKey = match[1];
+      const value = match[2];
+      current[fullKey] = value;
+      const baseKey = fullKey.split(";")[0];
+      if (!current[baseKey]) {
+        current[baseKey] = value;
+      }
     }
   }
 
