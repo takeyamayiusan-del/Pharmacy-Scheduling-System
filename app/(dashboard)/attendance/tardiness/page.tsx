@@ -60,7 +60,7 @@ export default function TardinessPage() {
   type LinkedTardinessRecord = TardinessRecord & { sourcePunchId?: string };
 
   const linkedTardinessRecords = useMemo<LinkedTardinessRecord[]>(() => {
-    // 檢查是否有已核准的加班可抵銷遲到
+    // 真實遲到記錄應該可見；只有自動打卡生成的遲到才會因為已核准加班而忽略。
     const shouldCancelTardiness = (employeeId: string, date: string): boolean => {
       return overtimeRequests.some(
         (req) =>
@@ -69,15 +69,13 @@ export default function TardinessPage() {
           req.status === "approved"
       );
     };
-    const records: LinkedTardinessRecord[] = tardinessRecords
-      .filter((record) => !shouldCancelTardiness(record.employeeId, record.date))
-      .map((record) => ({
-        ...record,
-        employeeName:
-          record.employeeName ||
-          employees.find((employee) => employee.id === record.employeeId)?.name ||
-          "",
-      }));
+    const records: LinkedTardinessRecord[] = tardinessRecords.map((record) => ({
+      ...record,
+      employeeName:
+        record.employeeName ||
+        employees.find((employee) => employee.id === record.employeeId)?.name ||
+        "",
+    }));
 
     punchRecords
       .filter(
