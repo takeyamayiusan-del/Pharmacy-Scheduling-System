@@ -28,7 +28,7 @@ export function MonthlyStatsTable() {
       .eq('id', session.user.id)
       .single();
 
-    const manager = currentUser?.role === 'boss' || currentUser?.role === 'manager';
+    const manager = currentUser?.role === 'owner' || currentUser?.role === 'manager';
     const [usersRes, statsRes] = await Promise.all([
       supabase.from('users').select('*').eq('is_active', true),
       supabase.from('monthly_attendance_stats').select('*').eq('year', year).eq('month', month),

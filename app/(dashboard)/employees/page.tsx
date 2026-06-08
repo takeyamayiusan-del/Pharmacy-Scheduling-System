@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useApp, type Employee } from "@/lib/context/AppContext";
 
-type Role = "owner" | "manager" | "staff" | "boss";
+type Role = "owner" | "manager" | "staff";
 
 export default function EmployeesPage() {
   const { currentUser, employees, addEmployee, updateEmployee, deleteEmployee } = useApp();

@@ -21,7 +21,7 @@ export default function BulletinBoard() {
     isUrgent: false,
   });
 
-  const isManager = ["owner", "manager", "boss"].includes(currentUser?.role ?? "");
+  const isManager = ["owner", "manager"].includes(currentUser?.role ?? "");
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 

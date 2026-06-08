@@ -10,7 +10,7 @@ import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, typ
 export type Employee = {
   id: string;
   name: string;
-  role: "owner" | "manager" | "staff" | "boss";
+  role: "owner" | "manager" | "staff";
   username?: string;
   password?: string;
   hireDate: string;               // 入職日期
