@@ -1479,7 +1479,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteLeaveRequest = async (id: string) => {
-    await supabase.from("leave_applications").delete().eq("id", id);
+    const { data, error } = await supabase
+      .from("leave_applications")
+      .delete()
+      .eq("id", id)
+      .select("id");
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error("未找到請假申請或刪除失敗");
+    }
+
     await loadLeaveRequests();
   };
 
@@ -1607,7 +1617,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteSwapRequest = async (id: string) => {
-    await supabase.from("shift_swap_applications").delete().eq("id", id);
+    const { data, error } = await supabase
+      .from("shift_swap_applications")
+      .delete()
+      .eq("id", id)
+      .select("id");
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error("未找到換班申請或刪除失敗");
+    }
+
     await loadSwapRequests();
   };
 
@@ -1744,7 +1764,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteOvertimeRequest = async (id: string) => {
-    await supabase.from("overtime_applications").delete().eq("id", id);
+    const { data, error } = await supabase
+      .from("overtime_applications")
+      .delete()
+      .eq("id", id)
+      .select("id");
+
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      throw new Error("未找到加班申請或刪除失敗");
+    }
+
     await loadOvertimeRequests();
   };
 
