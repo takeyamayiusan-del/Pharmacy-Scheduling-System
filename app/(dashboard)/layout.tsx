@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
   Fingerprint,
   DollarSign,
+  MessageSquare,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -116,6 +117,7 @@ export default function DashboardLayout({
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
     { href: '/attendance/punch-admin', label: '打卡管理', icon: Clock, allowed: isManager },
+    { href: '/shift-handoff', label: '交班留言', icon: MessageSquare, allowed: true },
     { href: '/fixed-shifts', label: '固定班表', icon: Settings, allowed: isManager },
     { href: '/wednesday-shifts', label: '禮三晚班', icon: MoonStar, allowed: true },
     { href: '/applications/leave', label: '請假申請', icon: FileText, allowed: true },
