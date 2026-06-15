@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useApp } from "@/lib/context/AppContext";
-import { MessageSquare, Send, CheckCircle, Trash2, Clock, Users, ArrowRight } from "lucide-react";
+import { MessageSquare, Send, CheckCircle, Trash2, Clock, ArrowRight } from "lucide-react";
 import { todayDateStr } from "@/lib/attendance/punchSchedule";
 
 export default function ShiftHandoff() {
