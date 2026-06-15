@@ -121,28 +121,13 @@ export type BulletinItem = {
   authorName: string;
   title: string;
   content: string;
-  type: "announcement" | "shift_swap_request";
+  type: "announcement" | "shift_swap_request" | "shift_handoff";
   status: "active" | "archived" | "completed";
   relatedId?: string;
   isUrgent: boolean;
   isPinned: boolean;
   targetType: "all" | "specific";
   targetIds: string[];
-  createdAt: string;
-};
-
-export type ShiftHandoff = {
-  id: string;
-  date: string;
-  shift: "A" | "B" | "C";
-  authorId: string;
-  authorName: string;
-  targetShift: "A" | "B" | "C" | "all";
-  content: string;
-  isCompleted: boolean;
-  completedById?: string;
-  completedByName?: string;
-  completedAt?: string;
   createdAt: string;
 };
 
@@ -375,11 +360,6 @@ interface AppContextType {
   loadBulletinItems: () => Promise<void>;
   readBulletinItem: (bulletinId: string) => Promise<void>;
   isBulletinRead: (bulletinId: string) => boolean;
-  shiftHandoffs: ShiftHandoff[];
-  addShiftHandoff: (handoff: Omit<ShiftHandoff, "id" | "authorName" | "isCompleted" | "completedById" | "completedByName" | "completedAt" | "createdAt">) => Promise<void>;
-  completeShiftHandoff: (id: string) => Promise<void>;
-  deleteShiftHandoff: (id: string) => Promise<void>;
-  loadShiftHandoffs: (date?: string) => Promise<void>;
   payrollRecords: PayrollRecord[];
   publishPayrollRecord: (id: string) => Promise<void>;
   loadPayrollRecords: (year: number, month: number) => Promise<void>;
@@ -415,7 +395,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [bulletinItems, setBulletinItems] = useState<BulletinItem[]>([]);
   const [bulletinReads, setBulletinReads] = useState<{ bulletinId: string; userId: string }[]>([]);
-  const [shiftHandoffs, setShiftHandoffs] = useState<ShiftHandoff[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>({});
   const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({});
@@ -2184,75 +2163,6 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     );
   };
 
-  // 交班留言
-  const loadShiftHandoffs = useCallback(async (date?: string): Promise<void> => {
-    let query = supabase
-      .from("shift_handoffs")
-      .select("*")
-      .order("created_at", { ascending: false });
-    
-    if (date) {
-      query = query.eq("date", date);
-    }
-    
-    const { data, error } = await query;
-    if (error) {
-      console.error("[loadShiftHandoffs] error:", error);
-      return;
-    }
-    
-    setShiftHandoffs(
-      (data ?? []).map((r) => ({
-        id: r.id,
-        date: r.date,
-        shift: r.shift,
-        authorId: r.author_id,
-        authorName: r.author_name,
-        targetShift: r.target_shift,
-        content: r.content,
-        isCompleted: r.is_completed,
-        completedById: r.completed_by_id,
-        completedByName: r.completed_by_name,
-        completedAt: r.completed_at,
-        createdAt: r.created_at,
-      }))
-    );
-  }, [supabase]);
-
-  const addShiftHandoff = async (
-    handoff: Omit<ShiftHandoff, "id" | "authorName" | "isCompleted" | "completedById" | "completedByName" | "completedAt" | "createdAt">
-  ): Promise<void> => {
-    if (!currentUser) return;
-    await supabase.from("shift_handoffs").insert({
-      date: handoff.date,
-      shift: handoff.shift,
-      author_id: handoff.authorId,
-      author_name: currentUser.name,
-      target_shift: handoff.targetShift,
-      content: handoff.content,
-    });
-    await loadShiftHandoffs(handoff.date);
-  };
-
-  const completeShiftHandoff = async (id: string): Promise<void> => {
-    if (!currentUser) return;
-    await supabase
-      .from("shift_handoffs")
-      .update({
-        is_completed: true,
-        completed_by_id: currentUser.id,
-        completed_by_name: currentUser.name,
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-    await loadShiftHandoffs();
-  };
-
-  const deleteShiftHandoff = async (id: string): Promise<void> => {
-    await supabase.from("shift_handoffs").delete().eq("id", id);
-    await loadShiftHandoffs();
-  };
-
   const loadPayrollRecords = useCallback(async (year: number, month: number): Promise<void> => {
     const { data } = await supabase
       .from("payroll_records")
@@ -2391,11 +2301,6 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         loadBulletinItems,
         readBulletinItem,
         isBulletinRead,
-        shiftHandoffs,
-        addShiftHandoff,
-        completeShiftHandoff,
-        deleteShiftHandoff,
-        loadShiftHandoffs,
         payrollRecords,
         publishPayrollRecord,
         loadPayrollRecords,

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, type BulletinItem } from "@/lib/context/AppContext";
-import { Megaphone, MessageSquare, AlertTriangle, Trash2, CheckCircle, Clock, Pin, PinOff, Eye, Users } from "lucide-react";
+import { Megaphone, MessageSquare, AlertTriangle, Trash2, CheckCircle, Clock, Pin, PinOff, Eye, Users, ArrowRightFromLine } from "lucide-react";
 
 export default function BulletinBoard() {
   const router = useRouter();
@@ -75,7 +75,7 @@ export default function BulletinBoard() {
       setFormData({ 
         title: "", 
         content: "", 
-        type: isManager ? "announcement" : "shift_swap_request", 
+        type: "announcement", 
         isUrgent: false,
         isPinned: false,
         targetType: "all",
@@ -133,7 +133,7 @@ export default function BulletinBoard() {
             setFormData({
               title: "",
               content: "",
-              type: isManager ? "announcement" : "shift_swap_request",
+              type: "announcement",
               isUrgent: false,
               isPinned: false,
               targetType: "all",
@@ -142,7 +142,7 @@ export default function BulletinBoard() {
           }}
           className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
         >
-          {showAddForm ? "取消" : isManager ? "發布公告" : "發布換班需求"}
+          {showAddForm ? "取消" : "發布公告"}
         </button>
       </div>
 
@@ -216,10 +216,10 @@ export default function BulletinBoard() {
               <select
                 value={formData.type}
                 onChange={(e) => setFormData({ ...formData, type: e.target.value as BulletinItem["type"] })}
-                disabled={!isManager}
-                className={`text-sm border rounded px-2 py-1 outline-none ${!isManager ? "bg-gray-50 text-gray-500 cursor-not-allowed" : ""}`}
+                className="text-sm border rounded px-2 py-1 outline-none"
               >
                 <option value="announcement">一般公告</option>
+                <option value="shift_handoff">交班留言</option>
                 <option value="shift_swap_request">換班/代班需求</option>
               </select>
             </div>
@@ -302,17 +302,21 @@ export default function BulletinBoard() {
                 
                 <div className="flex items-start justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    {item.type === "announcement" ? (
+                    {item.type === "shift_handoff" ? (
+                      <ArrowRightFromLine className="h-4 w-4 text-green-600" />
+                    ) : item.type === "announcement" ? (
                       <Megaphone className={`h-4 w-4 ${item.isUrgent ? "text-amber-600" : "text-blue-600"}`} />
                     ) : (
                       <MessageSquare className="h-4 w-4 text-purple-600" />
                     )}
                     <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                      item.type === "shift_handoff" ? "bg-green-100 text-green-700" :
                       item.type === "announcement" 
                         ? (item.isUrgent ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700")
                         : "bg-purple-100 text-purple-700"
                     }`}>
-                      {item.type === "announcement" ? (item.isUrgent ? "重要公告" : "公告") : "換班需求"}
+                      {item.type === "shift_handoff" ? "交班留言" :
+                       item.type === "announcement" ? (item.isUrgent ? "重要公告" : "公告") : "換班需求"}
                     </span>
                     {isTargeted && (
                       <span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded-full">
@@ -331,15 +335,17 @@ export default function BulletinBoard() {
                         <Eye className="h-4 w-4" />
                       </button>
                     )}
-                    {isManager && (
+                    {(isManager || currentUser?.id === item.authorId) && (
                       <>
-                        <button
-                          onClick={() => handleTogglePin(item)}
-                          className={`p-1 transition-colors ${item.isPinned ? "text-blue-600" : "text-gray-400 hover:text-blue-600"}`}
-                          title={item.isPinned ? "取消釘選" : "釘選置頂"}
-                        >
-                          {item.isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-                        </button>
+                        {isManager && (
+                          <button
+                            onClick={() => handleTogglePin(item)}
+                            className={`p-1 transition-colors ${item.isPinned ? "text-blue-600" : "text-gray-400 hover:text-blue-600"}`}
+                            title={item.isPinned ? "取消釘選" : "釘選置頂"}
+                          >
+                            {item.isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                          </button>
+                        )}
                         <button
                           onClick={() => handleStatusChange(item.id, "archived")}
                           className="p-1 text-gray-400 hover:text-emerald-600 transition-colors"

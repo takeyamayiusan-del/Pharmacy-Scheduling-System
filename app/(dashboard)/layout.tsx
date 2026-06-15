@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
   Fingerprint,
   DollarSign,
+  MessageSquare,
 } from 'lucide-react';
 import Link from 'next/link';
 
