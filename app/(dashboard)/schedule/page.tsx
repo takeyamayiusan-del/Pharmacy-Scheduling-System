@@ -522,7 +522,7 @@ export default function SchedulePage() {
               if (weekdayResting.length > 1) {
                 messages.push(`平日多人休假：${weekdayResting.join("、")}`);
               }
-              if (aWorkers.length === 0) {
+              if (aWorkers.length === 0 && !isSaturday(dateStr)) {
                 messages.push("沒有人上 A 班");
               }
               if (messages.length === 0) return null;
