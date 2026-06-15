@@ -20,8 +20,8 @@ import {
   todayDateStr,
   type PunchSlot,
 } from "@/lib/attendance/punchSchedule";
-import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X, MessageSquare, Send, CheckCircle, Trash2, ArrowRight } from "lucide-react";
-import { type BulletinItem, type ShiftHandoff } from "@/lib/context/AppContext";
+import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X, MessageSquare, Send, CheckCircle, Trash2 } from "lucide-react";
+import { type BulletinItem } from "@/lib/context/AppContext";
 
 type GpsState = "loading" | "denied" | "outside" | "inside";
 

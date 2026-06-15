@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, type BulletinItem } from "@/lib/context/AppContext";
-import { Megaphone, MessageSquare, AlertTriangle, Trash2, CheckCircle, Clock, Pin, PinOff, Eye, EyeOff, Users } from "lucide-react";
+import { Megaphone, MessageSquare, AlertTriangle, Trash2, CheckCircle, Clock, Pin, PinOff, Eye, Users } from "lucide-react";
 
 export default function BulletinBoard() {
   const router = useRouter();
