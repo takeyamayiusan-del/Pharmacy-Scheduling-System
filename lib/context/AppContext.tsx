@@ -125,6 +125,24 @@ export type BulletinItem = {
   status: "active" | "archived" | "completed";
   relatedId?: string;
   isUrgent: boolean;
+  isPinned: boolean;
+  targetType: "all" | "specific";
+  targetIds: string[];
+  createdAt: string;
+};
+
+export type ShiftHandoff = {
+  id: string;
+  date: string;
+  shift: "A" | "B" | "C";
+  authorId: string;
+  authorName: string;
+  targetShift: "A" | "B" | "C" | "all";
+  content: string;
+  isCompleted: boolean;
+  completedById?: string;
+  completedByName?: string;
+  completedAt?: string;
   createdAt: string;
 };
 
@@ -355,6 +373,13 @@ interface AppContextType {
   updateBulletinItem: (id: string, updates: Partial<BulletinItem>) => Promise<void>;
   deleteBulletinItem: (id: string) => Promise<void>;
   loadBulletinItems: () => Promise<void>;
+  readBulletinItem: (bulletinId: string) => Promise<void>;
+  isBulletinRead: (bulletinId: string) => boolean;
+  shiftHandoffs: ShiftHandoff[];
+  addShiftHandoff: (handoff: Omit<ShiftHandoff, "id" | "authorName" | "isCompleted" | "completedById" | "completedByName" | "completedAt" | "createdAt">) => Promise<void>;
+  completeShiftHandoff: (id: string) => Promise<void>;
+  deleteShiftHandoff: (id: string) => Promise<void>;
+  loadShiftHandoffs: (date?: string) => Promise<void>;
   payrollRecords: PayrollRecord[];
   publishPayrollRecord: (id: string) => Promise<void>;
   loadPayrollRecords: (year: number, month: number) => Promise<void>;
@@ -389,6 +414,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [punchRecords, setPunchRecords] = useState<PunchRecord[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [bulletinItems, setBulletinItems] = useState<BulletinItem[]>([]);
+  const [bulletinReads, setBulletinReads] = useState<{ bulletinId: string; userId: string }[]>([]);
+  const [shiftHandoffs, setShiftHandoffs] = useState<ShiftHandoff[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>({});
   const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({});
@@ -2026,7 +2053,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   // ─── Notifications ────────────────────────────────────────────────────────────
 
   const loadBulletinItems = useCallback(async (): Promise<void> => {
-    const [boardResponse, swapResponse] = await Promise.all([
+    const [boardResponse, swapResponse, readsResponse] = await Promise.all([
       supabase
         .from("bulletin_board")
         .select("*, users(name)")
@@ -2037,6 +2064,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
           "*, requester:users!shift_swap_applications_requester_id_fkey(name), target:users!shift_swap_applications_target_id_fkey(name)"
         )
         .order("created_at", { ascending: false }),
+      supabase
+        .from("bulletin_reads")
+        .select("bulletin_id, user_id"),
     ]);
 
     if (boardResponse.error) {
@@ -2048,6 +2078,13 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
 
     const boardData = Array.isArray(boardResponse.data) ? boardResponse.data : [];
     const swapData = Array.isArray(swapResponse.data) ? swapResponse.data : [];
+    const readsData = Array.isArray(readsResponse.data) ? readsResponse.data : [];
+
+    // Set bulletin reads
+    setBulletinReads(readsData.map((r: { bulletin_id: string; user_id: string }) => ({
+      bulletinId: r.bulletin_id,
+      userId: r.user_id,
+    })));
 
     const boardItems = boardData.map((r) => ({
       id: r.id,
@@ -2058,7 +2095,10 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       type: r.type as BulletinItem["type"],
       status: r.status as BulletinItem["status"],
       relatedId: r.related_id,
-      isUrgent: r.is_urgent,
+      isUrgent: r.is_urgent ?? false,
+      isPinned: r.is_pinned ?? false,
+      targetType: (r.target_type ?? "all") as "all" | "specific",
+      targetIds: r.target_ids ?? [],
       createdAt: r.created_at,
     }));
 
@@ -2072,13 +2112,18 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       status: mapSwapStatusToBulletinStatus(r.status),
       relatedId: r.id,
       isUrgent: false,
+      isPinned: false,
+      targetType: "all" as const,
+      targetIds: [],
       createdAt: r.created_at,
     }));
 
+    // Sort: pinned first, then by createdAt
     setBulletinItems(
-      [...boardItems, ...swapItems].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      )
+      [...boardItems, ...swapItems].sort((a, b) => {
+        if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      })
     );
   }, [supabase]);
 
@@ -2091,6 +2136,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       status: item.status,
       related_id: item.relatedId,
       is_urgent: item.isUrgent,
+      is_pinned: item.isPinned ?? false,
+      target_type: item.targetType ?? "all",
+      target_ids: item.targetIds ?? [],
     });
     await loadBulletinItems();
   };
@@ -2101,6 +2149,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     if (updates.content !== undefined) dbUpdates.content = updates.content;
     if (updates.status !== undefined) dbUpdates.status = updates.status;
     if (updates.isUrgent !== undefined) dbUpdates.is_urgent = updates.isUrgent;
+    if (updates.isPinned !== undefined) dbUpdates.is_pinned = updates.isPinned;
+    if (updates.targetType !== undefined) dbUpdates.target_type = updates.targetType;
+    if (updates.targetIds !== undefined) dbUpdates.target_ids = updates.targetIds;
     await supabase.from("bulletin_board").update(dbUpdates).eq("id", id);
     await loadBulletinItems();
   };
@@ -2108,6 +2159,97 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   const deleteBulletinItem = async (id: string): Promise<void> => {
     await supabase.from("bulletin_board").delete().eq("id", id);
     await loadBulletinItems();
+  };
+
+  // 已讀公告
+  const readBulletinItem = async (bulletinId: string): Promise<void> => {
+    if (!currentUser) return;
+    const existing = bulletinReads.find(
+      (r) => r.bulletinId === bulletinId && r.userId === currentUser.id
+    );
+    if (existing) return; // Already read
+    
+    await supabase.from("bulletin_reads").insert({
+      bulletin_id: bulletinId,
+      user_id: currentUser.id,
+    });
+    setBulletinReads((prev) => [...prev, { bulletinId, userId: currentUser.id }]);
+  };
+
+  const isBulletinRead = (bulletinId: string): boolean => {
+    if (!currentUser) return true;
+    return bulletinReads.some(
+      (r) => r.bulletinId === bulletinId && r.userId === currentUser.id
+    );
+  };
+
+  // 交班留言
+  const loadShiftHandoffs = useCallback(async (date?: string): Promise<void> => {
+    let query = supabase
+      .from("shift_handoffs")
+      .select("*")
+      .order("created_at", { ascending: false });
+    
+    if (date) {
+      query = query.eq("date", date);
+    }
+    
+    const { data, error } = await query;
+    if (error) {
+      console.error("[loadShiftHandoffs] error:", error);
+      return;
+    }
+    
+    setShiftHandoffs(
+      (data ?? []).map((r) => ({
+        id: r.id,
+        date: r.date,
+        shift: r.shift,
+        authorId: r.author_id,
+        authorName: r.author_name,
+        targetShift: r.target_shift,
+        content: r.content,
+        isCompleted: r.is_completed,
+        completedById: r.completed_by_id,
+        completedByName: r.completed_by_name,
+        completedAt: r.completed_at,
+        createdAt: r.created_at,
+      }))
+    );
+  }, [supabase]);
+
+  const addShiftHandoff = async (
+    handoff: Omit<ShiftHandoff, "id" | "authorName" | "isCompleted" | "completedById" | "completedByName" | "completedAt" | "createdAt">
+  ): Promise<void> => {
+    if (!currentUser) return;
+    await supabase.from("shift_handoffs").insert({
+      date: handoff.date,
+      shift: handoff.shift,
+      author_id: handoff.authorId,
+      author_name: currentUser.name,
+      target_shift: handoff.targetShift,
+      content: handoff.content,
+    });
+    await loadShiftHandoffs(handoff.date);
+  };
+
+  const completeShiftHandoff = async (id: string): Promise<void> => {
+    if (!currentUser) return;
+    await supabase
+      .from("shift_handoffs")
+      .update({
+        is_completed: true,
+        completed_by_id: currentUser.id,
+        completed_by_name: currentUser.name,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", id);
+    await loadShiftHandoffs();
+  };
+
+  const deleteShiftHandoff = async (id: string): Promise<void> => {
+    await supabase.from("shift_handoffs").delete().eq("id", id);
+    await loadShiftHandoffs();
   };
 
   const loadPayrollRecords = useCallback(async (year: number, month: number): Promise<void> => {
@@ -2246,6 +2388,13 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         updateBulletinItem,
         deleteBulletinItem,
         loadBulletinItems,
+        readBulletinItem,
+        isBulletinRead,
+        shiftHandoffs,
+        addShiftHandoff,
+        completeShiftHandoff,
+        deleteShiftHandoff,
+        loadShiftHandoffs,
         payrollRecords,
         publishPayrollRecord,
         loadPayrollRecords,
