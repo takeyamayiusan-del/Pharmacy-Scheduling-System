@@ -20,8 +20,8 @@ import {
   todayDateStr,
   type PunchSlot,
 } from "@/lib/attendance/punchSchedule";
-import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X } from "lucide-react";
-import { type BulletinItem } from "@/lib/context/AppContext";
+import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X, MessageSquare, Send, CheckCircle, Trash2, ArrowRight } from "lucide-react";
+import { type BulletinItem, type ShiftHandoff } from "@/lib/context/AppContext";
 
 type GpsState = "loading" | "denied" | "outside" | "inside";
 
@@ -39,10 +39,21 @@ export default function PunchPage() {
     addTardinessRecord,
     getTodayPunchRecords,
     bulletinItems,
+    shiftHandoffs,
+    addShiftHandoff,
+    completeShiftHandoff,
+    deleteShiftHandoff,
+    loadShiftHandoffs,
   } = useApp();
 
   const [announcementModal, setAnnouncementModal] = useState<boolean>(false);
   const [latestAnnouncement, setLatestAnnouncement] = useState<BulletinItem | null>(null);
+  
+  // 交班留言相關
+  const [showHandoffModal, setShowHandoffModal] = useState(false);
+  const [handoffContent, setHandoffContent] = useState("");
+  const [handoffTarget, setHandoffTarget] = useState<"A" | "B" | "C" | "all">("all");
+  const [isSubmittingHandoff, setIsSubmittingHandoff] = useState(false);
 
   // 檢測是否有未讀的重要公告
   useEffect(() => {
@@ -436,7 +447,161 @@ export default function PunchPage() {
             可提早 10 分鐘打卡；遲到第 6 分鐘起算；遲到 30 分鐘仍可打卡但建議請假；下班後第 10 分鐘起建議申請加班
           </p>
         )}
+        
+        {/* 交班留言按鈕 */}
+        <button
+          onClick={() => {
+            loadShiftHandoffs(today);
+            setShowHandoffModal(true);
+          }}
+          className="mt-3 w-full py-2 border border-blue-200 rounded-lg text-blue-600 text-sm font-medium hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
+        >
+          <MessageSquare className="h-4 w-4" />
+          留交班訊息
+          {/* 顯示未讀交班數量 */}
+          {(() => {
+            const pendingCount = shiftHandoffs.filter(h => 
+              h.date === today && 
+              !h.isCompleted && 
+              h.authorId !== currentUser?.id &&
+              (h.targetShift === "all" || h.targetShift === shift || h.shift === shift)
+            ).length;
+            return pendingCount > 0 ? (
+              <span className="bg-amber-500 text-white text-xs px-1.5 py-0.5 rounded-full">{pendingCount}</span>
+            ) : null;
+          })()}
+        </button>
       </div>
+
+      {/* 交班留言 Modal */}
+      {showHandoffModal && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-20 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-4 border-b flex items-center justify-between">
+              <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                <MessageSquare className="h-5 w-5 text-blue-600" />
+                交班留言
+              </h3>
+              <button onClick={() => setShowHandoffModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            {/* 發布交班 */}
+            <div className="p-4 border-b">
+              <p className="text-sm text-gray-600 mb-2">留下訊息給下一班</p>
+              <textarea
+                value={handoffContent}
+                onChange={(e) => setHandoffContent(e.target.value)}
+                className="w-full border rounded-lg p-3 text-sm h-24 resize-none"
+                placeholder="例如：O3客人藥物過敏、冰箱溫度異常、VIP客人明天會來..."
+              />
+              <div className="flex items-center gap-3 mt-2">
+                <select
+                  value={handoffTarget}
+                  onChange={(e) => setHandoffTarget(e.target.value as "A" | "B" | "C" | "all")}
+                  className="text-sm border rounded px-2 py-1"
+                >
+                  <option value="all">交給所有人</option>
+                  <option value="A">交給早班</option>
+                  <option value="B">交給午班</option>
+                  <option value="C">交給晚班</option>
+                </select>
+                <button
+                  onClick={async () => {
+                    if (!handoffContent.trim() || !currentUser) return;
+                    setIsSubmittingHandoff(true);
+                    await addShiftHandoff({
+                      date: today,
+                      shift: shift as "A" | "B" | "C",
+                      authorId: currentUser.id,
+                      targetShift: handoffTarget,
+                      content: handoffContent.trim(),
+                    });
+                    setHandoffContent("");
+                    setIsSubmittingHandoff(false);
+                    await loadShiftHandoffs(today);
+                  }}
+                  disabled={!handoffContent.trim() || isSubmittingHandoff || shift === "X"}
+                  className="flex-1 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center justify-center gap-1"
+                >
+                  <Send className="h-4 w-4" />
+                  {isSubmittingHandoff ? "發布中..." : "發布"}
+                </button>
+              </div>
+            </div>
+            
+            {/* 收到的交班 */}
+            <div className="p-4 max-h-80 overflow-y-auto">
+              <p className="text-sm font-medium text-gray-700 mb-3">收到的交班</p>
+              {shiftHandoffs.filter(h => 
+                h.date === today && 
+                h.authorId !== currentUser?.id &&
+                (h.targetShift === "all" || h.targetShift === shift || h.shift === shift)
+              ).length === 0 ? (
+                <p className="text-sm text-gray-400 text-center py-4">目前沒有收到的交班訊息</p>
+              ) : (
+                <div className="space-y-3">
+                  {shiftHandoffs.filter(h => 
+                    h.date === today && 
+                    h.authorId !== currentUser?.id &&
+                    (h.targetShift === "all" || h.targetShift === shift || h.shift === shift)
+                  ).map(h => (
+                    <div key={h.id} className={`p-3 rounded-lg border ${h.isCompleted ? "opacity-60 bg-gray-50" : "bg-blue-50 border-blue-200"}`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-medium text-blue-700">
+                            {h.authorName}
+                          </span>
+                          <span className="text-xs text-gray-400">
+                            {h.shift} → {h.targetShift}
+                          </span>
+                        </div>
+                        {!h.isCompleted && (
+                          <button
+                            onClick={() => completeShiftHandoff(h.id)}
+                            className="text-xs px-2 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200"
+                          >
+                            確認
+                          </button>
+                        )}
+                        {h.isCompleted && (
+                          <span className="text-xs text-green-600 flex items-center gap-1">
+                            <CheckCircle className="h-3 w-3" /> 已確認
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-sm text-gray-700">{h.content}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {/* 我發出的交班 */}
+              {shiftHandoffs.filter(h => h.date === today && h.authorId === currentUser?.id).length > 0 && (
+                <>
+                  <p className="text-sm font-medium text-gray-700 mb-3 mt-4">我發出的交班</p>
+                  <div className="space-y-2">
+                    {shiftHandoffs.filter(h => h.date === today && h.authorId === currentUser?.id).map(h => (
+                      <div key={h.id} className="p-3 rounded-lg border bg-gray-50">
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs text-gray-500">
+                            → {h.targetShift} {h.isCompleted && <span className="text-green-600">✓ 已確認</span>}
+                          </span>
+                          <button onClick={() => deleteShiftHandoff(h.id)} className="text-gray-400 hover:text-red-600">
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <p className="text-sm text-gray-700 mt-1">{h.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {shift === "X" ? (
         <div className="space-y-4">
