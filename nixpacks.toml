@@ -2,16 +2,16 @@
 # 耀聖藥局智慧排班系統
 
 [phases.setup]
-  nixPkgs = ["nodejs_20"]
+  nixPkgs = ["nodejs_20", "pnpm"]
 
 [phases.install]
-  cmds = ["npm install --include=dev"]
+  cmds = ["pnpm install"]
   dependsOn = ["setup"]
 
 [phases.build]
-  cmds = ["npm run build"]
+  cmds = ["pnpm run build"]
   dependsOn = ["install"]
 
 [start]
-  cmd = "npm start"
+  cmd = "pnpm run start"
   dependsOn = ["build"]
