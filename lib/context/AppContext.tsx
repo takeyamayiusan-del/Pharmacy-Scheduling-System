@@ -121,7 +121,7 @@ export type BulletinItem = {
   authorName: string;
   title: string;
   content: string;
-  type: "announcement" | "shift_swap_request";
+  type: "announcement" | "shift_swap_request" | "shift_handoff";
   status: "active" | "archived" | "completed";
   relatedId?: string;
   isUrgent: boolean;
