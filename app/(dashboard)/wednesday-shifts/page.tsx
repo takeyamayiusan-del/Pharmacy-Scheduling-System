@@ -45,7 +45,7 @@ export default function WednesdayShiftsPage() {
   const prevMonth = () => setCurrentDate(new Date(year, month - 2, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month, 1));
 
-  const handleToggleOff = (employeeId: string, dateStr: string) => {
+  const handleToggleOff = async (employeeId: string, dateStr: string) => {
     const selfId = currentUser?.id;
     if (!selfId || selfId !== employeeId) return;
 
@@ -73,7 +73,7 @@ export default function WednesdayShiftsPage() {
       }
     }
 
-    const result = toggleWednesdayOff(employeeId, dateStr);
+    const result = await toggleWednesdayOff(employeeId, dateStr);
     if (!result.success && result.message) {
       alert(result.message);
     }

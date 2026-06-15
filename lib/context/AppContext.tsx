@@ -308,7 +308,7 @@ interface AppContextType {
   wednesdayNightShifts: WednesdayNightShift[];
   setWednesdayNightShift: (date: string, employeeId: string) => void;
   getWednesdayOffDates: (employeeId: string, year: number, month: number) => string[];
-  toggleWednesdayOff: (employeeId: string, date: string) => { success: boolean; message?: string };
+  toggleWednesdayOff: (employeeId: string, date: string) => Promise<{ success: boolean; message?: string }>;
   isWednesdayOff: (employeeId: string, date: string) => boolean;
   getLeaveSummary: (employeeId: string, year: number, month: number) => LeaveSummary;
   toggleLeaveDate: (employeeId: string, date: string) => { success: boolean; message?: string };
@@ -1219,7 +1219,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const isWednesdayOff = (employeeId: string, date: string) =>
     (wednesdayOffSelections[employeeId] ?? []).includes(date);
 
-  const toggleWednesdayOff = (employeeId: string, date: string) => {
+  const toggleWednesdayOff = async (employeeId: string, date: string) => {
     const emp = employees.find((e) => e.id === employeeId);
     if (!emp?.isWednesdayRotation)
       return { success: false, message: "此員工未設定禮拜三晚班輪值規則" };
@@ -1232,32 +1232,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const selected = selectedDates.includes(date);
 
     if (selected) {
-      // Optimistic update
+      // 先刪除資料庫記錄，等待完成後再更新本地狀態
+      const { error } = await supabase
+        .from("wednesday_off_selections")
+        .delete()
+        .eq("user_id", employeeId)
+        .eq("date", date);
+      if (error) {
+        console.error("刪除禮拜三排休記錄失敗:", error);
+        return { success: false, message: "刪除失敗，請重試" };
+      }
+      // 等待成功後才更新本地狀態，確保打卡頁面能取得最新資料
       setWednesdayOffSelections((prev) => ({
         ...prev,
         [employeeId]: (prev[employeeId] ?? []).filter((d) => d !== date),
       }));
-      supabase
-        .from("wednesday_off_selections")
-        .delete()
-        .eq("user_id", employeeId)
-        .eq("date", date)
-        .then();
       return { success: true };
     }
 
     if (selectedDates.length >= 2)
       return { success: false, message: "每月最多只能選擇 2 個禮拜三不輪晚班" };
 
-    // Optimistic update
+    // 先寫入資料庫，等待完成後再更新本地狀態
+    const { error } = await supabase
+      .from("wednesday_off_selections")
+      .insert({ user_id: employeeId, date });
+    if (error) {
+      console.error("新增禮拜三排休記錄失敗:", error);
+      return { success: false, message: "新增失敗，請重試" };
+    }
+    // 等待成功後才更新本地狀態
     setWednesdayOffSelections((prev) => ({
       ...prev,
       [employeeId]: [...(prev[employeeId] ?? []), date],
     }));
-    supabase
-      .from("wednesday_off_selections")
-      .insert({ user_id: employeeId, date })
-      .then();
     return { success: true };
   };
 
