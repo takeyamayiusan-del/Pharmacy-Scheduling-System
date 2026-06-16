@@ -1,21 +1,19 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useApp } from "@/lib/context/AppContext";
+import { useApp, type PayrollRecord } from "@/lib/context/AppContext";
 import { createClient } from "@/lib/supabase/client";
 import XLSX from "xlsx-js-style";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
 export default function PayrollDetailPage() {
-  const { currentUser, employees, payrollRecords, loadPayrollRecords } = useApp();
+  const { currentUser, payrollRecords, loadPayrollRecords } = useApp();
   const supabase = createClient();
   
-  const [salaryConfig, setSalaryConfig] = useState<any>(null);
+  const [salaryConfig, setSalaryConfig] = useState<{ position?: string } | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<any>(null);
+  const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -51,23 +49,13 @@ export default function PayrollDetailPage() {
     r => r.year === new Date().getFullYear() && r.month === new Date().getMonth() + 1
   );
 
-  // 取得該月份的詳細薪資資料
-  const getPayrollDetails = async (record: any) => {
-    const { data: details } = await supabase
-      .from("payroll_records")
-      .select("*")
-      .eq("id", record.id)
-      .single();
-    return details;
-  };
-
-  const handleViewDetail = async (record: any) => {
+  const handleViewDetail = (record: PayrollRecord) => {
     setSelectedRecord(record);
     setShowDetailModal(true);
   };
 
   // 下載薪資單 Excel
-  const downloadSalaryExcel = async (record: any) => {
+  const downloadSalaryExcel = (record: PayrollRecord) => {
     if (!currentUser || !salaryConfig) return;
 
     const wb = XLSX.utils.book_new();
