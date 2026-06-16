@@ -89,6 +89,7 @@ export default function PayrollDetailPage() {
     };
 
     loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, supabase]);
 
   // 取得當前員工的已發布薪資記錄

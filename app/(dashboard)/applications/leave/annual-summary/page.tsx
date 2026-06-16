@@ -29,13 +29,14 @@ export default function AnnualLeaveSummaryPage() {
   }, [selectedYear, loadAnnualLeaveConfigs]);
 
   useEffect(() => {
-    if (isManager) {
+    if (isManager && displayEmployees.length > 0) {
       // 載入所有員工的調整記錄
       displayEmployees.forEach(emp => {
         loadAnnualLeaveAdjustments(emp.id, selectedYear);
       });
     }
-  }, [selectedYear, isManager, employees, loadAnnualLeaveAdjustments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedYear, isManager, loadAnnualLeaveAdjustments]);
 
   const displayEmployees = isManager 
     ? employees.filter(e => e.role !== 'owner') 
