@@ -21,6 +21,7 @@ import {
   PanelLeftOpen,
   Fingerprint,
   DollarSign,
+  DollarSignCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -124,6 +125,7 @@ export default function DashboardLayout({
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
     { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: isManager },
     { href: '/employees', label: '員工管理', icon: UserPlus, allowed: isManager },
+    { href: '/payroll-detail', label: '薪資查詢', icon: DollarSignCircle, allowed: true },
     { href: '/payroll', label: '薪資結算', icon: DollarSign, allowed: isManager },
   ];
 

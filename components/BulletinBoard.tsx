@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, type BulletinItem } from "@/lib/context/AppContext";
-import { Megaphone, MessageSquare, AlertTriangle, Trash2, CheckCircle, Clock, Pin, PinOff, Eye, Users, ArrowRightFromLine } from "lucide-react";
+import { Megaphone, MessageSquare, AlertTriangle, Trash2, Clock, Pin, PinOff, Eye, Users, ArrowRightFromLine } from "lucide-react";
 
 export default function BulletinBoard() {
   const router = useRouter();
@@ -88,10 +88,6 @@ export default function BulletinBoard() {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleStatusChange = async (id: string, status: BulletinItem["status"]) => {
-    await updateBulletinItem(id, { status });
   };
 
   const handleTogglePin = async (item: BulletinItem) => {
@@ -346,13 +342,6 @@ export default function BulletinBoard() {
                             {item.isPinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
                           </button>
                         )}
-                        <button
-                          onClick={() => handleStatusChange(item.id, "archived")}
-                          className="p-1 text-gray-400 hover:text-emerald-600 transition-colors"
-                          title="存檔"
-                        >
-                          <CheckCircle className="h-4 w-4" />
-                        </button>
                         <button
                           onClick={() => deleteBulletinItem(item.id)}
                           className="p-1 text-gray-400 hover:text-red-600 transition-colors"
