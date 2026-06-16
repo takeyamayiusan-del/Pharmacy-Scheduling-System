@@ -362,6 +362,7 @@ interface AppContextType {
   isBulletinRead: (bulletinId: string) => boolean;
   payrollRecords: PayrollRecord[];
   publishPayrollRecord: (id: string) => Promise<void>;
+  unpublishPayrollRecord: (id: string) => Promise<void>;
   loadPayrollRecords: (year: number, month: number) => Promise<void>;
   isLoading: boolean;
   isSunday: (dateStr: string) => boolean;
@@ -2218,6 +2219,17 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     if (record) await loadPayrollRecords(record.year, record.month);
   };
 
+  const unpublishPayrollRecord = async (id: string): Promise<void> => {
+    await supabase.from("payroll_records").update({
+      is_published: false,
+      published_at: null
+    }).eq("id", id);
+    
+    // 找出該筆記錄的員工資訊
+    const record = payrollRecords.find(r => r.id === id);
+    if (record) await loadPayrollRecords(record.year, record.month);
+  };
+
   const refreshNotifications = useCallback(async () => {
     if (currentUser?.id) {
       await loadNotifications(currentUser.id);
@@ -2303,6 +2315,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         isBulletinRead,
         payrollRecords,
         publishPayrollRecord,
+        unpublishPayrollRecord,
         loadPayrollRecords,
         isLoading,
         isSunday,

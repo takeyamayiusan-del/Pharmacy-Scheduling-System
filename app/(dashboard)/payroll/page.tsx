@@ -147,6 +147,7 @@ export default function PayrollPage() {
     shiftTimeConfig,
     payrollRecords,
     publishPayrollRecord,
+    unpublishPayrollRecord,
     loadPayrollRecords,
   } = useApp();
   const supabase = createClient();
@@ -808,7 +809,17 @@ export default function PayrollPage() {
                           <td className="px-3 py-3 text-right font-bold text-blue-600">${p.finalPay.toLocaleString()}</td>
                           <td className="px-3 py-3 text-right">
                             {isPublished ? (
-                              <span className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium">已發布</span>
+                              <button
+                                onClick={() => {
+                                  const record = payrollRecords.find(r => r.userId === p.userId && r.year === year && r.month === month);
+                                  if (record && confirm(`確定要取消發布 ${p.name} 的薪資單嗎？`)) {
+                                    unpublishPayrollRecord(record.id);
+                                  }
+                                }}
+                                className="text-[10px] bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full font-medium hover:bg-emerald-200 transition-colors"
+                              >
+                                已發布 ✓
+                              </button>
                             ) : (
                               <button
                                 onClick={() => handlePublish(p.userId)}
