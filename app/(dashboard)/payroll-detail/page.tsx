@@ -28,8 +28,13 @@ export default function PayrollDetailPage() {
         .single();
       setSalaryConfig(config);
       
-      // 載入所有已發布的薪資記錄
-      await loadPayrollRecords(new Date().getFullYear() - 1, 1);
+      // 載入最近 2 年的已發布薪資記錄
+      const currentYear = new Date().getFullYear();
+      for (let year = currentYear; year >= currentYear - 2; year--) {
+        for (let month = 12; month >= 1; month--) {
+          await loadPayrollRecords(year, month);
+        }
+      }
       
       setIsLoading(false);
     };

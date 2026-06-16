@@ -29,7 +29,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { currentUser, logout, notifications, markNotificationRead, refreshNotifications, getLeaveSummary, isLoading } = useApp();
+  const { currentUser, logout, notifications, markNotificationRead, deleteNotification, refreshNotifications, getLeaveSummary, isLoading } = useApp();
   const router = useRouter();
   const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -234,12 +234,21 @@ export default function DashboardLayout({
                                     {new Date(notification.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                   </div>
                                 </div>
-                                <button
-                                  onClick={() => handleNotificationClick(notification.id, autoRoute)}
-                                  className="shrink-0 text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
-                                >
-                                  查看
-                                </button>
+                                <div className="flex gap-1 shrink-0">
+                                  <button
+                                    onClick={() => handleNotificationClick(notification.id, autoRoute)}
+                                    className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                  >
+                                    查看
+                                  </button>
+                                  <button
+                                    onClick={() => deleteNotification(notification.id)}
+                                    className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
+                                    title="刪除"
+                                  >
+                                    ✕
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           );
