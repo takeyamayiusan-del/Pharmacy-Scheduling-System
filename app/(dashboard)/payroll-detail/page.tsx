@@ -16,15 +16,18 @@ const loadFont = async () => {
   
   fontLoadPromise = (async () => {
     try {
+      console.log('Loading font from /fonts/NotoSansTC-Regular.ttf');
       const response = await fetch('/fonts/NotoSansTC-Regular.ttf');
+      console.log('Font fetch status:', response.status);
       if (!response.ok) {
         console.error('Font fetch failed:', response.status);
         return null;
       }
       const buffer = await response.arrayBuffer();
+      console.log('Font buffer size:', buffer.byteLength);
       const binary = Array.from(new Uint8Array(buffer)).map(b => String.fromCharCode(b)).join('');
       fontBase64 = btoa(binary);
-      console.log('Font loaded successfully, size:', fontBase64.length);
+      console.log('Font loaded successfully, base64 size:', fontBase64.length);
       return fontBase64;
     } catch (e) {
       console.error('Failed to load font:', e);
@@ -301,7 +304,8 @@ export default function PayrollDetailPage() {
       console.log('PDF saved');
     } catch (err) {
       console.error('PDF generation error:', err);
-      alert('PDF 生成失敗，請稍後再試');
+      const errorMessage = err instanceof Error ? err.message : '未知錯誤';
+      alert(`PDF 生成失敗：${errorMessage}`);
     }
   };
 
