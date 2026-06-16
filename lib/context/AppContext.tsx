@@ -351,7 +351,7 @@ interface AppContextType {
   deleteLeaveRequest: (id: string) => Promise<void>;
   compLeaveLedger: CompLeaveLedgerEntry[];
   getCompLeaveBalance: (employeeId: string) => number;
-  getAnnualLeaveQuota: (employee: Employee) => number;
+  getAnnualLeaveQuota: (employee: Employee, year?: number) => number;
   getAnnualLeaveBalance: (employeeId: string, year: number) => number;
   getAvailableCompLeave: (employeeId: string) => { balance: number; expiring: Array<Record<string, unknown>> };
   loadCompLeaveLedger: () => Promise<void>;
