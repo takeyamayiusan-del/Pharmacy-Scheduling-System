@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useApp, type PayrollRecord } from "@/lib/context/AppContext";
 import { createClient } from "@/lib/supabase/client";
-import XLSX from "xlsx-js-style";
+import { jsPDF } from "jspdf";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
 export default function PayrollDetailPage() {
@@ -92,46 +92,164 @@ export default function PayrollDetailPage() {
     setShowDetailModal(true);
   };
 
-  // 下載薪資單 Excel
-  const downloadSalaryExcel = (record: PayrollRecord) => {
-    if (!currentUser || !salaryConfig) return;
+  // 下載薪資單 PDF
+  const downloadSalaryPDF = (record: PayrollRecord) => {
+    if (!currentUser) return;
 
-    const wb = XLSX.utils.book_new();
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    let y = margin;
+
+    // 頂部裝飾線
+    doc.setDrawColor(16, 185, 129); // emerald-500
+    doc.setLineWidth(2);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+
+    // 標題
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(24);
+    doc.setTextColor(5, 150, 105); // emerald-600
+    doc.text("薪資單", pageWidth / 2, y, { align: "center" });
+    y += 15;
+
+    // 副標題
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(12);
+    doc.setTextColor(107, 114, 128); // gray-500
+    doc.text("Payroll Statement", pageWidth / 2, y, { align: "center" });
+    y += 15;
+
+    // 分隔線
+    doc.setDrawColor(229, 231, 235); // gray-200
+    doc.setLineWidth(0.5);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 15;
+
+    // 基本資訊區塊
+    doc.setFillColor(249, 250, 251); // gray-50
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, 35, 3, 3, "F");
     
-    const wsData = [
-      ["薪資單", "", "", ""],
-      [`姓名：${currentUser.name}`, "", "", ""],
-      [`期間：${record.year}年${record.month}月`, "", "", ""],
-      ["", "", "", ""],
-      ["項目", "金額", "備註", ""],
-      ["底薪", record.baseSalary ?? 0, salaryConfig?.position ?? "", ""],
-      ["加班費", record.overtimePay ?? 0, "", ""],
-      ["獎金", record.bonusTotal > 0 ? record.bonusTotal : 0, "", ""],
-      ["", "", "", ""],
-      ["扣除項目", "", "", ""],
-      ["請假扣款", record.leaveDeduction ?? 0, "", ""],
-      ["遲到扣款", record.tardinessDeduction ?? 0, "", ""],
-      ["勞保", record.laborInsurance ?? 0, "", ""],
-      ["健保", record.healthInsurance ?? 0, "", ""],
-      ["退休金", record.pensionDeduction ?? 0, "", ""],
-      ["", "", "", ""],
-      ["實領金額", record.finalPay ?? 0, "", ""],
-      ["", "", "", ""],
-      [`發布日期：${record.publishedAt ? new Date(record.publishedAt).toLocaleDateString('zh-TW') : 'N/A'}`, "", "", ""],
+    doc.setFontSize(10);
+    doc.setTextColor(55, 65, 81); // gray-700
+    doc.text(`員工姓名：${currentUser.name}`, margin + 5, y + 10);
+    doc.text(`職　　稱：${salaryConfig?.position || '員工'}`, margin + 5, y + 20);
+    doc.text(`薪資期間：${record.year} 年 ${record.month} 月`, margin + 100, y + 10);
+    doc.text(`發布日期：${record.publishedAt ? new Date(record.publishedAt).toLocaleDateString('zh-TW') : 'N/A'}`, margin + 100, y + 20);
+    y += 45;
+
+    // ===== 應發項目 =====
+    doc.setFillColor(16, 185, 129); // emerald-500
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, 10, 2, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text("應 發 項 目", margin + 5, y + 7);
+    y += 15;
+
+    const earnings = [
+      ["底　　薪", record.baseSalary ?? 0],
+      ["加 班 費", record.overtimePay ?? 0],
+      ["獎　　金", record.bonusTotal > 0 ? record.bonusTotal : 0],
     ];
 
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    
-    // 設置列寬
-    ws['!cols'] = [
-      { wch: 20 },
-      { wch: 15 },
-      { wch: 20 },
-      { wch: 10 },
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    earnings.forEach(([label, amount]) => {
+      doc.setTextColor(55, 65, 81);
+      doc.text(label as string, margin + 5, y);
+      doc.setTextColor(5, 150, 105);
+      doc.text(`${(amount as number).toLocaleString('zh-TW')} 元`, pageWidth - margin - 5, y, { align: "right" });
+      y += 10;
+    });
+
+    // 應發合計
+    const totalEarnings = (record.baseSalary ?? 0) + (record.overtimePay ?? 0) + (record.bonusTotal > 0 ? record.bonusTotal : 0);
+    doc.setFont("helvetica", "bold");
+    doc.setDrawColor(16, 185, 129);
+    doc.setLineWidth(0.5);
+    doc.line(margin + 5, y - 3, pageWidth - margin - 5, y - 3);
+    doc.setTextColor(5, 150, 105);
+    doc.text("應發合計", margin + 5, y + 3);
+    doc.text(`${totalEarnings.toLocaleString('zh-TW')} 元`, pageWidth - margin - 5, y + 3, { align: "right" });
+    y += 15;
+
+    // ===== 扣除項目 =====
+    doc.setFillColor(239, 68, 68); // red-500
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, 10, 2, 2, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.setTextColor(255, 255, 255);
+    doc.text("扣 除 項 目", margin + 5, y + 7);
+    y += 15;
+
+    const deductions = [
+      ["請假扣款", record.leaveDeduction ?? 0],
+      ["遲到扣款", record.tardinessDeduction ?? 0],
+      ["勞工保險", record.laborInsurance ?? 0],
+      ["健康保險", record.healthInsurance ?? 0],
+      ["勞工退休金", record.pensionDeduction ?? 0],
     ];
 
-    XLSX.utils.book_append_sheet(wb, ws, "薪資單");
-    XLSX.writeFile(wb, `薪資單_${record.year}年${record.month}月.xlsx`);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    deductions.forEach(([label, amount]) => {
+      doc.setTextColor(55, 65, 81);
+      doc.text(label as string, margin + 5, y);
+      doc.setTextColor(239, 68, 68);
+      doc.text(`- ${(amount as number).toLocaleString('zh-TW')} 元`, pageWidth - margin - 5, y, { align: "right" });
+      y += 10;
+    });
+
+    // 扣除合計
+    const totalDeductions = (record.leaveDeduction ?? 0) + (record.tardinessDeduction ?? 0) + 
+                           (record.laborInsurance ?? 0) + (record.healthInsurance ?? 0) + 
+                           (record.pensionDeduction ?? 0);
+    doc.setFont("helvetica", "bold");
+    doc.setDrawColor(239, 68, 68);
+    doc.setLineWidth(0.5);
+    doc.line(margin + 5, y - 3, pageWidth - margin - 5, y - 3);
+    doc.setTextColor(239, 68, 68);
+    doc.text("扣除合計", margin + 5, y + 3);
+    doc.text(`- ${totalDeductions.toLocaleString('zh-TW')} 元`, pageWidth - margin - 5, y + 3, { align: "right" });
+    y += 20;
+
+    // ===== 實領金額 =====
+    doc.setFillColor(5, 150, 105); // emerald-600
+    doc.roundedRect(margin, y, pageWidth - 2 * margin, 20, 3, 3, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(14);
+    doc.setTextColor(255, 255, 255);
+    doc.text("實 領 金 額", margin + 10, y + 8);
+    doc.setFontSize(18);
+    doc.text(`NT$ ${(record.finalPay ?? 0).toLocaleString('zh-TW')} 元`, pageWidth - margin - 10, y + 13, { align: "right" });
+    y += 30;
+
+    // 底部裝飾線
+    doc.setDrawColor(16, 185, 129);
+    doc.setLineWidth(2);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 10;
+
+    // 備註
+    if (record.note) {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9);
+      doc.setTextColor(107, 114, 128);
+      doc.text(`備註：${record.note}`, margin, y);
+      y += 10;
+    }
+
+    // 頁尾
+    doc.setFontSize(8);
+    doc.setTextColor(156, 163, 175);
+    doc.text("本薪資單由系統自動產生，如有任何疑問請聯繫管理人員。", pageWidth / 2, pageHeight - 15, { align: "center" });
+    doc.text(`產生時間：${new Date().toLocaleString('zh-TW')}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+
+    // 下載
+    doc.save(`薪資單_${record.year}年${record.month}月.pdf`);
   };
 
   const formatCurrency = (amount: number) => {
@@ -197,11 +315,11 @@ export default function PayrollDetailPage() {
               查看詳細
             </button>
             <button
-              onClick={() => downloadSalaryExcel(currentMonthRecord)}
+              onClick={() => downloadSalaryPDF(currentMonthRecord)}
               className="flex items-center gap-2 px-4 py-2 border border-emerald-600 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"
             >
               <Download className="h-4 w-4" />
-              下載
+              下載 PDF
             </button>
           </div>
         </div>
@@ -252,7 +370,7 @@ export default function PayrollDetailPage() {
                       詳細
                     </button>
                     <button
-                      onClick={() => downloadSalaryExcel(record)}
+                      onClick={() => downloadSalaryPDF(record)}
                       className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
                     >
                       <Download className="h-4 w-4" />
@@ -351,11 +469,11 @@ export default function PayrollDetailPage() {
 
             <div className="p-4 border-t bg-gray-50">
               <button
-                onClick={() => downloadSalaryExcel(selectedRecord)}
+                onClick={() => downloadSalaryPDF(selectedRecord)}
                 className="w-full py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors flex items-center justify-center gap-2"
               >
                 <Download className="h-4 w-4" />
-                下載薪資單 Excel
+                下載薪資單 PDF
               </button>
             </div>
           </div>
