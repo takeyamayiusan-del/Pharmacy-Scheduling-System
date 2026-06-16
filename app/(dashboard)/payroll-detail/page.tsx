@@ -6,6 +6,22 @@ import { createClient } from "@/lib/supabase/client";
 import { jsPDF } from "jspdf";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
+// 載入中文字體
+let fontBase64: string | null = null;
+const loadFont = async () => {
+  if (fontBase64) return fontBase64;
+  try {
+    const response = await fetch('/fonts/NotoSansTC-Regular.ttf');
+    const buffer = await response.arrayBuffer();
+    const binary = Array.from(new Uint8Array(buffer)).map(b => String.fromCharCode(b)).join('');
+    fontBase64 = btoa(binary);
+    return fontBase64;
+  } catch (e) {
+    console.error('Failed to load font:', e);
+    return null;
+  }
+};
+
 export default function PayrollDetailPage() {
   const { currentUser, payrollRecords, setPayrollRecords } = useApp();
   const supabase = createClient();
@@ -93,7 +109,7 @@ export default function PayrollDetailPage() {
   };
 
   // 下載薪資單 PDF
-  const downloadSalaryPDF = (record: PayrollRecord) => {
+  const downloadSalaryPDF = async (record: PayrollRecord) => {
     if (!currentUser) return;
 
     const doc = new jsPDF();
@@ -102,6 +118,14 @@ export default function PayrollDetailPage() {
     const margin = 20;
     let y = margin;
 
+    // 載入中文字體
+    const fontData = await loadFont();
+    if (fontData) {
+      doc.addFileToVFS('NotoSansTC-Regular.ttf', fontData);
+      doc.addFont('NotoSansTC-Regular.ttf', 'NotoSansTC', 'normal');
+      doc.addFont('NotoSansTC-Regular.ttf', 'NotoSansTC', 'bold');
+    }
+
     // 頂部裝飾線
     doc.setDrawColor(16, 185, 129); // emerald-500
     doc.setLineWidth(2);
@@ -109,31 +133,31 @@ export default function PayrollDetailPage() {
     y += 10;
 
     // 標題
-    doc.setFont("helvetica", "bold");
+    doc.setFont("NotoSansTC", "bold");
     doc.setFontSize(24);
-    doc.setTextColor(5, 150, 105); // emerald-600
+    doc.setTextColor(5, 150, 105);
     doc.text("薪資單", pageWidth / 2, y, { align: "center" });
     y += 15;
 
     // 副標題
-    doc.setFont("helvetica", "normal");
+    doc.setFont("NotoSansTC", "normal");
     doc.setFontSize(12);
-    doc.setTextColor(107, 114, 128); // gray-500
+    doc.setTextColor(107, 114, 128);
     doc.text("Payroll Statement", pageWidth / 2, y, { align: "center" });
     y += 15;
 
     // 分隔線
-    doc.setDrawColor(229, 231, 235); // gray-200
+    doc.setDrawColor(229, 231, 235);
     doc.setLineWidth(0.5);
     doc.line(margin, y, pageWidth - margin, y);
     y += 15;
 
     // 基本資訊區塊
-    doc.setFillColor(249, 250, 251); // gray-50
+    doc.setFillColor(249, 250, 251);
     doc.roundedRect(margin, y, pageWidth - 2 * margin, 35, 3, 3, "F");
     
     doc.setFontSize(10);
-    doc.setTextColor(55, 65, 81); // gray-700
+    doc.setTextColor(55, 65, 81);
     doc.text(`員工姓名：${currentUser.name}`, margin + 5, y + 10);
     doc.text(`職　　稱：${salaryConfig?.position || '員工'}`, margin + 5, y + 20);
     doc.text(`薪資期間：${record.year} 年 ${record.month} 月`, margin + 100, y + 10);
@@ -141,9 +165,9 @@ export default function PayrollDetailPage() {
     y += 45;
 
     // ===== 應發項目 =====
-    doc.setFillColor(16, 185, 129); // emerald-500
+    doc.setFillColor(16, 185, 129);
     doc.roundedRect(margin, y, pageWidth - 2 * margin, 10, 2, 2, "F");
-    doc.setFont("helvetica", "bold");
+    doc.setFont("NotoSansTC", "bold");
     doc.setFontSize(11);
     doc.setTextColor(255, 255, 255);
     doc.text("應 發 項 目", margin + 5, y + 7);
@@ -155,7 +179,7 @@ export default function PayrollDetailPage() {
       ["獎　　金", record.bonusTotal > 0 ? record.bonusTotal : 0],
     ];
 
-    doc.setFont("helvetica", "normal");
+    doc.setFont("NotoSansTC", "normal");
     doc.setFontSize(10);
     earnings.forEach(([label, amount]) => {
       doc.setTextColor(55, 65, 81);
@@ -167,7 +191,7 @@ export default function PayrollDetailPage() {
 
     // 應發合計
     const totalEarnings = (record.baseSalary ?? 0) + (record.overtimePay ?? 0) + (record.bonusTotal > 0 ? record.bonusTotal : 0);
-    doc.setFont("helvetica", "bold");
+    doc.setFont("NotoSansTC", "bold");
     doc.setDrawColor(16, 185, 129);
     doc.setLineWidth(0.5);
     doc.line(margin + 5, y - 3, pageWidth - margin - 5, y - 3);
@@ -177,9 +201,9 @@ export default function PayrollDetailPage() {
     y += 15;
 
     // ===== 扣除項目 =====
-    doc.setFillColor(239, 68, 68); // red-500
+    doc.setFillColor(239, 68, 68);
     doc.roundedRect(margin, y, pageWidth - 2 * margin, 10, 2, 2, "F");
-    doc.setFont("helvetica", "bold");
+    doc.setFont("NotoSansTC", "bold");
     doc.setFontSize(11);
     doc.setTextColor(255, 255, 255);
     doc.text("扣 除 項 目", margin + 5, y + 7);
@@ -193,7 +217,7 @@ export default function PayrollDetailPage() {
       ["勞工退休金", record.pensionDeduction ?? 0],
     ];
 
-    doc.setFont("helvetica", "normal");
+    doc.setFont("NotoSansTC", "normal");
     doc.setFontSize(10);
     deductions.forEach(([label, amount]) => {
       doc.setTextColor(55, 65, 81);
@@ -207,7 +231,7 @@ export default function PayrollDetailPage() {
     const totalDeductions = (record.leaveDeduction ?? 0) + (record.tardinessDeduction ?? 0) + 
                            (record.laborInsurance ?? 0) + (record.healthInsurance ?? 0) + 
                            (record.pensionDeduction ?? 0);
-    doc.setFont("helvetica", "bold");
+    doc.setFont("NotoSansTC", "bold");
     doc.setDrawColor(239, 68, 68);
     doc.setLineWidth(0.5);
     doc.line(margin + 5, y - 3, pageWidth - margin - 5, y - 3);
@@ -217,9 +241,9 @@ export default function PayrollDetailPage() {
     y += 20;
 
     // ===== 實領金額 =====
-    doc.setFillColor(5, 150, 105); // emerald-600
+    doc.setFillColor(5, 150, 105);
     doc.roundedRect(margin, y, pageWidth - 2 * margin, 20, 3, 3, "F");
-    doc.setFont("helvetica", "bold");
+    doc.setFont("NotoSansTC", "bold");
     doc.setFontSize(14);
     doc.setTextColor(255, 255, 255);
     doc.text("實 領 金 額", margin + 10, y + 8);
@@ -235,7 +259,7 @@ export default function PayrollDetailPage() {
 
     // 備註
     if (record.note) {
-      doc.setFont("helvetica", "normal");
+      doc.setFont("NotoSansTC", "normal");
       doc.setFontSize(9);
       doc.setTextColor(107, 114, 128);
       doc.text(`備註：${record.note}`, margin, y);
