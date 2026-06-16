@@ -113,6 +113,8 @@ export type Notification = {
   read: boolean;
   createdAt: string;
   route?: string;
+  relatedId?: string;
+  relatedType?: string;
 };
 
 export type BulletinItem = {
@@ -813,6 +815,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           read: n.is_read,
           createdAt: n.created_at,
           route: notificationRouteFromRelatedType(n.related_type ?? null),
+          relatedId: n.related_id ?? undefined,
+          relatedType: n.related_type ?? undefined,
         }))
       );
     }
