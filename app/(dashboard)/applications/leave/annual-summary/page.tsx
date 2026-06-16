@@ -10,7 +10,7 @@ export default function AnnualLeaveSummaryPage() {
   const { 
     employees, currentUser, 
     getAnnualLeaveQuota, getAnnualLeaveBalance,
-    annualLeaveConfigs, annualLeaveAdjustments,
+    annualLeaveConfigs, setAnnualLeaveConfigs, annualLeaveAdjustments,
     loadAnnualLeaveConfigs, loadAnnualLeaveAdjustments,
     updateAnnualLeaveConfig, addAnnualLeaveAdjustment, deleteAnnualLeaveAdjustment,
     getTotalAdjustmentDays
