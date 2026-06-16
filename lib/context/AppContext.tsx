@@ -687,40 +687,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const hireDate = new Date(employee.hireDate);
     const currentYear = year ?? new Date().getFullYear();
     
-    // 計算該員工在該年度的年資（以月份計算）
-    const yearEnd = new Date(currentYear, 11, 31);
+    // 計算從入職日到該年度底的年資月份數
+    // 公式：該年度末月份(11) - 入職月份 + 12 * (該年度 - 入職年度)
+    // 這樣計算的是：該年度還剩多少個月 + 之前完整的年數
+    const yearsElapsed = currentYear - hireDate.getFullYear();
+    const monthsRemainingInHireYear = 11 - hireDate.getMonth(); // 0=1月, 11=12月
+    const monthsDiff = yearsElapsed * 12 + monthsRemainingInHireYear;
     
-    // 計算入職日到該年度底的年資月份數
-    const monthsDiff = (yearEnd.getFullYear() - hireDate.getFullYear()) * 12 + 
-                        (yearEnd.getMonth() - hireDate.getMonth());
-    
-    // 根據資料庫設定取得配額
-    // 找到最接近但不大於的年資設定
-    const applicableConfig = annualLeaveConfigs
-      .filter(c => c.year === currentYear && c.seniorityMonths <= monthsDiff)
-      .sort((a, b) => b.seniorityMonths - a.seniorityMonths)[0];
-    
-    // 如果沒有設定，使用預設邏輯
-    if (!applicableConfig) {
-      const sixMonthsAnniversary = new Date(hireDate);
-      sixMonthsAnniversary.setMonth(sixMonthsAnniversary.getMonth() + 6);
-      
-      const oneYearAnniversary = new Date(hireDate);
-      oneYearAnniversary.setFullYear(oneYearAnniversary.getFullYear() + 1);
-
-      const now = new Date();
-      
-      if (now < sixMonthsAnniversary) {
-        return 0;
-      } else if (now < oneYearAnniversary) {
-        return 3;
-      } else {
-        return 7;
-      }
+    // 根據年資月份數決定特休天數
+    // < 6 個月：0 天（未滿半年）
+    // 6-11 個月：3 天（滿半年）
+    // 12+ 個月：7 天（滿一年）
+    if (monthsDiff < 6) {
+      return 0;
+    } else if (monthsDiff < 12) {
+      return 3;
+    } else {
+      return 7;
     }
-    
-    return applicableConfig.days;
-  }, [annualLeaveConfigs]);
+  }, []);
 
   const getAnnualLeaveBalance = useCallback((employeeId: string, year: number) => {
     const emp = employees.find(e => e.id === employeeId);
