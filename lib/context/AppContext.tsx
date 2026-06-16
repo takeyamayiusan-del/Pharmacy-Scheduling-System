@@ -153,6 +153,26 @@ export type PayrollRecord = {
   createdAt: string;
 };
 
+export type AnnualLeaveConfig = {
+  id: string;
+  year: number;
+  seniorityMonths: number;
+  days: number;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type AnnualLeaveAdjustment = {
+  id: string;
+  userId: string;
+  year: number;
+  adjustmentDays: number;
+  reason?: string;
+  createdBy: string;
+  createdAt: string;
+};
+
 export type TardinessRecord = {
   id: string;
   employeeId: string;
@@ -335,6 +355,14 @@ interface AppContextType {
   getAnnualLeaveBalance: (employeeId: string, year: number) => number;
   getAvailableCompLeave: (employeeId: string) => { balance: number; expiring: Array<Record<string, unknown>> };
   loadCompLeaveLedger: () => Promise<void>;
+  annualLeaveConfigs: AnnualLeaveConfig[];
+  annualLeaveAdjustments: AnnualLeaveAdjustment[];
+  loadAnnualLeaveConfigs: (year: number) => Promise<void>;
+  loadAnnualLeaveAdjustments: (userId: string, year: number) => Promise<void>;
+  updateAnnualLeaveConfig: (id: string, days: number) => Promise<void>;
+  addAnnualLeaveAdjustment: (userId: string, year: number, adjustmentDays: number, reason?: string) => Promise<void>;
+  deleteAnnualLeaveAdjustment: (id: string) => Promise<void>;
+  getTotalAdjustmentDays: (userId: string, year: number) => number;
   swapRequests: SwapRequest[];
   addSwapRequest: (request: Omit<SwapRequest, "id" | "createdAt">) => Promise<void>;
   updateSwapRequestStatus: (id: string, status: "pending_confirmation" | "pending_approval" | "approved" | "rejected", rejectReason?: string) => Promise<void>;
@@ -405,6 +433,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({});
   const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>([]);
   const [compLeaveLedger, setCompLeaveLedger] = useState<CompLeaveLedgerEntry[]>([]);
+  const [annualLeaveConfigs, setAnnualLeaveConfigs] = useState<AnnualLeaveConfig[]>([]);
+  const [annualLeaveAdjustments, setAnnualLeaveAdjustments] = useState<AnnualLeaveAdjustment[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
 
   // Supabase-backed state (previously in localStorage)
@@ -545,6 +575,98 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase]);
 
+  // 年度特休設定相關函數
+  const loadAnnualLeaveConfigs = useCallback(async (year: number) => {
+    const { data } = await supabase
+      .from("annual_leave_config")
+      .select("*")
+      .eq("year", year)
+      .order("seniority_months", { ascending: true });
+    if (data) {
+      setAnnualLeaveConfigs(
+        data.map((r) => ({
+          id: r.id,
+          year: r.year,
+          seniorityMonths: r.seniority_months,
+          days: Number(r.days),
+          description: r.description ?? undefined,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+        }))
+      );
+    }
+  }, [supabase]);
+
+  const loadAnnualLeaveAdjustments = useCallback(async (userId: string, year: number) => {
+    const { data } = await supabase
+      .from("annual_leave_adjustments")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("year", year)
+      .order("created_at", { ascending: false });
+    if (data) {
+      setAnnualLeaveAdjustments(
+        data.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          year: r.year,
+          adjustmentDays: Number(r.adjustment_days),
+          reason: r.reason ?? undefined,
+          createdBy: r.created_by,
+          createdAt: r.created_at,
+        }))
+      );
+    }
+  }, [supabase]);
+
+  const updateAnnualLeaveConfig = async (id: string, days: number) => {
+    await supabase
+      .from("annual_leave_config")
+      .update({ days, updated_at: new Date().toISOString() })
+      .eq("id", id);
+    const config = annualLeaveConfigs.find(c => c.id === id);
+    if (config) {
+      setAnnualLeaveConfigs(prev => prev.map(c => c.id === id ? { ...c, days } : c));
+    }
+  };
+
+  const addAnnualLeaveAdjustment = async (userId: string, year: number, adjustmentDays: number, reason?: string) => {
+    if (!currentUser) return;
+    const { data } = await supabase
+      .from("annual_leave_adjustments")
+      .insert({
+        user_id: userId,
+        year,
+        adjustment_days: adjustmentDays,
+        reason,
+        created_by: currentUser.id,
+      })
+      .select()
+      .single();
+    if (data) {
+      setAnnualLeaveAdjustments(prev => [...prev, {
+        id: data.id,
+        userId: data.user_id,
+        year: data.year,
+        adjustmentDays: Number(data.adjustment_days),
+        reason: data.reason ?? undefined,
+        createdBy: data.created_by,
+        createdAt: data.created_at,
+      }]);
+    }
+  };
+
+  const deleteAnnualLeaveAdjustment = async (id: string) => {
+    await supabase.from("annual_leave_adjustments").delete().eq("id", id);
+    setAnnualLeaveAdjustments(prev => prev.filter(a => a.id !== id));
+  };
+
+  const getTotalAdjustmentDays = useCallback((userId: string, year: number) => {
+    return annualLeaveAdjustments
+      .filter(a => a.userId === userId && a.year === year)
+      .reduce((sum, a) => sum + a.adjustmentDays, 0);
+  }, [annualLeaveAdjustments]);
+
   const getCompLeaveBalance = useCallback(
     (employeeId: string) => {
       const now = Date.now();
@@ -560,41 +682,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [compLeaveLedger]
   );
 
-  const getAnnualLeaveQuota = useCallback((employee: Employee) => {
+  const getAnnualLeaveQuota = useCallback((employee: Employee, year?: number) => {
     const hireDate = new Date(employee.hireDate);
+    const currentYear = year ?? new Date().getFullYear();
     
-    // 邏輯說明：
-    // 1. 滿半年（入職日 + 6個月）給 3 天
-    // 2. 滿一年（入職日 + 12個月）給 7 天
-    // 3. 滿兩年及以上一樣維持 7 天
-    // 4. 每年重置（週年制重置），不累積
+    // 計算該員工在該年度的年資（以月份計算）
+    const yearStart = new Date(currentYear, 0, 1);
+    const yearEnd = new Date(currentYear, 11, 31);
     
-    // 計算該查詢年份中的週年紀念日
-    const sixMonthsAnniversary = new Date(hireDate);
-    sixMonthsAnniversary.setMonth(sixMonthsAnniversary.getMonth() + 6);
+    // 計算入職日到該年度底的年資月份數
+    const monthsDiff = (yearEnd.getFullYear() - hireDate.getFullYear()) * 12 + 
+                        (yearEnd.getMonth() - hireDate.getMonth());
     
-    const oneYearAnniversary = new Date(hireDate);
-    oneYearAnniversary.setFullYear(oneYearAnniversary.getFullYear() + 1);
+    // 根據資料庫設定取得配額
+    // 找到最接近但不大於的年資設定
+    const applicableConfig = annualLeaveConfigs
+      .filter(c => c.year === currentYear && c.seniorityMonths <= monthsDiff)
+      .sort((a, b) => b.seniorityMonths - a.seniorityMonths)[0];
+    
+    // 如果沒有設定，使用預設邏輯
+    if (!applicableConfig) {
+      const sixMonthsAnniversary = new Date(hireDate);
+      sixMonthsAnniversary.setMonth(sixMonthsAnniversary.getMonth() + 6);
+      
+      const oneYearAnniversary = new Date(hireDate);
+      oneYearAnniversary.setFullYear(oneYearAnniversary.getFullYear() + 1);
 
-    const now = new Date();
-    // 如果查詢的是過去年份，邏輯較複雜，通常以當前狀態為主
-    // 如果查詢的是當前或未來年份：
-    
-    // 判斷當前時間點相對於入職週年的狀態
-    if (now < sixMonthsAnniversary) {
-      return 0; // 未滿半年
-    } else if (now < oneYearAnniversary) {
-      return 3; // 滿半年未滿一年
-    } else {
-      return 7; // 滿一年以上（包含滿兩年）
+      const now = new Date();
+      
+      if (now < sixMonthsAnniversary) {
+        return 0;
+      } else if (now < oneYearAnniversary) {
+        return 3;
+      } else {
+        return 7;
+      }
     }
-  }, []);
+    
+    return applicableConfig.days;
+  }, [annualLeaveConfigs]);
 
   const getAnnualLeaveBalance = useCallback((employeeId: string, year: number) => {
     const emp = employees.find(e => e.id === employeeId);
     if (!emp) return 0;
     
-    const quota = getAnnualLeaveQuota(emp);
+    const baseQuota = getAnnualLeaveQuota(emp, year);
+    const adjustmentDays = getTotalAdjustmentDays(employeeId, year);
+    const quota = baseQuota + adjustmentDays;
+    
     const used = leaveRequests
       .filter(r => 
         r.employeeId === employeeId && 
@@ -605,7 +740,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .reduce((acc, r) => acc + r.leaveHours, 0);
       
     return Math.max(0, quota - (used / 8)); // 假設一天 8 小時，特休以天為單位
-  }, [employees, leaveRequests, getAnnualLeaveQuota]);
+  }, [employees, leaveRequests, getAnnualLeaveQuota, getTotalAdjustmentDays]);
 
   const loadLeaveRequests = useCallback(async () => {
     const { data } = await supabase
@@ -2309,6 +2444,14 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         getAnnualLeaveBalance,
         getAvailableCompLeave,
         loadCompLeaveLedger,
+        annualLeaveConfigs,
+        annualLeaveAdjustments,
+        loadAnnualLeaveConfigs,
+        loadAnnualLeaveAdjustments,
+        updateAnnualLeaveConfig,
+        addAnnualLeaveAdjustment,
+        deleteAnnualLeaveAdjustment,
+        getTotalAdjustmentDays,
         swapRequests,
         addSwapRequest,
         updateSwapRequestStatus,
