@@ -356,6 +356,7 @@ interface AppContextType {
   getAvailableCompLeave: (employeeId: string) => { balance: number; expiring: Array<Record<string, unknown>> };
   loadCompLeaveLedger: () => Promise<void>;
   annualLeaveConfigs: AnnualLeaveConfig[];
+  setAnnualLeaveConfigs: React.Dispatch<React.SetStateAction<AnnualLeaveConfig[]>>;
   annualLeaveAdjustments: AnnualLeaveAdjustment[];
   loadAnnualLeaveConfigs: (year: number) => Promise<void>;
   loadAnnualLeaveAdjustments: (userId: string, year: number) => Promise<void>;
@@ -2444,6 +2445,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         getAvailableCompLeave,
         loadCompLeaveLedger,
         annualLeaveConfigs,
+        setAnnualLeaveConfigs,
         annualLeaveAdjustments,
         loadAnnualLeaveConfigs,
         loadAnnualLeaveAdjustments,
