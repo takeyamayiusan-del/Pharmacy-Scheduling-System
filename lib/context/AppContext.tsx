@@ -687,12 +687,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const hireDate = new Date(employee.hireDate);
     const currentYear = year ?? new Date().getFullYear();
     
-    // 計算從入職日到該年度底的年資月份數
-    // 公式：該年度末月份(11) - 入職月份 + 12 * (該年度 - 入職年度)
-    // 這樣計算的是：該年度還剩多少個月 + 之前完整的年數
-    const yearsElapsed = currentYear - hireDate.getFullYear();
-    const monthsRemainingInHireYear = 11 - hireDate.getMonth(); // 0=1月, 11=12月
-    const monthsDiff = yearsElapsed * 12 + monthsRemainingInHireYear;
+    // 計算年資月份數：從入職日到 currentYear 年底的總月數
+    const hireYear = hireDate.getFullYear();
+    const hireMonth = hireDate.getMonth(); // 0=1月, 11=12月
+    
+    // 完整年數 * 12 + 該年剩餘月數
+    const yearsElapsed = currentYear - hireYear;
+    const monthsRemaining = 12 - hireMonth; // 1月->12, 12月->1
+    const monthsDiff = yearsElapsed * 12 + monthsRemaining - 12; // 扣掉hireYear那年的monthsRemaining重複計算
     
     // 根據年資月份數決定特休天數
     // < 6 個月：0 天（未滿半年）

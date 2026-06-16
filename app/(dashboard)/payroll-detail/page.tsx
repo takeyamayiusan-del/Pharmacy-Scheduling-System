@@ -8,18 +8,31 @@ import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from 
 
 // 載入中文字體
 let fontBase64: string | null = null;
+let fontLoadPromise: Promise<string | null> | null = null;
+
 const loadFont = async () => {
   if (fontBase64) return fontBase64;
-  try {
-    const response = await fetch('/fonts/NotoSansTC-Regular.ttf');
-    const buffer = await response.arrayBuffer();
-    const binary = Array.from(new Uint8Array(buffer)).map(b => String.fromCharCode(b)).join('');
-    fontBase64 = btoa(binary);
-    return fontBase64;
-  } catch (e) {
-    console.error('Failed to load font:', e);
-    return null;
-  }
+  if (fontLoadPromise) return fontLoadPromise;
+  
+  fontLoadPromise = (async () => {
+    try {
+      const response = await fetch('/fonts/NotoSansTC-Regular.ttf');
+      if (!response.ok) {
+        console.error('Font fetch failed:', response.status);
+        return null;
+      }
+      const buffer = await response.arrayBuffer();
+      const binary = Array.from(new Uint8Array(buffer)).map(b => String.fromCharCode(b)).join('');
+      fontBase64 = btoa(binary);
+      console.log('Font loaded successfully, size:', fontBase64.length);
+      return fontBase64;
+    } catch (e) {
+      console.error('Failed to load font:', e);
+      return null;
+    }
+  })();
+  
+  return fontLoadPromise;
 };
 
 export default function PayrollDetailPage() {
