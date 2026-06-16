@@ -7,7 +7,7 @@ import XLSX from "xlsx-js-style";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
 export default function PayrollDetailPage() {
-  const { currentUser, payrollRecords, loadPayrollRecords } = useApp();
+  const { currentUser, payrollRecords, setPayrollRecords } = useApp();
   const supabase = createClient();
   
   const [salaryConfig, setSalaryConfig] = useState<{ position?: string } | null>(null);
@@ -19,7 +19,7 @@ export default function PayrollDetailPage() {
     const loadData = async () => {
       if (!currentUser) return;
       setIsLoading(true);
-      
+
       // 載入薪資設定
       const { data: config } = await supabase
         .from("employee_salary_config")
@@ -27,20 +27,53 @@ export default function PayrollDetailPage() {
         .eq("user_id", currentUser.id)
         .single();
       setSalaryConfig(config);
-      
-      // 載入最近 2 年的已發布薪資記錄
-      const currentYear = new Date().getFullYear();
-      for (let year = currentYear; year >= currentYear - 2; year--) {
-        for (let month = 12; month >= 1; month--) {
-          await loadPayrollRecords(year, month);
-        }
+
+      // 一次性載入該員工所有已發布的薪資記錄
+      const { data: records } = await supabase
+        .from("payroll_records")
+        .select("*")
+        .eq("user_id", currentUser.id)
+        .eq("is_published", true)
+        .order("year", { ascending: false })
+        .order("month", { ascending: false });
+
+      if (records) {
+        const mapped = records.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          year: r.year,
+          month: r.month,
+          baseSalary: Number(r.base_salary),
+          laborInsurance: Number(r.labor_insurance),
+          healthInsurance: Number(r.health_insurance),
+          pensionDeduction: Number(r.pension_deduction),
+          leaveDeduction: Number(r.leave_deduction),
+          overtimePay: Number(r.overtime_pay),
+          tardinessDeduction: Number(r.tardiness_deduction),
+          bonusTotal: Number(r.bonus_total),
+          finalPay: Number(r.final_pay),
+          note: r.note,
+          isPublished: r.is_published,
+          publishedAt: r.published_at,
+          createdAt: r.created_at,
+        }));
+        // 直接更新 payrollRecords
+        mapped.forEach((r) => {
+          setPayrollRecords((prev) => {
+            const exists = prev.find((p) => p.id === r.id);
+            if (exists) {
+              return prev.map((p) => (p.id === r.id ? r : p));
+            }
+            return [...prev, r];
+          });
+        });
       }
-      
+
       setIsLoading(false);
     };
-    
+
     loadData();
-  }, [currentUser, supabase, loadPayrollRecords]);
+  }, [currentUser, supabase]);
 
   // 取得當前員工的已發布薪資記錄
   const myPublishedRecords = payrollRecords
