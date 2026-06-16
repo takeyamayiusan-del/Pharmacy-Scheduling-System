@@ -364,6 +364,7 @@ interface AppContextType {
   readBulletinItem: (bulletinId: string) => Promise<void>;
   isBulletinRead: (bulletinId: string) => boolean;
   payrollRecords: PayrollRecord[];
+  setPayrollRecords: React.Dispatch<React.SetStateAction<PayrollRecord[]>>;
   publishPayrollRecord: (id: string) => Promise<void>;
   unpublishPayrollRecord: (id: string) => Promise<void>;
   loadPayrollRecords: (year: number, month: number) => Promise<void>;
@@ -2176,27 +2177,39 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       .eq("year", year)
       .eq("month", month);
     if (data) {
-      setPayrollRecords(
-        data.map((r) => ({
-          id: r.id,
-          userId: r.user_id,
-          year: r.year,
-          month: r.month,
-          baseSalary: Number(r.base_salary),
-          laborInsurance: Number(r.labor_insurance),
-          healthInsurance: Number(r.health_insurance),
-          pensionDeduction: Number(r.pension_deduction),
-          leaveDeduction: Number(r.leave_deduction),
-          overtimePay: Number(r.overtime_pay),
-          tardinessDeduction: Number(r.tardiness_deduction),
-          bonusTotal: Number(r.bonus_total),
-          finalPay: Number(r.final_pay),
-          note: r.note,
-          isPublished: r.is_published,
-          publishedAt: r.published_at,
-          createdAt: r.created_at,
-        }))
-      );
+      const newRecords = data.map((r) => ({
+        id: r.id,
+        userId: r.user_id,
+        year: r.year,
+        month: r.month,
+        baseSalary: Number(r.base_salary),
+        laborInsurance: Number(r.labor_insurance),
+        healthInsurance: Number(r.health_insurance),
+        pensionDeduction: Number(r.pension_deduction),
+        leaveDeduction: Number(r.leave_deduction),
+        overtimePay: Number(r.overtime_pay),
+        tardinessDeduction: Number(r.tardiness_deduction),
+        bonusTotal: Number(r.bonus_total),
+        finalPay: Number(r.final_pay),
+        note: r.note,
+        isPublished: r.is_published,
+        publishedAt: r.published_at,
+        createdAt: r.created_at,
+      }));
+      
+      // 合併新舊資料，避免覆蓋已存在的記錄
+      setPayrollRecords((prev) => {
+        const merged = [...prev];
+        newRecords.forEach((newRec) => {
+          const index = merged.findIndex((r) => r.id === newRec.id);
+          if (index >= 0) {
+            merged[index] = newRec;
+          } else {
+            merged.push(newRec);
+          }
+        });
+        return merged;
+      });
     }
   }, [supabase]);
 
@@ -2325,6 +2338,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         readBulletinItem,
         isBulletinRead,
         payrollRecords,
+        setPayrollRecords,
         publishPayrollRecord,
         unpublishPayrollRecord,
         loadPayrollRecords,
