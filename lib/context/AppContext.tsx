@@ -687,7 +687,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const currentYear = year ?? new Date().getFullYear();
     
     // 計算該員工在該年度的年資（以月份計算）
-    const yearStart = new Date(currentYear, 0, 1);
     const yearEnd = new Date(currentYear, 11, 31);
     
     // 計算入職日到該年度底的年資月份數
