@@ -111,6 +111,7 @@ export default function PayrollDetailPage() {
       canvas.width = width * scale;
       canvas.height = height * scale;
       ctx.scale(scale, scale);
+      ctx.textBaseline = 'top';
 
       // 背景
       ctx.fillStyle = '#ffffff';
