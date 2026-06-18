@@ -832,7 +832,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           targetEmployeeId: r.target_id,
           targetEmployeeName: (r.target as { name?: string } | null)?.name ?? "",
           requesterDate: r.swap_date,
-          targetDate: r.swap_date,
+          targetDate: r.target_swap_date || r.swap_date,
           status: mapSwapStatusFromDb(r.status),
           rejectReason: r.reject_reason ?? undefined,
           createdAt: r.created_at,
@@ -1654,6 +1654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         requester_id: request.requesterId,
         target_id: request.targetEmployeeId,
         swap_date: request.requesterDate,
+        target_swap_date: request.targetDate,
         status: isSelfSwap ? "pending_review" : "pending_confirm",
       })
       .select("id")
