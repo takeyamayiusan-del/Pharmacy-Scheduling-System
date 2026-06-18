@@ -131,26 +131,14 @@ export default function PayrollDetailPage() {
 
     try {
       const doc = new jsPDF();
-      const pageWidth = doc.internal?.pageSize?.getWidth() ?? 210;
-      const pageHeight = doc.internal?.pageSize?.getHeight() ?? 297;
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 20;
       let y = margin;
 
-      // 載入中文字體
-      let fontLoaded = false;
-      const fontData = await loadFont();
-      if (fontData) {
-        try {
-          doc.addFileToVFS('NotoSansTC-Regular.ttf', fontData);
-          doc.addFont('NotoSansTC-Regular.ttf', 'NotoSansTC', 'normal');
-          doc.addFont('NotoSansTC-Regular.ttf', 'NotoSansTC', 'bold');
-          fontLoaded = true;
-        } catch (fontErr) {
-          console.error('Font add error:', fontErr);
-        }
-      }
-
-      const fontName = fontLoaded ? "NotoSansTC" : "helvetica";
+      // 使用預設字體（避免字體載入問題）
+      const fontName = "helvetica";
+      const fontNameBold = "helvetica";
 
       // 頂部裝飾線
       doc.setDrawColor(16, 185, 129);
