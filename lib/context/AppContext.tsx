@@ -1736,6 +1736,106 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
 
+      if (status === "approved") {
+        // 核准時實際交換班表
+        const isSelfSwap = request.requesterId === request.targetEmployeeId;
+        
+        if (isSelfSwap) {
+          // 自己跟自己換班：交換該員工兩天的班表
+          const reqEntries = await supabase
+            .from("schedule_overrides")
+            .select("*")
+            .eq("user_id", request.requesterId)
+            .eq("date", request.requesterDate);
+          const targetEntries = await supabase
+            .from("schedule_overrides")
+            .select("*")
+            .eq("user_id", request.targetEmployeeId)
+            .eq("date", request.targetDate);
+          
+          const reqShift = reqEntries.data?.[0]?.shift_code;
+          const targetShift = targetEntries.data?.[0]?.shift_code;
+          
+          // 交換班表
+          if (reqShift && targetShift) {
+            await supabase.from("schedule_overrides").upsert({
+              user_id: request.requesterId,
+              date: request.targetDate,
+              shift_code: reqShift,
+            });
+            await supabase.from("schedule_overrides").upsert({
+              user_id: request.targetEmployeeId,
+              date: request.requesterDate,
+              shift_code: targetShift,
+            });
+          } else if (reqShift) {
+            await supabase.from("schedule_overrides").upsert({
+              user_id: request.requesterId,
+              date: request.targetDate,
+              shift_code: reqShift,
+            });
+            await supabase.from("schedule_overrides").delete()
+              .eq("user_id", request.targetEmployeeId)
+              .eq("date", request.requesterDate);
+          } else if (targetShift) {
+            await supabase.from("schedule_overrides").upsert({
+              user_id: request.targetEmployeeId,
+              date: request.requesterDate,
+              shift_code: targetShift,
+            });
+            await supabase.from("schedule_overrides").delete()
+              .eq("user_id", request.requesterId)
+              .eq("date", request.targetDate);
+          }
+          
+          // 重新載入班表
+          await loadSchedule();
+        } else {
+          // 與他人換班：交換雙方的班表
+          const reqEntries = await supabase
+            .from("schedule_overrides")
+            .select("*")
+            .eq("user_id", request.requesterId)
+            .eq("date", request.requesterDate);
+          const targetEntries = await supabase
+            .from("schedule_overrides")
+            .select("*")
+            .eq("user_id", request.targetEmployeeId)
+            .eq("date", request.targetDate);
+          
+          const reqShift = reqEntries.data?.[0]?.shift_code;
+          const targetShift = targetEntries.data?.[0]?.shift_code;
+          
+          // 交換班表
+          if (reqShift) {
+            await supabase.from("schedule_overrides").upsert({
+              user_id: request.targetEmployeeId,
+              date: request.requesterDate,
+              shift_code: reqShift,
+            });
+          } else {
+            await supabase.from("schedule_overrides").delete()
+              .eq("user_id", request.targetEmployeeId)
+              .eq("date", request.requesterDate);
+          }
+          
+          if (targetShift) {
+            await supabase.from("schedule_overrides").upsert({
+              user_id: request.requesterId,
+              date: request.targetDate,
+              shift_code: targetShift,
+            });
+          } else {
+            await supabase.from("schedule_overrides").delete()
+              .eq("user_id", request.requesterId)
+              .eq("date", request.targetDate);
+          }
+          
+          // 重新載入班表
+          await loadSchedule();
+        }
+      }
+
       if (status === "approved" || (status === "rejected" && prevStatus === "pending_approval")) {
         const statusText = status === "approved" ? "已核准" : "已駁回";
         let body = `換班申請（${request.requesterDate} ↔ ${request.targetDate}）${statusText}。`;

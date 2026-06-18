@@ -131,8 +131,8 @@ export default function PayrollDetailPage() {
 
     try {
       const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
+      const pageWidth = doc.internal?.pageSize?.getWidth() ?? 210;
+      const pageHeight = doc.internal?.pageSize?.getHeight() ?? 297;
       const margin = 20;
       let y = margin;
 
