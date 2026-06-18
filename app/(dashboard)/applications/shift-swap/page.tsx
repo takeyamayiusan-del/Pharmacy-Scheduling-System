@@ -26,7 +26,8 @@ export default function ShiftSwapPage() {
     setShowForm(true);
     setFormData(prev => ({
       requesterDate: requesterDate || prev.requesterDate,
-      targetDate: targetDate || requesterDate || prev.targetDate,
+      // targetDate 保持空白，讓使用者自己選擇目標日期
+      targetDate: targetDate || prev.targetDate,
       targetEmployeeId: targetEmployeeId || prev.targetEmployeeId,
     }));
   }, [searchParams]);
@@ -100,7 +101,7 @@ export default function ShiftSwapPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">我的日期（換出）</label>
                 <input type="date" value={formData.requesterDate}
-                  onChange={e => setFormData({ ...formData, requesterDate: e.target.value, targetDate: formData.targetDate || e.target.value })}
+                  onChange={e => setFormData({ ...formData, requesterDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
                 {previewRequesterShift && <p className="text-xs text-gray-500 mt-1">當日班別：{previewRequesterShift}</p>}
               </div>
