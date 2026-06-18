@@ -14,7 +14,7 @@ const shiftColors: Record<ShiftCode, string> = {
   C: 'bg-yellow-100 text-yellow-800 border-yellow-300',
   D: 'bg-purple-100 text-purple-800 border-purple-300',
   E: 'bg-pink-100 text-pink-800 border-pink-300',
-  X: 'bg-gray-100 text-gray-500 border-gray-300',
+  X: 'bg-orange-100 text-orange-700 border-orange-300', // 請假 - 橘色區分
 };
 
 export function ShiftCell({ shiftCode, isFixed, isLocked, onClick, editable }: ShiftCellProps) {
