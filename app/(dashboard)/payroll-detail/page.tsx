@@ -6,31 +6,6 @@ import { createClient } from "@/lib/supabase/client";
 import { jsPDF } from "jspdf";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
-// 載入中文字體
-let fontBase64: string | null = null;
-let fontLoadPromise: Promise<string | null> | null = null;
-
-const loadChineseFont = async (): Promise<string | null> => {
-  if (fontBase64) return fontBase64;
-  if (fontLoadPromise) return fontLoadPromise;
-  
-  fontLoadPromise = (async () => {
-    try {
-      const response = await fetch('/fonts/NotoSansTC-Regular.ttf');
-      if (!response.ok) return null;
-      const buffer = await response.arrayBuffer();
-      const binary = Array.from(new Uint8Array(buffer)).map(b => String.fromCharCode(b)).join('');
-      fontBase64 = btoa(binary);
-      return fontBase64;
-    } catch (e) {
-      console.error('Font load failed:', e);
-      return null;
-    }
-  })();
-  
-  return fontLoadPromise;
-};
-
 export default function PayrollDetailPage() {
   const { currentUser, payrollRecords, setPayrollRecords } = useApp();
   const supabase = createClient();
@@ -123,175 +98,204 @@ export default function PayrollDetailPage() {
     if (!currentUser) return;
 
     try {
-      const doc = new jsPDF();
-      const pageWidth = doc.internal.pageSize.getWidth();
-      const pageHeight = doc.internal.pageSize.getHeight();
-      const margin = 20;
-      let y = margin;
+      // 使用 Canvas 繪製再轉 PDF（確保中文正常顯示）
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d')!;
+      const width = 595; // A4 width in points
+      const height = 842; // A4 height in points
+      canvas.width = width;
+      canvas.height = height;
 
-      // 載入中文字體
-      let fontName = "helvetica";
-      try {
-        const fontData = await loadChineseFont();
-        if (fontData) {
-          doc.addFileToVFS('NotoSansTC-Regular.ttf', fontData);
-          doc.addFont('NotoSansTC-Regular.ttf', 'NotoSansTC', 'normal');
-          fontName = "NotoSansTC";
-        }
-      } catch (e) {
-        console.error('Font loading failed, using default:', e);
-      }
+      // 縮放係數
+      const scale = 2;
+      canvas.width = width * scale;
+      canvas.height = height * scale;
+      ctx.scale(scale, scale);
+
+      // 背景
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, width, height);
+
+      let y = 30;
 
       // 頂部裝飾線
-      doc.setDrawColor(16, 185, 129);
-      doc.setLineWidth(2);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 10;
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(20, y);
+      ctx.lineTo(width - 20, y);
+      ctx.stroke();
+      y += 20;
 
       // 標題
-      doc.setFont(fontName, "bold");
-      doc.setFontSize(24);
-      doc.setTextColor(5, 150, 105);
-      doc.text("薪資單", pageWidth / 2, y, { align: "center" });
-      y += 15;
+      ctx.fillStyle = '#059669';
+      ctx.font = 'bold 32px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('薪資單', width / 2, y);
+      y += 25;
 
       // 副標題
-      doc.setFont(fontName, "normal");
-      doc.setFontSize(12);
-      doc.setTextColor(107, 114, 128);
-      doc.text("Payroll Statement", pageWidth / 2, y, { align: "center" });
-      y += 15;
+      ctx.fillStyle = '#6b7280';
+      ctx.font = '16px "Microsoft JhengHei", sans-serif';
+      ctx.fillText('Payroll Statement', width / 2, y);
+      y += 25;
 
       // 分隔線
-      doc.setDrawColor(229, 231, 235);
-      doc.setLineWidth(0.5);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 15;
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(20, y);
+      ctx.lineTo(width - 20, y);
+      ctx.stroke();
+      y += 25;
 
       // 基本資訊區塊
-      doc.setFillColor(249, 250, 251);
-      doc.roundedRect(margin, y, pageWidth - 2 * margin, 35, 3, 3, "F");
-      
-      doc.setFontSize(10);
-      doc.setTextColor(55, 65, 81);
-      doc.text(`員工姓名：${currentUser.name}`, margin + 5, y + 10);
-      doc.text(`職　　稱：${salaryConfig?.position || '員工'}`, margin + 5, y + 20);
-      doc.text(`薪資期間：${record.year} 年 ${record.month} 月`, margin + 100, y + 10);
-      doc.text(`發布日期：${record.publishedAt ? new Date(record.publishedAt).toLocaleDateString('zh-TW') : 'N/A'}`, margin + 100, y + 20);
-      y += 45;
+      ctx.fillStyle = '#f9fafb';
+      ctx.fillRect(20, y, width - 40, 60);
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.strokeRect(20, y, width - 40, 60);
+
+      ctx.fillStyle = '#374151';
+      ctx.font = '14px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(`員工姓名：${currentUser.name}`, 30, y + 20);
+      ctx.fillText(`職　　稱：${salaryConfig?.position || '員工'}`, 30, y + 40);
+      ctx.fillText(`薪資期間：${record.year} 年 ${record.month} 月`, 320, y + 20);
+      ctx.fillText(`發布日期：${record.publishedAt ? new Date(record.publishedAt).toLocaleDateString('zh-TW') : 'N/A'}`, 320, y + 40);
+      y += 80;
 
       // ===== 應發項目 =====
-      doc.setFillColor(16, 185, 129);
-      doc.roundedRect(margin, y, pageWidth - 2 * margin, 10, 2, 2, "F");
-      doc.setFont(fontName, "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(255, 255, 255);
-      doc.text("應 發 項 目", margin + 5, y + 7);
-      y += 15;
+      ctx.fillStyle = '#10b981';
+      ctx.fillRect(20, y, width - 40, 20);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('應 發 項 目', 30, y + 14);
+      y += 30;
 
       const earnings = [
-        ["底　　薪", record.baseSalary ?? 0],
-        ["加 班 費", record.overtimePay ?? 0],
-        ["獎　　金", record.bonusTotal > 0 ? record.bonusTotal : 0],
+        ['底　　薪', record.baseSalary ?? 0],
+        ['加 班 費', record.overtimePay ?? 0],
+        ['獎　　金', record.bonusTotal > 0 ? record.bonusTotal : 0],
       ];
 
-      doc.setFont(fontName, "normal");
-      doc.setFontSize(10);
+      ctx.textAlign = 'left';
+      ctx.font = '14px "Microsoft JhengHei", sans-serif';
       earnings.forEach(([label, amount]) => {
-        doc.setTextColor(55, 65, 81);
-        doc.text(label as string, margin + 5, y);
-        doc.setTextColor(5, 150, 105);
-        doc.text(`${(amount as number).toLocaleString('zh-TW')} 元`, pageWidth - margin - 5, y, { align: "right" });
-        y += 10;
+        ctx.fillStyle = '#374151';
+        ctx.fillText(label as string, 30, y);
+        ctx.fillStyle = '#059669';
+        ctx.textAlign = 'right';
+        ctx.fillText(`${(amount as number).toLocaleString('zh-TW')} 元`, width - 30, y);
+        ctx.textAlign = 'left';
+        y += 20;
       });
 
       // 應發合計
       const totalEarnings = (record.baseSalary ?? 0) + (record.overtimePay ?? 0) + (record.bonusTotal > 0 ? record.bonusTotal : 0);
-      doc.setFont(fontName, "bold");
-      doc.setDrawColor(16, 185, 129);
-      doc.setLineWidth(0.5);
-      doc.line(margin + 5, y - 3, pageWidth - margin - 5, y - 3);
-      doc.setTextColor(5, 150, 105);
-      doc.text("應發合計", margin + 5, y + 3);
-      doc.text(`${totalEarnings.toLocaleString('zh-TW')} 元`, pageWidth - margin - 5, y + 3, { align: "right" });
-      y += 15;
+      ctx.strokeStyle = '#10b981';
+      ctx.beginPath();
+      ctx.moveTo(25, y - 5);
+      ctx.lineTo(width - 25, y - 5);
+      ctx.stroke();
+      ctx.fillStyle = '#059669';
+      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('應發合計', 30, y + 8);
+      ctx.textAlign = 'right';
+      ctx.fillText(`${totalEarnings.toLocaleString('zh-TW')} 元`, width - 30, y + 8);
+      ctx.textAlign = 'left';
+      y += 35;
 
       // ===== 扣除項目 =====
-      doc.setFillColor(239, 68, 68);
-      doc.roundedRect(margin, y, pageWidth - 2 * margin, 10, 2, 2, "F");
-      doc.setFont(fontName, "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(255, 255, 255);
-      doc.text("扣 除 項 目", margin + 5, y + 7);
-      y += 15;
+      ctx.fillStyle = '#ef4444';
+      ctx.fillRect(20, y, width - 40, 20);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('扣 除 項 目', 30, y + 14);
+      y += 30;
 
       const deductions = [
-        ["請假扣款", record.leaveDeduction ?? 0],
-        ["遲到扣款", record.tardinessDeduction ?? 0],
-        ["勞工保險", record.laborInsurance ?? 0],
-        ["健康保險", record.healthInsurance ?? 0],
-        ["勞工退休金", record.pensionDeduction ?? 0],
+        ['請假扣款', record.leaveDeduction ?? 0],
+        ['遲到扣款', record.tardinessDeduction ?? 0],
+        ['勞工保險', record.laborInsurance ?? 0],
+        ['健康保險', record.healthInsurance ?? 0],
+        ['勞工退休金', record.pensionDeduction ?? 0],
       ];
 
-      doc.setFont(fontName, "normal");
-      doc.setFontSize(10);
+      ctx.textAlign = 'left';
+      ctx.font = '14px "Microsoft JhengHei", sans-serif';
       deductions.forEach(([label, amount]) => {
-        doc.setTextColor(55, 65, 81);
-        doc.text(label as string, margin + 5, y);
-        doc.setTextColor(239, 68, 68);
-        doc.text(`- ${(amount as number).toLocaleString('zh-TW')} 元`, pageWidth - margin - 5, y, { align: "right" });
-        y += 10;
+        ctx.fillStyle = '#374151';
+        ctx.fillText(label as string, 30, y);
+        ctx.fillStyle = '#ef4444';
+        ctx.textAlign = 'right';
+        ctx.fillText(`- ${(amount as number).toLocaleString('zh-TW')} 元`, width - 30, y);
+        ctx.textAlign = 'left';
+        y += 20;
       });
 
       // 扣除合計
-      const totalDeductions = (record.leaveDeduction ?? 0) + (record.tardinessDeduction ?? 0) + 
-                             (record.laborInsurance ?? 0) + (record.healthInsurance ?? 0) + 
-                             (record.pensionDeduction ?? 0);
-      doc.setFont(fontName, "bold");
-      doc.setDrawColor(239, 68, 68);
-      doc.setLineWidth(0.5);
-      doc.line(margin + 5, y - 3, pageWidth - margin - 5, y - 3);
-      doc.setTextColor(239, 68, 68);
-      doc.text("扣除合計", margin + 5, y + 3);
-      doc.text(`- ${totalDeductions.toLocaleString('zh-TW')} 元`, pageWidth - margin - 5, y + 3, { align: "right" });
-      y += 20;
+      const totalDeductions = (record.leaveDeduction ?? 0) + (record.tardinessDeduction ?? 0) +
+        (record.laborInsurance ?? 0) + (record.healthInsurance ?? 0) +
+        (record.pensionDeduction ?? 0);
+      ctx.strokeStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.moveTo(25, y - 5);
+      ctx.lineTo(width - 25, y - 5);
+      ctx.stroke();
+      ctx.fillStyle = '#ef4444';
+      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('扣除合計', 30, y + 8);
+      ctx.textAlign = 'right';
+      ctx.fillText(`- ${totalDeductions.toLocaleString('zh-TW')} 元`, width - 30, y + 8);
+      ctx.textAlign = 'left';
+      y += 40;
 
       // ===== 實領金額 =====
-      doc.setFillColor(5, 150, 105);
-      doc.roundedRect(margin, y, pageWidth - 2 * margin, 20, 3, 3, "F");
-      doc.setFont(fontName, "bold");
-      doc.setFontSize(14);
-      doc.setTextColor(255, 255, 255);
-      doc.text("實 領 金 額", margin + 10, y + 8);
-      doc.setFontSize(18);
-      doc.text(`NT$ ${(record.finalPay ?? 0).toLocaleString('zh-TW')} 元`, pageWidth - margin - 10, y + 13, { align: "right" });
-      y += 30;
+      ctx.fillStyle = '#059669';
+      ctx.fillRect(20, y, width - 40, 40);
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('實 領 金 額', 30, y + 18);
+      ctx.font = 'bold 24px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(`NT$ ${(record.finalPay ?? 0).toLocaleString('zh-TW')} 元`, width - 30, y + 28);
+      y += 60;
 
       // 底部裝飾線
-      doc.setDrawColor(16, 185, 129);
-      doc.setLineWidth(2);
-      doc.line(margin, y, pageWidth - margin, y);
-      y += 10;
+      ctx.strokeStyle = '#10b981';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(20, y);
+      ctx.lineTo(width - 20, y);
+      ctx.stroke();
+      y += 20;
 
       // 備註
       if (record.note) {
-        doc.setFont(fontName, "normal");
-        doc.setFontSize(9);
-        doc.setTextColor(107, 114, 128);
-        doc.text(`備註：${record.note}`, margin, y);
-        y += 10;
+        ctx.fillStyle = '#6b7280';
+        ctx.font = '12px "Microsoft JhengHei", sans-serif';
+        ctx.textAlign = 'left';
+        ctx.fillText(`備註：${record.note}`, 20, y);
+        y += 20;
       }
 
       // 頁尾
-      doc.setFontSize(8);
-      doc.setTextColor(156, 163, 175);
-      doc.text("本薪資單由系統自動產生，如有任何疑問請聯繫管理人員。", pageWidth / 2, pageHeight - 15, { align: "center" });
-      doc.text(`產生時間：${new Date().toLocaleString('zh-TW')}`, pageWidth / 2, pageHeight - 10, { align: "center" });
+      ctx.fillStyle = '#9ca3af';
+      ctx.font = '10px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('本薪資單由系統自動產生，如有任何疑問請聯繫管理人員。', width / 2, height - 35);
+      ctx.fillText(`產生時間：${new Date().toLocaleString('zh-TW')}`, width / 2, height - 22);
 
-      // 下載
-      console.log('Generating PDF...');
-      doc.save(`薪資單_${record.year}年${record.month}月.pdf`);
-      console.log('PDF saved');
+      // 轉換為 PDF
+      const imageData = canvas.toDataURL('image/png');
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
+      pdf.addImage(imageData, 'PNG', 0, 0, width, height);
+      pdf.save(`薪資單_${record.year}年${record.month}月.pdf`);
     } catch (err) {
       console.error('PDF generation error:', err);
       const errorMessage = err instanceof Error ? err.message : '未知錯誤';
