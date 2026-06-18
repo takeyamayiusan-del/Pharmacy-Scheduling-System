@@ -454,7 +454,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Load data from Supabase ────────────────────────────────────────────────
 
   const loadScheduleOverrides = useCallback(async () => {
-    const { data } = await supabase.from("schedule_overrides").select("user_id, date, shift_code");
+    const { data } = await supabase.from("schedule_entries").select("user_id, date, shift_code");
     if (data) {
       const result: ScheduleData = {};
       data.forEach((r) => {
@@ -1751,42 +1751,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const targetEntries = await supabase
             .from("schedule_entries")
             .select("*")
-            .eq("user_id", request.targetEmployeeId)
+            .eq("user_id", request.requesterId)
             .eq("date", request.targetDate);
           
           const reqShift = reqEntries.data?.[0]?.shift_code;
           const targetShift = targetEntries.data?.[0]?.shift_code;
           
-          // 交換班表
-          if (reqShift && targetShift) {
+          // 交換班表（使用 upsert）
+          if (reqShift) {
             await supabase.from("schedule_entries").upsert({
               user_id: request.requesterId,
               date: request.targetDate,
               shift_code: reqShift,
-            });
-            await supabase.from("schedule_entries").upsert({
-              user_id: request.targetEmployeeId,
-              date: request.requesterDate,
-              shift_code: targetShift,
-            });
-          } else if (reqShift) {
+            }, { onConflict: 'user_id,date' });
+          }
+          if (targetShift) {
             await supabase.from("schedule_entries").upsert({
               user_id: request.requesterId,
-              date: request.targetDate,
-              shift_code: reqShift,
-            });
-            await supabase.from("schedule_entries").delete()
-              .eq("user_id", request.targetEmployeeId)
-              .eq("date", request.requesterDate);
-          } else if (targetShift) {
-            await supabase.from("schedule_entries").upsert({
-              user_id: request.targetEmployeeId,
               date: request.requesterDate,
               shift_code: targetShift,
-            });
-            await supabase.from("schedule_entries").delete()
-              .eq("user_id", request.requesterId)
-              .eq("date", request.targetDate);
+            }, { onConflict: 'user_id,date' });
           }
           
           // 重新載入班表
@@ -1807,29 +1791,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const reqShift = reqEntries.data?.[0]?.shift_code;
           const targetShift = targetEntries.data?.[0]?.shift_code;
           
-          // 交換班表
+          // 交換班表（使用 upsert 明確指定 onConflict）
           if (reqShift) {
             await supabase.from("schedule_entries").upsert({
               user_id: request.targetEmployeeId,
               date: request.requesterDate,
               shift_code: reqShift,
-            });
-          } else {
-            await supabase.from("schedule_entries").delete()
-              .eq("user_id", request.targetEmployeeId)
-              .eq("date", request.requesterDate);
+            }, { onConflict: 'user_id,date' });
           }
-          
           if (targetShift) {
             await supabase.from("schedule_entries").upsert({
               user_id: request.requesterId,
               date: request.targetDate,
               shift_code: targetShift,
-            });
-          } else {
-            await supabase.from("schedule_entries").delete()
-              .eq("user_id", request.requesterId)
-              .eq("date", request.targetDate);
+            }, { onConflict: 'user_id,date' });
           }
           
           // 重新載入班表
