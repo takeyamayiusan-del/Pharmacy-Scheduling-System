@@ -1789,7 +1789,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           
           // 重新載入班表
-          await loadSchedule();
+          await loadScheduleOverrides();
         } else {
           // 與他人換班：交換雙方的班表
           const reqEntries = await supabase
@@ -1832,7 +1832,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           
           // 重新載入班表
-          await loadSchedule();
+          await loadScheduleOverrides();
         }
       }
 
