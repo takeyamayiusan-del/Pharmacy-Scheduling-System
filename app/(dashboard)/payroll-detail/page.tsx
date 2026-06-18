@@ -6,38 +6,6 @@ import { createClient } from "@/lib/supabase/client";
 import { jsPDF } from "jspdf";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
-// 載入中文字體
-let fontBase64: string | null = null;
-let fontLoadPromise: Promise<string | null> | null = null;
-
-const loadFont = async () => {
-  if (fontBase64) return fontBase64;
-  if (fontLoadPromise) return fontLoadPromise;
-  
-  fontLoadPromise = (async () => {
-    try {
-      console.log('Loading font from /fonts/NotoSansTC-Regular.ttf');
-      const response = await fetch('/fonts/NotoSansTC-Regular.ttf');
-      console.log('Font fetch status:', response.status);
-      if (!response.ok) {
-        console.error('Font fetch failed:', response.status);
-        return null;
-      }
-      const buffer = await response.arrayBuffer();
-      console.log('Font buffer size:', buffer.byteLength);
-      const binary = Array.from(new Uint8Array(buffer)).map(b => String.fromCharCode(b)).join('');
-      fontBase64 = btoa(binary);
-      console.log('Font loaded successfully, base64 size:', fontBase64.length);
-      return fontBase64;
-    } catch (e) {
-      console.error('Failed to load font:', e);
-      return null;
-    }
-  })();
-  
-  return fontLoadPromise;
-};
-
 export default function PayrollDetailPage() {
   const { currentUser, payrollRecords, setPayrollRecords } = useApp();
   const supabase = createClient();
@@ -138,7 +106,6 @@ export default function PayrollDetailPage() {
 
       // 使用預設字體（避免字體載入問題）
       const fontName = "helvetica";
-      const fontNameBold = "helvetica";
 
       // 頂部裝飾線
       doc.setDrawColor(16, 185, 129);
