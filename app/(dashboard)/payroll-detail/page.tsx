@@ -6,6 +6,31 @@ import { createClient } from "@/lib/supabase/client";
 import { jsPDF } from "jspdf";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 
+// 載入中文字體
+let fontBase64: string | null = null;
+let fontLoadPromise: Promise<string | null> | null = null;
+
+const loadChineseFont = async (): Promise<string | null> => {
+  if (fontBase64) return fontBase64;
+  if (fontLoadPromise) return fontLoadPromise;
+  
+  fontLoadPromise = (async () => {
+    try {
+      const response = await fetch('/fonts/NotoSansTC-Regular.ttf');
+      if (!response.ok) return null;
+      const buffer = await response.arrayBuffer();
+      const binary = Array.from(new Uint8Array(buffer)).map(b => String.fromCharCode(b)).join('');
+      fontBase64 = btoa(binary);
+      return fontBase64;
+    } catch (e) {
+      console.error('Font load failed:', e);
+      return null;
+    }
+  })();
+  
+  return fontLoadPromise;
+};
+
 export default function PayrollDetailPage() {
   const { currentUser, payrollRecords, setPayrollRecords } = useApp();
   const supabase = createClient();
@@ -104,8 +129,18 @@ export default function PayrollDetailPage() {
       const margin = 20;
       let y = margin;
 
-      // 使用預設字體（避免字體載入問題）
-      const fontName = "helvetica";
+      // 載入中文字體
+      let fontName = "helvetica";
+      try {
+        const fontData = await loadChineseFont();
+        if (fontData) {
+          doc.addFileToVFS('NotoSansTC-Regular.ttf', fontData);
+          doc.addFont('NotoSansTC-Regular.ttf', 'NotoSansTC', 'normal');
+          fontName = "NotoSansTC";
+        }
+      } catch (e) {
+        console.error('Font loading failed, using default:', e);
+      }
 
       // 頂部裝飾線
       doc.setDrawColor(16, 185, 129);

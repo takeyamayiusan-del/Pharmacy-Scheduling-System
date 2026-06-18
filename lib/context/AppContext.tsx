@@ -1743,12 +1743,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (isSelfSwap) {
           // 自己跟自己換班：交換該員工兩天的班表
           const reqEntries = await supabase
-            .from("schedule_overrides")
+            .from("schedule_entries")
             .select("*")
             .eq("user_id", request.requesterId)
             .eq("date", request.requesterDate);
           const targetEntries = await supabase
-            .from("schedule_overrides")
+            .from("schedule_entries")
             .select("*")
             .eq("user_id", request.targetEmployeeId)
             .eq("date", request.targetDate);
@@ -1758,32 +1758,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
           
           // 交換班表
           if (reqShift && targetShift) {
-            await supabase.from("schedule_overrides").upsert({
+            await supabase.from("schedule_entries").upsert({
               user_id: request.requesterId,
               date: request.targetDate,
               shift_code: reqShift,
             });
-            await supabase.from("schedule_overrides").upsert({
+            await supabase.from("schedule_entries").upsert({
               user_id: request.targetEmployeeId,
               date: request.requesterDate,
               shift_code: targetShift,
             });
           } else if (reqShift) {
-            await supabase.from("schedule_overrides").upsert({
+            await supabase.from("schedule_entries").upsert({
               user_id: request.requesterId,
               date: request.targetDate,
               shift_code: reqShift,
             });
-            await supabase.from("schedule_overrides").delete()
+            await supabase.from("schedule_entries").delete()
               .eq("user_id", request.targetEmployeeId)
               .eq("date", request.requesterDate);
           } else if (targetShift) {
-            await supabase.from("schedule_overrides").upsert({
+            await supabase.from("schedule_entries").upsert({
               user_id: request.targetEmployeeId,
               date: request.requesterDate,
               shift_code: targetShift,
             });
-            await supabase.from("schedule_overrides").delete()
+            await supabase.from("schedule_entries").delete()
               .eq("user_id", request.requesterId)
               .eq("date", request.targetDate);
           }
@@ -1793,12 +1793,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } else {
           // 與他人換班：交換雙方的班表
           const reqEntries = await supabase
-            .from("schedule_overrides")
+            .from("schedule_entries")
             .select("*")
             .eq("user_id", request.requesterId)
             .eq("date", request.requesterDate);
           const targetEntries = await supabase
-            .from("schedule_overrides")
+            .from("schedule_entries")
             .select("*")
             .eq("user_id", request.targetEmployeeId)
             .eq("date", request.targetDate);
@@ -1808,25 +1808,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
           
           // 交換班表
           if (reqShift) {
-            await supabase.from("schedule_overrides").upsert({
+            await supabase.from("schedule_entries").upsert({
               user_id: request.targetEmployeeId,
               date: request.requesterDate,
               shift_code: reqShift,
             });
           } else {
-            await supabase.from("schedule_overrides").delete()
+            await supabase.from("schedule_entries").delete()
               .eq("user_id", request.targetEmployeeId)
               .eq("date", request.requesterDate);
           }
           
           if (targetShift) {
-            await supabase.from("schedule_overrides").upsert({
+            await supabase.from("schedule_entries").upsert({
               user_id: request.requesterId,
               date: request.targetDate,
               shift_code: targetShift,
             });
           } else {
-            await supabase.from("schedule_overrides").delete()
+            await supabase.from("schedule_entries").delete()
               .eq("user_id", request.requesterId)
               .eq("date", request.targetDate);
           }

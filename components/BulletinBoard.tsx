@@ -99,9 +99,17 @@ export default function BulletinBoard() {
     setReadBulletins(prev => new Set(prev).add(item.id));
   };
 
-  // 過濾公告：只看自己或發給所有人的
+  // 過濾公告：
+  // 1. 只看自己或發給所有人的
+  // 2. 換班需求(swap)只讓作者自己看到（讓他可追蹤自己的申請）
   const visibleItems = bulletinItems.filter(item => {
     if (item.status !== "active") return false;
+    
+    // 換班需求只顯示給作者本人
+    if (item.type === "shift_swap_request") {
+      return item.authorId === currentUser?.id;
+    }
+    
     if (item.targetType === "all") return true;
     return item.targetIds.includes(currentUser?.id ?? "");
   });
