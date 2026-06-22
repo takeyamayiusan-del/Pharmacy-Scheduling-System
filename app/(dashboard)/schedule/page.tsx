@@ -191,8 +191,7 @@ export default function SchedulePage() {
   const calculateEffectiveShift = (
     originalShift: ShiftType,
     leaveStartTime: string,
-    leaveEndTime: string,
-    leavePeriod: string
+    leaveEndTime: string
   ): { shift: ShiftType | null; details: string } => {
     // 班別時段定義
     const shiftTimeSlots: Record<ShiftType, { start: string; end: string }[]> = {
@@ -312,8 +311,7 @@ export default function SchedulePage() {
       const result = calculateEffectiveShift(
         originalShift,
         approvedLeave.startTime,
-        approvedLeave.endTime,
-        approvedLeave.period
+        approvedLeave.endTime
       );
       if (result.shift === null) {
         effectiveShift = "X"; // 全日請假
