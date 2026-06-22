@@ -149,11 +149,10 @@ function drawScheduleSegment(
           req.status === "approved"
       );
       
-      const palette = hasApprovedLeave
-        ? { bg: "#e9d5ff", text: "#6d28d9", border: "#c4b5fd" }
-        : hasApprovedOvertime
-          ? { bg: "#fed7aa", text: "#9a3412", border: "#fdba74" }
-          : exportShiftPalette[shift];
+      // 請假和加班都顯示為暗橘色
+      const palette = hasApprovedLeave || hasApprovedOvertime
+        ? { bg: "#fed7aa", text: "#9a3412", border: "#fdba74" }
+        : exportShiftPalette[shift];
       
       ctx.fillStyle = cellBg;
       ctx.fillRect(x, rowY, dayColWidth, rowHeight);

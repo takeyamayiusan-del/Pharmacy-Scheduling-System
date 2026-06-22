@@ -187,6 +187,102 @@ export default function SchedulePage() {
     setShowExportModal(false);
   };
 
+  // 計算請假後的剩餘工作時段，返回新的班別
+  const calculateEffectiveShift = (
+    originalShift: ShiftType,
+    leaveStartTime: string,
+    leaveEndTime: string,
+    leavePeriod: string
+  ): { shift: ShiftType | null; details: string } => {
+    // 班別時段定義
+    const shiftTimeSlots: Record<ShiftType, { start: string; end: string }[]> = {
+      A: [{ start: "08:30", end: "12:00" }, { start: "13:30", end: "17:00" }, { start: "19:00", end: "21:00" }],
+      B: [{ start: "08:30", end: "12:00" }, { start: "13:30", end: "18:00" }],
+      C: [{ start: "08:30", end: "12:00" }],
+      D: [{ start: "13:30", end: "18:00" }],
+      E: [{ start: "13:30", end: "17:00" }, { start: "19:00", end: "21:00" }],
+      X: [],
+    };
+
+    const timeToMinutes = (time: string): number => {
+      const [h, m] = time.split(":").map(Number);
+      return h * 60 + m;
+    };
+
+    const minutesToTime = (mins: number): string => {
+      const h = Math.floor(mins / 60);
+      const m = mins % 60;
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    };
+
+    const slots = shiftTimeSlots[originalShift];
+    if (!slots || slots.length === 0) {
+      return { shift: null, details: "休假" };
+    }
+
+    const leaveStart = timeToMinutes(leaveStartTime);
+    const leaveEnd = timeToMinutes(leaveEndTime);
+
+    // 計算每個時段被請假覆蓋的情況
+    const remainingSlots: { start: string; end: string }[] = [];
+    
+    for (const slot of slots) {
+      const slotStart = timeToMinutes(slot.start);
+      const slotEnd = timeToMinutes(slot.end);
+      
+      // 如果請假完全覆蓋這個時段，不保留
+      if (leaveStart <= slotStart && leaveEnd >= slotEnd) {
+        continue;
+      }
+      
+      // 如果請假完全在這個時段之外，保留整個時段
+      if (leaveEnd <= slotStart || leaveStart >= slotEnd) {
+        remainingSlots.push({ start: slot.start, end: slot.end });
+        continue;
+      }
+      
+      // 如果請假部分覆蓋這個時段
+      if (leaveStart > slotStart && leaveStart < slotEnd) {
+        // 請假從時段中間開始，保留前半段
+        remainingSlots.push({ start: slot.start, end: minutesToTime(leaveStart) });
+      }
+      
+      if (leaveEnd > slotStart && leaveEnd < slotEnd) {
+        // 請假在時段中間結束，保留後半段
+        remainingSlots.push({ start: minutesToTime(leaveEnd), end: slot.end });
+      }
+    }
+
+    // 根據剩餘時段判斷新的班別
+    if (remainingSlots.length === 0) {
+      return { shift: null, details: "全日請假" };
+    }
+
+    // 將時段轉換為文字描述
+    const details = remainingSlots.map(s => `${s.start}-${s.end}`).join(", ");
+
+    // 根據剩餘時段匹配班別
+    const checkMatch = (shiftSlots: { start: string; end: string }[]): boolean => {
+      if (shiftSlots.length !== remainingSlots.length) return false;
+      for (let i = 0; i < shiftSlots.length; i++) {
+        if (shiftSlots[i].start !== remainingSlots[i].start || shiftSlots[i].end !== remainingSlots[i].end) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    // 檢查是否匹配現有班別
+    for (const [shift, shiftSlots] of Object.entries(shiftTimeSlots)) {
+      if (checkMatch(shiftSlots)) {
+        return { shift: shift as ShiftType, details };
+      }
+    }
+
+    // 如果沒有完全匹配的班別，返回自定義時段
+    return { shift: null, details };
+  };
+
   // 獲取員工在特定日期的請假或加班資訊
   const getEmployeeShiftInfo = (date: string, employeeId: string) => {
     const originalShift = getShiftForDate(date, employeeId);
@@ -208,11 +304,34 @@ export default function SchedulePage() {
         req.status === "approved"
     );
     
+    // 計算請假後的有效班別
+    let effectiveShift = originalShift;
+    let effectiveShiftDetails = "";
+    
+    if (approvedLeave) {
+      const result = calculateEffectiveShift(
+        originalShift,
+        approvedLeave.startTime,
+        approvedLeave.endTime,
+        approvedLeave.period
+      );
+      if (result.shift === null) {
+        effectiveShift = "X"; // 全日請假
+      } else {
+        effectiveShift = result.shift;
+      }
+      effectiveShiftDetails = result.details;
+    }
+
     return {
       originalShift,
+      effectiveShift,
+      effectiveShiftDetails,
       hasLeave: !!approvedLeave,
       hasOvertime: !!approvedOvertime,
       leaveType: approvedLeave?.type,
+      leaveStartTime: approvedLeave?.startTime,
+      leaveEndTime: approvedLeave?.endTime,
       overtimeInfo: approvedOvertime ? { startTime: approvedOvertime.startTime, endTime: approvedOvertime.endTime } : null,
     };
   };
@@ -223,7 +342,7 @@ export default function SchedulePage() {
         return {
           id: emp.id,
           name: emp.name,
-          shift: shiftInfo.hasLeave || shiftInfo.hasOvertime ? "X" : shiftInfo.originalShift,
+          shift: shiftInfo.hasLeave || shiftInfo.hasOvertime ? shiftInfo.effectiveShift : shiftInfo.originalShift,
           shiftInfo,
         };
       })
@@ -765,8 +884,9 @@ export default function SchedulePage() {
                 </div>
               )}
               {dateModalWorkers.map((worker) => {
-                const displayShift = showOriginalShift ? worker.shiftInfo.originalShift : worker.shift;
+                const displayShift = showOriginalShift ? worker.shiftInfo.originalShift : worker.shiftInfo.effectiveShift;
                 const hasLeaveOrOvertime = worker.shiftInfo.hasLeave || worker.shiftInfo.hasOvertime;
+                const effectiveShiftDetails = worker.shiftInfo.effectiveShiftDetails;
                 
                 return (
                   <div 
@@ -779,9 +899,17 @@ export default function SchedulePage() {
                       <span className="font-medium text-gray-800">{worker.name}</span>
                       {hasLeaveOrOvertime && !showOriginalShift && (
                         <span className="text-xs text-orange-600">
-                          {worker.shiftInfo.hasLeave && `請假中（${worker.shiftInfo.leaveType}）`}
+                          {worker.shiftInfo.hasLeave && (
+                            <>
+                              請假：{worker.shiftInfo.leaveStartTime}-{worker.shiftInfo.leaveEndTime}
+                              {effectiveShiftDetails && effectiveShiftDetails !== "全日請假" && (
+                                <span className="ml-1">（實際上班：{effectiveShiftDetails}）</span>
+                              )}
+                              {effectiveShiftDetails === "全日請假" && <span className="ml-1">（全日請假）</span>}
+                            </>
+                          )}
                           {worker.shiftInfo.hasLeave && worker.shiftInfo.hasOvertime && " / "}
-                          {worker.shiftInfo.hasOvertime && `加班（${worker.shiftInfo.overtimeInfo?.startTime}-${worker.shiftInfo.overtimeInfo?.endTime}）`}
+                          {worker.shiftInfo.hasOvertime && `加班：${worker.shiftInfo.overtimeInfo?.startTime}-${worker.shiftInfo.overtimeInfo?.endTime}`}
                         </span>
                       )}
                       {hasLeaveOrOvertime && showOriginalShift && (
@@ -799,7 +927,7 @@ export default function SchedulePage() {
                         </span>
                       )}
                       <span className="text-sm text-gray-600">
-                        {displayShift}班（{shiftLabels[displayShift]}）
+                        {displayShift && displayShift !== "X" ? `${displayShift}班（${shiftLabels[displayShift]}）` : shiftLabels[displayShift] || "休假"}
                       </span>
                     </div>
                   </div>
