@@ -91,6 +91,7 @@ export default function SchedulePage() {
     setIsEditingNotes(false);
   };
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
+  const [showOriginalShift, setShowOriginalShift] = useState(false); // 新增：是否顯示原始班表
   const [activeLegendShift, setActiveLegendShift] = useState<ShiftType | null>(null);
   const [showExportModal, setShowExportModal] = useState(false);
   
@@ -143,12 +144,41 @@ export default function SchedulePage() {
   };
 
   const handleExportPdf = async (layout: ExportLayout) => {
+    // 創建一個包裝函數，在匯出時考慮請假和加班
+    const getShiftForDateWithLeave = (date: string, employeeId: string): ShiftType => {
+      const shift = getShiftForDate(date, employeeId);
+      
+      // 檢查是否有核准的請假申請
+      const approvedLeave = leaveRequests.find(
+        (req) =>
+          req.employeeId === employeeId &&
+          req.startDate <= date &&
+          req.endDate >= date &&
+          req.status === "approved"
+      );
+      
+      // 檢查是否有核准的加班申請
+      const approvedOvertime = overtimeRequests.find(
+        (req) =>
+          req.employeeId === employeeId &&
+          req.date === date &&
+          req.status === "approved"
+      );
+      
+      // 如果有請假或加班，返回特殊標記
+      if (approvedLeave || approvedOvertime) {
+        return "X"; // 將其顯示為 X，讓匯出函數可以正確處理
+      }
+      
+      return shift;
+    };
+
     await exportSchedulePdf({
       year,
       month,
       daysInMonth,
       employees: displayEmployees.map((e) => ({ id: e.id, name: e.name })),
-      getShiftForDate,
+      getShiftForDate: getShiftForDateWithLeave,
       getHolidayInfo,
       layout,
       leaveRequests,
@@ -157,12 +187,46 @@ export default function SchedulePage() {
     setShowExportModal(false);
   };
 
+  // 獲取員工在特定日期的請假或加班資訊
+  const getEmployeeShiftInfo = (date: string, employeeId: string) => {
+    const originalShift = getShiftForDate(date, employeeId);
+    
+    // 檢查是否有核准的請假申請
+    const approvedLeave = leaveRequests.find(
+      (req) =>
+        req.employeeId === employeeId &&
+        req.startDate <= date &&
+        req.endDate >= date &&
+        req.status === "approved"
+    );
+    
+    // 檢查是否有核准的加班申請
+    const approvedOvertime = overtimeRequests.find(
+      (req) =>
+        req.employeeId === employeeId &&
+        req.date === date &&
+        req.status === "approved"
+    );
+    
+    return {
+      originalShift,
+      hasLeave: !!approvedLeave,
+      hasOvertime: !!approvedOvertime,
+      leaveType: approvedLeave?.type,
+      overtimeInfo: approvedOvertime ? { startTime: approvedOvertime.startTime, endTime: approvedOvertime.endTime } : null,
+    };
+  };
+
   const dateModalWorkers = selectedDate
-    ? displayEmployees.map((emp) => ({
-        id: emp.id,
-        name: emp.name,
-        shift: getShiftForDate(selectedDate, emp.id),
-      }))
+    ? displayEmployees.map((emp) => {
+        const shiftInfo = getEmployeeShiftInfo(selectedDate, emp.id);
+        return {
+          id: emp.id,
+          name: emp.name,
+          shift: shiftInfo.hasLeave || shiftInfo.hasOvertime ? "X" : shiftInfo.originalShift,
+          shiftInfo,
+        };
+      })
     : [];
   const selectedDateWarnings = selectedDate
     ? (() => {
@@ -653,12 +717,42 @@ export default function SchedulePage() {
               </h3>
               <button
                 type="button"
-                onClick={() => setSelectedDate(null)}
+                onClick={() => {
+                  setSelectedDate(null);
+                  setShowOriginalShift(false);
+                }}
                 className="rounded-lg px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
               >
                 關閉
               </button>
             </div>
+            
+            {/* 視圖切換按鈕 */}
+            <div className="flex items-center justify-center gap-2 border-b px-5 py-3 bg-gray-50">
+              <button
+                type="button"
+                onClick={() => setShowOriginalShift(false)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  !showOriginalShift
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                顯示異動班表
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowOriginalShift(true)}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  showOriginalShift
+                    ? "bg-blue-600 text-white"
+                    : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                }`}
+              >
+                查看原始班表
+              </button>
+            </div>
+            
             <div className="max-h-[60vh] overflow-y-auto px-5 py-4 space-y-2">
               {selectedDateWarnings.length > 0 && (
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-2">
@@ -670,14 +764,47 @@ export default function SchedulePage() {
                   </ul>
                 </div>
               )}
-              {dateModalWorkers.map((worker) => (
-                <div key={worker.id} className="flex items-center justify-between rounded-lg border p-3">
-                  <span className="font-medium text-gray-800">{worker.name}</span>
-                  <span className="text-sm text-gray-600">
-                    {worker.shift}班（{shiftLabels[worker.shift]}）
-                  </span>
-                </div>
-              ))}
+              {dateModalWorkers.map((worker) => {
+                const displayShift = showOriginalShift ? worker.shiftInfo.originalShift : worker.shift;
+                const hasLeaveOrOvertime = worker.shiftInfo.hasLeave || worker.shiftInfo.hasOvertime;
+                
+                return (
+                  <div 
+                    key={worker.id} 
+                    className={`flex items-center justify-between rounded-lg border p-3 ${
+                      hasLeaveOrOvertime && !showOriginalShift ? "bg-orange-50 border-orange-200" : ""
+                    }`}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <span className="font-medium text-gray-800">{worker.name}</span>
+                      {hasLeaveOrOvertime && !showOriginalShift && (
+                        <span className="text-xs text-orange-600">
+                          {worker.shiftInfo.hasLeave && `請假中（${worker.shiftInfo.leaveType}）`}
+                          {worker.shiftInfo.hasLeave && worker.shiftInfo.hasOvertime && " / "}
+                          {worker.shiftInfo.hasOvertime && `加班（${worker.shiftInfo.overtimeInfo?.startTime}-${worker.shiftInfo.overtimeInfo?.endTime}）`}
+                        </span>
+                      )}
+                      {hasLeaveOrOvertime && showOriginalShift && (
+                        <span className="text-xs text-gray-500">
+                          原始班表：{worker.shiftInfo.hasLeave && `請假（${worker.shiftInfo.leaveType}）`}
+                          {worker.shiftInfo.hasLeave && worker.shiftInfo.hasOvertime && " / "}
+                          {worker.shiftInfo.hasOvertime && `加班（${worker.shiftInfo.overtimeInfo?.startTime}-${worker.shiftInfo.overtimeInfo?.endTime}）`}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {hasLeaveOrOvertime && (
+                        <span className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-700 font-medium">
+                          {worker.shiftInfo.hasLeave ? "假" : "加"}
+                        </span>
+                      )}
+                      <span className="text-sm text-gray-600">
+                        {displayShift}班（{shiftLabels[displayShift]}）
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>
