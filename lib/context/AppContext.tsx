@@ -1741,21 +1741,48 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // 核准時實際交換班表
         const isSelfSwap = request.requesterId === request.targetEmployeeId;
         
+        //  Helper: 獲取某員工在某日期的班表（從 DB 或預設邏輯）
+        const getEffectiveShift = async (employeeId: string, date: string): Promise<string> => {
+          const { data } = await supabase
+            .from("schedule_entries")
+            .select("shift_code")
+            .eq("user_id", employeeId)
+            .eq("date", date)
+            .single();
+          if (data?.shift_code) return data.shift_code;
+          // 沒有 DB 記錄，回推預設班表（同步計算，與 getShiftForDate 同樣邏輯）
+          if (isSunday(date)) return "X";
+          const emp = employees.find(e => e.id === employeeId);
+          const isWednesdayRotation = emp?.isWednesdayRotation ?? false;
+          if (isSaturday(date)) {
+            return (leaveSelections[employeeId] ?? []).includes(date) ? "X" : "C";
+          }
+          if ((leaveSelections[employeeId] ?? []).includes(date)) return "X";
+          if (isWednesday(date) && isWednesdayRotation) {
+            const rotationEmployees = employees.filter(e => e.isWednesdayRotation);
+            if (rotationEmployees.length === 0) return "B";
+            if (rotationEmployees.length === 1) {
+              return employeeId === rotationEmployees[0].id ? "A" : "B";
+            }
+            const offEmployees = rotationEmployees.filter(e =>
+              (wednesdayOffSelections[e.id] ?? []).includes(date)
+            );
+            const onDutyEmployees = rotationEmployees.filter(e =>
+              !(wednesdayOffSelections[e.id] ?? []).includes(date)
+            );
+            if (offEmployees.length === rotationEmployees.length || onDutyEmployees.length === rotationEmployees.length) {
+              return "B";
+            }
+            const isOnDuty = onDutyEmployees.some(e => e.id === employeeId);
+            return isOnDuty ? "A" : "B";
+          }
+          return "B"; // 預設平日班表
+        };
+        
         if (isSelfSwap) {
           // 自己跟自己換班：交換該員工兩天的班表
-          const reqEntries = await supabase
-            .from("schedule_entries")
-            .select("*")
-            .eq("user_id", request.requesterId)
-            .eq("date", request.requesterDate);
-          const targetEntries = await supabase
-            .from("schedule_entries")
-            .select("*")
-            .eq("user_id", request.requesterId)
-            .eq("date", request.targetDate);
-          
-          const reqShift = reqEntries.data?.[0]?.shift_code;
-          const targetShift = targetEntries.data?.[0]?.shift_code;
+          const reqShift = await getEffectiveShift(request.requesterId, request.requesterDate);
+          const targetShift = await getEffectiveShift(request.requesterId, request.targetDate);
           
           // 交換班表（使用 upsert）
           if (reqShift) {
@@ -1777,19 +1804,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           await loadScheduleOverrides();
         } else {
           // 與他人換班：交換雙方的班表
-          const reqEntries = await supabase
-            .from("schedule_entries")
-            .select("*")
-            .eq("user_id", request.requesterId)
-            .eq("date", request.requesterDate);
-          const targetEntries = await supabase
-            .from("schedule_entries")
-            .select("*")
-            .eq("user_id", request.targetEmployeeId)
-            .eq("date", request.targetDate);
-          
-          const reqShift = reqEntries.data?.[0]?.shift_code;
-          const targetShift = targetEntries.data?.[0]?.shift_code;
+          const reqShift = await getEffectiveShift(request.requesterId, request.requesterDate);
+          const targetShift = await getEffectiveShift(request.targetEmployeeId, request.targetDate);
           
           // 交換班表（使用 upsert 明確指定 onConflict）
           if (reqShift) {
