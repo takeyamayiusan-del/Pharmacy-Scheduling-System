@@ -1282,7 +1282,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Optimistic update
     setSchedule((prev) => ({ ...prev, [date]: { ...prev[date], [employeeId]: shift } }));
-    await supabase.from("schedule_overrides").upsert(
+    // 使用 schedule_entries 表（與 loadScheduleOverrides 一致）
+    await supabase.from("schedule_entries").upsert(
       { user_id: employeeId, date, shift_code: shift, updated_by: currentUser?.id },
       { onConflict: "user_id,date" }
     );
