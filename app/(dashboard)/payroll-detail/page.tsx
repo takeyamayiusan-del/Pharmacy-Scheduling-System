@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useApp, type PayrollRecord } from "@/lib/context/AppContext";
 import { createClient } from "@/lib/supabase/client";
-import { exportPayslipPdf } from "@/lib/payroll/exportPayslipPdf";
 import { jsPDF } from "jspdf";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 

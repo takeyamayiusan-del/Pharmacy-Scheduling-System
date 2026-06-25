@@ -125,9 +125,6 @@ export default function AttendancePage() {
 
   // 產生每月打卡明細數據
   const monthlyPunchData = useMemo(() => {
-    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
-    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
-    
     return displayEmployees.map((emp) => {
       const employeePunches = punchRecords
         .filter((p) => p.employeeId === emp.id)
@@ -197,7 +194,7 @@ export default function AttendancePage() {
   // 匯出整月打卡明細 PDF
   const exportMonthlyPunchPdf = () => {
     const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d')!;
+    const ctx = canvas.getContext('2d') as CanvasRenderingContext2D;
     
     // 計算頁面尺寸
     const pageWidth = 842; // A4 landscape width in points

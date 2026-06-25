@@ -1647,9 +1647,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Swap requests (Supabase) ────────────────────────────────────────────────
 
-  const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">, skipNotification = false) => {
+  const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">) => {
     const isSelfSwap = request.requesterId === request.targetEmployeeId;
-    const { data } = await supabase
+    await supabase
       .from("shift_swap_applications")
       .insert({
         requester_id: request.requesterId,
@@ -1657,9 +1657,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         swap_date: request.requesterDate,
         target_swap_date: request.targetDate,
         status: isSelfSwap ? "pending_review" : "pending_confirm",
-      })
-      .select("id")
-      .single();
+      });
 
     // 不再發送通知公告（由管理員主動查看審核）
 
