@@ -1647,7 +1647,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Swap requests (Supabase) ────────────────────────────────────────────────
 
-  const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">) => {
+  const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">, skipNotification = false) => {
     const isSelfSwap = request.requesterId === request.targetEmployeeId;
     const { data } = await supabase
       .from("shift_swap_applications")
@@ -1661,27 +1661,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .select("id")
       .single();
 
-    if (!isSelfSwap) {
-      await insertNotification({
-        recipientId: request.targetEmployeeId,
-        type: "shift_swap_requested",
-        title: "換班邀請",
-        body: `${request.requesterName} 邀請您換班：${request.requesterDate} ↔ ${request.targetDate}，請確認。`,
-        relatedId: data?.id,
-        relatedType: "shift_swap",
-      });
-    } else {
-      await notifyManagers({
-        type: "shift_swap_confirmed",
-        title: "換班申請待審核",
-        body: `${request.requesterName} 申請自行換班（${request.requesterDate} ↔ ${request.targetDate}），請審核。`,
-        relatedId: data?.id,
-        relatedType: "shift_swap",
-      });
-    }
+    // 不再發送通知公告（由管理員主動查看審核）
 
     await loadSwapRequests();
-    if (currentUser?.id) await loadNotifications(currentUser.id);
   };
 
   const updateSwapRequestStatus = async (
@@ -1822,21 +1804,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
           
         } else {
           // 與他人換班：交換雙方的班表
+          // 申請者 requesterDate = 申請者「要去上班的日期」（帶著申請者的班表去目標員工那天上班）
+          // 目標員工 targetDate = 目標員工「要去上班的日期」（帶著目標員工的班表去申請者那天上班）
           const reqShift = getEffectiveShift(request.requesterId, request.requesterDate);
           const targetShift = getEffectiveShift(request.targetEmployeeId, request.targetDate);
           
-          // 交換班表：targetEmployee 得到 requester 的班表
+          // 申請者去 targetDate 上班（帶著申請者原來的班表 reqShift）
           await supabase.from("schedule_entries").upsert({
-            user_id: request.targetEmployeeId,
-            date: request.requesterDate,
+            user_id: request.requesterId,
+            date: request.targetDate,
             shift_code: reqShift,
             updated_by: currentUser?.id,
           }, { onConflict: 'user_id,date' });
           
-          // requester 得到 targetEmployee 的班表
+          // 目標員工去 requesterDate 上班（帶著目標員工原來的班表 targetShift）
           await supabase.from("schedule_entries").upsert({
-            user_id: request.requesterId,
-            date: request.targetDate,
+            user_id: request.targetEmployeeId,
+            date: request.requesterDate,
             shift_code: targetShift,
             updated_by: currentUser?.id,
           }, { onConflict: 'user_id,date' });
@@ -1878,16 +1862,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteSwapRequest = async (id: string) => {
-    const { data, error } = await supabase
+    // 先獲取申請詳情
+    const request = swapRequests.find((item) => item.id === id);
+    
+    // 如果申請已核准且執行過換班，刪除時恢復原班表
+    if (request && (request.status === "approved" || request.status === "pending_approval" || request.status === "pending_confirmation")) {
+      const isSelfSwap = request.requesterId === request.targetEmployeeId;
+      
+      if (isSelfSwap) {
+        // 自己換班：恢復雙方的原始班表
+        // 刪除雙方在對方日期的記錄
+        await supabase.from("schedule_entries").delete()
+          .eq("user_id", request.requesterId)
+          .eq("date", request.targetDate);
+        await supabase.from("schedule_entries").delete()
+          .eq("user_id", request.requesterId)
+          .eq("date", request.requesterDate);
+      } else {
+        // 與他人換班：恢復雙方的原始班表
+        // 刪除換班後的記錄，讓班表回歸預設
+        await supabase.from("schedule_entries").delete()
+          .eq("user_id", request.requesterId)
+          .eq("date", request.targetDate);
+        await supabase.from("schedule_entries").delete()
+          .eq("user_id", request.targetEmployeeId)
+          .eq("date", request.requesterDate);
+        
+        // 重新載入班表
+        await loadScheduleOverrides();
+      }
+    }
+    
+    // 刪除換班申請
+    const { error } = await supabase
       .from("shift_swap_applications")
       .delete()
-      .eq("id", id)
-      .select("id");
+      .eq("id", id);
 
     if (error) throw error;
-    if (!data || data.length === 0) {
-      throw new Error("未找到換班申請或刪除失敗");
-    }
 
     await loadSwapRequests();
   };
