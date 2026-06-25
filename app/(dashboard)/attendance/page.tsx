@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 import { SHIFT_HOURS } from '@/lib/attendance/calculator';
 import { buildEffectiveTardinessRecords } from '@/lib/tardiness';
+import { Download, FileText, Calendar, Clock } from 'lucide-react';
 
 export default function AttendancePage() {
   const {
@@ -17,6 +18,7 @@ export default function AttendancePage() {
     punchRecords,
   } = useApp();
   const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
+  const [showMonthlyDetail, setShowMonthlyDetail] = useState(false);
   
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -121,6 +123,35 @@ export default function AttendancePage() {
     });
   }, [daysInMonth, displayEmployees, getShiftForDate, getHolidayInfo, leaveRequests, month, overtimeRequests, tardinessRecords, punchRecords, year]);
 
+  // 產生每月打卡明細數據
+  const monthlyPunchData = useMemo(() => {
+    const startDate = `${year}-${String(month).padStart(2, '0')}-01`;
+    const endDate = `${year}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+    
+    return displayEmployees.map((emp) => {
+      const employeePunches = punchRecords
+        .filter((p) => p.employeeId === emp.id)
+        .filter((p) => isDateInMonth(p.date, year, month))
+        .sort((a, b) => {
+          if (a.date !== b.date) return a.date.localeCompare(b.date);
+          return a.time.localeCompare(b.time);
+        });
+      
+      // 按日期分組
+      const byDate: Record<string, typeof employeePunches> = {};
+      employeePunches.forEach((p) => {
+        if (!byDate[p.date]) byDate[p.date] = [];
+        byDate[p.date].push(p);
+      });
+      
+      return {
+        id: emp.id,
+        name: emp.name,
+        byDate,
+      };
+    });
+  }, [displayEmployees, punchRecords, year, month, daysInMonth]);
+
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 2, 1));
   };
@@ -163,6 +194,172 @@ export default function AttendancePage() {
     URL.revokeObjectURL(url);
   };
 
+  // 匯出整月打卡明細 PDF
+  const exportMonthlyPunchPdf = () => {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d')!;
+    
+    // 計算頁面尺寸
+    const pageWidth = 842; // A4 landscape width in points
+    const pageHeight = 595; // A4 landscape height in points
+    const scale = 2;
+    canvas.width = pageWidth * scale;
+    canvas.height = pageHeight * scale;
+    ctx.scale(scale, scale);
+    
+    const marginLeft = 20;
+    const marginTop = 30;
+    const lineHeight = 18;
+    let y = marginTop;
+    const colWidths = [80, 60, 80, 200]; // 日期, 星期, 班別, 打卡時間
+    
+    const dayLabels = ['日', '一', '二', '三', '四', '五', '六'];
+    
+    // 繪製每個員工的打卡明細
+    const drawPage = () => {
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, pageWidth, pageHeight);
+      y = marginTop;
+    };
+    
+    const checkNewPage = (needed: number) => {
+      if (y + needed > pageHeight - 30) {
+        // 繪製頁碼
+        ctx.fillStyle = '#9ca3af';
+        ctx.font = '10px "Microsoft JhengHei", sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`- ${pageWidth / 30} -`, pageWidth / 2, pageHeight - 15);
+        return true;
+      }
+      return false;
+    };
+    
+    drawPage();
+    
+    // 標題
+    ctx.fillStyle = '#059669';
+    ctx.font = 'bold 20px "Microsoft JhengHei", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${year} 年 ${month} 月 打卡記錄明細`, pageWidth / 2, y);
+    y += 30;
+    
+    // 員工數據
+    monthlyPunchData.forEach((empData) => {
+      // 檢查是否需要換頁
+      if (checkNewPage(100)) {
+        drawPage();
+      }
+      
+      // 員工姓名
+      ctx.fillStyle = '#1f2937';
+      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(empData.name, marginLeft, y);
+      y += 20;
+      
+      // 表頭
+      ctx.fillStyle = '#374151';
+      ctx.font = 'bold 11px "Microsoft JhengHei", sans-serif';
+      let x = marginLeft;
+      ctx.fillText('日期', x, y);
+      x += colWidths[0];
+      ctx.fillText('星期', x, y);
+      x += colWidths[1];
+      ctx.fillText('班別', x, y);
+      x += colWidths[2];
+      ctx.fillText('打卡時間', x, y);
+      y += lineHeight;
+      
+      // 分隔線
+      ctx.strokeStyle = '#e5e7eb';
+      ctx.beginPath();
+      ctx.moveTo(marginLeft, y);
+      ctx.lineTo(pageWidth - marginLeft, y);
+      ctx.stroke();
+      y += 5;
+      
+      // 每日數據
+      for (let day = 1; day <= daysInMonth; day++) {
+        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+        const date = new Date(dateStr);
+        const dayOfWeek = dayLabels[date.getDay()];
+        const shift = getShiftForDate(dateStr, empData.id);
+        const punches = empData.byDate[dateStr] || [];
+        
+        // 檢查是否需要換頁
+        if (checkNewPage(lineHeight + 10)) {
+          drawPage();
+          // 重新繪製表頭
+          ctx.fillStyle = '#374151';
+          ctx.font = 'bold 11px "Microsoft JhengHei", sans-serif';
+          x = marginLeft;
+          ctx.fillText('日期', x, y);
+          x += colWidths[0];
+          ctx.fillText('星期', x, y);
+          x += colWidths[1];
+          ctx.fillText('班別', x, y);
+          x += colWidths[2];
+          ctx.fillText('打卡時間', x, y);
+          y += lineHeight;
+          ctx.strokeStyle = '#e5e7eb';
+          ctx.beginPath();
+          ctx.moveTo(marginLeft, y);
+          ctx.lineTo(pageWidth - marginLeft, y);
+          ctx.stroke();
+          y += 5;
+        }
+        
+        x = marginLeft;
+        
+        // 日期
+        ctx.fillStyle = '#374151';
+        ctx.font = '11px "Microsoft JhengHei", sans-serif';
+        ctx.fillText(`${month}/${day}`, x, y);
+        x += colWidths[0];
+        
+        // 星期
+        ctx.fillStyle = dayOfWeek === '六' || dayOfWeek === '日' ? '#dc2626' : '#374151';
+        ctx.fillText(dayOfWeek, x, y);
+        x += colWidths[1];
+        
+        // 班別
+        ctx.fillStyle = '#374151';
+        ctx.fillText(shift, x, y);
+        x += colWidths[2];
+        
+        // 打卡時間
+        if (punches.length > 0) {
+          const times = punches.map((p) => p.time).join('、');
+          ctx.fillStyle = '#059669';
+          ctx.fillText(times, x, y);
+        } else {
+          ctx.fillStyle = '#9ca3af';
+          ctx.fillText('無打卡', x, y);
+        }
+        
+        y += lineHeight;
+      }
+      
+      y += 15; // 員工之間的間距
+    });
+    
+    // 繪製頁碼
+    ctx.fillStyle = '#9ca3af';
+    ctx.font = '10px "Microsoft JhengHei", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`- ${pageWidth / 30} -`, pageWidth / 2, pageHeight - 15);
+    
+    // 轉換為 PDF
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new (window as any).jspdf.jsPDF({
+      orientation: 'landscape',
+      unit: 'pt',
+      format: 'a4'
+    });
+    pdf.addImage(imgData, 'PNG', 0, 0, pageWidth, pageHeight);
+    pdf.save(`打卡記錄_${year}_${String(month).padStart(2, '0')}.pdf`);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -172,11 +369,89 @@ export default function AttendancePage() {
           <button onClick={nextMonth} className="p-2 border rounded hover:bg-gray-50">▶</button>
         </div>
         {canExport && (
-          <button onClick={exportExcelReport} className="app-btn-primary">
-            匯出 Excel 報表
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowMonthlyDetail(!showMonthlyDetail)}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+            >
+              <Calendar className="h-4 w-4" />
+              {showMonthlyDetail ? '隱藏打卡明細' : '查看打卡明細'}
+            </button>
+            <button onClick={exportMonthlyPunchPdf} className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700">
+              <Download className="h-4 w-4" />
+              匯出打卡 PDF
+            </button>
+            <button onClick={exportExcelReport} className="app-btn-primary">
+              匯出 Excel 報表
+            </button>
+          </div>
         )}
       </div>
+
+      {/* 打卡明細面板 */}
+      {showMonthlyDetail && canExport && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="p-4 border-b bg-gray-50">
+            <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              {year} 年 {month} 月 打卡明細
+            </h3>
+          </div>
+          <div className="max-h-[60vh] overflow-y-auto">
+            {monthlyPunchData.map((empData) => (
+              <div key={empData.id} className="border-b last:border-b-0 p-4">
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-gray-500" />
+                  {empData.name}
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-7 gap-2">
+                  {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
+                    const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                    const date = new Date(dateStr);
+                    const dayOfWeek = date.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+                    const shift = getShiftForDate(dateStr, empData.id);
+                    const punches = empData.byDate[dateStr] || [];
+                    
+                    return (
+                      <div
+                        key={day}
+                        className={`p-2 rounded-lg border text-xs ${
+                          isWeekend
+                            ? 'bg-red-50 border-red-200'
+                            : 'bg-gray-50 border-gray-200'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <span className={`font-medium ${isWeekend ? 'text-red-600' : 'text-gray-700'}`}>
+                            {month}/{day}
+                          </span>
+                          <span className="text-gray-400">{['日', '一', '二', '三', '四', '五', '六'][dayOfWeek]}</span>
+                        </div>
+                        <div className="text-gray-600 mb-1">
+                          班別：<span className="font-medium">{shift}</span>
+                        </div>
+                        <div className="space-y-0.5">
+                          {punches.length > 0 ? (
+                            punches.map((p, idx) => (
+                              <div key={idx} className={`text-xs ${p.action === 'work_in' ? 'text-green-600' : 'text-blue-600'}`}>
+                                {p.action === 'work_in' ? '進' : '出'}：{p.time}
+                                {p.lateMinutes > 0 && <span className="text-red-500 ml-1">遲{p.lateMinutes}分</span>}
+                              </div>
+                            ))
+                          ) : (
+                            <div className="text-gray-400 text-xs">無打卡</div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         <table className="w-full">
