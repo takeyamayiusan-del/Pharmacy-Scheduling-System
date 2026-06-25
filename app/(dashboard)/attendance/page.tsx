@@ -5,6 +5,13 @@ import { useApp } from '@/lib/context/AppContext';
 import { SHIFT_HOURS } from '@/lib/attendance/calculator';
 import { buildEffectiveTardinessRecords } from '@/lib/tardiness';
 import { Download, FileText, Calendar, Clock } from 'lucide-react';
+import jsPDF from 'jspdf';
+
+declare global {
+  interface Window {
+    jspdf: { jsPDF: typeof jsPDF };
+  }
+}
 
 export default function AttendancePage() {
   const {
@@ -147,7 +154,7 @@ export default function AttendancePage() {
         byDate,
       };
     });
-  }, [displayEmployees, punchRecords, year, month, daysInMonth]);
+  }, [displayEmployees, punchRecords, year, month]);
 
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 2, 1));
@@ -348,7 +355,7 @@ export default function AttendancePage() {
     
     // 轉換為 PDF
     const imgData = canvas.toDataURL('image/png');
-    const pdf = new (window as any).jspdf.jsPDF({
+    const pdf = new jsPDF({
       orientation: 'landscape',
       unit: 'pt',
       format: 'a4'
