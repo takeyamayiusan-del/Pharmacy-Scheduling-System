@@ -20,14 +20,6 @@ export default function PayrollDetailPage() {
       if (!currentUser) return;
       setIsLoading(true);
 
-      // 載入薪資設定
-      const { data: config } = await supabase
-        .from("employee_salary_config")
-        .select("*")
-        .eq("user_id", currentUser.id)
-        .single();
-      setSalaryConfig(config);
-
       // 一次性載入該員工所有已發布的薪資記錄
       const { data: records } = await supabase
         .from("payroll_records")
