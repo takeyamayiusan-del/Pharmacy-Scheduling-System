@@ -10,7 +10,7 @@ export default function PayrollDetailPage() {
   const { currentUser, payrollRecords, setPayrollRecords } = useApp();
   const supabase = createClient();
   
-  const [salaryConfig, setSalaryConfig] = useState<{ position?: string } | null>(null);
+  
   const [isLoading, setIsLoading] = useState(true);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
@@ -26,7 +26,7 @@ export default function PayrollDetailPage() {
         .select("*")
         .eq("user_id", currentUser.id)
         .single();
-      setSalaryConfig(config);
+
 
       // 一次性載入該員工所有已發布的薪資記錄
       const { data: records } = await supabase
