@@ -98,210 +98,156 @@ export default function PayrollDetailPage() {
     if (!currentUser) return;
 
     try {
-      // 使用 Canvas 繪製再轉 PDF（確保中文正常顯示）
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d')!;
-      const width = 595; // A4 width in points
-      const height = 842; // A4 height in points
-      canvas.width = width;
-      canvas.height = height;
-
-      // 縮放係數
-      const scale = 2;
-      canvas.width = width * scale;
-      canvas.height = height * scale;
-      ctx.scale(scale, scale);
-      ctx.textBaseline = 'top';
-
-      // 背景
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, width, height);
-
-      let y = 30;
-
-      // 頂部裝飾線
-      ctx.strokeStyle = '#10b981';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(20, y);
-      ctx.lineTo(width - 20, y);
-      ctx.stroke();
-      y += 20;
-
-      // 標題
-      ctx.fillStyle = '#059669';
-      ctx.font = 'bold 32px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('薪資單', width / 2, y);
-      y += 25;
-
-      // 副標題
-      ctx.fillStyle = '#6b7280';
-      ctx.font = '16px "Microsoft JhengHei", sans-serif';
-      ctx.fillText('Payroll Statement', width / 2, y);
-      y += 25;
-
-      // 分隔線
-      ctx.strokeStyle = '#e5e7eb';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(20, y);
-      ctx.lineTo(width - 20, y);
-      ctx.stroke();
-      y += 25;
-
-      // 基本資訊區塊
-      ctx.fillStyle = '#f9fafb';
-      ctx.fillRect(20, y, width - 40, 60);
-      ctx.strokeStyle = '#e5e7eb';
-      ctx.strokeRect(20, y, width - 40, 60);
-
-      ctx.fillStyle = '#374151';
-      ctx.font = '14px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText(`員工姓名：${currentUser.name}`, 30, y + 20);
-      ctx.fillText(`職　　稱：${salaryConfig?.position || '員工'}`, 30, y + 40);
-      ctx.fillText(`薪資期間：${record.year} 年 ${record.month} 月`, 320, y + 20);
-      ctx.fillText(`發布日期：${record.publishedAt ? new Date(record.publishedAt).toLocaleDateString('zh-TW') : 'N/A'}`, 320, y + 40);
-      y += 80;
-
-      // ===== 應發項目 =====
-      ctx.fillStyle = '#10b981';
-      ctx.fillRect(20, y, width - 40, 20);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('應 發 項 目', 30, y + 14);
-      y += 30;
-
-      const earnings = [
-        ['底　　薪', record.baseSalary ?? 0],
-        ['加 班 費', record.overtimePay ?? 0],
-        ['獎　　金', record.bonusTotal > 0 ? record.bonusTotal : 0],
-      ];
-
-      ctx.textAlign = 'left';
-      ctx.font = '14px "Microsoft JhengHei", sans-serif';
-      earnings.forEach(([label, amount]) => {
-        ctx.fillStyle = '#374151';
-        ctx.fillText(label as string, 30, y);
-        ctx.fillStyle = '#059669';
-        ctx.textAlign = 'right';
-        ctx.fillText(`${(amount as number).toLocaleString('zh-TW')} 元`, width - 30, y);
-        ctx.textAlign = 'left';
-        y += 20;
+      const pageWidth = 595;
+      const marginLeft = 30;
+      const marginRight = 30;
+      const contentWidth = pageWidth - marginLeft - marginRight;
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4'
       });
-
-      // 應發合計
-      const totalEarnings = (record.baseSalary ?? 0) + (record.overtimePay ?? 0) + (record.bonusTotal > 0 ? record.bonusTotal : 0);
-      ctx.strokeStyle = '#10b981';
-      ctx.beginPath();
-      ctx.moveTo(25, y - 5);
-      ctx.lineTo(width - 25, y - 5);
-      ctx.stroke();
-      ctx.fillStyle = '#059669';
-      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('應發合計', 30, y + 8);
-      ctx.textAlign = 'right';
-      ctx.fillText(`${totalEarnings.toLocaleString('zh-TW')} 元`, width - 30, y + 8);
-      ctx.textAlign = 'left';
-      y += 35;
-
-      // ===== 扣除項目 =====
-      ctx.fillStyle = '#ef4444';
-      ctx.fillRect(20, y, width - 40, 20);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('扣 除 項 目', 30, y + 14);
+      
+      let y = 30;
+      const rowHeight = 28;
+      
+      // 頂部綠色條
+      pdf.setFillColor(16, 185, 129);
+      pdf.rect(0, 0, pageWidth, 8, 'F');
+      y += 20;
+      
+      // 標題
+      pdf.setTextColor(5, 150, 105);
+      pdf.setFontSize(24);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('薪資單', pageWidth / 2, y, { align: 'center' });
       y += 30;
+      
+      // 分隔線
+      pdf.setDrawColor(229, 231, 235);
+      pdf.setLineWidth(0.5);
+      pdf.line(marginLeft, y, pageWidth - marginRight, y);
+      y += 20;
+      
+      // 基本資訊
+      pdf.setFillColor(249, 250, 251);
+      pdf.rect(marginLeft, y, contentWidth, 55, 'F');
+      
+      pdf.setTextColor(55, 65, 81);
+      pdf.setFontSize(10);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('員工：' + currentUser.name, marginLeft + 8, y + 15);
+      pdf.text(record.year + '年' + record.month + '月', marginLeft + 200, y + 15);
+      pdf.text('發布：' + (record.publishedAt ? new Date(record.publishedAt).toLocaleDateString('zh-TW') : '-') + '| 列印：' + new Date().toLocaleDateString('zh-TW'), marginLeft + 8, y + 40);
+      y += 65;
+      
+      // ===== 應發項目 =====
+      pdf.setFillColor(16, 185, 129);
+      pdf.rect(marginLeft, y, contentWidth, 20, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('應發項目', marginLeft + 8, y + 14);
+      y += 25;
+      
+      const earnings = [
+        ['底薪', record.baseSalary ?? 0],
+        ['加班費', record.overtimePay ?? 0],
+        ['獎金', record.bonusTotal > 0 ? record.bonusTotal : 0],
+      ];
+      
+      pdf.setFont('helvetica', 'normal');
+      pdf.setTextColor(55, 65, 81);
+      pdf.setFontSize(10);
+      earnings.forEach((item) => {
+        const label = item[0];
+        const amount = item[1] as number;
+        pdf.text(label as string, marginLeft + 8, y + 5);
+        pdf.setTextColor(5, 150, 105);
+        pdf.text(amount.toLocaleString() + ' 元', pageWidth - marginRight - 8, y + 5, { align: 'right' });
+        pdf.setTextColor(55, 65, 81);
+        y += rowHeight;
+      });
+      
+      const totalEarnings = (record.baseSalary ?? 0) + (record.overtimePay ?? 0) + (record.bonusTotal > 0 ? record.bonusTotal : 0);
+      pdf.setDrawColor(16, 185, 129);
+      pdf.line(marginLeft + 5, y, pageWidth - marginRight - 5, y);
+      y += 8;
+      pdf.setTextColor(5, 150, 105);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('應發合計', marginLeft + 8, y + 5);
+      pdf.text(totalEarnings.toLocaleString() + ' 元', pageWidth - marginRight - 8, y + 5, { align: 'right' });
+      y += 35;
+      
+      // ===== 扣除項目 =====
+      pdf.setFillColor(239, 68, 68);
+      pdf.rect(marginLeft, y, contentWidth, 20, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(11);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('扣除項目', marginLeft + 8, y + 14);
+      y += 25;
 
       const deductions = [
         ['請假扣款', record.leaveDeduction ?? 0],
         ['遲到扣款', record.tardinessDeduction ?? 0],
-        ['勞工保險', record.laborInsurance ?? 0],
-        ['健康保險', record.healthInsurance ?? 0],
-        ['勞工退休金', record.pensionDeduction ?? 0],
+        ['勞保', record.laborInsurance ?? 0],
+        ['健保', record.healthInsurance ?? 0],
+        ['退休金', record.pensionDeduction ?? 0],
       ];
 
-      ctx.textAlign = 'left';
-      ctx.font = '14px "Microsoft JhengHei", sans-serif';
-      deductions.forEach(([label, amount]) => {
-        ctx.fillStyle = '#374151';
-        ctx.fillText(label as string, 30, y);
-        ctx.fillStyle = '#ef4444';
-        ctx.textAlign = 'right';
-        ctx.fillText(`- ${(amount as number).toLocaleString('zh-TW')} 元`, width - 30, y);
-        ctx.textAlign = 'left';
-        y += 20;
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(10);
+      deductions.forEach((item) => {
+        const label = item[0];
+        const amount = item[1] as number;
+        pdf.setTextColor(55, 65, 81);
+        pdf.text(label as string, marginLeft + 8, y + 5);
+        pdf.setTextColor(239, 68, 68);
+        pdf.text('- ' + amount.toLocaleString() + ' 元', pageWidth - marginRight - 8, y + 5, { align: 'right' });
+        y += rowHeight;
       });
 
-      // 扣除合計
       const totalDeductions = (record.leaveDeduction ?? 0) + (record.tardinessDeduction ?? 0) +
         (record.laborInsurance ?? 0) + (record.healthInsurance ?? 0) +
         (record.pensionDeduction ?? 0);
-      ctx.strokeStyle = '#ef4444';
-      ctx.beginPath();
-      ctx.moveTo(25, y - 5);
-      ctx.lineTo(width - 25, y - 5);
-      ctx.stroke();
-      ctx.fillStyle = '#ef4444';
-      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('扣除合計', 30, y + 8);
-      ctx.textAlign = 'right';
-      ctx.fillText(`- ${totalDeductions.toLocaleString('zh-TW')} 元`, width - 30, y + 8);
-      ctx.textAlign = 'left';
+      pdf.setDrawColor(239, 68, 68);
+      pdf.line(marginLeft + 5, y, pageWidth - marginRight - 5, y);
+      y += 8;
+      pdf.setTextColor(239, 68, 68);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('扣除合計', marginLeft + 8, y + 5);
+      pdf.text('- ' + totalDeductions.toLocaleString() + ' 元', pageWidth - marginRight - 8, y + 5, { align: 'right' });
       y += 40;
 
       // ===== 實領金額 =====
-      ctx.fillStyle = '#059669';
-      ctx.fillRect(20, y, width - 40, 40);
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 14px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'left';
-      ctx.fillText('實 領 金 額', 30, y + 18);
-      ctx.font = 'bold 24px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'right';
-      ctx.fillText(`NT$ ${(record.finalPay ?? 0).toLocaleString('zh-TW')} 元`, width - 30, y + 28);
-      y += 60;
-
-      // 底部裝飾線
-      ctx.strokeStyle = '#10b981';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(20, y);
-      ctx.lineTo(width - 20, y);
-      ctx.stroke();
-      y += 20;
+      pdf.setFillColor(30, 64, 175);
+      pdf.rect(marginLeft, y, contentWidth, 40, 'F');
+      pdf.setTextColor(255, 255, 255);
+      pdf.setFontSize(12);
+      pdf.setFont('helvetica', 'bold');
+      pdf.text('實領金額', marginLeft + 12, y + 16);
+      pdf.setFontSize(16);
+      pdf.text('NT$ ' + record.finalPay.toLocaleString() + ' 元', pageWidth - marginRight - 12, y + 28, { align: 'right' });
+      y += 55;
 
       // 備註
-      if (record.note) {
-        ctx.fillStyle = '#6b7280';
-        ctx.font = '12px "Microsoft JhengHei", sans-serif';
-        ctx.textAlign = 'left';
-        ctx.fillText(`備註：${record.note}`, 20, y);
-        y += 20;
-      }
+      pdf.setDrawColor(229, 231, 235);
+      pdf.line(marginLeft, y, pageWidth - marginRight, y);
+      y += 15;
+      pdf.setTextColor(156, 163, 175);
+      pdf.setFontSize(8);
+      pdf.setFont('helvetica', 'normal');
+      pdf.text('耀聖藥局排班系統產生 | ' + new Date().toLocaleString('zh-TW'), pageWidth / 2, y, { align: 'center' });
 
-      // 頁尾
-      ctx.fillStyle = '#9ca3af';
-      ctx.font = '10px "Microsoft JhengHei", sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('本薪資單由系統自動產生，如有任何疑問請聯繫管理人員。', width / 2, height - 35);
-      ctx.fillText(`產生時間：${new Date().toLocaleString('zh-TW')}`, width / 2, height - 22);
-
-      // 轉換為 PDF
-      const imageData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-      pdf.addImage(imageData, 'PNG', 0, 0, width, height);
-      pdf.save(`薪資單_${record.year}年${record.month}月.pdf`);
+      pdf.save('薪資單_' + currentUser.name + '_' + record.year + '_' + record.month + '.pdf');
     } catch (err) {
       console.error('PDF generation error:', err);
       const errorMessage = err instanceof Error ? err.message : '未知錯誤';
-      alert(`PDF 生成失敗：${errorMessage}`);
+      alert('PDF 生成失敗：' + errorMessage);
     }
+  };
   };
 
   const formatCurrency = (amount: number) => {
