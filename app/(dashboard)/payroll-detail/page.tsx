@@ -94,6 +94,7 @@ export default function PayrollDetailPage() {
   };
 
   // 下載薪資單 PDF
+  // 下載薪資單 PDF
   const downloadSalaryPDF = async (record: PayrollRecord) => {
     if (!currentUser) return;
     try {
@@ -232,6 +233,59 @@ export default function PayrollDetailPage() {
       alert('PDF 生成失敗');
     }
   };
+
+  const formatCurrency = (amount: number) => {
+    return amount?.toLocaleString('zh-TW', { minimumFractionDigits: 0 }) ?? "0";
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <div className="text-gray-500">載入中...</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 max-w-2xl">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+          <DollarSign className="h-6 w-6 text-emerald-600" />
+          薪資查詢
+        </h1>
+      </div>
+
+      {/* 當月薪資預覽 */}
+      {currentMonthRecord ? (
+        <div className="app-card p-6 bg-gradient-to-br from-emerald-50 to-blue-50 border-emerald-200">
+          <div className="flex items-center gap-2 mb-4">
+            <span className="bg-emerald-500 text-white text-xs px-2 py-1 rounded-full">本月已發布</span>
+            <span className="text-sm text-gray-600">{new Date().getFullYear()}年{new Date().getMonth() + 1}月</span>
+          </div>
+          
+          <div className="text-center mb-4">
+            <p className="text-sm text-gray-600 mb-1">實領金額</p>
+            <p className="text-4xl font-bold text-emerald-600">
+              ${formatCurrency(currentMonthRecord.finalPay)}
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+            <div className="bg-white/50 rounded-lg p-3">
+              <p className="text-gray-500 text-xs">底薪</p>
+              <p className="font-medium">${formatCurrency(currentMonthRecord.baseSalary)}</p>
+            </div>
+            <div className="bg-white/50 rounded-lg p-3">
+              <p className="text-gray-500 text-xs">加班費</p>
+              <p className="font-medium text-green-600">+${formatCurrency(currentMonthRecord.overtimePay)}</p>
+            </div>
+            <div className="bg-white/50 rounded-lg p-3">
+              <p className="text-gray-500 text-xs">請假扣款</p>
+              <p className="font-medium text-red-500">-${formatCurrency(currentMonthRecord.leaveDeduction)}</p>
+            </div>
+            <div className="bg-white/50 rounded-lg p-3">
+              <p className="text-gray-500 text-xs">遲到扣款</p>
+              <p className="font-medium text-red-500">-${formatCurrency(currentMonthRecord.tardinessDeduction)}</p>
             </div>
           </div>
 
