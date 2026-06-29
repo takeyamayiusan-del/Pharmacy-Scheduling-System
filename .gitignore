@@ -80,6 +80,10 @@ supabase/.branches/
 !/data/storage/.gitkeep
 /data/backups/*
 !/data/backups/.gitkeep
+!/data/backups/USB_README.txt
+
+# USB 打包產物（勿提交）
+yaosheng-usb-*.zip
 /data/app-logs/*
 !/data/app-logs/.gitkeep
 

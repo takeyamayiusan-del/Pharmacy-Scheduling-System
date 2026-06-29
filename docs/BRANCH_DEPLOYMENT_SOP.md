@@ -48,30 +48,33 @@ git push origin main
 
 > ⚠️ **絕對不要** commit：`.env.local`、`data/postgres/` 內容、`node_modules`、`.next`
 
-### A-3. 打包資料（若要把現有班表／員工帶過去）
+### A-3. 打包資料帶到 USB（保留本機測試資料）
 
-若家裡已經有跑過的資料（員工帳號、班表、請假紀錄）：
+你的資料庫目前在 **Docker volume** 裡，不在空的 `data/postgres/`。請用專用腳本匯出 SQL：
 
 ```powershell
-# 先停止服務
-supabase stop
-
-# 打包 data/（只打包資料，比整包專案小很多）
-npm run data:pack-usb
+npm run data:pack-branch-usb
 ```
 
-會產生 `yaosheng-data-日期.zip`，拷到 USB。
+會產生專案根目錄的 **`yaosheng-usb-日期.zip`**，內含：
 
-若分店是**全新開始**、不要舊資料 → **略過 A-3**。
+| 檔案 | 說明 |
+|------|------|
+| `yaosheng-local-日期.sql` | 完整資料庫備份（員工、班表、申請…） |
+| `USB_README.txt` | 還原說明 |
+
+**把這個 ZIP 拷到 USB 即可**（通常約 1MB，很快）。
+
+> 不必拷 `node_modules`、`.next`、整包專案。
 
 ### A-4. 準備攜帶物品
 
 | 物品 | 必要？ |
 |------|--------|
-| USB（內含 `yaosheng-data-*.zip`，若有舊資料） | 有舊資料才要 |
-| 手機（Tailscale 登入、收驗證信） | ✅ |
-| 本文件（或 GitHub 上可看） | ✅ |
-| 整包專案 USB | ❌ **不需要**（改用 GitHub） |
+| USB（內含 `yaosheng-usb-*.zip`） | ✅ 要保留測試資料時 |
+| 手機（Tailscale 登入） | ✅ |
+| 本文件（或 GitHub 上看） | ✅ |
+| 整包專案 USB | ❌ 用 GitHub clone |
 
 ---
 
@@ -171,29 +174,25 @@ git --version
 
 ```powershell
 cd C:\
-git clone https://github.com/你的帳號/Pharmacy-Scheduling-System.git
+git clone -b deploy/local-production https://github.com/takeyamayiusan-del/Pharmacy-Scheduling-System.git
 cd C:\Pharmacy-Scheduling-System
 ```
 
 ---
 
-### 步驟 6／10：還原資料（僅情境 2）
+### 步驟 6／10：還原資料庫（從 USB）
 
-若有 USB 上的 `yaosheng-data-日期.zip`：
-
-```powershell
-cd C:\Pharmacy-Scheduling-System
-npm run data:setup-dirs
-
-# 解壓到 data（會覆蓋 postgres、storage）
-Expand-Archive -Path "E:\yaosheng-data-2026-06-30.zip" -DestinationPath "C:\Pharmacy-Scheduling-System\data" -Force
-```
-
-若全新架設：
+解壓 USB 上的 `yaosheng-usb-日期.zip`，先完成步驟 8 `supabase start`，再還原：
 
 ```powershell
-npm run data:setup-dirs
+# 假設 USB 在 E:，且已 supabase start
+Get-Content "E:\yaosheng-local-2026-06-29.sql" -Raw -Encoding UTF8 |
+  docker exec -i supabase_db_yaosheng-pharmacy psql -U postgres -d postgres
 ```
+
+（檔名請改成 ZIP 裡實際的日期。）
+
+若**全新架設、不要舊資料** → 略過本步，改執行 `supabase db push` + `npm run data:seed-users`。
 
 ---
 
@@ -561,6 +560,18 @@ pm2 restart pharmacy-web
 | 網站埠 | 3000 |
 | 外網 | Tailscale Funnel `*.ts.net` |
 | 登入 email 格式 | `帳號@yaosheng.app` |
+
+---
+
+## 附錄：Vercel 與本機並行
+
+| | Vercel（這幾天測試） | 分店主機（正式本機） |
+|--|---------------------|---------------------|
+| 程式分支 | `main`（不變） | `deploy/local-production` |
+| 資料 | 雲端 Supabase | 本機 Docker + USB SQL 還原 |
+| 部署 | Vercel 自動（可暫停） | `git clone -b deploy/local-production` |
+
+兩邊資料**不會自動同步**，正好當雙重備援。
 
 ---
 
