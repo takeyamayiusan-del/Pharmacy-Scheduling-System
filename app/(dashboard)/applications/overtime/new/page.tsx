@@ -48,7 +48,7 @@ export default function NewOvertimeApplicationPage() {
       });
 
       if (error) throw error;
-      router.push('/dashboard/applications/overtime');
+      router.push('/applications/overtime');
     } catch {
       setErrors({ submit: '申請失敗，請稍後再試' });
     } finally {

@@ -5,20 +5,23 @@ import { useRouter } from 'next/navigation';
 import { useApp } from '@/lib/context/AppContext';
 
 export default function RootPage() {
-  const { currentUser } = useApp();
+  const { currentUser, isLoading } = useApp();
   const router = useRouter();
   const [hasRedirected, setHasRedirected] = useState(false);
 
   useEffect(() => {
-    if (!hasRedirected) {
-      setHasRedirected(true);
-      if (currentUser) {
-        router.replace('/attendance/punch');
-      } else {
-        router.replace('/login');
-      }
+    if (isLoading || hasRedirected) return;
+    setHasRedirected(true);
+    if (currentUser) {
+      const dest =
+        currentUser.role === "owner" || currentUser.role === "manager"
+          ? "/schedule"
+          : "/attendance/punch";
+      router.replace(dest);
+    } else {
+      router.replace("/login");
     }
-  }, [currentUser, router, hasRedirected]);
+  }, [currentUser, isLoading, router, hasRedirected]);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">

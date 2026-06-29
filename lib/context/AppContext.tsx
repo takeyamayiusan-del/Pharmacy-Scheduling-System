@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from "react";
 import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedType } from "@/lib/applications/statusMaps";
 import { createClient } from "@/lib/supabase/client";
+import { toAuthEmail } from "@/lib/auth/constants";
 import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, type PunchSlot } from "@/lib/attendance/punchSchedule";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -20,6 +21,14 @@ export type Employee = {
 
 export type ShiftType = "A" | "B" | "C" | "D" | "E" | "X";
 export type ShiftTimeConfig = Record<ShiftType, string[]>;
+export type ShiftDisplayStyle = {
+  label: string;
+  displayText: string;
+  bgColor: string;
+  textColor: string;
+  borderColor: string;
+};
+export type ShiftDisplayConfig = Record<ShiftType, ShiftDisplayStyle>;
 
 export type ScheduleData = {
   [date: string]: {
@@ -276,12 +285,12 @@ const isInMonth = (dateStr: string, year: number, month: number) => {
   return date.getFullYear() === year && date.getMonth() + 1 === month;
 };
 
-const getMonthSaturdays = (year: number, month: number) => {
+const getMonthWednesdays = (year: number, month: number) => {
   const dates: string[] = [];
   const daysInMonth = new Date(year, month, 0).getDate();
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    if (isSaturday(dateStr)) dates.push(dateStr);
+    if (isWednesday(dateStr)) dates.push(dateStr);
   }
   return dates;
 };
@@ -330,9 +339,12 @@ interface AppContextType {
   deleteFixedShift: (index: number) => Promise<void>;
   shiftTimeConfig: ShiftTimeConfig;
   updateShiftTimeConfig: (shift: ShiftType, ranges: string[]) => Promise<void>;
+  shiftDisplayConfig: ShiftDisplayConfig;
+  updateShiftDisplayConfig: (shift: ShiftType, style: Partial<ShiftDisplayStyle>) => Promise<void>;
   wednesdayNightShifts: WednesdayNightShift[];
   setWednesdayNightShift: (date: string, employeeId: string) => void;
   getWednesdayOffDates: (employeeId: string, year: number, month: number) => string[];
+  getWednesdayOffLimit: (year: number, month: number) => number;
   toggleWednesdayOff: (employeeId: string, date: string) => Promise<{ success: boolean; message?: string }>;
   isWednesdayOff: (employeeId: string, date: string) => boolean;
   getLeaveSummary: (employeeId: string, year: number, month: number) => LeaveSummary;
@@ -449,6 +461,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     E: ["13:30-17:00", "19:00-21:00"],
     X: ["休假"],
   });
+  const [shiftDisplayConfig, setShiftDisplayConfig] = useState<ShiftDisplayConfig>({
+    A: { label: "全天", displayText: "A", bgColor: "#bfdbfe", textColor: "#1e3a8a", borderColor: "#60a5fa" },
+    B: { label: "白班", displayText: "B", bgColor: "#a7f3d0", textColor: "#065f46", borderColor: "#34d399" },
+    C: { label: "上午", displayText: "C", bgColor: "#fde68a", textColor: "#92400e", borderColor: "#f59e0b" },
+    D: { label: "下午", displayText: "D", bgColor: "#ddd6fe", textColor: "#5b21b6", borderColor: "#a78bfa" },
+    E: { label: "下午+晚", displayText: "E", bgColor: "#fecdd3", textColor: "#9f1239", borderColor: "#fb7185" },
+    X: { label: "休假", displayText: "X", bgColor: "#e2e8f0", textColor: "#334155", borderColor: "#94a3b8" },
+  });
   const [wednesdayNightShifts, setWednesdayNightShifts] = useState<WednesdayNightShift[]>([]);
 
   // ─── Load data from Supabase ────────────────────────────────────────────────
@@ -493,13 +513,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const loadShiftTimeConfig = useCallback(async () => {
-    const { data } = await supabase.from("shift_time_config").select("shift_code, time_ranges");
+    const { data } = await supabase
+      .from("shift_time_config")
+      .select("shift_code, time_ranges, display_label, display_text, bg_color, text_color, border_color");
     if (data && data.length > 0) {
       const config: Partial<ShiftTimeConfig> = {};
+      const displayConfig: Partial<ShiftDisplayConfig> = {};
       data.forEach((r) => {
-        config[r.shift_code as ShiftType] = r.time_ranges;
+        const code = r.shift_code as ShiftType;
+        config[code] = r.time_ranges;
+        displayConfig[code] = {
+          label: r.display_label || code,
+          displayText: r.display_text || code,
+          bgColor: r.bg_color || "#e5e7eb",
+          textColor: r.text_color || "#111827",
+          borderColor: r.border_color || "#9ca3af",
+        };
       });
       setShiftTimeConfig((prev) => ({ ...prev, ...config }));
+      setShiftDisplayConfig((prev) => ({ ...prev, ...displayConfig }));
     }
   }, [supabase]);
 
@@ -534,13 +566,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase
       .from("users")
-      .select("id, name, role, is_active, hire_date, is_wednesday_rotation, is_weekday_off_rule")
+      .select("id, username, name, role, is_active, hire_date, is_wednesday_rotation, is_weekday_off_rule")
       .eq("is_active", true);
       if (data) {
         setEmployees(
           data.map((r) => ({
             id: r.id,
             name: r.name,
+            username: r.username ?? undefined,
             role: mapRole(r.role),
             hireDate: r.hire_date || '2026-04-01',
             isWednesdayRotation: r.is_wednesday_rotation,
@@ -1008,16 +1041,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (mounted) {
             const { data: userRow } = await supabase
               .from("users")
-              .select("id, name, role, hire_date")
+              .select("id, name, role, hire_date, is_wednesday_rotation, is_weekday_off_rule")
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[initAuth] userRow:", userRow);
             if (userRow && mounted) {
-              const emp: Employee = { 
-                id: userRow.id, 
-                name: userRow.name, 
+              const emp: Employee = {
+                id: userRow.id,
+                name: userRow.name,
                 role: mapRole(userRow.role),
-                hireDate: userRow.hire_date || "2026-04-01"
+                hireDate: userRow.hire_date || "2026-04-01",
+                isWednesdayRotation: userRow.is_wednesday_rotation ?? false,
+                isWeekdayOffRule: userRow.is_weekday_off_rule ?? false,
               };
             setCurrentUser(emp);
             // Load data in background without awaiting
@@ -1068,16 +1103,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const { data: userRow } = await supabase
               .from("users")
-              .select("id, name, role, hire_date")
+              .select("id, name, role, hire_date, is_wednesday_rotation, is_weekday_off_rule")
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[SIGNED_IN] userRow:", userRow);
             if (userRow && mounted) {
-              const emp: Employee = { 
-                id: userRow.id, 
-                name: userRow.name, 
+              const emp: Employee = {
+                id: userRow.id,
+                name: userRow.name,
                 role: mapRole(userRow.role),
-                hireDate: userRow.hire_date || "2026-04-01"
+                hireDate: userRow.hire_date || "2026-04-01",
+                isWednesdayRotation: userRow.is_wednesday_rotation ?? false,
+                isWeekdayOffRule: userRow.is_weekday_off_rule ?? false,
               };
               setCurrentUser(emp);
               // Load data in background without awaiting
@@ -1118,46 +1155,56 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Auth functions ──────────────────────────────────────────────────────────
 
-  const loginEmployee = async (username: string, password: string): Promise<boolean> => {
-    const email = `${username.trim().toLowerCase()}@yaosheng.app`;
-    console.log("[login] attempting:", email);
+  const loginWithRole = async (
+    username: string,
+    password: string,
+    allowedDbRoles: string[]
+  ): Promise<boolean> => {
+    const email = toAuthEmail(username);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      console.log("[login] result:", data?.user?.id, "error:", error?.message);
       if (error) {
-        console.error("[login] error:", error.message, error.status);
-        // rate limit 錯誤特別處理
         if (error.message?.toLowerCase().includes("too many") || error.status === 429) {
           throw new Error("請求過於頻繁，請等待 1 分鐘後再試");
         }
+        return false;
       }
-      return !error;
+
+      if (!data.user) return false;
+
+      const { data: profile, error: profileError } = await supabase
+        .from("users")
+        .select("id, name, role, hire_date, is_active, is_wednesday_rotation, is_weekday_off_rule")
+        .eq("id", data.user.id)
+        .single();
+
+      if (profileError || !profile?.is_active || !allowedDbRoles.includes(profile.role)) {
+        await supabase.auth.signOut();
+        return false;
+      }
+
+      setCurrentUser({
+        id: profile.id,
+        name: profile.name,
+        role: mapRole(profile.role),
+        hireDate: profile.hire_date || "2026-04-01",
+        isWednesdayRotation: profile.is_wednesday_rotation ?? false,
+        isWeekdayOffRule: profile.is_weekday_off_rule ?? false,
+      });
+
+      return true;
     } catch (e) {
-      console.error("[login] exception:", e);
       if (e instanceof Error) throw e;
       return false;
     }
   };
 
+  const loginEmployee = async (username: string, password: string): Promise<boolean> => {
+    return loginWithRole(username, password, ["employee"]);
+  };
+
   const loginManager = async (username: string, password: string): Promise<boolean> => {
-    const email = `${username.trim().toLowerCase()}@yaosheng.app`;
-    console.log("[login] attempting:", email);
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-      console.log("[login] result:", data?.user?.id, "error:", error?.message);
-      if (error) {
-        console.error("[login] error:", error.message, error.status);
-        // rate limit 錯誤特別處理
-        if (error.message?.toLowerCase().includes("too many") || error.status === 429) {
-          throw new Error("請求過於頻繁，請等待 1 分鐘後再試");
-        }
-      }
-      return !error;
-    } catch (e) {
-      console.error("[login] exception:", e);
-      if (e instanceof Error) throw e;
-      return false;
-    }
+    return loginWithRole(username, password, ["manager", "boss"]);
   };
 
   const logout = async () => {
@@ -1167,7 +1214,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Employee management (via API Routes) ────────────────────────────────────
 
   const addEmployee = async (employee: Omit<Employee, "id">) => {
-    await fetch("/api/auth/create-user", {
+    const res = await fetch("/api/auth/create-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1178,23 +1225,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
         hire_date: employee.hireDate,
       }),
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || "新增員工失敗");
+    }
     await loadEmployees();
   };
 
   const updateEmployee = async (id: string, updates: Partial<Employee>) => {
-    await fetch("/api/auth/update-user", {
+    const res = await fetch("/api/auth/update-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         userId: id,
         name: updates.name,
         role: updates.role,
+        username: updates.username,
         password: updates.password,
         isWednesdayRotation: updates.isWednesdayRotation,
         isWeekdayOffRule: updates.isWeekdayOffRule,
         hire_date: updates.hireDate,
       }),
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || "更新員工失敗");
+    }
     await loadEmployees();
     // Update currentUser if it's the same user
     if (currentUser?.id === id) {
@@ -1203,11 +1259,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteEmployee = async (id: string) => {
-    await fetch("/api/auth/delete-user", {
+    const res = await fetch("/api/auth/delete-user", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: id }),
     });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(body.error || "刪除員工失敗");
+    }
     await loadEmployees();
   };
 
@@ -1266,6 +1326,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateShift = async (date: string, employeeId: string, shift: ShiftType) => {
+    const y = new Date(date).getFullYear();
+    const m = new Date(date).getMonth() + 1;
+    const monthLocked = leaveMonthLocks.some((l) => l.year === y && l.month === m);
+    const canOverrideLocked = currentUser?.role === "owner" || currentUser?.role === "manager";
+    if (monthLocked && !canOverrideLocked) {
+      throw new Error("本月份班表已鎖定，僅店長/老闆可修改");
+    }
+
     // 檢查是否有已核准的請假
     const approvedLeave = leaveRequests.find(
       (r) =>
@@ -1336,6 +1404,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   };
 
+  const updateShiftDisplayConfig = async (shift: ShiftType, style: Partial<ShiftDisplayStyle>) => {
+    const next = { ...shiftDisplayConfig[shift], ...style };
+    setShiftDisplayConfig((prev) => ({ ...prev, [shift]: next }));
+    await supabase.from("shift_time_config").upsert(
+      {
+        shift_code: shift,
+        display_label: next.label,
+        display_text: next.displayText,
+        bg_color: next.bgColor,
+        text_color: next.textColor,
+        border_color: next.borderColor,
+      },
+      { onConflict: "shift_code" }
+    );
+  };
+
   // ─── Wednesday night shifts ──────────────────────────────────────────────────
 
   const setWednesdayNightShift = (date: string, employeeId: string) => {
@@ -1352,6 +1436,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getWednesdayOffDates = (employeeId: string, year: number, month: number) =>
     (wednesdayOffSelections[employeeId] ?? []).filter((d) => isInMonth(d, year, month));
+
+  const getWednesdayOffLimit = (year: number, month: number) => {
+    const totalWednesdays = getMonthWednesdays(year, month).length;
+    return Math.ceil(totalWednesdays / 2);
+  };
 
   const isWednesdayOff = (employeeId: string, date: string) =>
     (wednesdayOffSelections[employeeId] ?? []).includes(date);
@@ -1387,8 +1476,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { success: true };
     }
 
-    if (selectedDates.length >= 2)
-      return { success: false, message: "每月最多只能選擇 2 個禮拜三不輪晚班" };
+    const offLimit = getWednesdayOffLimit(year, month);
+    if (selectedDates.length >= offLimit)
+      return { success: false, message: `本月最多只能選擇 ${offLimit} 個禮拜三不輪晚班` };
 
     // 先寫入資料庫，等待完成後再更新本地狀態
     const { error } = await supabase
@@ -1410,10 +1500,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const getLeaveSummary = (employeeId: string, year: number, month: number): LeaveSummary => {
     const selectedDates = (leaveSelections[employeeId] ?? []).filter((d) => isInMonth(d, year, month));
-    const saturdayDates = getMonthSaturdays(year, month);
-    const optionalSaturday = saturdayDates[4];
     const selectedSaturdayDates = selectedDates.filter((d) => isSaturday(d));
-    const saturdayCoreDates = selectedSaturdayDates.filter((d) => d !== optionalSaturday);
     const weekdayDates = selectedDates.filter((d) => !isSaturday(d) && !isSunday(d));
 
     const emp = employees.find((e) => e.id === employeeId);
@@ -1421,12 +1508,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     return {
       selectedDates,
-      saturdayUsed: isWeekdayOffRule ? selectedSaturdayDates.length : saturdayCoreDates.length,
+      saturdayUsed: selectedSaturdayDates.length,
       saturdayLimit: 2,
       weekdayUsed: isWeekdayOffRule ? 0 : weekdayDates.length,
       weekdayLimit: isWeekdayOffRule ? 0 : 2,
-      optionalSaturdayUsed: Boolean(optionalSaturday && selectedDates.includes(optionalSaturday) && !isWeekdayOffRule),
-      optionalSaturdayAvailable: !isWeekdayOffRule && saturdayDates.length >= 5,
+      optionalSaturdayUsed: false,
+      optionalSaturdayAvailable: false,
     };
   };
 
@@ -1462,20 +1549,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isWeekdayOffRule && !isSaturday(date)) return { success: false, message: "此員工套用平日不排休規則，排休只能選擇週六" };
 
     if (isSaturday(date)) {
-      if (isWeekdayOffRule && summary.saturdayUsed >= summary.saturdayLimit)
-        return { success: false, message: "禮拜六排休已達 2 天上限" };
-
-      const saturdayDates = getMonthSaturdays(year, month);
-      const optionalSaturday = saturdayDates[4];
-      if (date === optionalSaturday && !isWeekdayOffRule) {
-        setLeaveSelections((prev) => ({
-          ...prev,
-          [employeeId]: [...(prev[employeeId] ?? []), date],
-        }));
-        supabase.from("leave_selections").insert({ user_id: employeeId, date }).then();
-        return { success: true };
-      }
-
       if (summary.saturdayUsed >= summary.saturdayLimit)
         return { success: false, message: "禮拜六排休已達 2 天上限" };
     } else if (summary.weekdayUsed >= summary.weekdayLimit) {
@@ -1494,8 +1567,54 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const isLeaveMonthLocked = (year: number, month: number) =>
     leaveMonthLocks.some((l) => l.year === year && l.month === month);
 
+  const isPastMonth = (dateStr: string): boolean => {
+    const date = new Date(dateStr);
+    const today = new Date();
+    const requestMonth = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
+    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
+    return requestMonth < currentMonth;
+  };
+
+  const hasPastMonthInRange = (startDate: string, endDate: string): boolean => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const current = new Date();
+    const currentMonth = new Date(current.getFullYear(), current.getMonth(), 1).getTime();
+    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+
+    while (cursor <= endMonth) {
+      if (cursor.getTime() < currentMonth) return true;
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+    return false;
+  };
+
+  const snapshotMonthSchedule = async (year: number, month: number, actorId?: string) => {
+    const activeEmployees = employees.filter((e) => e.role !== "owner");
+    if (activeEmployees.length === 0) return;
+    const daysInMonth = new Date(year, month, 0).getDate();
+    const rows: Array<{ user_id: string; date: string; shift_code: ShiftType; updated_by?: string }> = [];
+
+    for (let day = 1; day <= daysInMonth; day += 1) {
+      const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      for (const emp of activeEmployees) {
+        rows.push({
+          user_id: emp.id,
+          date,
+          shift_code: getShiftForDate(date, emp.id),
+          updated_by: actorId ?? currentUser?.id,
+        });
+      }
+    }
+
+    await supabase.from("schedule_entries").upsert(rows, { onConflict: "user_id,date" });
+    await loadScheduleOverrides();
+  };
+
   const lockLeaveMonth = async (year: number, month: number, lockedBy: string) => {
     if (leaveMonthLocks.some((l) => l.year === year && l.month === month)) return;
+    await snapshotMonthSchedule(year, month, lockedBy);
     const { data } = await supabase
       .from("leave_month_locks")
       .insert({ year, month, locked_by: lockedBy })
@@ -1527,6 +1646,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addLeaveRequest = async (request: Omit<LeaveRequest, "id" | "createdAt">) => {
+    if (hasPastMonthInRange(request.startDate, request.endDate)) {
+      throw new Error("已進入新月份，無法再送過去月份的請假申請");
+    }
+
     const dbPeriod =
       request.period === "morning"
         ? "morning"
@@ -1648,6 +1771,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Swap requests (Supabase) ────────────────────────────────────────────────
 
   const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">) => {
+    const touchesPastMonth =
+      isPastMonth(request.requesterDate) || isPastMonth(request.targetDate);
+    if (touchesPastMonth) {
+      throw new Error("已進入新月份，無法再送過去月份的換班申請");
+    }
+
     const isSelfSwap = request.requesterId === request.targetEmployeeId;
     await supabase
       .from("shift_swap_applications")
@@ -1662,6 +1791,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 不再發送通知公告（由管理員主動查看審核）
 
     await loadSwapRequests();
+  };
+
+  /** 還原已核准換班寫入的 schedule_entries，讓班表回到換班前狀態 */
+  const revertApprovedSwap = async (request: SwapRequest) => {
+    const isSelfSwap = request.requesterId === request.targetEmployeeId;
+
+    if (isSelfSwap) {
+      await supabase
+        .from("schedule_entries")
+        .delete()
+        .eq("user_id", request.requesterId)
+        .eq("date", request.targetDate);
+      await supabase
+        .from("schedule_entries")
+        .delete()
+        .eq("user_id", request.requesterId)
+        .eq("date", request.requesterDate);
+    } else {
+      await supabase
+        .from("schedule_entries")
+        .delete()
+        .eq("user_id", request.requesterId)
+        .eq("date", request.targetDate);
+      await supabase
+        .from("schedule_entries")
+        .delete()
+        .eq("user_id", request.targetEmployeeId)
+        .eq("date", request.requesterDate);
+    }
+
+    await loadScheduleOverrides();
   };
 
   const updateSwapRequestStatus = async (
@@ -1684,6 +1844,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .eq("id", id);
 
     if (request) {
+      // 取消審核或駁回已核准申請時，還原班表
+      if (prevStatus === "approved" && status !== "approved") {
+        await revertApprovedSwap(request);
+      }
+
       if (
         status === "pending_approval" &&
         prevStatus === "pending_confirmation"
@@ -1801,25 +1966,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }, { onConflict: 'user_id,date' });
           
         } else {
-          // 與他人換班：交換雙方的班表
-          // 申請者 requesterDate = 申請者「要去上班的日期」（帶著申請者的班表去目標員工那天上班）
-          // 目標員工 targetDate = 目標員工「要去上班的日期」（帶著目標員工的班表去申請者那天上班）
+          // 與他人換班：申請者到對方日期承擔對方班別，對方到申請者日期承擔申請者班別
           const reqShift = getEffectiveShift(request.requesterId, request.requesterDate);
           const targetShift = getEffectiveShift(request.targetEmployeeId, request.targetDate);
-          
-          // 申請者去 targetDate 上班（帶著申請者原來的班表 reqShift）
+
           await supabase.from("schedule_entries").upsert({
             user_id: request.requesterId,
             date: request.targetDate,
-            shift_code: reqShift,
+            shift_code: targetShift,
             updated_by: currentUser?.id,
           }, { onConflict: 'user_id,date' });
-          
-          // 目標員工去 requesterDate 上班（帶著目標員工原來的班表 targetShift）
+
           await supabase.from("schedule_entries").upsert({
             user_id: request.targetEmployeeId,
             date: request.requesterDate,
-            shift_code: targetShift,
+            shift_code: reqShift,
             updated_by: currentUser?.id,
           }, { onConflict: 'user_id,date' });
         }
@@ -1860,38 +2021,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteSwapRequest = async (id: string) => {
-    // 先獲取申請詳情
     const request = swapRequests.find((item) => item.id === id);
-    
-    // 如果申請已核准且執行過換班，刪除時恢復原班表
-    if (request && (request.status === "approved" || request.status === "pending_approval" || request.status === "pending_confirmation")) {
-      const isSelfSwap = request.requesterId === request.targetEmployeeId;
-      
-      if (isSelfSwap) {
-        // 自己換班：恢復雙方的原始班表
-        // 刪除雙方在對方日期的記錄
-        await supabase.from("schedule_entries").delete()
-          .eq("user_id", request.requesterId)
-          .eq("date", request.targetDate);
-        await supabase.from("schedule_entries").delete()
-          .eq("user_id", request.requesterId)
-          .eq("date", request.requesterDate);
-      } else {
-        // 與他人換班：恢復雙方的原始班表
-        // 刪除換班後的記錄，讓班表回歸預設
-        await supabase.from("schedule_entries").delete()
-          .eq("user_id", request.requesterId)
-          .eq("date", request.targetDate);
-        await supabase.from("schedule_entries").delete()
-          .eq("user_id", request.targetEmployeeId)
-          .eq("date", request.requesterDate);
-        
-        // 重新載入班表
-        await loadScheduleOverrides();
-      }
+
+    // 僅已核准且已寫入班表的申請需要還原
+    if (request?.status === "approved") {
+      await revertApprovedSwap(request);
     }
-    
-    // 刪除換班申請
+
     const { error } = await supabase
       .from("shift_swap_applications")
       .delete()
@@ -1905,6 +2041,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Overtime requests (Supabase) ────────────────────────────────────────────
 
   const addOvertimeRequest = async (request: Omit<OvertimeRequest, "id" | "createdAt">) => {
+    if (isPastMonth(request.date)) {
+      throw new Error("已進入新月份，無法再送過去月份的加班申請");
+    }
+
     await supabase.from("overtime_applications").insert({
       user_id: request.employeeId,
       overtime_date: request.date,
@@ -2530,9 +2670,12 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         deleteFixedShift,
         shiftTimeConfig,
         updateShiftTimeConfig,
+        shiftDisplayConfig,
+        updateShiftDisplayConfig,
         wednesdayNightShifts,
         setWednesdayNightShift,
         getWednesdayOffDates,
+        getWednesdayOffLimit,
         toggleWednesdayOff,
         isWednesdayOff,
         getLeaveSummary,

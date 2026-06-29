@@ -18,7 +18,10 @@ export default function AttendancePage() {
     tardinessRecords,
     punchRecords,
   } = useApp();
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [showMonthlyDetail, setShowMonthlyDetail] = useState(false);
   
   const year = currentDate.getFullYear();

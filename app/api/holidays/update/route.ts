@@ -1,44 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createServerClient } from "@supabase/ssr";
 import { createAdminClient } from "@/lib/supabase/server";
-
-async function assertManagerAuth(req: NextRequest) {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return req.cookies.getAll();
-        },
-        setAll() {
-          return;
-        },
-      },
-    }
-  );
-
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  if (!session) {
-    return { error: "尚未登入或會話已失效", status: 401 };
-  }
-
-  const admin = createAdminClient();
-  const { data: user, error } = await admin
-    .from("users")
-    .select("role")
-    .eq("id", session.user.id)
-    .single();
-
-  if (error || !user || !["boss", "manager"].includes(user.role)) {
-    return { error: "此帳號沒有更新假期的權限", status: 403 };
-  }
-
-  return { callerId: session.user.id };
-}
+import { assertManagerAuth } from "@/lib/auth/server";
 
 const holidayNameMap: Record<string, string> = {
   "Republic Day": "元旦",

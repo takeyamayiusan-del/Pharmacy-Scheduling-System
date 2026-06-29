@@ -51,6 +51,9 @@ build/
 .env
 .env.*
 !.env.example
+!.env.local.example
+!scripts/.env.cloud.example
+!scripts/.env.local-db.example
 
 # IDE files
 .vscode/
@@ -67,8 +70,20 @@ Thumbs.db
 *.temp
 .cache/
 
+# Supabase CLI local state
+supabase/.branches/
+
+# 本機執行資料（與專案同資料夾，可整包搬移；勿提交實際資料）
+/data/postgres/*
+!/data/postgres/.gitkeep
+/data/storage/*
+!/data/storage/.gitkeep
+/data/backups/*
+!/data/backups/.gitkeep
+/data/app-logs/*
+!/data/app-logs/.gitkeep
+
 # Sensitive files (auto-detected)
 .env.local
-.env.local.example
 node_modules
 

@@ -67,7 +67,7 @@ export default function NewShiftSwapApplicationPage() {
       });
 
       if (error) throw error;
-      router.push('/dashboard/applications/shift-swap');
+      router.push('/applications/shift-swap');
     } catch (err) {
       console.error(err);
     } finally {

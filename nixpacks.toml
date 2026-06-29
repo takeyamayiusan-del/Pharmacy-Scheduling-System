@@ -1,17 +1,17 @@
 # Railway Nixpacks Configuration
-# 耀聖藥局智慧排班系統
+# 耀聖藥局智慧排班系統（統一使用 npm）
 
 [phases.setup]
-  nixPkgs = ["nodejs_20", "pnpm"]
+  nixPkgs = ["nodejs_20"]
 
 [phases.install]
-  cmds = ["pnpm install"]
+  cmds = ["npm ci"]
   dependsOn = ["setup"]
 
 [phases.build]
-  cmds = ["pnpm run build"]
+  cmds = ["npm run build"]
   dependsOn = ["install"]
 
 [start]
-  cmd = "pnpm run start"
+  cmd = "npm start"
   dependsOn = ["build"]

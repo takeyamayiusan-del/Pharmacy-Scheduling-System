@@ -81,7 +81,7 @@ export default function NewLeaveApplicationPage() {
       });
 
       if (error) throw error;
-      router.push('/dashboard/applications/leave');
+      router.push('/applications/leave');
     } catch {
       setErrors({ submit: '申請失敗，請稍後再試' });
     } finally {

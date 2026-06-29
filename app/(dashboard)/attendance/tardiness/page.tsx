@@ -21,6 +21,8 @@ export default function TardinessPage() {
     minutes: 0,
     notes: ""
   });
+
+  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
   
   // 提交遲到記錄
   const handleSubmit = async (e: React.FormEvent) => {
@@ -147,6 +149,17 @@ export default function TardinessPage() {
     }
   };
   
+  if (!isManager) {
+    return (
+      <div className="min-h-full flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
+          <p className="text-gray-600">僅店長與老闆可以管理遲到記錄</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* 頁頭 */}

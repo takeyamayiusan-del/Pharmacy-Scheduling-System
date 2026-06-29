@@ -141,17 +141,9 @@ function drawScheduleSegment(
           req.status === "approved"
       );
       
-      // 檢查是否有核准的加班申請
-      const hasApprovedOvertime = options.overtimeRequests?.some(
-        (req) =>
-          req.employeeId === emp.id &&
-          req.date === dateStr &&
-          req.status === "approved"
-      );
-      
-      // 請假和加班都顯示為暗橘色
-      const palette = hasApprovedLeave || hasApprovedOvertime
-        ? { bg: "#fed7aa", text: "#9a3412", border: "#fdba74" }
+      // 請假顯示為紫色
+      const palette = hasApprovedLeave
+        ? { bg: "#ddd6fe", text: "#5b21b6", border: "#a78bfa" }
         : exportShiftPalette[shift];
       
       ctx.fillStyle = cellBg;
@@ -164,7 +156,7 @@ function drawScheduleSegment(
       ctx.strokeRect(x + 6, rowY + 6, dayColWidth - 12, rowHeight - 12);
       ctx.fillStyle = palette.text;
       ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
-      const displayText = hasApprovedLeave ? "假" : hasApprovedOvertime ? "加" : shift;
+      const displayText = hasApprovedLeave ? "假" : shift;
       // 設定文字對齊方式，確保水平與垢直居中
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";

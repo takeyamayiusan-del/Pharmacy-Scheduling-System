@@ -1,16 +1,33 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { assertManagerAuth } from "@/lib/auth/server";
+import { PROTECTED_USERNAMES, toAuthEmail, toDbRole } from "@/lib/auth/constants";
 
 // POST /api/auth/update-user
-// Body: { userId, password?, name?, role?, isWednesdayRotation?, isWeekdayOffRule? }
+// Body: { userId, password?, name?, role?, username?, ... }
 export async function POST(req: NextRequest) {
   try {
+    const auth = await assertManagerAuth(req);
+    if ("error" in auth) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
     const body = await req.json();
-    const { userId, password, name, role, isWednesdayRotation, isWeekdayOffRule, hire_date } = body as {
+    const {
+      userId,
+      password,
+      name,
+      role,
+      username,
+      isWednesdayRotation,
+      isWeekdayOffRule,
+      hire_date,
+    } = body as {
       userId: string;
       password?: string;
       name?: string;
       role?: string;
+      username?: string;
       isWednesdayRotation?: boolean;
       isWeekdayOffRule?: boolean;
       hire_date?: string;
@@ -22,15 +39,30 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminClient();
 
-    // Update public.users fields
+    const { data: existing } = await admin
+      .from("users")
+      .select("username")
+      .eq("id", userId)
+      .single();
+
+    if (username !== undefined) {
+      const nextUsername = username.trim().toLowerCase();
+      if (
+        existing?.username &&
+        PROTECTED_USERNAMES.has(existing.username) &&
+        nextUsername !== existing.username
+      ) {
+        return NextResponse.json({ error: "無法變更系統預設管理者帳號" }, { status: 403 });
+      }
+    }
+
     const updates: Record<string, unknown> = {};
     if (name !== undefined) updates.name = name;
-    if (role !== undefined) {
-      updates.role = role === "staff" ? "employee" : role === "owner" ? "boss" : role;
-    }
+    if (role !== undefined) updates.role = toDbRole(role);
     if (isWednesdayRotation !== undefined) updates.is_wednesday_rotation = isWednesdayRotation;
     if (isWeekdayOffRule !== undefined) updates.is_weekday_off_rule = isWeekdayOffRule;
     if (hire_date !== undefined) updates.hire_date = hire_date;
+    if (username !== undefined) updates.username = username.trim().toLowerCase();
 
     if (Object.keys(updates).length > 0) {
       const { error } = await admin.from("users").update(updates).eq("id", userId);
@@ -39,9 +71,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Update password in auth.users if provided
-    if (password) {
-      const { error: authError } = await admin.auth.admin.updateUserById(userId, { password });
+    const authUpdates: { password?: string; email?: string } = {};
+    if (password) authUpdates.password = password;
+    if (username) authUpdates.email = toAuthEmail(username);
+
+    if (Object.keys(authUpdates).length > 0) {
+      const { error: authError } = await admin.auth.admin.updateUserById(userId, authUpdates);
       if (authError) {
         return NextResponse.json({ error: authError.message }, { status: 500 });
       }
@@ -49,7 +84,9 @@ export async function POST(req: NextRequest) {
 
     const { data: updated, error: fetchError } = await admin
       .from("users")
-      .select("id, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, hire_date, created_at, updated_at")
+      .select(
+        "id, username, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, hire_date, created_at, updated_at"
+      )
       .eq("id", userId)
       .single();
 

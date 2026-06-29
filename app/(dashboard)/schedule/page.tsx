@@ -7,25 +7,6 @@ import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
 
-// 班別顏色設定
-const shiftColors: Record<ShiftType, { bg: string; text: string; border: string }> = {
-  A: { bg: "bg-blue-200", text: "text-blue-900", border: "border-blue-400" },
-  B: { bg: "bg-emerald-200", text: "text-emerald-900", border: "border-emerald-400" },
-  C: { bg: "bg-amber-200", text: "text-amber-900", border: "border-amber-400" },
-  D: { bg: "bg-violet-200", text: "text-violet-900", border: "border-violet-400" },
-  E: { bg: "bg-rose-200", text: "text-rose-900", border: "border-rose-400" },
-  X: { bg: "bg-slate-200", text: "text-slate-700", border: "border-slate-400" },
-};
-
-const shiftLabels: Record<ShiftType, string> = {
-  A: "全天",
-  B: "白班",
-  C: "上午",
-  D: "下午",
-  E: "下午+晚",
-  X: "休假",
-};
-
 const shiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
@@ -45,6 +26,7 @@ export default function SchedulePage() {
     getShiftForDate,
     getWednesdayOffDates,
     shiftTimeConfig,
+    shiftDisplayConfig,
     isLeaveMonthLocked,
     lockLeaveMonth,
     unlockLeaveMonth,
@@ -52,7 +34,10 @@ export default function SchedulePage() {
     overtimeRequests,
   } = useApp();
   
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [holidayRefreshYear, setHolidayRefreshYear] = useState<number>(new Date().getFullYear());
   const [isRefreshingHolidays, setIsRefreshingHolidays] = useState(false);
   const [holidayRefreshMessage, setHolidayRefreshMessage] = useState<string | null>(null);
@@ -156,20 +141,11 @@ export default function SchedulePage() {
           req.endDate >= date &&
           req.status === "approved"
       );
-      
-      // 檢查是否有核准的加班申請
-      const approvedOvertime = overtimeRequests.find(
-        (req) =>
-          req.employeeId === employeeId &&
-          req.date === date &&
-          req.status === "approved"
-      );
-      
-      // 如果有請假或加班，返回特殊標記
-      if (approvedLeave || approvedOvertime) {
-        return "X"; // 將其顯示為 X，讓匯出函數可以正確處理
+
+      if (approvedLeave) {
+        return "X";
       }
-      
+
       return shift;
     };
 
@@ -340,7 +316,7 @@ export default function SchedulePage() {
         return {
           id: emp.id,
           name: emp.name,
-          shift: shiftInfo.hasLeave || shiftInfo.hasOvertime ? shiftInfo.effectiveShift : shiftInfo.originalShift,
+          shift: shiftInfo.hasLeave ? shiftInfo.effectiveShift : shiftInfo.originalShift,
           shiftInfo,
         };
       })
@@ -389,7 +365,6 @@ export default function SchedulePage() {
 
   // 班表單元格
   const ShiftCell = ({ date, employeeId, shift }: { date: string; employeeId: string; shift: ShiftType }) => {
-    const colors = shiftColors[shift];
     const isEditing = editingCell?.date === date && editingCell?.employeeId === employeeId;
     const editable = canEdit(employeeId, date);
     const holidayInfo = getHolidayInfo(date);
@@ -410,14 +385,6 @@ export default function SchedulePage() {
         req.status === "approved"
     );
 
-    // 檢查是否有核准的加班申請
-    const approvedOvertimeRequest = overtimeRequests.find(
-      (req) =>
-        req.employeeId === employeeId &&
-        req.date === date &&
-        req.status === "approved"
-    );
-
     if (isEditing) {
       return (
         <div className="p-1">
@@ -426,9 +393,14 @@ export default function SchedulePage() {
               <button
                 key={s}
                 onClick={() => selectShift(date, employeeId, s)}
-                className={`text-xs px-1 py-0.5 rounded border ${shiftColors[s].bg} ${shiftColors[s].text} ${shiftColors[s].border} hover:opacity-80`}
+                style={{
+                  backgroundColor: shiftDisplayConfig[s].bgColor,
+                  color: shiftDisplayConfig[s].textColor,
+                  borderColor: shiftDisplayConfig[s].borderColor,
+                }}
+                className="text-xs px-1 py-0.5 rounded border hover:opacity-80"
               >
-                {s}
+                {shiftDisplayConfig[s].displayText}
               </button>
             ))}
             <button
@@ -446,9 +418,18 @@ export default function SchedulePage() {
       <div className="p-1 relative">
         <div
           onClick={() => editable && startEditing(date, employeeId)}
-          className={`h-10 flex items-center justify-center rounded font-medium border-2 ${approvedLeaveRequest || approvedOvertimeRequest ? 'bg-orange-600 text-white border-orange-700' : colors.bg + ' ' + colors.text + ' ' + colors.border} ${editable ? 'cursor-pointer hover:opacity-80' : ''} ${isSun ? 'bg-red-50' : ''} ${hasFixedShift ? 'ring-2 ring-orange-400' : ''}`}
+          style={
+            approvedLeaveRequest
+              ? undefined
+              : {
+                  backgroundColor: shiftDisplayConfig[shift].bgColor,
+                  color: shiftDisplayConfig[shift].textColor,
+                  borderColor: shiftDisplayConfig[shift].borderColor,
+                }
+          }
+          className={`h-10 flex items-center justify-center rounded font-medium border-2 ${approvedLeaveRequest ? "bg-violet-500 text-white border-violet-600" : ""} ${editable ? "cursor-pointer hover:opacity-80" : ""} ${isSun && !approvedLeaveRequest ? "bg-red-50" : ""} ${hasFixedShift ? "ring-2 ring-orange-400" : ""}`}
         >
-          {approvedLeaveRequest ? "假" : approvedOvertimeRequest ? "加" : shift}
+          {approvedLeaveRequest ? "假" : shiftDisplayConfig[shift].displayText}
           {editable && <span className="ml-1 text-[10px]">✏️</span>}
         </div>
         
@@ -487,7 +468,7 @@ export default function SchedulePage() {
             <div className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-orange-400"></div>
-                <span className="text-gray-600">橘色框 - 固定班表</span>
+                <span className="text-gray-600">橘色框 - 固定班表（鎖定月份已快照，不受後續固定班調整影響）</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-red-500"></div>
@@ -496,6 +477,10 @@ export default function SchedulePage() {
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
                 <span className="text-gray-600">國定假日 - 可編輯</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-violet-500"></div>
+                <span className="text-gray-600">紫色 - 當日請假</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-pink-500"></div>
@@ -552,7 +537,7 @@ export default function SchedulePage() {
           </button>
           {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
             <button onClick={toggleMonthLock} className={monthLocked ? "app-btn-outline border-red-300 text-red-700" : "app-btn-outline"}>
-              {monthLocked ? "解除排休鎖定" : "鎖定本月排休"}
+              {monthLocked ? "解除本月班表鎖定" : "鎖定本月班表"}
             </button>
           )}
           {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
@@ -579,7 +564,7 @@ export default function SchedulePage() {
           {currentUser?.role === "owner" && <span className="text-blue-600">👑 您可以編輯所有人的班表</span>}
           {currentUser?.role === "manager" && <span className="text-green-600">👔 您可以編輯所有人的班表與審核申請</span>}
           {currentUser?.role === "staff" && <span className="text-gray-500">👤 僅檢視班表</span>}
-          {monthLocked && <span className="ml-3 text-red-600 font-medium">🔒 本月排休已鎖定</span>}
+          {monthLocked && <span className="ml-3 text-red-600 font-medium">🔒 本月班表已鎖定（固定班調整不回寫本月）</span>}
         </div>
         {holidayRefreshMessage && (
           <div className="mt-2 text-sm text-emerald-700">
@@ -638,7 +623,7 @@ export default function SchedulePage() {
               <div key={idx} className="border rounded-lg p-2">
                 <span className="font-medium text-gray-800">{emp?.name}</span>
                 <p className="text-gray-600 text-xs mt-1">
-                  每個 {dayLabels[fs.dayOfWeek]} - {shiftLabels[fs.shift]}
+                  每個 {dayLabels[fs.dayOfWeek]} - {shiftDisplayConfig[fs.shift].label}
                 </p>
               </div>
             );
@@ -788,28 +773,34 @@ export default function SchedulePage() {
         <div className="p-4 border-t bg-gray-50">
           <div className="flex flex-wrap items-center gap-6">
             <span className="text-sm font-medium text-gray-700">圖例：</span>
-            {Object.entries(shiftLabels).map(([shift, label]) => {
-              const s = shift as ShiftType;
-              const colors = shiftColors[s];
+            {shiftOptions.map((shiftCode) => {
+              const s = shiftCode as ShiftType;
               const isActive = activeLegendShift === s;
               return (
                 <button
-                  key={shift}
+                  key={shiftCode}
                   type="button"
                   className="relative flex items-center gap-2 text-sm"
                   onMouseEnter={() => setActiveLegendShift(s)}
                   onMouseLeave={() => setActiveLegendShift((prev) => (prev === s ? null : prev))}
                   onClick={() => setActiveLegendShift((prev) => (prev === s ? null : s))}
                 >
-                  <span className={`w-8 h-8 flex items-center justify-center rounded border-2 font-medium ${colors.bg} ${colors.text} ${colors.border}`}>
-                    {s}
+                  <span
+                    style={{
+                      backgroundColor: shiftDisplayConfig[s].bgColor,
+                      color: shiftDisplayConfig[s].textColor,
+                      borderColor: shiftDisplayConfig[s].borderColor,
+                    }}
+                    className="w-8 h-8 flex items-center justify-center rounded border-2 font-medium"
+                  >
+                    {shiftDisplayConfig[s].displayText}
                   </span>
-                  <span className="text-gray-600">{label}</span>
+                  <span className="text-gray-600">{shiftDisplayConfig[s].label}</span>
 
                   {isActive && (
                     <span className="absolute left-0 bottom-10 z-30 min-w-[170px] rounded-lg border bg-white px-3 py-2 text-left text-xs shadow-xl">
                       <span className="block font-semibold text-gray-800 mb-1">
-                        {s}班時段
+                        {shiftDisplayConfig[s].displayText}班時段
                       </span>
                       {shiftTimeConfig[s].map((range) => (
                         <span key={range} className="block text-gray-600">
@@ -882,50 +873,47 @@ export default function SchedulePage() {
                 </div>
               )}
               {dateModalWorkers.map((worker) => {
-                const displayShift = showOriginalShift ? worker.shiftInfo.originalShift : worker.shiftInfo.effectiveShift;
-                const hasLeaveOrOvertime = worker.shiftInfo.hasLeave || worker.shiftInfo.hasOvertime;
-                const effectiveShiftDetails = worker.shiftInfo.effectiveShiftDetails;
-                
+                const { originalShift, effectiveShift, effectiveShiftDetails } = worker.shiftInfo;
+                const hasLeave = worker.shiftInfo.hasLeave;
+
+                const formatShiftLabel = (shift: ShiftType) => {
+                  if (!shift || shift === "X") return shiftDisplayConfig[shift]?.label || "休假";
+                  return `${shiftDisplayConfig[shift].displayText}班（${shiftDisplayConfig[shift].label}）`;
+                };
+
                 return (
-                  <div 
-                    key={worker.id} 
+                  <div
+                    key={worker.id}
                     className={`flex items-center justify-between rounded-lg border p-3 ${
-                      hasLeaveOrOvertime && !showOriginalShift ? "bg-orange-50 border-orange-200" : ""
+                      hasLeave && !showOriginalShift ? "bg-violet-50 border-violet-200" : ""
                     }`}
                   >
                     <div className="flex flex-col gap-1">
                       <span className="font-medium text-gray-800">{worker.name}</span>
-                      {hasLeaveOrOvertime && !showOriginalShift && (
-                        <span className="text-xs text-orange-600">
-                          {worker.shiftInfo.hasLeave && (
-                            <>
-                              請假：{worker.shiftInfo.leaveStartTime}-{worker.shiftInfo.leaveEndTime}
-                              {effectiveShiftDetails && effectiveShiftDetails !== "全日請假" && (
-                                <span className="ml-1">（實際上班：{effectiveShiftDetails}）</span>
-                              )}
-                              {effectiveShiftDetails === "全日請假" && <span className="ml-1">（全日請假）</span>}
-                            </>
-                          )}
-                          {worker.shiftInfo.hasLeave && worker.shiftInfo.hasOvertime && " / "}
-                          {worker.shiftInfo.hasOvertime && `加班：${worker.shiftInfo.overtimeInfo?.startTime}-${worker.shiftInfo.overtimeInfo?.endTime}`}
-                        </span>
-                      )}
-                      {hasLeaveOrOvertime && showOriginalShift && (
-                        <span className="text-xs text-gray-500">
-                          原始班表：{worker.shiftInfo.hasLeave && `請假（${worker.shiftInfo.leaveType}）`}
-                          {worker.shiftInfo.hasLeave && worker.shiftInfo.hasOvertime && " / "}
-                          {worker.shiftInfo.hasOvertime && `加班（${worker.shiftInfo.overtimeInfo?.startTime}-${worker.shiftInfo.overtimeInfo?.endTime}）`}
+                      {!showOriginalShift && hasLeave && (
+                        <span className="text-xs text-violet-600">
+                          請假：{worker.shiftInfo.leaveStartTime}-{worker.shiftInfo.leaveEndTime}
+                          {worker.shiftInfo.leaveType && `（${worker.shiftInfo.leaveType}）`}
+                          {effectiveShiftDetails === "全日請假" ? (
+                            <span className="ml-1">（全日請假）</span>
+                          ) : effectiveShiftDetails && effectiveShiftDetails !== "休假" ? (
+                            <span className="ml-1">（實際上班：{effectiveShiftDetails}）</span>
+                          ) : null}
                         </span>
                       )}
                     </div>
                     <div className="flex items-center gap-2">
-                      {hasLeaveOrOvertime && (
-                        <span className="text-xs px-2 py-1 rounded bg-orange-100 text-orange-700 font-medium">
-                          {worker.shiftInfo.hasLeave ? "假" : "加"}
+                      {!showOriginalShift && hasLeave && (
+                        <span className="text-xs px-2 py-1 rounded bg-violet-100 text-violet-700 font-medium">
+                          假
                         </span>
                       )}
                       <span className="text-sm text-gray-600">
-                        {displayShift && displayShift !== "X" ? `${displayShift}班（${shiftLabels[displayShift]}）` : shiftLabels[displayShift] || "休假"}
+                        {showOriginalShift
+                          ? formatShiftLabel(originalShift)
+                          : hasLeave && effectiveShiftDetails === "全日請假"
+                            ? "休假（全日請假）"
+                            : formatShiftLabel(effectiveShift)}
                       </span>
                     </div>
                   </div>
