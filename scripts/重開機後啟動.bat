@@ -1,8 +1,7 @@
 @echo off
-chcp 65001 >nul
 echo ========================================
-echo   耀聖藥局 - 重開機後一鍵啟動
-echo   請以系統管理員身分執行
+echo   Yaosheng Pharmacy - Post-reboot start
+echo   Run as Administrator
 echo ========================================
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0windows-start-all.ps1"

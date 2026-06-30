@@ -139,9 +139,9 @@ export default function DashboardLayout({
     router.push('/notifications');
   };
 
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/login');
   };
 
   const closeMobileSidebar = () => {

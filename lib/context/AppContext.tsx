@@ -1208,7 +1208,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    await supabase.auth.signOut();
+    setCurrentUser(null);
+    setEmployees([]);
+    const { error } = await supabase.auth.signOut({ scope: "local" });
+    if (error) {
+      console.error("[logout] signOut error:", error);
+    }
   };
 
   // ─── Employee management (via API Routes) ────────────────────────────────────
