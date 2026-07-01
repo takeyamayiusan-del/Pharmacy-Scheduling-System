@@ -1376,36 +1376,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     if (isManagerEdit) {
+      const syncLeaveSelection = async (action: "add" | "remove") => {
+        const res = await fetch("/api/schedule/sync-leave-selection", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ employeeId, date, action }),
+        });
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          throw new Error(data.error || "同步排休選擇失敗，請稍後再試");
+        }
+      };
+
       if (syncAction === "add" && !alreadySelected) {
+        await syncLeaveSelection("add");
         setLeaveSelections((prev) => ({
           ...prev,
           [employeeId]: [...(prev[employeeId] ?? []), date],
         }));
-        const { error } = await supabase
-          .from("leave_selections")
-          .insert({ user_id: employeeId, date });
-        if (error) {
-          console.error("[updateShift] leave_selections insert:", error);
-          setLeaveSelections((prev) => ({
-            ...prev,
-            [employeeId]: (prev[employeeId] ?? []).filter((d) => d !== date),
-          }));
-          throw new Error("同步排休選擇失敗，請確認資料庫權限或稍後再試");
-        }
       } else if (syncAction === "remove" && alreadySelected) {
+        await syncLeaveSelection("remove");
         setLeaveSelections((prev) => ({
           ...prev,
           [employeeId]: (prev[employeeId] ?? []).filter((d) => d !== date),
         }));
-        const { error } = await supabase
-          .from("leave_selections")
-          .delete()
-          .eq("user_id", employeeId)
-          .eq("date", date);
-        if (error) {
-          console.error("[updateShift] leave_selections delete:", error);
-          throw new Error("同步排休選擇失敗，請稍後再試");
-        }
       }
     }
 
