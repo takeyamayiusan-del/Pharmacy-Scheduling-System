@@ -1,9 +1,22 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
+import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
+import { formatShiftName } from "@/lib/schedule/shiftLabels";
+
+/** 含晚班的全天班（與班表邏輯一致） */
+const FULL_DAY_EVENING_SHIFT = "A" as const;
+
+type PendingEveningLeave = {
+  dateStr: string;
+  day: number;
+  shiftLabel: string;
+};
 
 export default function LeaveSelectionPage() {
+  const router = useRouter();
   const {
     currentUser,
     employees,
@@ -15,11 +28,15 @@ export default function LeaveSelectionPage() {
     toggleLeaveDate,
     getShiftForDate,
     isLeaveMonthLocked,
+    shiftDisplayConfig,
+    addBulletinItem,
   } = useApp();
   const [currentDate, setCurrentDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+  const [pendingEveningLeave, setPendingEveningLeave] = useState<PendingEveningLeave | null>(null);
+  const [isSubmittingLeaveAction, setIsSubmittingLeaveAction] = useState(false);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -44,6 +61,61 @@ export default function LeaveSelectionPage() {
     setCurrentDate(new Date(year, month, 1));
   };
 
+  const applyLeaveSelection = (dateStr: string) => {
+    if (!currentUser) return { success: false as const, message: "請先登入" };
+    const result = toggleLeaveDate(currentUser.id, dateStr);
+    if (!result.success && result.message) {
+      alert(result.message);
+    }
+    return result;
+  };
+
+  const completeEveningLeave = async (
+    action: "only" | "bulletin" | "swap"
+  ) => {
+    if (!pendingEveningLeave || !currentUser || isSubmittingLeaveAction) return;
+    setIsSubmittingLeaveAction(true);
+    try {
+      const { dateStr, day, shiftLabel } = pendingEveningLeave;
+      const result = applyLeaveSelection(dateStr);
+      if (!result.success) {
+        setPendingEveningLeave(null);
+        return;
+      }
+
+      if (action === "bulletin") {
+        await addBulletinItem({
+          authorId: currentUser.id,
+          title: `${month}/${day} 需代晚班`,
+          content: `${currentUser.name} 預計於 ${year}/${month}/${day} 排休，當日原為 ${shiftLabel}（含晚班），誠徵代晚班，歡迎洽詢換班。`,
+          type: "shift_swap_request",
+          status: "active",
+          isUrgent: false,
+          isPinned: false,
+          targetType: "all",
+          targetIds: [],
+        });
+        alert("已發布代班公告，同事可在班表頁公告欄查看。");
+      }
+
+      if (action === "swap") {
+        const params = new URLSearchParams({
+          date: dateStr,
+          source: "leave_evening_conflict",
+          source_note: `${year}/${month}/${day} 排休需代 ${shiftLabel} 晚班`,
+        });
+        router.push(`/applications/shift-swap?${params.toString()}`);
+      }
+
+      setPendingEveningLeave(null);
+    } catch (error) {
+      console.error("[completeEveningLeave]", error);
+      alert("操作失敗，請稍後再試");
+    } finally {
+      setIsSubmittingLeaveAction(false);
+    }
+  };
+
   const toggleDate = (day: number) => {
     if (!currentUser) return;
     if (monthLocked) {
@@ -51,10 +123,24 @@ export default function LeaveSelectionPage() {
       return;
     }
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const result = toggleLeaveDate(currentUser.id, dateStr);
-    if (!result.success && result.message) {
-      alert(result.message);
+    const isSelected = selectedDates.includes(dateStr);
+
+    if (isSelected) {
+      applyLeaveSelection(dateStr);
+      return;
     }
+
+    const shiftOnDate = getShiftForDate(dateStr, currentUser.id);
+    if (shiftOnDate === FULL_DAY_EVENING_SHIFT) {
+      setPendingEveningLeave({
+        dateStr,
+        day,
+        shiftLabel: formatShiftName(shiftDisplayConfig, FULL_DAY_EVENING_SHIFT),
+      });
+      return;
+    }
+
+    applyLeaveSelection(dateStr);
   };
 
   const canSelectDate = (day: number) => {
@@ -70,29 +156,14 @@ export default function LeaveSelectionPage() {
     return (leaveSummary?.weekdayUsed ?? 0) < 2;
   };
 
-  const warnings = Array.from({ length: daysInMonth }, (_, index) => index + 1)
-    .map((day) => {
-      const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      if (isSunday(dateStr)) return null;
-      const restingEmployees = employees
-        .filter((emp) => emp.role !== "owner")
-        .filter((emp) => getShiftForDate(dateStr, emp.id) === "X");
-      const weekdayRestingEmployees = restingEmployees.filter(() => !isSaturday(dateStr));
-      const aShiftEmployees = employees
-        .filter((emp) => emp.role !== "owner")
-        .filter((emp) => getShiftForDate(dateStr, emp.id) === "A");
-
-      const messages: string[] = [];
-      if (weekdayRestingEmployees.length > 1) {
-        messages.push(`平日有多人排休：${weekdayRestingEmployees.map((emp) => emp.name).join("、")}`);
-      }
-      if (aShiftEmployees.length === 0) {
-        messages.push("當天沒有人上 A 班");
-      }
-      if (messages.length === 0) return null;
-      return { dateStr, day, messages };
-    })
-    .filter(Boolean) as { dateStr: string; day: number; messages: string[] }[];
+  const warnings = buildScheduleWarnings({
+    year,
+    month,
+    daysInMonth,
+    employees,
+    shiftDisplayConfig,
+    getShiftForDate,
+  });
 
   return (
     <div className="space-y-6">
@@ -122,6 +193,7 @@ export default function LeaveSelectionPage() {
           <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
           <p>• 平常大家預設都是 B 班，A 班代表全天＋晚班</p>
           <p>• 點選日期後會<strong>立即儲存</strong>，無需另外提交</p>
+          <p>• 若選到您原為全天班（含晚班）的日期，系統會提示是否發布代班公告或提出換班申請</p>
           {saturdayCount >= 5 && (
             <p className="text-purple-600 font-medium">
               • 本月有 5 個禮拜六，但每人仍最多只能排休 2 天禮拜六
@@ -236,6 +308,57 @@ export default function LeaveSelectionPage() {
           </span>
         </div>
       </div>
+
+      {pendingEveningLeave && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">需代晚班提醒</h3>
+            <p className="text-sm text-gray-600 mb-4">
+              <span className="font-medium text-amber-800">
+                {month}/{pendingEveningLeave.day} 日
+              </span>
+              依目前班表，您當天原為{" "}
+              <span className="font-medium">{pendingEveningLeave.shiftLabel}</span>
+              （含晚班）。若排休，建議找人代晚班。
+            </p>
+            <p className="text-sm text-gray-500 mb-5">請選擇後續處理方式：</p>
+            <div className="flex flex-col gap-2">
+              <button
+                type="button"
+                disabled={isSubmittingLeaveAction}
+                onClick={() => completeEveningLeave("bulletin")}
+                className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                排休並發布代班公告
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingLeaveAction}
+                onClick={() => completeEveningLeave("swap")}
+                className="w-full px-4 py-2.5 border-2 border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50"
+              >
+                排休並提出換班申請
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingLeaveAction}
+                onClick={() => completeEveningLeave("only")}
+                className="w-full px-4 py-2.5 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
+              >
+                仍要排休（不公告）
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingLeaveAction}
+                onClick={() => setPendingEveningLeave(null)}
+                className="w-full px-4 py-2 text-gray-500 hover:text-gray-700"
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

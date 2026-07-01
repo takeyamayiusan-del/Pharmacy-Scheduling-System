@@ -93,6 +93,12 @@ export default function ShiftSwapPage() {
         </div>
       )}
 
+      {source === "leave_evening_conflict" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          {sourceNote || "由排休選擇（全天班含晚班）引導建立換班申請"}
+        </div>
+      )}
+
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <h3 className="font-medium text-gray-900 mb-4">新換班申請</h3>

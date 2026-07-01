@@ -5,6 +5,10 @@ import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedTyp
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
 import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, type PunchSlot } from "@/lib/attendance/punchSchedule";
+import {
+  checkManagerLeaveAssignment,
+  shouldSyncLeaveSelection,
+} from "@/lib/schedule/leaveSelectionRules";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1339,6 +1343,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("本月份班表已鎖定，僅店長/老闆可修改");
     }
 
+    const isManagerEdit =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
+    const emp = employees.find((e) => e.id === employeeId);
+    const alreadySelected = (leaveSelections[employeeId] ?? []).includes(date);
+    const syncAction = shouldSyncLeaveSelection(date, shift);
+
+    if (isManagerEdit && syncAction === "add" && !alreadySelected) {
+      const ruleCheck = checkManagerLeaveAssignment(
+        emp,
+        emp?.name ?? "員工",
+        date,
+        leaveSelections
+      );
+      if (ruleCheck.shouldWarn && ruleCheck.message) {
+        if (!window.confirm(ruleCheck.message)) return;
+      }
+    }
+
     // 檢查是否有已核准的請假
     const approvedLeave = leaveRequests.find(
       (r) =>
@@ -1353,9 +1375,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!window.confirm(confirmMsg)) return;
     }
 
+    if (isManagerEdit) {
+      if (syncAction === "add" && !alreadySelected) {
+        setLeaveSelections((prev) => ({
+          ...prev,
+          [employeeId]: [...(prev[employeeId] ?? []), date],
+        }));
+        const { error } = await supabase
+          .from("leave_selections")
+          .insert({ user_id: employeeId, date });
+        if (error) {
+          console.error("[updateShift] leave_selections insert:", error);
+          setLeaveSelections((prev) => ({
+            ...prev,
+            [employeeId]: (prev[employeeId] ?? []).filter((d) => d !== date),
+          }));
+          throw new Error("同步排休選擇失敗，請確認資料庫權限或稍後再試");
+        }
+      } else if (syncAction === "remove" && alreadySelected) {
+        setLeaveSelections((prev) => ({
+          ...prev,
+          [employeeId]: (prev[employeeId] ?? []).filter((d) => d !== date),
+        }));
+        const { error } = await supabase
+          .from("leave_selections")
+          .delete()
+          .eq("user_id", employeeId)
+          .eq("date", date);
+        if (error) {
+          console.error("[updateShift] leave_selections delete:", error);
+          throw new Error("同步排休選擇失敗，請稍後再試");
+        }
+      }
+    }
+
     // Optimistic update
     setSchedule((prev) => ({ ...prev, [date]: { ...prev[date], [employeeId]: shift } }));
-    // 使用 schedule_entries 表（與 loadScheduleOverrides 一致）
     await supabase.from("schedule_entries").upsert(
       { user_id: employeeId, date, shift_code: shift, updated_by: currentUser?.id },
       { onConflict: "user_id,date" }

@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { useApp, type ShiftType } from "@/lib/context/AppContext";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
+import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
+import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
@@ -85,6 +87,14 @@ export default function SchedulePage() {
   const daysInMonth = new Date(year, month, 0).getDate();
   const saturdayCount = countSaturdaysInMonth(year, month);
   const monthLocked = isLeaveMonthLocked(year, month);
+  const scheduleWarnings = buildScheduleWarnings({
+    year,
+    month,
+    daysInMonth,
+    employees,
+    shiftDisplayConfig,
+    getShiftForDate,
+  });
   const today = new Date();
   const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
@@ -109,6 +119,11 @@ export default function SchedulePage() {
 
   // 過濾掉老闆（不顯示在班表）
   const displayEmployees = employees.filter(e => e.role !== "owner");
+  const rotationEmployees = employees.filter((e) => e.isWednesdayRotation);
+  const rotationLabel =
+    rotationEmployees.length > 0
+      ? rotationEmployees.map((e) => e.name).join("/")
+      : "尚未設定";
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
 
   const prevMonth = () => {
@@ -157,6 +172,7 @@ export default function SchedulePage() {
       getShiftForDate: getShiftForDateWithLeave,
       getHolidayInfo,
       layout,
+      shiftDisplayConfig,
       leaveRequests,
       overtimeRequests,
     });
@@ -323,17 +339,36 @@ export default function SchedulePage() {
     : [];
   const selectedDateWarnings = selectedDate
     ? (() => {
-        const eveningShifts: ShiftType[] = ["A", "D", "E"];
-        const eveningWorkers = dateModalWorkers.filter((worker) => eveningShifts.includes(worker.shift));
         const leaveWorkers = dateModalWorkers.filter((worker) => worker.shift === "X");
-        const aShiftWorkers = dateModalWorkers.filter((worker) => worker.shift === "A");
         const warnings: string[] = [];
-        if (eveningWorkers.length < 2) {
-          warnings.push(`晚班人數不足（目前 ${eveningWorkers.length} 人）`);
+
+        if (isSaturday(selectedDate)) {
+          const working = dateModalWorkers.filter((worker) => worker.shift !== "X");
+          const morning = dateModalWorkers.filter((worker) => worker.shift === "C");
+          if (morning.length === 0) {
+            warnings.push(`沒有人上${formatShiftName(shiftDisplayConfig, "C")}`);
+          }
+          if (working.length === 0) {
+            warnings.push("禮拜六無人上班");
+          } else if (working.length < 2) {
+            warnings.push(
+              `僅 ${working.map((w) => w.name).join("、")} 上班，禮拜六至少需要 2 人`
+            );
+          }
+        } else if (!isSunday(selectedDate)) {
+          const eveningShifts: ShiftType[] = ["A", "D", "E"];
+          const eveningWorkers = dateModalWorkers.filter((worker) =>
+            eveningShifts.includes(worker.shift)
+          );
+          const aShiftWorkers = dateModalWorkers.filter((worker) => worker.shift === "A");
+          if (eveningWorkers.length < 2) {
+            warnings.push(`晚班人數不足（目前 ${eveningWorkers.length} 人）`);
+          }
+          if (aShiftWorkers.length === 0) {
+            warnings.push(`${formatShiftName(shiftDisplayConfig, "A")}無人`);
+          }
         }
-        if (aShiftWorkers.length === 0) {
-          warnings.push("A 班無人");
-        }
+
         if (leaveWorkers.length > 1) {
           warnings.push(`多人同日排休：${leaveWorkers.map((w) => w.name).join("、")}`);
         }
@@ -358,9 +393,13 @@ export default function SchedulePage() {
   };
 
   // 選擇班別
-  const selectShift = (date: string, employeeId: string, shift: ShiftType) => {
-    updateShift(date, employeeId, shift);
-    setEditingCell(null);
+  const selectShift = async (date: string, employeeId: string, shift: ShiftType) => {
+    try {
+      await updateShift(date, employeeId, shift);
+      setEditingCell(null);
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "班表更新失敗");
+    }
   };
 
   // 班表單元格
@@ -484,7 +523,9 @@ export default function SchedulePage() {
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-pink-500"></div>
-                <span className="text-gray-600">禮拜三晚班輪流</span>
+                <span className="text-gray-600">
+                  禮拜三晚班輪流{rotationEmployees.length > 0 ? `（${rotationLabel}）` : ""}
+                </span>
               </div>
             </div>
           </div>
@@ -636,7 +677,9 @@ export default function SchedulePage() {
 
       {/* 禮拜三輪流晚班 */}
       <div className="app-card p-4">
-        <h3 className="font-medium text-gray-900 mb-3">🌙 禮拜三晚班輪流 (宜孝/貞葶)</h3>
+        <h3 className="font-medium text-gray-900 mb-3">
+          🌙 禮拜三晚班輪流{rotationEmployees.length > 0 ? `（${rotationLabel}）` : "（尚未設定輪值人員）"}
+        </h3>
         <div className="flex flex-wrap gap-2">
           {wednesdayNightShifts
             .filter(s => new Date(s.date).getMonth() + 1 === month && new Date(s.date).getFullYear() === year)
@@ -647,13 +690,23 @@ export default function SchedulePage() {
                 <div key={s.date} className="border rounded-lg p-2 bg-pink-50">
                   <div className="text-sm font-medium">{date.getMonth() + 1}/{date.getDate()}</div>
                   <div className="text-xs text-gray-600">{emp?.name}</div>
-                  <div className="text-[11px] text-gray-500 mt-1">
-                    宜孝休：{getWednesdayOffDates("yihsiao", year, month).includes(s.date) ? "是" : "否"} ・
-                    貞葶休：{getWednesdayOffDates("zhenting", year, month).includes(s.date) ? "是" : "否"}
-                  </div>
+                  {rotationEmployees.length > 0 && (
+                    <div className="text-[11px] text-gray-500 mt-1">
+                      {rotationEmployees.map((rotationEmp, index) => (
+                        <span key={rotationEmp.id}>
+                          {index > 0 && " ・ "}
+                          {rotationEmp.name}休：
+                          {getWednesdayOffDates(rotationEmp.id, year, month).includes(s.date) ? "是" : "否"}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               );
             })}
+          {rotationEmployees.length === 0 && (
+            <p className="text-sm text-gray-500">請至「固定班表」啟用員工的禮拜三晚班輪值</p>
+          )}
         </div>
       </div>
 
@@ -673,32 +726,12 @@ export default function SchedulePage() {
       <div className="app-card bg-amber-50/80 border-amber-200 p-4">
         <h3 className="font-medium text-amber-800 mb-3">⚠️ 班表提醒</h3>
         <div className="space-y-2 text-sm text-amber-900">
-          {Array.from({ length: daysInMonth }, (_, index) => index + 1)
-            .map((day) => {
-              const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-              if (isSunday(dateStr)) return null;
-              const workers = displayEmployees.map((emp) => ({
-                employee: emp,
-                shift: getShiftForDate(dateStr, emp.id),
-              }));
-              const resting = workers.filter((item) => item.shift === "X").map((item) => item.employee.name);
-              const weekdayResting = !isSaturday(dateStr) ? resting : [];
-              const aWorkers = workers.filter((item) => item.shift === "A").map((item) => item.employee.name);
-              const messages: string[] = [];
-              if (weekdayResting.length > 1) {
-                messages.push(`平日多人休假：${weekdayResting.join("、")}`);
-              }
-              if (aWorkers.length === 0 && !isSaturday(dateStr)) {
-                messages.push("沒有人上 A 班");
-              }
-              if (messages.length === 0) return null;
-              return (
-                <div key={dateStr}>
-                  <span className="font-medium">{month}/{day}</span>：{messages.join("；")}
-                </div>
-              );
-            })
-            .filter(Boolean)}
+          {scheduleWarnings.map((warning) => (
+            <div key={warning.dateStr}>
+              <span className="font-medium">{month}/{warning.day}</span>：
+              {warning.messages.join("；")}
+            </div>
+          ))}
         </div>
       </div>
 

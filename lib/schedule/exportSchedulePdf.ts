@@ -1,19 +1,10 @@
 import { jsPDF } from "jspdf";
-import type { ShiftType } from "@/lib/context/AppContext";
+import type { ShiftType, ShiftDisplayConfig } from "@/lib/context/AppContext";
 
 export type ExportEmployee = { id: string; name: string };
 export type ExportLayout = "landscape" | "portrait";
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
-
-const exportShiftPalette: Record<ShiftType, { bg: string; text: string; border: string }> = {
-  A: { bg: "#dbeafe", text: "#1d4ed8", border: "#93c5fd" },
-  B: { bg: "#dcfce7", text: "#15803d", border: "#86efac" },
-  C: { bg: "#fef9c3", text: "#a16207", border: "#fde68a" },
-  D: { bg: "#ede9fe", text: "#6d28d9", border: "#c4b5fd" },
-  E: { bg: "#fce7f3", text: "#be185d", border: "#f9a8d4" },
-  X: { bg: "#f1f5f9", text: "#64748b", border: "#cbd5e1" },
-};
 
 export type DrawScheduleOptions = {
   year: number;
@@ -23,6 +14,7 @@ export type DrawScheduleOptions = {
   getShiftForDate: (date: string, employeeId: string) => ShiftType;
   getHolidayInfo: (date: string) => { isHoliday: boolean; name?: string };
   layout: ExportLayout;
+  shiftDisplayConfig: ShiftDisplayConfig;
   leaveRequests?: Array<{ employeeId: string; startDate: string; endDate: string; status: string }>;
   overtimeRequests?: Array<{ employeeId: string; date: string; status: string }>;
 };
@@ -38,7 +30,7 @@ function drawScheduleSegment(
   ctx: CanvasRenderingContext2D,
   options: SegmentOptions
 ): number {
-  const { year, month, employees, getShiftForDate, getHolidayInfo, dayStart, dayEnd, tableY, sectionTitle } =
+  const { year, month, employees, getShiftForDate, getHolidayInfo, shiftDisplayConfig, dayStart, dayEnd, tableY, sectionTitle } =
     options;
   const dayCount = dayEnd - dayStart + 1;
   const rowHeight = 42;
@@ -143,8 +135,13 @@ function drawScheduleSegment(
       
       // 請假顯示為紫色
       const palette = hasApprovedLeave
-        ? { bg: "#ddd6fe", text: "#5b21b6", border: "#a78bfa" }
-        : exportShiftPalette[shift];
+        ? { bg: "#ddd6fe", text: "#5b21b6", border: "#a78bfa", displayText: "假" }
+        : {
+            bg: shiftDisplayConfig[shift].bgColor,
+            text: shiftDisplayConfig[shift].textColor,
+            border: shiftDisplayConfig[shift].borderColor,
+            displayText: shiftDisplayConfig[shift].displayText,
+          };
       
       ctx.fillStyle = cellBg;
       ctx.fillRect(x, rowY, dayColWidth, rowHeight);
@@ -156,7 +153,7 @@ function drawScheduleSegment(
       ctx.strokeRect(x + 6, rowY + 6, dayColWidth - 12, rowHeight - 12);
       ctx.fillStyle = palette.text;
       ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
-      const displayText = hasApprovedLeave ? "假" : shift;
+      const displayText = palette.displayText;
       // 設定文字對齊方式，確保水平與垢直居中
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
