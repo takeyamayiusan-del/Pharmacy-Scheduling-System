@@ -9,6 +9,7 @@ import {
   periodToTimes,
   type LeavePeriod,
 } from '@/lib/attendance/leaveHours';
+import { currentMonthMinDate } from '@/lib/schedule/monthAccess';
 
 const PERIOD_OPTIONS: { label: string; value: LeavePeriod }[] = [
   { label: '全天', value: 'full_day' },
@@ -114,6 +115,14 @@ export default function LeaveApplicationPage() {
       setSubmitError(`補休餘額不足（可用 ${compBalance} 小時，本次需要 ${estimatedHours} 小時）`);
       return;
     }
+    if (formData.type === '特休') {
+      const year = new Date(formData.startDate).getFullYear();
+      const balance = getAnnualLeaveBalance(currentUser.id, year);
+      if (balance < estimatedHours / 8) {
+        setSubmitError(`特休餘額不足（剩餘 ${balance.toFixed(1)} 天，本次需要 ${(estimatedHours / 8).toFixed(1)} 天）`);
+        return;
+      }
+    }
 
     let startTime = formData.startTime;
     let endTime = formData.endTime;
@@ -123,32 +132,36 @@ export default function LeaveApplicationPage() {
       endTime = times.endTime;
     }
 
-    await addLeaveRequest({
-      employeeId: currentUser.id,
-      employeeName: currentUser.name,
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-      startTime,
-      endTime,
-      period: formData.period,
-      shiftMode: formData.shiftMode,
-      leaveHours: estimatedHours,
-      type: formData.type,
-      reason: formData.reason,
-      status: 'pending',
-    });
+    try {
+      await addLeaveRequest({
+        employeeId: currentUser.id,
+        employeeName: currentUser.name,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        startTime,
+        endTime,
+        period: formData.period,
+        shiftMode: formData.shiftMode,
+        leaveHours: estimatedHours,
+        type: formData.type,
+        reason: formData.reason,
+        status: 'pending',
+      });
 
-    setShowForm(false);
-    setFormData({
-      startDate: '',
-      endDate: '',
-      startTime: '08:30',
-      endTime: '18:00',
-      period: 'full_day',
-      shiftMode: 'schedule',
-      type: '事假',
-      reason: '',
-    });
+      setShowForm(false);
+      setFormData({
+        startDate: '',
+        endDate: '',
+        startTime: '08:30',
+        endTime: '18:00',
+        period: 'full_day',
+        shiftMode: 'schedule',
+        type: '事假',
+        reason: '',
+      });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : '申請失敗');
+    }
   };
 
   const handleReject = async () => {
@@ -234,6 +247,7 @@ export default function LeaveApplicationPage() {
                 <input
                   type="date"
                   value={formData.startDate}
+                  min={currentMonthMinDate()}
                   onChange={(e) =>
                     setFormData({
                       ...formData,

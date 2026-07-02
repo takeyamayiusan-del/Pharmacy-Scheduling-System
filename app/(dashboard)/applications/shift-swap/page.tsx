@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
 import { useSearchParams } from "next/navigation";
+import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
 
 export default function ShiftSwapPage() {
   const {
@@ -37,22 +38,26 @@ export default function ShiftSwapPage() {
   const previewTargetShift = formData.targetEmployeeId && formData.targetDate
     ? getShiftForDate(formData.targetDate, formData.targetEmployeeId) : null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
     const targetEmployee = employees.find(emp => emp.id === formData.targetEmployeeId);
     if (!targetEmployee) return;
-    addSwapRequest({
-      requesterId: currentUser.id,
-      requesterName: currentUser.name,
-      targetEmployeeId: targetEmployee.id,
-      targetEmployeeName: targetEmployee.name,
-      requesterDate: formData.requesterDate,
-      targetDate: formData.targetDate,
-      status: "pending_confirmation",
-    });
-    setFormData({ requesterDate: "", targetDate: "", targetEmployeeId: "" });
-    setShowForm(false);
+    try {
+      await addSwapRequest({
+        requesterId: currentUser.id,
+        requesterName: currentUser.name,
+        targetEmployeeId: targetEmployee.id,
+        targetEmployeeName: targetEmployee.name,
+        requesterDate: formData.requesterDate,
+        targetDate: formData.targetDate,
+        status: "pending_confirmation",
+      });
+      setFormData({ requesterDate: "", targetDate: "", targetEmployeeId: "" });
+      setShowForm(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "申請失敗");
+    }
   };
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
@@ -106,14 +111,14 @@ export default function ShiftSwapPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">我的日期（換出）</label>
-                <input type="date" value={formData.requesterDate}
+                <input type="date" value={formData.requesterDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, requesterDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
                 {previewRequesterShift && <p className="text-xs text-gray-500 mt-1">當日班別：{previewRequesterShift}</p>}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">對方日期（換入）</label>
-                <input type="date" value={formData.targetDate}
+                <input type="date" value={formData.targetDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, targetDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
                 {previewTargetShift && <p className="text-xs text-gray-500 mt-1">對方班別：{previewTargetShift}</p>}

@@ -92,6 +92,12 @@ Invoke-Step "[4/5] Next.js site :3000" {
     if (-not (Test-Path ".next")) {
         Write-Host "  First run: npm run build ..."
         & $npm run build
+    } else {
+        Write-Host "  Rebuilding site (code may have changed) ..."
+        & $npm run build
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm run build failed with exit code $LASTEXITCODE"
+        }
     }
     Start-Process -FilePath $npm -ArgumentList "start" -WorkingDirectory $ProjectRoot -WindowStyle Hidden
     Start-Sleep -Seconds 8

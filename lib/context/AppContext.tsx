@@ -9,6 +9,18 @@ import {
   checkManagerLeaveAssignment,
   shouldSyncLeaveSelection,
 } from "@/lib/schedule/leaveSelectionRules";
+import { hasPastMonthInRange, isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
+import { resolveAnnualLeaveQuotaDays } from "@/lib/attendance/annualLeave";
+import {
+  calculateEffectiveShift,
+  enumerateDatesInRange,
+} from "@/lib/schedule/effectiveShift";
+import {
+  fetchDbScheduleShifts,
+  restoreScheduleSnapshot,
+  upsertScheduleShift,
+  type ScheduleSnapshotEntry,
+} from "@/lib/schedule/scheduleSnapshot";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -77,6 +89,7 @@ export type LeaveRequest = {
   rejectReason?: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
+  scheduleSnapshot?: ScheduleSnapshotEntry[];
 };
 
 export type CompLeaveLedgerEntry = {
@@ -101,6 +114,7 @@ export type SwapRequest = {
   status: "pending_confirmation" | "pending_approval" | "approved" | "rejected";
   rejectReason?: string;
   createdAt: string;
+  scheduleSnapshot?: ScheduleSnapshotEntry[];
 };
 
 export type OvertimeRequest = {
@@ -552,16 +566,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const loadLeaveMonthLocks = useCallback(async () => {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("leave_month_locks")
-      .select("year, month, locked_by, created_at");
+      .select("year, month, locked_by, locked_at");
+    if (error) {
+      console.error("loadLeaveMonthLocks:", error);
+      return;
+    }
     if (data) {
       setLeaveMonthLocks(
         data.map((r) => ({
           year: r.year,
           month: r.month,
           lockedBy: r.locked_by,
-          lockedAt: r.created_at,
+          lockedAt: r.locked_at,
         }))
       );
     }
@@ -720,31 +738,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [compLeaveLedger]
   );
 
-  const getAnnualLeaveQuota = useCallback((employee: Employee, year?: number) => {
-    const hireDate = new Date(employee.hireDate);
-    const currentYear = year ?? new Date().getFullYear();
-    
-    // 計算年資月份數：從入職日到 currentYear 年底的總月數
-    const hireYear = hireDate.getFullYear();
-    const hireMonth = hireDate.getMonth(); // 0=1月, 11=12月
-    
-    // 完整年數 * 12 + 該年剩餘月數
-    const yearsElapsed = currentYear - hireYear;
-    const monthsRemaining = 12 - hireMonth; // 1月->12, 12月->1
-    const monthsDiff = yearsElapsed * 12 + monthsRemaining - 12; // 扣掉hireYear那年的monthsRemaining重複計算
-    
-    // 根據年資月份數決定特休天數
-    // < 6 個月：0 天（未滿半年）
-    // 6-11 個月：3 天（滿半年）
-    // 12+ 個月：7 天（滿一年）
-    if (monthsDiff < 6) {
-      return 0;
-    } else if (monthsDiff < 12) {
-      return 3;
-    } else {
-      return 7;
-    }
-  }, []);
+  const getAnnualLeaveQuota = useCallback(
+    (employee: Employee, year?: number) => {
+      const currentYear = year ?? new Date().getFullYear();
+      return resolveAnnualLeaveQuotaDays(employee, currentYear, annualLeaveConfigs);
+    },
+    [annualLeaveConfigs]
+  );
 
   const getAnnualLeaveBalance = useCallback((employeeId: string, year: number) => {
     const emp = employees.find(e => e.id === employeeId);
@@ -810,6 +810,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             reason: r.reason,
             rejectReason: r.reject_reason ?? undefined,
             status: r.status as LeaveRequest["status"],
+            scheduleSnapshot: (r.schedule_snapshot as ScheduleSnapshotEntry[] | null) ?? undefined,
             createdAt: r.created_at,
           };
         })
@@ -872,6 +873,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           targetDate: r.target_swap_date || r.swap_date,
           status: mapSwapStatusFromDb(r.status),
           rejectReason: r.reject_reason ?? undefined,
+          scheduleSnapshot: (r.schedule_snapshot as ScheduleSnapshotEntry[] | null) ?? undefined,
           createdAt: r.created_at,
         }))
       );
@@ -1077,6 +1079,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
               loadLeaveMonthLocks(),
               loadBulletinItems(),
               loadHolidays(),
+              loadAnnualLeaveConfigs(new Date().getFullYear()),
+              loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
             ]).catch((e) => console.error("[initAuth] background load error:", e));
           }
         }
@@ -1139,6 +1143,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 loadLeaveMonthLocks(),
                 loadBulletinItems(),
                 loadHolidays(),
+                loadAnnualLeaveConfigs(new Date().getFullYear()),
+                loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
               ]).catch((e) => console.error("[SIGNED_IN] background load error:", e));
             } else if (mounted) {
               console.warn("[SIGNED_IN] no user row found for", session.user.id);
@@ -1335,6 +1341,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateShift = async (date: string, employeeId: string, shift: ShiftType) => {
+    if (isPastDate(date)) {
+      throw new Error("已過去的月份無法修改班表");
+    }
+
     const y = new Date(date).getFullYear();
     const m = new Date(date).getMonth() + 1;
     const monthLocked = leaveMonthLocks.some((l) => l.year === y && l.month === m);
@@ -1575,8 +1585,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const dateObject = new Date(date);
     const year = dateObject.getFullYear();
     const month = dateObject.getMonth() + 1;
-    if (leaveMonthLocks.some((l) => l.year === year && l.month === month))
-      return { success: false, message: "本月份排休已鎖定，僅可選擇後續月份" };
+
+    if (isPastMonth(year, month) || isPastDate(date)) {
+      return { success: false, message: "已過去的月份無法變更排休選擇" };
+    }
+
+    if (leaveMonthLocks.some((l) => l.year === year && l.month === month)) {
+      return { success: false, message: "本月份班表已鎖定，無法變更排休選擇（請假／換班／加班仍可申請）" };
+    }
 
     const summary = getLeaveSummary(employeeId, year, month);
     const isSelected = summary.selectedDates.includes(date);
@@ -1621,29 +1637,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const isLeaveMonthLocked = (year: number, month: number) =>
     leaveMonthLocks.some((l) => l.year === year && l.month === month);
 
-  const isPastMonth = (dateStr: string): boolean => {
-    const date = new Date(dateStr);
-    const today = new Date();
-    const requestMonth = new Date(date.getFullYear(), date.getMonth(), 1).getTime();
-    const currentMonth = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
-    return requestMonth < currentMonth;
-  };
-
-  const hasPastMonthInRange = (startDate: string, endDate: string): boolean => {
-    const start = new Date(startDate);
-    const end = new Date(endDate);
-    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-    const current = new Date();
-    const currentMonth = new Date(current.getFullYear(), current.getMonth(), 1).getTime();
-    const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
-
-    while (cursor <= endMonth) {
-      if (cursor.getTime() < currentMonth) return true;
-      cursor.setMonth(cursor.getMonth() + 1);
-    }
-    return false;
-  };
-
   const snapshotMonthSchedule = async (year: number, month: number, actorId?: string) => {
     const activeEmployees = employees.filter((e) => e.role !== "owner");
     if (activeEmployees.length === 0) return;
@@ -1662,32 +1655,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    await supabase.from("schedule_entries").upsert(rows, { onConflict: "user_id,date" });
+    const chunkSize = 200;
+    for (let i = 0; i < rows.length; i += chunkSize) {
+      const chunk = rows.slice(i, i + chunkSize);
+      const { error: upsertError } = await supabase
+        .from("schedule_entries")
+        .upsert(chunk, { onConflict: "user_id,date" });
+      if (upsertError) {
+        throw new Error(`班表快照失敗：${upsertError.message}`);
+      }
+    }
     await loadScheduleOverrides();
   };
 
   const lockLeaveMonth = async (year: number, month: number, lockedBy: string) => {
     if (leaveMonthLocks.some((l) => l.year === year && l.month === month)) return;
     await snapshotMonthSchedule(year, month, lockedBy);
-    const { data } = await supabase
-      .from("leave_month_locks")
-      .insert({ year, month, locked_by: lockedBy })
-      .select()
-      .single();
-    if (data) {
+
+    const res = await fetch("/api/schedule/lock-month", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year, month, action: "lock" }),
+    });
+    const payload = (await res.json()) as {
+      error?: string;
+      lock?: { year: number; month: number; locked_by: string; locked_at: string };
+      alreadyLocked?: boolean;
+    };
+    if (!res.ok) {
+      throw new Error(payload.error ?? "鎖定失敗");
+    }
+    if (payload.lock) {
       setLeaveMonthLocks((prev) => [
         ...prev,
-        { year: data.year, month: data.month, lockedBy: data.locked_by, lockedAt: data.created_at },
+        {
+          year: payload.lock!.year,
+          month: payload.lock!.month,
+          lockedBy: payload.lock!.locked_by,
+          lockedAt: payload.lock!.locked_at,
+        },
       ]);
+    } else if (!payload.alreadyLocked) {
+      await loadLeaveMonthLocks();
     }
   };
 
   const unlockLeaveMonth = async (year: number, month: number) => {
-    await supabase
-      .from("leave_month_locks")
-      .delete()
-      .eq("year", year)
-      .eq("month", month);
+    const res = await fetch("/api/schedule/lock-month", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ year, month, action: "unlock" }),
+    });
+    const payload = (await res.json()) as { error?: string };
+    if (!res.ok) {
+      throw new Error(payload.error ?? "解除鎖定失敗");
+    }
     setLeaveMonthLocks((prev) => prev.filter((l) => !(l.year === year && l.month === month)));
   };
 
@@ -1699,9 +1721,71 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return Math.round((((eh * 60 + em) - (sh * 60 + sm)) / 60) * 100) / 100;
   };
 
+  const buildLeaveScheduleSnapshot = async (
+    employeeId: string,
+    startDate: string,
+    endDate: string
+  ): Promise<ScheduleSnapshotEntry[]> => {
+    const dates = enumerateDatesInRange(startDate, endDate);
+    const dbMap = await fetchDbScheduleShifts(supabase, [employeeId], dates);
+    return dates.map((date) => {
+      const key = `${employeeId}:${date}`;
+      const hadDbEntry = dbMap.has(key);
+      const shift = hadDbEntry ? dbMap.get(key)! : getShiftForDate(date, employeeId);
+      return { userId: employeeId, date, shift, hadDbEntry };
+    });
+  };
+
+  const applyApprovedLeaveToSchedule = async (request: LeaveRequest) => {
+    const dates = enumerateDatesInRange(request.startDate, request.endDate);
+    for (const date of dates) {
+      const originalShift = getShiftForDate(date, request.employeeId);
+      if (originalShift === "X") continue;
+
+      let startTime = request.startTime;
+      let endTime = request.endTime;
+      if (request.period === "morning") {
+        startTime = "08:30";
+        endTime = "12:00";
+      } else if (request.period === "afternoon") {
+        startTime = "13:30";
+        endTime = "18:00";
+      } else if (request.period === "full_day") {
+        await upsertScheduleShift(supabase, request.employeeId, date, "X", currentUser?.id);
+        continue;
+      }
+
+      const { shift } = calculateEffectiveShift(originalShift, startTime, endTime);
+      await upsertScheduleShift(
+        supabase,
+        request.employeeId,
+        date,
+        shift ?? "X",
+        currentUser?.id
+      );
+    }
+    await loadScheduleOverrides();
+  };
+
+  const revertApprovedLeaveFromSchedule = async (request: LeaveRequest) => {
+    if (request.scheduleSnapshot?.length) {
+      await restoreScheduleSnapshot(supabase, request.scheduleSnapshot, currentUser?.id);
+    } else {
+      const dates = enumerateDatesInRange(request.startDate, request.endDate);
+      for (const date of dates) {
+        await supabase
+          .from("schedule_entries")
+          .delete()
+          .eq("user_id", request.employeeId)
+          .eq("date", date);
+      }
+    }
+    await loadScheduleOverrides();
+  };
+
   const addLeaveRequest = async (request: Omit<LeaveRequest, "id" | "createdAt">) => {
     if (hasPastMonthInRange(request.startDate, request.endDate)) {
-      throw new Error("已進入新月份，無法再送過去月份的請假申請");
+      throw new Error("已過去的月份無法再提出請假申請");
     }
 
     const dbPeriod =
@@ -1742,11 +1826,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const request = leaveRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
 
+    if (
+      request &&
+      status !== prevStatus &&
+      hasPastMonthInRange(request.startDate, request.endDate)
+    ) {
+      throw new Error("已過去的月份無法變更請假申請");
+    }
+
     if (status === "approved" && request?.type === "補休假") {
       const balance = getCompLeaveBalance(request.employeeId);
       if (balance < request.leaveHours) {
         throw new Error(`補休餘額不足（可用 ${balance} 小時，需要 ${request.leaveHours} 小時）`);
       }
+    }
+
+    if (status === "approved" && request?.type === "特休") {
+      const emp = employees.find((e) => e.id === request.employeeId);
+      if (emp) {
+        const year = new Date(request.startDate).getFullYear();
+        const quotaDays = getAnnualLeaveQuota(emp, year) + getTotalAdjustmentDays(request.employeeId, year);
+        const usedHours = leaveRequests
+          .filter(
+            (r) =>
+              r.id !== id &&
+              r.employeeId === request.employeeId &&
+              r.type === "特休" &&
+              r.status === "approved" &&
+              new Date(r.startDate).getFullYear() === year
+          )
+          .reduce((sum, r) => sum + r.leaveHours, 0);
+        const needHours = request.leaveHours;
+        if (usedHours + needHours > quotaDays * 8) {
+          const remainDays = Math.max(0, quotaDays - usedHours / 8);
+          throw new Error(
+            `特休餘額不足（剩餘約 ${remainDays.toFixed(1)} 天，本次需要 ${(needHours / 8).toFixed(1)} 天）`
+          );
+        }
+      }
+    }
+
+    let leaveSnapshot: ScheduleSnapshotEntry[] | undefined;
+    if (request && status === "approved" && prevStatus !== "approved") {
+      leaveSnapshot = await buildLeaveScheduleSnapshot(
+        request.employeeId,
+        request.startDate,
+        request.endDate
+      );
     }
 
     await supabase
@@ -1756,10 +1882,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         reviewed_by: currentUser?.id,
         reviewed_at: new Date().toISOString(),
         ...(rejectReason ? { reject_reason: rejectReason } : {}),
+        ...(leaveSnapshot ? { schedule_snapshot: leaveSnapshot } : {}),
       })
       .eq("id", id);
 
     if (request) {
+      if (status === "approved" && prevStatus !== "approved") {
+        const requestWithSnapshot = leaveSnapshot
+          ? { ...request, scheduleSnapshot: leaveSnapshot }
+          : request;
+        await applyApprovedLeaveToSchedule(requestWithSnapshot);
+      }
+      if (prevStatus === "approved" && status !== "approved") {
+        await revertApprovedLeaveFromSchedule(request);
+        await supabase
+          .from("leave_applications")
+          .update({ schedule_snapshot: null })
+          .eq("id", id);
+      }
       if (status === "approved" && prevStatus !== "approved" && request.type === "補休假") {
         await supabase.from("comp_leave_ledger").insert({
           user_id: request.employeeId,
@@ -1808,6 +1948,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteLeaveRequest = async (id: string) => {
+    const request = leaveRequests.find((item) => item.id === id);
+    if (request?.status === "approved") {
+      await revertApprovedLeaveFromSchedule(request);
+    }
+
     const { data, error } = await supabase
       .from("leave_applications")
       .delete()
@@ -1826,9 +1971,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">) => {
     const touchesPastMonth =
-      isPastMonth(request.requesterDate) || isPastMonth(request.targetDate);
+      isPastDate(request.requesterDate) || isPastDate(request.targetDate);
     if (touchesPastMonth) {
-      throw new Error("已進入新月份，無法再送過去月份的換班申請");
+      throw new Error("已過去的月份無法再提出換班申請");
     }
 
     const isSelfSwap = request.requesterId === request.targetEmployeeId;
@@ -1849,33 +1994,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   /** 還原已核准換班寫入的 schedule_entries，讓班表回到換班前狀態 */
   const revertApprovedSwap = async (request: SwapRequest) => {
-    const isSelfSwap = request.requesterId === request.targetEmployeeId;
-
-    if (isSelfSwap) {
-      await supabase
-        .from("schedule_entries")
-        .delete()
-        .eq("user_id", request.requesterId)
-        .eq("date", request.targetDate);
-      await supabase
-        .from("schedule_entries")
-        .delete()
-        .eq("user_id", request.requesterId)
-        .eq("date", request.requesterDate);
+    if (request.scheduleSnapshot?.length) {
+      await restoreScheduleSnapshot(supabase, request.scheduleSnapshot, currentUser?.id);
     } else {
-      await supabase
-        .from("schedule_entries")
-        .delete()
-        .eq("user_id", request.requesterId)
-        .eq("date", request.targetDate);
-      await supabase
-        .from("schedule_entries")
-        .delete()
-        .eq("user_id", request.targetEmployeeId)
-        .eq("date", request.requesterDate);
+      const isSelfSwap = request.requesterId === request.targetEmployeeId;
+      if (isSelfSwap) {
+        await supabase
+          .from("schedule_entries")
+          .delete()
+          .eq("user_id", request.requesterId)
+          .eq("date", request.targetDate);
+        await supabase
+          .from("schedule_entries")
+          .delete()
+          .eq("user_id", request.requesterId)
+          .eq("date", request.requesterDate);
+      } else {
+        for (const entry of [
+          { userId: request.requesterId, date: request.targetDate },
+          { userId: request.requesterId, date: request.requesterDate },
+          { userId: request.targetEmployeeId, date: request.requesterDate },
+          { userId: request.targetEmployeeId, date: request.targetDate },
+        ]) {
+          await supabase
+            .from("schedule_entries")
+            .delete()
+            .eq("user_id", entry.userId)
+            .eq("date", entry.date);
+        }
+      }
     }
-
+    await supabase
+      .from("shift_swap_applications")
+      .update({ schedule_snapshot: null })
+      .eq("id", request.id);
     await loadScheduleOverrides();
+  };
+
+  const buildSwapScheduleSnapshot = async (
+    request: SwapRequest,
+    isSelfSwap: boolean
+  ): Promise<ScheduleSnapshotEntry[]> => {
+    const cells = isSelfSwap
+      ? [
+          { userId: request.requesterId, date: request.requesterDate },
+          { userId: request.requesterId, date: request.targetDate },
+        ]
+      : [
+          { userId: request.requesterId, date: request.requesterDate },
+          { userId: request.requesterId, date: request.targetDate },
+          { userId: request.targetEmployeeId, date: request.requesterDate },
+          { userId: request.targetEmployeeId, date: request.targetDate },
+        ];
+    const userIds = Array.from(new Set(cells.map((c) => c.userId)));
+    const dates = Array.from(new Set(cells.map((c) => c.date)));
+    const dbMap = await fetchDbScheduleShifts(supabase, userIds, dates);
+    return cells.map(({ userId, date }) => {
+      const key = `${userId}:${date}`;
+      const hadDbEntry = dbMap.has(key);
+      const shift = hadDbEntry ? dbMap.get(key)! : getShiftForDate(date, userId);
+      return { userId, date, shift, hadDbEntry };
+    });
   };
 
   const updateSwapRequestStatus = async (
@@ -1886,6 +2065,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const request = swapRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
     const dbStatus = mapSwapStatusToDb(status);
+
+    if (
+      request &&
+      status !== prevStatus &&
+      (isPastDate(request.requesterDate) || isPastDate(request.targetDate))
+    ) {
+      throw new Error("已過去的月份無法變更換班申請");
+    }
 
     await supabase
       .from("shift_swap_applications")
@@ -1937,109 +2124,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      if (status === "approved") {
-        // 核准時實際交換班表
+      if (status === "approved" && prevStatus !== "approved") {
         const isSelfSwap = request.requesterId === request.targetEmployeeId;
-        
-        //  Helper: 獲取某員工在某日期的班表（從 schedule state、DB 或預設邏輯）
-        const getEffectiveShift = (employeeId: string, date: string): string => {
-          // 先檢查 schedule state（這是內存中的班表數據）
-          const stateShift = schedule[date]?.[employeeId];
-          if (stateShift) return stateShift;
-          
-          // 檢查 DB cache
-          const dbEntry = scheduleEntriesCache?.find(
-            r => r.user_id === employeeId && r.date === date
-          );
-          if (dbEntry?.shift_code) return dbEntry.shift_code;
-          
-          // 沒有記錄，回推預設班表（同步計算，與 getShiftForDate 同樣邏輯）
-          if (isSunday(date)) return "X";
-          const emp = employees.find(e => e.id === employeeId);
-          const isWednesdayRotation = emp?.isWednesdayRotation ?? false;
-          if (isSaturday(date)) {
-            return (leaveSelections[employeeId] ?? []).includes(date) ? "X" : "C";
-          }
-          if ((leaveSelections[employeeId] ?? []).includes(date)) return "X";
-          if (isWednesday(date) && isWednesdayRotation) {
-            const rotationEmployees = employees.filter(e => e.isWednesdayRotation);
-            if (rotationEmployees.length === 0) return "B";
-            if (rotationEmployees.length === 1) {
-              return employeeId === rotationEmployees[0].id ? "A" : "B";
-            }
-            const offEmployees = rotationEmployees.filter(e =>
-              (wednesdayOffSelections[e.id] ?? []).includes(date)
-            );
-            const onDutyEmployees = rotationEmployees.filter(e =>
-              !(wednesdayOffSelections[e.id] ?? []).includes(date)
-            );
-            if (offEmployees.length === rotationEmployees.length || onDutyEmployees.length === rotationEmployees.length) {
-              return "B";
-            }
-            const isOnDuty = onDutyEmployees.some(e => e.id === employeeId);
-            return isOnDuty ? "A" : "B";
-          }
-          // 一般固定班表
-          const dayOfWeek = new Date(date).getDay();
-          const fixedShift = fixedShifts.find(
-            s => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek
-          );
-          return fixedShift?.shift ?? "B";
-        };
-        
-        // 先從 DB 獲取所有相關的班表數據
-        const allDates = [request.requesterDate, request.targetDate];
-        const allEmployeeIds = isSelfSwap 
-          ? [request.requesterId] 
-          : [request.requesterId, request.targetEmployeeId];
-        
-        const { data: scheduleEntriesCache } = await supabase
-          .from("schedule_entries")
-          .select("user_id, date, shift_code")
-          .in("date", allDates)
-          .in("user_id", allEmployeeIds);
-        
+        const snapshot = await buildSwapScheduleSnapshot(request, isSelfSwap);
+
+        await supabase
+          .from("shift_swap_applications")
+          .update({ schedule_snapshot: snapshot })
+          .eq("id", id);
+
+        const reqShift = getShiftForDate(request.requesterDate, request.requesterId);
+        const targetShift = getShiftForDate(request.targetDate, request.targetEmployeeId);
+
         if (isSelfSwap) {
-          // 自己跟自己換班：交換該員工兩天的班表
-          const reqShift = getEffectiveShift(request.requesterId, request.requesterDate);
-          const targetShift = getEffectiveShift(request.requesterId, request.targetDate);
-          
-          // 交換班表（使用 upsert）
-          await supabase.from("schedule_entries").upsert({
-            user_id: request.requesterId,
-            date: request.targetDate,
-            shift_code: reqShift,
-            updated_by: currentUser?.id,
-          }, { onConflict: 'user_id,date' });
-          
-          await supabase.from("schedule_entries").upsert({
-            user_id: request.requesterId,
-            date: request.requesterDate,
-            shift_code: targetShift,
-            updated_by: currentUser?.id,
-          }, { onConflict: 'user_id,date' });
-          
+          await upsertScheduleShift(
+            supabase,
+            request.requesterId,
+            request.targetDate,
+            reqShift,
+            currentUser?.id
+          );
+          await upsertScheduleShift(
+            supabase,
+            request.requesterId,
+            request.requesterDate,
+            targetShift,
+            currentUser?.id
+          );
         } else {
-          // 與他人換班：申請者到對方日期承擔對方班別，對方到申請者日期承擔申請者班別
-          const reqShift = getEffectiveShift(request.requesterId, request.requesterDate);
-          const targetShift = getEffectiveShift(request.targetEmployeeId, request.targetDate);
-
-          await supabase.from("schedule_entries").upsert({
-            user_id: request.requesterId,
-            date: request.targetDate,
-            shift_code: targetShift,
-            updated_by: currentUser?.id,
-          }, { onConflict: 'user_id,date' });
-
-          await supabase.from("schedule_entries").upsert({
-            user_id: request.targetEmployeeId,
-            date: request.requesterDate,
-            shift_code: reqShift,
-            updated_by: currentUser?.id,
-          }, { onConflict: 'user_id,date' });
+          await upsertScheduleShift(
+            supabase,
+            request.requesterId,
+            request.targetDate,
+            targetShift,
+            currentUser?.id
+          );
+          await upsertScheduleShift(
+            supabase,
+            request.requesterId,
+            request.requesterDate,
+            "X",
+            currentUser?.id
+          );
+          await upsertScheduleShift(
+            supabase,
+            request.targetEmployeeId,
+            request.requesterDate,
+            reqShift,
+            currentUser?.id
+          );
+          await upsertScheduleShift(
+            supabase,
+            request.targetEmployeeId,
+            request.targetDate,
+            "X",
+            currentUser?.id
+          );
         }
-        
-        // 重新載入班表
+
         await loadScheduleOverrides();
       }
 
@@ -2095,8 +2237,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Overtime requests (Supabase) ────────────────────────────────────────────
 
   const addOvertimeRequest = async (request: Omit<OvertimeRequest, "id" | "createdAt">) => {
-    if (isPastMonth(request.date)) {
-      throw new Error("已進入新月份，無法再送過去月份的加班申請");
+    if (isPastDate(request.date)) {
+      throw new Error("已過去的月份無法再提出加班申請");
     }
 
     await supabase.from("overtime_applications").insert({
@@ -2121,6 +2263,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateOvertimeRequestStatus = async (id: string, status: "approved" | "rejected", rejectReason?: string) => {
     const request = overtimeRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
+
+    if (request && status !== prevStatus && isPastDate(request.date)) {
+      throw new Error("已過去的月份無法變更加班申請");
+    }
 
     await supabase
       .from("overtime_applications")

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
+import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
 
 export default function OvertimePage() {
   const { currentUser, employees, overtimeRequests, addOvertimeRequest, updateOvertimeRequestStatus, deleteOvertimeRequest, punchRecords } = useApp();
@@ -26,21 +27,25 @@ export default function OvertimePage() {
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
-    addOvertimeRequest({
-      employeeId: currentUser.id,
-      employeeName: currentUser.name,
-      date: formData.date,
-      startTime: formData.startTime,
-      endTime: formData.endTime,
-      reason: formData.reason,
-      compensationType: formData.compensationType,
-      status: "pending",
-    });
-    setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" });
-    setShowForm(false);
+    try {
+      await addOvertimeRequest({
+        employeeId: currentUser.id,
+        employeeName: currentUser.name,
+        date: formData.date,
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        reason: formData.reason,
+        compensationType: formData.compensationType,
+        status: "pending",
+      });
+      setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" });
+      setShowForm(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "申請失敗");
+    }
   };
 
   const calcHours = (s: string, e: string) => {
@@ -78,7 +83,7 @@ export default function OvertimePage() {
           <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
-              <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })}
+              <input type="date" value={formData.date} min={currentMonthMinDate()} onChange={e => setFormData({ ...formData, date: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg" required />
             </div>
             <div className="grid grid-cols-2 gap-4">

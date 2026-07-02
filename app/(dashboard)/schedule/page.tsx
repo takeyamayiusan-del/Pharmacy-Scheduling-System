@@ -5,6 +5,8 @@ import { useApp, type ShiftType } from "@/lib/context/AppContext";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
+import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
+import { calculateEffectiveShift } from "@/lib/schedule/effectiveShift";
 import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
@@ -80,6 +82,7 @@ export default function SchedulePage() {
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showOriginalShift, setShowOriginalShift] = useState(false); // 新增：是否顯示原始班表
   const [activeLegendShift, setActiveLegendShift] = useState<ShiftType | null>(null);
+  const [lockingMonth, setLockingMonth] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   
   const year = currentDate.getFullYear();
@@ -87,6 +90,7 @@ export default function SchedulePage() {
   const daysInMonth = new Date(year, month, 0).getDate();
   const saturdayCount = countSaturdaysInMonth(year, month);
   const monthLocked = isLeaveMonthLocked(year, month);
+  const viewingPastMonth = isPastMonth(year, month);
   const scheduleWarnings = buildScheduleWarnings({
     year,
     month,
@@ -136,11 +140,19 @@ export default function SchedulePage() {
 
   const toggleMonthLock = async () => {
     if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) return;
-    if (monthLocked) {
-      await unlockLeaveMonth(year, month);
-      return;
+    if (lockingMonth) return;
+    setLockingMonth(true);
+    try {
+      if (monthLocked) {
+        await unlockLeaveMonth(year, month);
+      } else {
+        await lockLeaveMonth(year, month, currentUser.id);
+      }
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "班表鎖定操作失敗");
+    } finally {
+      setLockingMonth(false);
     }
-    await lockLeaveMonth(year, month, currentUser.id);
   };
 
   const handleExportPdf = async (layout: ExportLayout) => {
@@ -179,101 +191,6 @@ export default function SchedulePage() {
     setShowExportModal(false);
   };
 
-  // 計算請假後的剩餘工作時段，返回新的班別
-  const calculateEffectiveShift = (
-    originalShift: ShiftType,
-    leaveStartTime: string,
-    leaveEndTime: string
-  ): { shift: ShiftType | null; details: string } => {
-    // 班別時段定義
-    const shiftTimeSlots: Record<ShiftType, { start: string; end: string }[]> = {
-      A: [{ start: "08:30", end: "12:00" }, { start: "13:30", end: "17:00" }, { start: "19:00", end: "21:00" }],
-      B: [{ start: "08:30", end: "12:00" }, { start: "13:30", end: "18:00" }],
-      C: [{ start: "08:30", end: "12:00" }],
-      D: [{ start: "13:30", end: "18:00" }],
-      E: [{ start: "13:30", end: "17:00" }, { start: "19:00", end: "21:00" }],
-      X: [],
-    };
-
-    const timeToMinutes = (time: string): number => {
-      const [h, m] = time.split(":").map(Number);
-      return h * 60 + m;
-    };
-
-    const minutesToTime = (mins: number): string => {
-      const h = Math.floor(mins / 60);
-      const m = mins % 60;
-      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-    };
-
-    const slots = shiftTimeSlots[originalShift];
-    if (!slots || slots.length === 0) {
-      return { shift: null, details: "休假" };
-    }
-
-    const leaveStart = timeToMinutes(leaveStartTime);
-    const leaveEnd = timeToMinutes(leaveEndTime);
-
-    // 計算每個時段被請假覆蓋的情況
-    const remainingSlots: { start: string; end: string }[] = [];
-    
-    for (const slot of slots) {
-      const slotStart = timeToMinutes(slot.start);
-      const slotEnd = timeToMinutes(slot.end);
-      
-      // 如果請假完全覆蓋這個時段，不保留
-      if (leaveStart <= slotStart && leaveEnd >= slotEnd) {
-        continue;
-      }
-      
-      // 如果請假完全在這個時段之外，保留整個時段
-      if (leaveEnd <= slotStart || leaveStart >= slotEnd) {
-        remainingSlots.push({ start: slot.start, end: slot.end });
-        continue;
-      }
-      
-      // 如果請假部分覆蓋這個時段
-      if (leaveStart > slotStart && leaveStart < slotEnd) {
-        // 請假從時段中間開始，保留前半段
-        remainingSlots.push({ start: slot.start, end: minutesToTime(leaveStart) });
-      }
-      
-      if (leaveEnd > slotStart && leaveEnd < slotEnd) {
-        // 請假在時段中間結束，保留後半段
-        remainingSlots.push({ start: minutesToTime(leaveEnd), end: slot.end });
-      }
-    }
-
-    // 根據剩餘時段判斷新的班別
-    if (remainingSlots.length === 0) {
-      return { shift: null, details: "全日請假" };
-    }
-
-    // 將時段轉換為文字描述
-    const details = remainingSlots.map(s => `${s.start}-${s.end}`).join(", ");
-
-    // 根據剩餘時段匹配班別
-    const checkMatch = (shiftSlots: { start: string; end: string }[]): boolean => {
-      if (shiftSlots.length !== remainingSlots.length) return false;
-      for (let i = 0; i < shiftSlots.length; i++) {
-        if (shiftSlots[i].start !== remainingSlots[i].start || shiftSlots[i].end !== remainingSlots[i].end) {
-          return false;
-        }
-      }
-      return true;
-    };
-
-    // 檢查是否匹配現有班別
-    for (const [shift, shiftSlots] of Object.entries(shiftTimeSlots)) {
-      if (checkMatch(shiftSlots)) {
-        return { shift: shift as ShiftType, details };
-      }
-    }
-
-    // 如果沒有完全匹配的班別，返回自定義時段
-    return { shift: null, details };
-  };
-
   // 獲取員工在特定日期的請假或加班資訊
   const getEmployeeShiftInfo = (date: string, employeeId: string) => {
     const originalShift = getShiftForDate(date, employeeId);
@@ -295,22 +212,19 @@ export default function SchedulePage() {
         req.status === "approved"
     );
     
-    // 計算請假後的有效班別
     let effectiveShift = originalShift;
     let effectiveShiftDetails = "";
-    
+    let isPartialLeave = false;
+
     if (approvedLeave) {
       const result = calculateEffectiveShift(
         originalShift,
         approvedLeave.startTime,
         approvedLeave.endTime
       );
-      if (result.shift === null) {
-        effectiveShift = "X"; // 全日請假
-      } else {
-        effectiveShift = result.shift;
-      }
+      effectiveShift = result.shift ?? "X";
       effectiveShiftDetails = result.details;
+      isPartialLeave = result.isPartial && effectiveShift !== "X";
     }
 
     return {
@@ -318,6 +232,7 @@ export default function SchedulePage() {
       effectiveShift,
       effectiveShiftDetails,
       hasLeave: !!approvedLeave,
+      isPartialLeave,
       hasOvertime: !!approvedOvertime,
       leaveType: approvedLeave?.type,
       leaveStartTime: approvedLeave?.startTime,
@@ -379,8 +294,9 @@ export default function SchedulePage() {
   // 檢查是否可以編輯
   const canEdit = (employeeId: string, dateStr: string): boolean => {
     if (!currentUser) return false;
-    if (isSunday(dateStr)) return false; // 禮拜日不能編輯
-    if (currentUser.role === "owner") return true; // 老闆可以編輯所有人
+    if (isPastDate(dateStr)) return false;
+    if (isSunday(dateStr)) return false;
+    if (currentUser.role === "owner") return true;
     if (currentUser.role === "manager") return true;
     return false;
   };
@@ -408,21 +324,13 @@ export default function SchedulePage() {
     const editable = canEdit(employeeId, date);
     const holidayInfo = getHolidayInfo(date);
     const isSun = isSunday(date);
-    // 檢查是否是禮拜三晚班輪流
+    const shiftInfo = getEmployeeShiftInfo(date, employeeId);
+    const displayShift = shiftInfo.hasLeave ? shiftInfo.effectiveShift : shift;
+    const isFullDayLeave = shiftInfo.hasLeave && shiftInfo.effectiveShift === "X";
+    const isPartialLeave = shiftInfo.isPartialLeave;
     const wednesdayNightShift = wednesdayNightShifts.find(s => s.date === date && s.employeeId === employeeId);
-    
-    // 檢查是否有固定班表
     const dayOfWeek = new Date(date).getDay();
     const hasFixedShift = fixedShifts.some(f => f.employeeId === employeeId && f.dayOfWeek === dayOfWeek);
-
-    // 檢查是否有核准的請假申請
-    const approvedLeaveRequest = leaveRequests.find(
-      (req) =>
-        req.employeeId === employeeId &&
-        req.startDate <= date &&
-        req.endDate >= date &&
-        req.status === "approved"
-    );
 
     if (isEditing) {
       return (
@@ -458,22 +366,31 @@ export default function SchedulePage() {
         <div
           onClick={() => editable && startEditing(date, employeeId)}
           style={
-            approvedLeaveRequest
+            isFullDayLeave
               ? undefined
               : {
-                  backgroundColor: shiftDisplayConfig[shift].bgColor,
-                  color: shiftDisplayConfig[shift].textColor,
-                  borderColor: shiftDisplayConfig[shift].borderColor,
+                  backgroundColor: shiftDisplayConfig[displayShift].bgColor,
+                  color: shiftDisplayConfig[displayShift].textColor,
+                  borderColor: shiftDisplayConfig[displayShift].borderColor,
                 }
           }
-          className={`h-10 flex items-center justify-center rounded font-medium border-2 ${approvedLeaveRequest ? "bg-violet-500 text-white border-violet-600" : ""} ${editable ? "cursor-pointer hover:opacity-80" : ""} ${isSun && !approvedLeaveRequest ? "bg-red-50" : ""} ${hasFixedShift ? "ring-2 ring-orange-400" : ""}`}
+          className={`h-10 flex items-center justify-center rounded font-medium border-2 ${isFullDayLeave ? "bg-violet-500 text-white border-violet-600" : ""} ${editable ? "cursor-pointer hover:opacity-80" : ""} ${isSun && !isFullDayLeave ? "bg-red-50" : ""} ${hasFixedShift ? "ring-2 ring-orange-400" : ""}`}
+          title={isPartialLeave ? `半日請假：${shiftInfo.effectiveShiftDetails}` : undefined}
         >
-          {approvedLeaveRequest ? "假" : shiftDisplayConfig[shift].displayText}
+          {isFullDayLeave ? "假" : shiftDisplayConfig[displayShift].displayText}
           {editable && <span className="ml-1 text-[10px]">✏️</span>}
         </div>
         
         {/* 標記 */}
-        {isSun && shift === "X" && (
+        {isPartialLeave && (
+          <div
+            className="absolute -top-1 -left-1 bg-amber-500 text-white text-xs font-bold rounded-full w-4 h-4 flex items-center justify-center shadow z-10"
+            title={`半日請假 ${shiftInfo.leaveStartTime}–${shiftInfo.leaveEndTime}`}
+          >
+            !
+          </div>
+        )}
+        {isSun && displayShift === "X" && (
           <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
             日
           </div>
@@ -577,8 +494,12 @@ export default function SchedulePage() {
             匯出班表
           </button>
           {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
-            <button onClick={toggleMonthLock} className={monthLocked ? "app-btn-outline border-red-300 text-red-700" : "app-btn-outline"}>
-              {monthLocked ? "解除本月班表鎖定" : "鎖定本月班表"}
+            <button
+              onClick={toggleMonthLock}
+              disabled={lockingMonth}
+              className={monthLocked ? "app-btn-outline border-red-300 text-red-700 disabled:opacity-60" : "app-btn-outline disabled:opacity-60"}
+            >
+              {lockingMonth ? "處理中..." : monthLocked ? "解除本月班表鎖定" : "鎖定本月班表"}
             </button>
           )}
           {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
@@ -605,7 +526,8 @@ export default function SchedulePage() {
           {currentUser?.role === "owner" && <span className="text-blue-600">👑 您可以編輯所有人的班表</span>}
           {currentUser?.role === "manager" && <span className="text-green-600">👔 您可以編輯所有人的班表與審核申請</span>}
           {currentUser?.role === "staff" && <span className="text-gray-500">👤 僅檢視班表</span>}
-          {monthLocked && <span className="ml-3 text-red-600 font-medium">🔒 本月班表已鎖定（固定班調整不回寫本月）</span>}
+          {monthLocked && <span className="ml-3 text-red-600 font-medium">🔒 本月班表已鎖定（員工無法改排休；店長可調班表；請假／換班／加班仍可申請）</span>}
+          {viewingPastMonth && <span className="ml-3 text-gray-600 font-medium">📅 已過去的月份僅供查閱，無法修改班表或申請</span>}
         </div>
         {holidayRefreshMessage && (
           <div className="mt-2 text-sm text-emerald-700">
@@ -723,16 +645,34 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      <div className="app-card bg-amber-50/80 border-amber-200 p-4">
-        <h3 className="font-medium text-amber-800 mb-3">⚠️ 班表提醒</h3>
-        <div className="space-y-2 text-sm text-amber-900">
-          {scheduleWarnings.map((warning) => (
-            <div key={warning.dateStr}>
-              <span className="font-medium">{month}/{warning.day}</span>：
-              {warning.messages.join("；")}
-            </div>
-          ))}
-        </div>
+      <div
+        className={`app-card p-4 ${
+          scheduleWarnings.length > 0
+            ? "bg-amber-50/80 border-amber-200"
+            : "bg-green-50/80 border-green-200"
+        }`}
+      >
+        <h3
+          className={`font-medium mb-3 ${
+            scheduleWarnings.length > 0 ? "text-amber-800" : "text-green-800"
+          }`}
+        >
+          {scheduleWarnings.length > 0 ? "⚠️ 班表提醒" : "✅ 班表提醒"}
+        </h3>
+        {scheduleWarnings.length > 0 ? (
+          <div className="space-y-2 text-sm text-amber-900">
+            {scheduleWarnings.map((warning) => (
+              <div key={warning.dateStr}>
+                <span className="font-medium">{month}/{warning.day}</span>：
+                {warning.messages.join("；")}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-green-800">
+            本月排班檢查無異常：全天班有人值班、禮拜六至少 2 人上班，目前沒有衝突。
+          </p>
+        )}
       </div>
 
       {/* 班表 */}

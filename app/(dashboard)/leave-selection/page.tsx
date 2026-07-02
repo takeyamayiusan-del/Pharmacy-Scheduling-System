@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
+import { isPastMonth } from "@/lib/schedule/monthAccess";
 
 /** 含晚班的全天班（與班表邏輯一致） */
 const FULL_DAY_EVENING_SHIFT = "A" as const;
@@ -46,6 +47,7 @@ export default function LeaveSelectionPage() {
   const leaveSummary = currentUser ? getLeaveSummary(currentUser.id, year, month) : null;
   const selectedDates = leaveSummary?.selectedDates ?? [];
   const monthLocked = isLeaveMonthLocked(year, month);
+  const viewingPastMonth = isPastMonth(year, month);
   const weekdayOffOnly = currentUser?.isWeekdayOffRule ?? false;
 
   const remaining = {
@@ -119,7 +121,11 @@ export default function LeaveSelectionPage() {
   const toggleDate = (day: number) => {
     if (!currentUser) return;
     if (monthLocked) {
-      alert("本月份排休已鎖定，僅可選擇後續月份");
+      alert("本月份班表已鎖定，無法變更排休選擇（請假／換班／加班仍可申請）");
+      return;
+    }
+    if (viewingPastMonth) {
+      alert("已過去的月份無法變更排休選擇");
       return;
     }
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -145,6 +151,7 @@ export default function LeaveSelectionPage() {
 
   const canSelectDate = (day: number) => {
     if (!currentUser) return false;
+    if (viewingPastMonth) return false;
     if (monthLocked) return false;
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     if (selectedDates.includes(dateStr)) return true;
@@ -170,7 +177,15 @@ export default function LeaveSelectionPage() {
       {monthLocked && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
           <p className="text-sm font-medium text-red-700">
-            本月份排休已由店長鎖定，請改選後續月份。
+            本月份班表已由店長鎖定，無法變更排休選擇。請假、換班、加班仍可申請；店長可於班表頁調整。
+          </p>
+        </div>
+      )}
+
+      {viewingPastMonth && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+          <p className="text-sm font-medium text-gray-700">
+            已過去的月份僅供查閱，無法變更排休選擇或提出該月申請。
           </p>
         </div>
       )}
@@ -229,9 +244,21 @@ export default function LeaveSelectionPage() {
         </p>
       </div>
 
-      {warnings.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-          <h3 className="font-medium text-amber-800 mb-2">⚠️ 排班提醒</h3>
+      <div
+        className={`rounded-xl p-4 border ${
+          warnings.length > 0
+            ? "bg-amber-50 border-amber-200"
+            : "bg-green-50 border-green-200"
+        }`}
+      >
+        <h3
+          className={`font-medium mb-2 ${
+            warnings.length > 0 ? "text-amber-800" : "text-green-800"
+          }`}
+        >
+          {warnings.length > 0 ? "⚠️ 排班提醒" : "✅ 排班提醒"}
+        </h3>
+        {warnings.length > 0 ? (
           <div className="space-y-2 text-sm text-amber-900">
             {warnings.map((warning) => (
               <div key={warning.dateStr}>
@@ -240,8 +267,12 @@ export default function LeaveSelectionPage() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-sm text-green-800">
+            本月排班檢查無異常：全天班有人值班、禮拜六至少 2 人上班，目前沒有衝突。
+          </p>
+        )}
+      </div>
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         <div className="p-4">
