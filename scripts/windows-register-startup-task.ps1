@@ -1,19 +1,67 @@
-# Register auto-start on Windows logon (Task Scheduler)
+# Register auto-start + funnel watchdog (Task Scheduler)
 # Run as Administrator:
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-register-startup-task.ps1
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $StartScript = Join-Path $ProjectRoot "scripts\windows-start-all.ps1"
-$TaskName = "YaoshengPharmacyStart"
+$WatchdogScript = Join-Path $ProjectRoot "scripts\windows-funnel-watchdog.ps1"
+$StartTaskName = "YaoshengPharmacyStart"
+$WatchdogTaskName = "YaoshengPharmacyWatchdog"
 
-$action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$StartScript`""
-$trigger = New-ScheduledTaskTrigger -AtLogOn
-$principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+$settings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Hours 2) `
+    -RestartCount 2 `
+    -RestartInterval (New-TimeSpan -Minutes 5)
 
-Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
-Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Description "Yaosheng pharmacy auto start"
+# 開機後 3 分鐘 + 登入時 各跑一次完整啟動
+$triggerStartup = New-ScheduledTaskTrigger -AtStartup
+$triggerStartup.Delay = "PT3M"
+$triggerLogon = New-ScheduledTaskTrigger -AtLogOn
+
+$startAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$StartScript`""
+
+# SYSTEM 帳號：重開機無需有人登入也會執行
+$startPrincipal = New-ScheduledTaskPrincipal `
+    -UserId "SYSTEM" `
+    -LogonType ServiceAccount `
+    -RunLevel Highest
+
+Unregister-ScheduledTask -TaskName $StartTaskName -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask `
+    -TaskName $StartTaskName `
+    -Action $startAction `
+    -Trigger @($triggerStartup, $triggerLogon) `
+    -Principal $startPrincipal `
+    -Settings $settings `
+    -Description "Yaosheng pharmacy: VM + Supabase proxy + Next.js + Tailscale Funnel"
+
+# 每 15 分鐘檢查外網；Funnel 掉了自動修復
+$watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$WatchdogScript`""
+
+$triggerWatchdog = New-ScheduledTaskTrigger -Once -At (Get-Date).Date `
+    -RepetitionInterval (New-TimeSpan -Minutes 15) `
+    -RepetitionDuration (New-TimeSpan -Days 3650)
+
+$watchdogSettings = New-ScheduledTaskSettingsSet `
+    -AllowStartIfOnBatteries `
+    -DontStopIfGoingOnBatteries `
+    -StartWhenAvailable `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
+
+Unregister-ScheduledTask -TaskName $WatchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
+Register-ScheduledTask `
+    -TaskName $WatchdogTaskName `
+    -Action $watchdogAction `
+    -Trigger $triggerWatchdog `
+    -Principal $startPrincipal `
+    -Settings $watchdogSettings `
+    -Description "Yaosheng pharmacy: auto-repair Tailscale Funnel if external URL fails"
 
 $vm = Get-VM -Name "yaosheng-supabase" -ErrorAction SilentlyContinue
 if ($vm) {
@@ -22,5 +70,11 @@ if ($vm) {
 }
 
 Write-Host ""
-Write-Host "Scheduled task registered: $TaskName" -ForegroundColor Green
-Write-Host "On logon, runs: windows-start-all.ps1"
+Write-Host "Registered tasks:" -ForegroundColor Green
+Write-Host "  $StartTaskName  — AtStartup (+3min) + AtLogon"
+Write-Host "  $WatchdogTaskName — every 15 minutes"
+Write-Host ""
+Write-Host "Logs: $ProjectRoot\data\logs\funnel-watchdog.log"
+Write-Host ""
+Write-Host "Test watchdog now:" -ForegroundColor Yellow
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-funnel-watchdog.ps1"

@@ -15,6 +15,11 @@ import {
   calculateEffectiveShift,
   enumerateDatesInRange,
 } from "@/lib/schedule/effectiveShift";
+import { buildSwapShiftsAndChanges } from "@/lib/schedule/swapSchedule";
+import {
+  applyScheduleChangesToState,
+  revertSnapshotOnState,
+} from "@/lib/schedule/swapScheduleState";
 import {
   fetchDbScheduleShifts,
   restoreScheduleSnapshot,
@@ -150,7 +155,13 @@ export type BulletinItem = {
   authorName: string;
   title: string;
   content: string;
-  type: "announcement" | "shift_swap_request" | "shift_handoff";
+  type:
+    | "announcement"
+    | "cover_request"
+    | "task_completed"
+    | "day_off_notice"
+    | "must_do_today"
+    | "shift_handoff";
   status: "active" | "archived" | "completed";
   relatedId?: string;
   isUrgent: boolean;
@@ -331,12 +342,6 @@ const mapRole = (dbRole: string): "owner" | "manager" | "staff" => {
   return "staff";
 };
 
-const mapSwapStatusToBulletinStatus = (swapStatus: string): BulletinItem["status"] => {
-  if (swapStatus === "approved") return "completed";
-  if (swapStatus === "rejected") return "archived";
-  return "active";
-};
-
 // ─── Context type ─────────────────────────────────────────────────────────────
 
 interface AppContextType {
@@ -492,15 +497,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Load data from Supabase ────────────────────────────────────────────────
 
   const loadScheduleOverrides = useCallback(async () => {
-    const { data } = await supabase.from("schedule_entries").select("user_id, date, shift_code");
-    if (data) {
-      const result: ScheduleData = {};
-      data.forEach((r) => {
-        if (!result[r.date]) result[r.date] = {};
-        result[r.date][r.user_id] = r.shift_code as ShiftType;
-      });
-      setSchedule(result);
+    const { data, error } = await supabase.from("schedule_entries").select("user_id, date, shift_code");
+    if (error) {
+      console.error("loadScheduleOverrides:", error);
+      return;
     }
+    const result: ScheduleData = {};
+    (data ?? []).forEach((r) => {
+      if (!result[r.date]) result[r.date] = {};
+      result[r.date][r.user_id] = r.shift_code as ShiftType;
+    });
+    setSchedule(result);
   }, [supabase]);
 
   const loadLeaveSelections = useCallback(async () => {
@@ -639,17 +646,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .eq("year", year)
       .order("seniority_months", { ascending: true });
     if (data) {
-      setAnnualLeaveConfigs(
-        data.map((r) => ({
-          id: r.id,
-          year: r.year,
-          seniorityMonths: r.seniority_months,
-          days: Number(r.days),
-          description: r.description ?? undefined,
-          createdAt: r.created_at,
-          updatedAt: r.updated_at,
-        }))
-      );
+      const mapped = data.map((r) => ({
+        id: r.id,
+        year: r.year,
+        seniorityMonths: r.seniority_months,
+        days: Number(r.days),
+        description: r.description ?? undefined,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      }));
+      setAnnualLeaveConfigs((prev) => {
+        const otherYears = prev.filter((c) => c.year !== year);
+        return [...otherYears, ...mapped];
+      });
     }
   }, [supabase]);
 
@@ -1994,40 +2003,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   /** 還原已核准換班寫入的 schedule_entries，讓班表回到換班前狀態 */
   const revertApprovedSwap = async (request: SwapRequest) => {
-    if (request.scheduleSnapshot?.length) {
-      await restoreScheduleSnapshot(supabase, request.scheduleSnapshot, currentUser?.id);
-    } else {
-      const isSelfSwap = request.requesterId === request.targetEmployeeId;
-      if (isSelfSwap) {
-        await supabase
-          .from("schedule_entries")
-          .delete()
-          .eq("user_id", request.requesterId)
-          .eq("date", request.targetDate);
-        await supabase
-          .from("schedule_entries")
-          .delete()
-          .eq("user_id", request.requesterId)
-          .eq("date", request.requesterDate);
-      } else {
-        for (const entry of [
-          { userId: request.requesterId, date: request.targetDate },
-          { userId: request.requesterId, date: request.requesterDate },
-          { userId: request.targetEmployeeId, date: request.requesterDate },
-          { userId: request.targetEmployeeId, date: request.targetDate },
-        ]) {
-          await supabase
-            .from("schedule_entries")
-            .delete()
-            .eq("user_id", entry.userId)
-            .eq("date", entry.date);
-        }
-      }
+    const res = await fetch("/api/schedule/apply-swap", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        swapId: request.id,
+        action: "revert",
+        snapshot: request.scheduleSnapshot,
+      }),
+    });
+    const payload = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      snapshot?: ScheduleSnapshotEntry[];
+    };
+    if (!res.ok) {
+      throw new Error(payload.error ?? "還原換班班表失敗");
     }
-    await supabase
-      .from("shift_swap_applications")
-      .update({ schedule_snapshot: null })
-      .eq("id", request.id);
+    if (payload.snapshot?.length) {
+      setSchedule((prev) => revertSnapshotOnState(prev, payload.snapshot!));
+    }
     await loadScheduleOverrides();
   };
 
@@ -2042,8 +2036,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ]
       : [
           { userId: request.requesterId, date: request.requesterDate },
-          { userId: request.requesterId, date: request.targetDate },
-          { userId: request.targetEmployeeId, date: request.requesterDate },
           { userId: request.targetEmployeeId, date: request.targetDate },
         ];
     const userIds = Array.from(new Set(cells.map((c) => c.userId)));
@@ -2074,7 +2066,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("已過去的月份無法變更換班申請");
     }
 
-    await supabase
+    if (request && prevStatus === "approved" && status !== "approved") {
+      await revertApprovedSwap(request);
+    }
+
+    if (request && status === "approved" && prevStatus !== "approved") {
+      const isSelfSwap = request.requesterId === request.targetEmployeeId;
+      const snapshot = await buildSwapScheduleSnapshot(request, isSelfSwap);
+      const { changes } = buildSwapShiftsAndChanges(request, snapshot);
+
+      const res = await fetch("/api/schedule/apply-swap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          swapId: id,
+          action: "approve",
+          snapshot,
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        changes?: typeof changes;
+      };
+      if (!res.ok) {
+        throw new Error(payload.error ?? "核准換班寫入班表失敗");
+      }
+      setSchedule((prev) => applyScheduleChangesToState(prev, payload.changes ?? changes));
+      await loadScheduleOverrides();
+    }
+
+    const { error: statusError } = await supabase
       .from("shift_swap_applications")
       .update({
         status: dbStatus,
@@ -2084,12 +2105,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .eq("id", id);
 
-    if (request) {
-      // 取消審核或駁回已核准申請時，還原班表
-      if (prevStatus === "approved" && status !== "approved") {
-        await revertApprovedSwap(request);
-      }
+    if (statusError) {
+      throw new Error(`換班狀態更新失敗：${statusError.message}`);
+    }
 
+    if (request) {
       if (
         status === "pending_approval" &&
         prevStatus === "pending_confirmation"
@@ -2122,67 +2142,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           relatedId: id,
           relatedType: "shift_swap",
         });
-      }
-
-      if (status === "approved" && prevStatus !== "approved") {
-        const isSelfSwap = request.requesterId === request.targetEmployeeId;
-        const snapshot = await buildSwapScheduleSnapshot(request, isSelfSwap);
-
-        await supabase
-          .from("shift_swap_applications")
-          .update({ schedule_snapshot: snapshot })
-          .eq("id", id);
-
-        const reqShift = getShiftForDate(request.requesterDate, request.requesterId);
-        const targetShift = getShiftForDate(request.targetDate, request.targetEmployeeId);
-
-        if (isSelfSwap) {
-          await upsertScheduleShift(
-            supabase,
-            request.requesterId,
-            request.targetDate,
-            reqShift,
-            currentUser?.id
-          );
-          await upsertScheduleShift(
-            supabase,
-            request.requesterId,
-            request.requesterDate,
-            targetShift,
-            currentUser?.id
-          );
-        } else {
-          await upsertScheduleShift(
-            supabase,
-            request.requesterId,
-            request.targetDate,
-            targetShift,
-            currentUser?.id
-          );
-          await upsertScheduleShift(
-            supabase,
-            request.requesterId,
-            request.requesterDate,
-            "X",
-            currentUser?.id
-          );
-          await upsertScheduleShift(
-            supabase,
-            request.targetEmployeeId,
-            request.requesterDate,
-            reqShift,
-            currentUser?.id
-          );
-          await upsertScheduleShift(
-            supabase,
-            request.targetEmployeeId,
-            request.targetDate,
-            "X",
-            currentUser?.id
-          );
-        }
-
-        await loadScheduleOverrides();
       }
 
       if (status === "approved" || (status === "rejected" && prevStatus === "pending_approval")) {
@@ -2622,16 +2581,10 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   // ─── Notifications ────────────────────────────────────────────────────────────
 
   const loadBulletinItems = useCallback(async (): Promise<void> => {
-    const [boardResponse, swapResponse, readsResponse] = await Promise.all([
+    const [boardResponse, readsResponse] = await Promise.all([
       supabase
         .from("bulletin_board")
         .select("*, users(name)")
-        .order("created_at", { ascending: false }),
-      supabase
-        .from("shift_swap_applications")
-        .select(
-          "*, requester:users!shift_swap_applications_requester_id_fkey(name), target:users!shift_swap_applications_target_id_fkey(name)"
-        )
         .order("created_at", { ascending: false }),
       supabase
         .from("bulletin_reads")
@@ -2641,19 +2594,29 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     if (boardResponse.error) {
       console.error("[loadBulletinItems] bulletin_board error:", boardResponse.error);
     }
-    if (swapResponse.error) {
-      console.error("[loadBulletinItems] shift_swap_applications error:", swapResponse.error);
-    }
 
     const boardData = Array.isArray(boardResponse.data) ? boardResponse.data : [];
-    const swapData = Array.isArray(swapResponse.data) ? swapResponse.data : [];
     const readsData = Array.isArray(readsResponse.data) ? readsResponse.data : [];
 
-    // Set bulletin reads
     setBulletinReads(readsData.map((r: { bulletin_id: string; user_id: string }) => ({
       bulletinId: r.bulletin_id,
       userId: r.user_id,
     })));
+
+    const normalizeType = (rawType: string): BulletinItem["type"] => {
+      if (rawType === "shift_swap_request") return "cover_request";
+      const allowed: BulletinItem["type"][] = [
+        "announcement",
+        "cover_request",
+        "task_completed",
+        "day_off_notice",
+        "must_do_today",
+        "shift_handoff",
+      ];
+      return allowed.includes(rawType as BulletinItem["type"])
+        ? (rawType as BulletinItem["type"])
+        : "announcement";
+    };
 
     const boardItems = boardData.map((r) => ({
       id: r.id,
@@ -2661,7 +2624,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       authorName: (r.users as { name?: string } | null)?.name ?? "未知",
       title: r.title,
       content: r.content,
-      type: r.type as BulletinItem["type"],
+      type: normalizeType(r.type),
       status: r.status as BulletinItem["status"],
       relatedId: r.related_id,
       isUrgent: r.is_urgent ?? false,
@@ -2671,25 +2634,8 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       createdAt: r.created_at,
     }));
 
-    const swapItems = swapData.map((r) => ({
-      id: `swap-${r.id}`,
-      authorId: r.requester_id,
-      authorName: (r.requester as { name?: string } | null)?.name ?? "未知",
-      title: `${(r.requester as { name?: string } | null)?.name ?? "員工"} 申請 ${r.swap_date} 換班`,
-      content: `希望與 ${(r.target as { name?: string } | null)?.name ?? "同事"} 互換班次，換班日期：${r.swap_date}`,
-      type: "shift_swap_request" as BulletinItem["type"],
-      status: mapSwapStatusToBulletinStatus(r.status),
-      relatedId: r.id,
-      isUrgent: false,
-      isPinned: false,
-      targetType: "all" as const,
-      targetIds: [],
-      createdAt: r.created_at,
-    }));
-
-    // Sort: pinned first, then by createdAt
     setBulletinItems(
-      [...boardItems, ...swapItems].sort((a, b) => {
+      boardItems.sort((a, b) => {
         if (a.isPinned !== b.isPinned) return a.isPinned ? -1 : 1;
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       })

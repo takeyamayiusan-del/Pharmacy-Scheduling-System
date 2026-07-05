@@ -89,8 +89,8 @@ export default function LeaveSelectionPage() {
         await addBulletinItem({
           authorId: currentUser.id,
           title: `${month}/${day} 需代晚班`,
-          content: `${currentUser.name} 預計於 ${year}/${month}/${day} 排休，當日原為 ${shiftLabel}（含晚班），誠徵代晚班，歡迎洽詢換班。`,
-          type: "shift_swap_request",
+          content: `[COVER_DATE:${dateStr}]\n${currentUser.name} 預計於 ${year}/${month}/${day} 排休，當日原為 ${shiftLabel}（含晚班），誠徵代晚班，歡迎洽詢換班。`,
+          type: "cover_request",
           status: "active",
           isUrgent: false,
           isPinned: false,

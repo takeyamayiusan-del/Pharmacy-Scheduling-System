@@ -296,6 +296,7 @@ export default function AnnualLeaveSummaryPage() {
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
         <h3 className="text-sm font-semibold text-blue-800 mb-2">特休計算規則說明：</h3>
         <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
+          <li>入職未滿 6 個月：0 天特休（依<strong>目前</strong>年資計算）。</li>
           <li>入職滿 6 個月：給予 3 天特休。</li>
           <li>入職滿 1 年：給予 7 天特休。</li>
           <li>滿 2 年及以上：維持 7 天特休。</li>

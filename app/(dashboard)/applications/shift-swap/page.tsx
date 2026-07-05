@@ -14,6 +14,19 @@ export default function ShiftSwapPage() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ requesterDate: "", targetDate: "", targetEmployeeId: "" });
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const runSwapAction = async (id: string, action: () => Promise<void>) => {
+    if (actionId) return;
+    setActionId(id);
+    try {
+      await action();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "操作失敗，請稍後再試");
+    } finally {
+      setActionId(null);
+    }
+  };
 
   const source = searchParams.get("source");
   const sourceNote = searchParams.get("source_note");
@@ -188,12 +201,11 @@ export default function ShiftSwapPage() {
                     {canConfirm && (
                       <>
                         <button
-                          onClick={async () => {
-                            await updateSwapRequestStatus(req.id, "pending_approval");
-                          }}
-                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                          disabled={actionId === req.id}
+                          onClick={() => runSwapAction(req.id, () => updateSwapRequestStatus(req.id, "pending_approval"))}
+                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
                         >
-                          確認換班
+                          {actionId === req.id ? "處理中…" : "確認換班"}
                         </button>
                         <button
                           onClick={() => setRejectModal({ id: req.id, reason: "" })}
@@ -206,16 +218,26 @@ export default function ShiftSwapPage() {
                     {/* 管理者審核 */}
                     {canManagerAct && (
                       <>
-                        <button onClick={() => updateSwapRequestStatus(req.id, "approved")}
-                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">核准</button>
+                        <button
+                          disabled={actionId === req.id}
+                          onClick={() => runSwapAction(req.id, () => updateSwapRequestStatus(req.id, "approved"))}
+                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {actionId === req.id ? "處理中…" : "核准"}
+                        </button>
                         <button onClick={() => setRejectModal({ id: req.id, reason: "" })}
                           className="px-3 py-1 bg-orange-500 text-white rounded text-sm hover:bg-orange-600">駁回</button>
                       </>
                     )}
                     {/* 管理者取消審核 */}
                     {isManager && (req.status === "approved" || req.status === "rejected") && (
-                      <button onClick={() => updateSwapRequestStatus(req.id, "pending_approval")}
-                        className="px-2 py-1 border rounded text-xs hover:bg-gray-50">取消審核</button>
+                      <button
+                        disabled={actionId === req.id}
+                        onClick={() => runSwapAction(req.id, () => updateSwapRequestStatus(req.id, "pending_approval"))}
+                        className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {actionId === req.id ? "處理中…" : "取消審核"}
+                      </button>
                     )}
                     {/* 刪除 */}
                     {isManager && (
@@ -246,10 +268,19 @@ export default function ShiftSwapPage() {
               onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
               className="w-full border rounded-lg px-3 py-2 text-sm mb-3" rows={3} placeholder="請輸入原因（選填）" />
             <div className="flex gap-2">
-              <button onClick={async () => {
-                await updateSwapRequestStatus(rejectModal.id, "rejected", rejectModal.reason);
-                setRejectModal(null);
-              }} className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">確認</button>
+              <button
+                disabled={!!actionId}
+                onClick={() => {
+                  if (!rejectModal) return;
+                  void runSwapAction(rejectModal.id, async () => {
+                    await updateSwapRequestStatus(rejectModal.id, "rejected", rejectModal.reason);
+                    setRejectModal(null);
+                  });
+                }}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {actionId ? "處理中…" : "確認"}
+              </button>
               <button onClick={() => setRejectModal(null)} className="flex-1 py-2 border rounded-lg text-sm">取消</button>
             </div>
           </div>
