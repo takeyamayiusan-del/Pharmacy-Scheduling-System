@@ -1,12 +1,31 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
 
+const SOURCE_LABELS: Record<string, string> = {
+  adjustment: "手動調整",
+  overtime_credit: "加班累積",
+  leave_debit: "請假使用",
+  reversal: "取消退回",
+  expiry: "過期",
+};
+
 export default function OvertimePage() {
-  const { currentUser, employees, overtimeRequests, addOvertimeRequest, updateOvertimeRequestStatus, deleteOvertimeRequest, punchRecords } = useApp();
+  const {
+    currentUser,
+    employees,
+    overtimeRequests,
+    addOvertimeRequest,
+    updateOvertimeRequestStatus,
+    deleteOvertimeRequest,
+    punchRecords,
+    compLeaveLedger,
+    getCompLeaveBalance,
+    grantCompLeaveHours,
+  } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" as "pay" | "time_off" });
@@ -24,8 +43,26 @@ export default function OvertimePage() {
     }
   }, [searchParams]);
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
+  const [grantForm, setGrantForm] = useState({
+    employeeId: "",
+    hours: "",
+    note: "",
+  });
+  const [isGranting, setIsGranting] = useState(false);
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const staffEmployees = useMemo(
+    () => employees.filter((e) => e.role !== "owner"),
+    [employees]
+  );
+
+  const adjustmentHistory = useMemo(
+    () =>
+      compLeaveLedger
+        .filter((entry) => entry.sourceType === "adjustment")
+        .slice(0, 20),
+    [compLeaveLedger]
+  );
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -67,6 +104,27 @@ export default function OvertimePage() {
   const visibleRequests = isManager
     ? overtimeRequests
     : overtimeRequests.filter(r => r.employeeId === currentUser?.id);
+
+  const handleGrantCompLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!grantForm.employeeId || isGranting) return;
+    const hours = Number(grantForm.hours);
+    if (!Number.isFinite(hours) || hours === 0) {
+      alert("請輸入有效的時數（可為正數核發、負數扣回）");
+      return;
+    }
+
+    setIsGranting(true);
+    try {
+      await grantCompLeaveHours(grantForm.employeeId, hours, grantForm.note);
+      setGrantForm({ employeeId: "", hours: "", note: "" });
+      alert(hours > 0 ? "補休時數已核發" : "補休時數已扣回");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "操作失敗");
+    } finally {
+      setIsGranting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -124,6 +182,116 @@ export default function OvertimePage() {
               <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
             </div>
           </form>
+        </div>
+      )}
+
+      {isManager && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="p-4 border-b bg-emerald-50">
+            <h3 className="font-medium text-gray-900">補休時數管理</h3>
+            <p className="text-xs text-gray-600 mt-1">
+              店長／老闆可手動核發或扣回員工補休時數（半年內有效，與加班轉補休相同）
+            </p>
+          </div>
+
+          <div className="p-4 grid gap-6 lg:grid-cols-2">
+            <form onSubmit={handleGrantCompLeave} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">員工</label>
+                <select
+                  value={grantForm.employeeId}
+                  onChange={(e) => setGrantForm((prev) => ({ ...prev, employeeId: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  required
+                >
+                  <option value="">— 選擇員工 —</option>
+                  {staffEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}（可用 {getCompLeaveBalance(emp.id)} 小時）
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">時數</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  value={grantForm.hours}
+                  onChange={(e) => setGrantForm((prev) => ({ ...prev, hours: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  placeholder="例如：2 或 -1（扣回）"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">備註（選填）</label>
+                <input
+                  type="text"
+                  value={grantForm.note}
+                  onChange={(e) => setGrantForm((prev) => ({ ...prev, note: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  placeholder="例如：週末支援核發"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isGranting}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {isGranting ? "處理中..." : "確認調整補休"}
+              </button>
+            </form>
+
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">員工補休餘額</h4>
+              <div className="border rounded-lg divide-y max-h-56 overflow-y-auto">
+                {staffEmployees.map((emp) => (
+                  <div key={emp.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <span className="text-gray-900">{emp.name}</span>
+                    <span className="font-semibold text-emerald-700">
+                      {getCompLeaveBalance(emp.id)} 小時
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {adjustmentHistory.length > 0 && (
+            <div className="border-t p-4">
+              <h4 className="text-sm font-medium text-gray-700 mb-2">近期手動調整紀錄</h4>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-gray-500">
+                      <th className="text-left py-1 pr-2">時間</th>
+                      <th className="text-left py-1 pr-2">員工</th>
+                      <th className="text-left py-1 pr-2">時數</th>
+                      <th className="text-left py-1">備註</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adjustmentHistory.map((entry) => (
+                      <tr key={entry.id} className="border-t">
+                        <td className="py-1.5 pr-2 text-gray-600">
+                          {new Date(entry.createdAt).toLocaleDateString("zh-TW")}
+                        </td>
+                        <td className="py-1.5 pr-2">
+                          {employees.find((e) => e.id === entry.employeeId)?.name ?? "—"}
+                        </td>
+                        <td className={`py-1.5 pr-2 font-medium ${entry.hours > 0 ? "text-emerald-700" : "text-red-600"}`}>
+                          {entry.hours > 0 ? "+" : ""}
+                          {entry.hours} 小時
+                        </td>
+                        <td className="py-1.5 text-gray-600">{entry.note ?? SOURCE_LABELS.adjustment}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -390,6 +390,7 @@ interface AppContextType {
   getAnnualLeaveBalance: (employeeId: string, year: number) => number;
   getAvailableCompLeave: (employeeId: string) => { balance: number; expiring: Array<Record<string, unknown>> };
   loadCompLeaveLedger: () => Promise<void>;
+  grantCompLeaveHours: (employeeId: string, hours: number, note?: string) => Promise<void>;
   annualLeaveConfigs: AnnualLeaveConfig[];
   setAnnualLeaveConfigs: React.Dispatch<React.SetStateAction<AnnualLeaveConfig[]>>;
   annualLeaveAdjustments: AnnualLeaveAdjustment[];
@@ -2483,6 +2484,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { balance, expiring };
   }, [compLeaveLedger, getCompLeaveBalance, getCompLeaveExpiry]);
 
+  const grantCompLeaveHours = async (employeeId: string, hours: number, note?: string) => {
+    if (!currentUser) throw new Error("請先登入");
+    if (currentUser.role !== "owner" && currentUser.role !== "manager") {
+      throw new Error("僅店長或老闆可調整補休時數");
+    }
+    if (!Number.isFinite(hours) || hours === 0) {
+      throw new Error("請輸入有效的時數");
+    }
+
+    const employee = employees.find((e) => e.id === employeeId);
+    if (!employee) throw new Error("找不到員工");
+
+    const roundedHours = Math.round(hours * 100) / 100;
+    if (roundedHours < 0) {
+      const balance = getCompLeaveBalance(employeeId);
+      if (balance + roundedHours < 0) {
+        throw new Error(`補休餘額不足（目前 ${balance} 小時）`);
+      }
+    }
+
+    const expiresAt =
+      roundedHours > 0
+        ? (() => {
+            const d = new Date();
+            d.setMonth(d.getMonth() + 6);
+            return d.toISOString();
+          })()
+        : null;
+
+    const managerLabel = currentUser.role === "owner" ? "老闆" : "店長";
+    const defaultNote =
+      roundedHours > 0
+        ? `${managerLabel}核發補休 ${roundedHours} 小時`
+        : `${managerLabel}扣回補休 ${Math.abs(roundedHours)} 小時`;
+
+    const { error } = await supabase.from("comp_leave_ledger").insert({
+      user_id: employeeId,
+      hours: roundedHours,
+      source_type: "adjustment",
+      note: note?.trim() || defaultNote,
+      expires_at: expiresAt,
+    });
+    if (error) throw new Error(error.message || "調整補休失敗");
+
+    await loadCompLeaveLedger();
+
+    await insertNotification({
+      recipientId: employeeId,
+      type: "info",
+      title: roundedHours > 0 ? "補休時數已核發" : "補休時數已調整",
+      body: `${currentUser.name} ${roundedHours > 0 ? "核發" : "扣回"} ${Math.abs(roundedHours)} 小時補休。${note?.trim() ? `備註：${note.trim()}` : ""}`,
+      relatedType: "overtime",
+    });
+  };
+
   // 自動檢查補休過期並發送通知
   useEffect(() => {
     if (!currentUser || isLoading) return;
@@ -2894,6 +2950,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         getAnnualLeaveBalance,
         getAvailableCompLeave,
         loadCompLeaveLedger,
+        grantCompLeaveHours,
         annualLeaveConfigs,
         setAnnualLeaveConfigs,
         annualLeaveAdjustments,
