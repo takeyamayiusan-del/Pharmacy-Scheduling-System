@@ -14,7 +14,6 @@ import {
 } from "@/lib/bulletin/bulletinMeta";
 import {
   Megaphone,
-  MessageSquare,
   AlertTriangle,
   Trash2,
   Clock,

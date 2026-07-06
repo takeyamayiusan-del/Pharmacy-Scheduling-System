@@ -2528,7 +2528,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   
 
 const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => {
-    await supabase.from("punch_records").insert({
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
+    const isForOtherEmployee =
+      !!currentUser && record.employeeId !== currentUser.id;
+
+    if (isManagerActor && isForOtherEmployee) {
+      const res = await fetch("/api/attendance/punch-records", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ record }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error || "新增打卡紀錄失敗");
+      }
+      await loadPunchRecords();
+      return;
+    }
+
+    const { error } = await supabase.from("punch_records").insert({
       employee_id: record.employeeId,
       employee_name: record.employeeName,
       date: record.date,
@@ -2541,10 +2560,31 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       latitude: record.latitude,
       longitude: record.longitude,
     });
+    if (error) throw error;
     await loadPunchRecords();
   };
 
   const updatePunchRecord = async (id: string, updates: PunchRecordUpdate) => {
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
+    const target = punchRecords.find((p) => p.id === id);
+    const isForOtherEmployee =
+      !!currentUser && !!target && target.employeeId !== currentUser.id;
+
+    if (isManagerActor && isForOtherEmployee) {
+      const res = await fetch("/api/attendance/punch-records", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, updates }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error || "更新打卡紀錄失敗");
+      }
+      await loadPunchRecords();
+      return;
+    }
+
     const dbUpdates: Record<string, unknown> = {};
     if (updates.time !== undefined) dbUpdates.time = updates.time;
     if (updates.action !== undefined) dbUpdates.action = updates.action;
@@ -2557,14 +2597,28 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   };
 
   const deletePunchRecord = async (id: string) => {
-    await supabase.from("punch_records").delete().eq("id", id);
-    // 記錄審計日誌
-    const deletedRecord = punchRecords.find((p) => p.id === id);
-    if (deletedRecord) {
-      // 記錄審計日誌（使用當前使用者 ID）
-      // await logPunchAudit(id, "delete", deletedRecord, null, currentUser?.id || "");
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
+    const target = punchRecords.find((p) => p.id === id);
+    const isForOtherEmployee =
+      !!currentUser && !!target && target.employeeId !== currentUser.id;
+
+    if (isManagerActor && isForOtherEmployee) {
+      const res = await fetch("/api/attendance/punch-records", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error || "刪除打卡紀錄失敗");
+      }
+      await loadPunchRecords();
+      return;
     }
 
+    const { error } = await supabase.from("punch_records").delete().eq("id", id);
+    if (error) throw error;
     await loadPunchRecords();
   };
 
