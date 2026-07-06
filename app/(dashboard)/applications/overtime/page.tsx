@@ -13,6 +13,12 @@ const SOURCE_LABELS: Record<string, string> = {
   expiry: "過期",
 };
 
+function formatCompLeaveAmount(hours: number): string {
+  const rounded = Math.round(hours * 100) / 100;
+  const minutes = Math.round(Math.abs(hours) * 60);
+  return `${rounded > 0 ? "+" : ""}${rounded} 小時（${minutes} 分鐘）`;
+}
+
 export default function OvertimePage() {
   const {
     currentUser,
@@ -45,9 +51,12 @@ export default function OvertimePage() {
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
   const [grantForm, setGrantForm] = useState({
     employeeId: "",
-    hours: "",
+    amount: "",
+    unit: "hours" as "hours" | "minutes",
     note: "",
   });
+  const [historyEmployeeId, setHistoryEmployeeId] = useState("");
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [isGranting, setIsGranting] = useState(false);
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
@@ -56,12 +65,44 @@ export default function OvertimePage() {
     [employees]
   );
 
-  const adjustmentHistory = useMemo(
-    () =>
-      compLeaveLedger
-        .filter((entry) => entry.sourceType === "adjustment")
-        .slice(0, 20),
-    [compLeaveLedger]
+  const adjustmentHistory = useMemo(() => {
+    const items = compLeaveLedger.filter((entry) => entry.sourceType === "adjustment");
+    if (!historyEmployeeId) return items;
+    return items.filter((entry) => entry.employeeId === historyEmployeeId);
+  }, [compLeaveLedger, historyEmployeeId]);
+
+  const recentAdjustments = adjustmentHistory.slice(0, 2);
+
+  const renderAdjustmentRow = (entry: (typeof adjustmentHistory)[number], compact = false) => (
+    <div
+      key={entry.id}
+      className={`flex items-start justify-between gap-2 ${compact ? "py-1.5" : "py-2 border-t first:border-t-0"}`}
+    >
+      <div className="min-w-0">
+        <p className="text-xs text-gray-900">
+          {employees.find((e) => e.id === entry.employeeId)?.name ?? "—"}
+          <span className="text-gray-400 mx-1">·</span>
+          <span className="text-gray-500">
+            {new Date(entry.createdAt).toLocaleString("zh-TW", {
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+        </p>
+        {entry.note && (
+          <p className={`text-gray-400 truncate ${compact ? "text-[10px]" : "text-xs"}`}>
+            {entry.note}
+          </p>
+        )}
+      </div>
+      <span
+        className={`text-xs font-medium whitespace-nowrap ${entry.hours > 0 ? "text-emerald-700" : "text-red-600"}`}
+      >
+        {formatCompLeaveAmount(entry.hours)}
+      </span>
+    </div>
   );
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -108,16 +149,26 @@ export default function OvertimePage() {
   const handleGrantCompLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!grantForm.employeeId || isGranting) return;
-    const hours = Number(grantForm.hours);
-    if (!Number.isFinite(hours) || hours === 0) {
-      alert("請輸入有效的時數（可為正數核發、負數扣回）");
+    const raw = Number(grantForm.amount);
+    if (!Number.isFinite(raw) || raw === 0) {
+      alert("請輸入有效的時數或分鐘數（可為正數核發、負數扣回）");
+      return;
+    }
+
+    const hours =
+      grantForm.unit === "minutes"
+        ? Math.round((raw / 60) * 100) / 100
+        : Math.round(raw * 100) / 100;
+
+    if (hours === 0) {
+      alert("換算後時數為 0，請輸入較大的數值");
       return;
     }
 
     setIsGranting(true);
     try {
       await grantCompLeaveHours(grantForm.employeeId, hours, grantForm.note);
-      setGrantForm({ employeeId: "", hours: "", note: "" });
+      setGrantForm({ employeeId: "", amount: "", unit: "hours", note: "" });
       alert(hours > 0 ? "補休時數已核發" : "補休時數已扣回");
     } catch (err) {
       alert(err instanceof Error ? err.message : "操作失敗");
@@ -213,16 +264,39 @@ export default function OvertimePage() {
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">時數</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">調整數量</label>
+                <div className="flex gap-2 mb-2">
+                  {[
+                    { v: "hours" as const, l: "小時" },
+                    { v: "minutes" as const, l: "分鐘" },
+                  ].map((opt) => (
+                    <label key={opt.v} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="comp-unit"
+                        checked={grantForm.unit === opt.v}
+                        onChange={() => setGrantForm((prev) => ({ ...prev, unit: opt.v }))}
+                      />
+                      {opt.l}
+                    </label>
+                  ))}
+                </div>
                 <input
                   type="number"
-                  step="0.5"
-                  value={grantForm.hours}
-                  onChange={(e) => setGrantForm((prev) => ({ ...prev, hours: e.target.value }))}
+                  step={grantForm.unit === "minutes" ? "1" : "0.01"}
+                  value={grantForm.amount}
+                  onChange={(e) => setGrantForm((prev) => ({ ...prev, amount: e.target.value }))}
                   className="w-full px-3 py-2 border rounded-lg text-sm"
-                  placeholder="例如：2 或 -1（扣回）"
+                  placeholder={
+                    grantForm.unit === "minutes"
+                      ? "例如：30 或 -15（扣回）"
+                      : "例如：2、0.5（30分）或 -1"
+                  }
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  支援小數點後兩位；{grantForm.unit === "hours" ? "0.5 = 30 分鐘" : "30 分鐘 = 0.5 小時"}
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">備註（選填）</label>
@@ -259,39 +333,65 @@ export default function OvertimePage() {
           </div>
 
           {adjustmentHistory.length > 0 && (
-            <div className="border-t p-4">
-              <h4 className="text-sm font-medium text-gray-700 mb-2">近期手動調整紀錄</h4>
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-gray-500">
-                      <th className="text-left py-1 pr-2">時間</th>
-                      <th className="text-left py-1 pr-2">員工</th>
-                      <th className="text-left py-1 pr-2">時數</th>
-                      <th className="text-left py-1">備註</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adjustmentHistory.map((entry) => (
-                      <tr key={entry.id} className="border-t">
-                        <td className="py-1.5 pr-2 text-gray-600">
-                          {new Date(entry.createdAt).toLocaleDateString("zh-TW")}
-                        </td>
-                        <td className="py-1.5 pr-2">
-                          {employees.find((e) => e.id === entry.employeeId)?.name ?? "—"}
-                        </td>
-                        <td className={`py-1.5 pr-2 font-medium ${entry.hours > 0 ? "text-emerald-700" : "text-red-600"}`}>
-                          {entry.hours > 0 ? "+" : ""}
-                          {entry.hours} 小時
-                        </td>
-                        <td className="py-1.5 text-gray-600">{entry.note ?? SOURCE_LABELS.adjustment}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="border-t px-4 py-3">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <h4 className="text-xs font-medium text-gray-600">近期手動調整</h4>
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryModal(true)}
+                  className="text-xs text-blue-600 hover:text-blue-800"
+                >
+                  查看全部（{adjustmentHistory.length} 筆）
+                </button>
+              </div>
+              <div className="divide-y">
+                {recentAdjustments.map((entry) => renderAdjustmentRow(entry, true))}
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-xl">
+            <div className="p-4 border-b flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-gray-900">手動調整紀錄</h3>
+                <p className="text-xs text-gray-500">共 {adjustmentHistory.length} 筆</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={historyEmployeeId}
+                  onChange={(e) => setHistoryEmployeeId(e.target.value)}
+                  className="text-xs border rounded-lg px-2 py-1.5"
+                >
+                  <option value="">全部員工</option>
+                  {staffEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-sm px-3 py-1.5 border rounded-lg hover:bg-gray-50"
+                >
+                  關閉
+                </button>
+              </div>
+            </div>
+            <div className="overflow-y-auto p-4">
+              {adjustmentHistory.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-8">沒有紀錄</p>
+              ) : (
+                <div className="border rounded-lg divide-y">
+                  {adjustmentHistory.map((entry) => renderAdjustmentRow(entry))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
