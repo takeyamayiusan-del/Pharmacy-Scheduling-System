@@ -5,14 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
 
-const SOURCE_LABELS: Record<string, string> = {
-  adjustment: "手動調整",
-  overtime_credit: "加班累積",
-  leave_debit: "請假使用",
-  reversal: "取消退回",
-  expiry: "過期",
-};
-
 function formatCompLeaveAmount(hours: number): string {
   const rounded = Math.round(hours * 100) / 100;
   const minutes = Math.round(Math.abs(hours) * 60);
