@@ -99,6 +99,9 @@ export type LeaveRequest = {
   rejectReason?: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
+  reviewedBy?: string;
+  reviewedByName?: string;
+  reviewedAt?: string;
   scheduleSnapshot?: ScheduleSnapshotEntry[];
 };
 
@@ -790,7 +793,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadLeaveRequests = useCallback(async () => {
     const { data } = await supabase
       .from("leave_applications")
-      .select("*, users!leave_applications_user_id_fkey(name)")
+      .select(
+        "*, users!leave_applications_user_id_fkey(name), reviewer:users!leave_applications_reviewed_by_fkey(name)"
+      )
       .order("created_at", { ascending: false });
     if (data) {
       setLeaveRequests(
@@ -831,6 +836,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             reason: r.reason,
             rejectReason: r.reject_reason ?? undefined,
             status: r.status as LeaveRequest["status"],
+            reviewedBy: r.reviewed_by ?? undefined,
+            reviewedByName: (r.reviewer as { name?: string } | null)?.name ?? undefined,
+            reviewedAt: r.reviewed_at ?? undefined,
             scheduleSnapshot: (r.schedule_snapshot as ScheduleSnapshotEntry[] | null) ?? undefined,
             createdAt: r.created_at,
           };
@@ -1977,7 +1985,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteLeaveRequest = async (id: string) => {
     const { data: row, error: loadError } = await supabase
       .from("leave_applications")
-      .select("*, users!leave_applications_user_id_fkey(name)")
+      .select(
+        "*, users!leave_applications_user_id_fkey(name), reviewer:users!leave_applications_reviewed_by_fkey(name)"
+      )
       .eq("id", id)
       .single();
 
