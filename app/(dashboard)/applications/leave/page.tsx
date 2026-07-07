@@ -499,19 +499,6 @@ export default function LeaveApplicationPage() {
                         <span className="text-gray-400 text-xs">—</span>
                       )}
                     </td>
-                    <td className="p-4">
-                      {req.status === 'approved' ? (
-                        <button
-                          type="button"
-                          onClick={() => handlePrintLeaveForm(req)}
-                          className="px-2 py-1 border border-blue-600 text-blue-600 rounded text-xs hover:bg-blue-50 whitespace-nowrap"
-                        >
-                          列印簽名表
-                        </button>
-                      ) : (
-                        <span className="text-gray-400 text-xs">—</span>
-                      )}
-                    </td>
                     {isManager && (
                       <td className="p-4">
                         <div className="flex gap-1 flex-wrap">
