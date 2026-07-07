@@ -6,7 +6,7 @@ import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSched
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
-import { calculateEffectiveShift } from "@/lib/schedule/effectiveShift";
+import { calculateLeaveDisplayOnSchedule, getOriginalShiftForLeaveDay } from "@/lib/schedule/leaveSchedule";
 import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
@@ -28,6 +28,7 @@ export default function SchedulePage() {
     wednesdayNightShifts,
     countSaturdaysInMonth,
     getShiftForDate,
+    getBaseShiftForDate,
     getWednesdayOffDates,
     shiftTimeConfig,
     shiftDisplayConfig,
@@ -194,8 +195,7 @@ export default function SchedulePage() {
   // 獲取員工在特定日期的請假或加班資訊
   const getEmployeeShiftInfo = (date: string, employeeId: string) => {
     const originalShift = getShiftForDate(date, employeeId);
-    
-    // 檢查是否有核准的請假申請
+
     const approvedLeave = leaveRequests.find(
       (req) =>
         req.employeeId === employeeId &&
@@ -203,41 +203,58 @@ export default function SchedulePage() {
         req.endDate >= date &&
         req.status === "approved"
     );
-    
-    // 檢查是否有核准的加班申請
+
     const approvedOvertime = overtimeRequests.find(
       (req) =>
         req.employeeId === employeeId &&
         req.date === date &&
         req.status === "approved"
     );
-    
-    let effectiveShift = originalShift;
-    let effectiveShiftDetails = "";
-    let isPartialLeave = false;
 
-    if (approvedLeave) {
-      const result = calculateEffectiveShift(
+    if (!approvedLeave) {
+      return {
         originalShift,
-        approvedLeave.startTime,
-        approvedLeave.endTime
-      );
-      effectiveShift = result.shift ?? "X";
-      effectiveShiftDetails = result.details;
-      isPartialLeave = result.isPartial && effectiveShift !== "X";
+        effectiveShift: originalShift,
+        effectiveShiftDetails: "",
+        hasLeave: false,
+        isPartialLeave: false,
+        hasOvertime: !!approvedOvertime,
+        leaveType: undefined,
+        leaveStartTime: undefined,
+        leaveEndTime: undefined,
+        overtimeInfo: approvedOvertime
+          ? { startTime: approvedOvertime.startTime, endTime: approvedOvertime.endTime }
+          : null,
+      };
     }
 
+    const baseShift = getOriginalShiftForLeaveDay({
+      employeeId,
+      date,
+      shiftMode: approvedLeave.shiftMode,
+      scheduleSnapshot: approvedLeave.scheduleSnapshot,
+      getBaseShiftForDate,
+    });
+    const leaveDisplay = calculateLeaveDisplayOnSchedule(
+      baseShift,
+      approvedLeave.period,
+      approvedLeave.startTime,
+      approvedLeave.endTime
+    );
+
     return {
-      originalShift,
-      effectiveShift,
-      effectiveShiftDetails,
-      hasLeave: !!approvedLeave,
-      isPartialLeave,
+      originalShift: baseShift,
+      effectiveShift: leaveDisplay.effectiveShift,
+      effectiveShiftDetails: leaveDisplay.effectiveShiftDetails,
+      hasLeave: true,
+      isPartialLeave: leaveDisplay.isPartialLeave,
       hasOvertime: !!approvedOvertime,
-      leaveType: approvedLeave?.type,
-      leaveStartTime: approvedLeave?.startTime,
-      leaveEndTime: approvedLeave?.endTime,
-      overtimeInfo: approvedOvertime ? { startTime: approvedOvertime.startTime, endTime: approvedOvertime.endTime } : null,
+      leaveType: approvedLeave.type,
+      leaveStartTime: leaveDisplay.leaveStartTime,
+      leaveEndTime: leaveDisplay.leaveEndTime,
+      overtimeInfo: approvedOvertime
+        ? { startTime: approvedOvertime.startTime, endTime: approvedOvertime.endTime }
+        : null,
     };
   };
 

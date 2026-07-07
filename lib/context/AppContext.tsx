@@ -15,11 +15,16 @@ import {
   calculateEffectiveShift,
   enumerateDatesInRange,
 } from "@/lib/schedule/effectiveShift";
+import { roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 import { buildSwapShiftsAndChanges } from "@/lib/schedule/swapSchedule";
 import {
   applyScheduleChangesToState,
   revertSnapshotOnState,
 } from "@/lib/schedule/swapScheduleState";
+import {
+  getOriginalShiftForLeaveDay,
+  resolveLeaveTimesForSchedule,
+} from "@/lib/schedule/leaveSchedule";
 import {
   fetchDbScheduleShifts,
   restoreScheduleSnapshot,
@@ -356,6 +361,7 @@ interface AppContextType {
   schedule: ScheduleData;
   updateShift: (date: string, employeeId: string, shift: ShiftType) => Promise<void>;
   getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getBaseShiftForDate: (date: string, employeeId: string) => ShiftType;
   fixedShifts: FixedShift[];
   addFixedShift: (shift: FixedShift) => Promise<void>;
   updateFixedShift: (index: number, shift: FixedShift) => Promise<void>;
@@ -406,7 +412,11 @@ interface AppContextType {
   deleteSwapRequest: (id: string) => Promise<void>;
   overtimeRequests: OvertimeRequest[];
   addOvertimeRequest: (request: Omit<OvertimeRequest, "id" | "createdAt">) => Promise<void>;
-  updateOvertimeRequestStatus: (id: string, status: "approved" | "rejected", rejectReason?: string) => Promise<void>;
+  updateOvertimeRequestStatus: (
+    id: string,
+    status: "approved" | "rejected" | "pending",
+    rejectReason?: string
+  ) => Promise<void>;
   deleteOvertimeRequest: (id: string) => Promise<void>;
   tardinessRecords: TardinessRecord[];
   addTardinessRecord: (record: Omit<TardinessRecord, "id" | "createdAt">) => Promise<void>;
@@ -736,7 +746,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getCompLeaveBalance = useCallback(
     (employeeId: string) => {
       const now = Date.now();
-      return compLeaveLedger
+      const total = compLeaveLedger
         .filter((entry) => entry.employeeId === employeeId)
         .reduce((sum, entry) => {
           if (entry.hours > 0 && entry.expiresAt && new Date(entry.expiresAt).getTime() < now) {
@@ -744,6 +754,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
           return sum + entry.hours;
         }, 0);
+      return roundCompLeaveHours(total);
     },
     [compLeaveLedger]
   );
@@ -1298,56 +1309,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Schedule (localStorage) ─────────────────────────────────────────────────
 
-  const getShiftForDate = (date: string, employeeId: string): ShiftType => {
-    const override = schedule[date]?.[employeeId];
-    if (override) return override;
+  const getBaseShiftForDate = (date: string, employeeId: string): ShiftType => {
     if (isSunday(date)) return "X";
 
     const emp = employees.find((e) => e.id === employeeId);
     const isWednesdayRotation = emp?.isWednesdayRotation ?? false;
-    // 注意：isWeekdayOffRule 只影響「排休選擇」，不影響班表邏輯
-    // 平日不排休規則 = 平日正常上班，不能選平日排休（只能選週六）
 
-    // 週六：有排休選 X，否則 C
     if (isSaturday(date)) {
       return (leaveSelections[employeeId] ?? []).includes(date) ? "X" : "C";
     }
 
-    // 排休日
     if ((leaveSelections[employeeId] ?? []).includes(date)) return "X";
 
     const dayOfWeek = new Date(date).getDay();
 
-    // 禮拜三晚班輪值邏輯（動態）
     if (isWednesday(date) && isWednesdayRotation) {
-      // 找出所有參與禮三輪值的員工
       const rotationEmployees = employees.filter((e) => e.isWednesdayRotation);
       if (rotationEmployees.length === 0) return "B";
       if (rotationEmployees.length === 1) {
-        // 只有一個輪值員工，固定 A 班
         return employeeId === rotationEmployees[0].id ? "A" : "B";
       }
-      // 多個輪值員工：依 wednesdayOffSelections 決定誰輪值
       const offEmployees = rotationEmployees.filter((e) =>
         (wednesdayOffSelections[e.id] ?? []).includes(date)
       );
       const onDutyEmployees = rotationEmployees.filter((e) =>
         !(wednesdayOffSelections[e.id] ?? []).includes(date)
       );
-      // 如果所有人都休或都值，預設 B 班
       if (offEmployees.length === rotationEmployees.length || onDutyEmployees.length === rotationEmployees.length) {
         return "B";
       }
-      // 有人休有人值 → 值班員工 A，其他 B
       const isOnDuty = onDutyEmployees.some((e) => e.id === employeeId);
       return isOnDuty ? "A" : "B";
     }
 
-    // 一般固定班表
     const fixedShift = fixedShifts.find(
       (s) => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek
     );
     return fixedShift?.shift ?? "B";
+  };
+
+  const getShiftForDate = (date: string, employeeId: string): ShiftType => {
+    const override = schedule[date]?.[employeeId];
+    if (override) return override;
+    return getBaseShiftForDate(date, employeeId);
   };
 
   const updateShift = async (date: string, employeeId: string, shift: ShiftType) => {
@@ -1741,26 +1745,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return dates.map((date) => {
       const key = `${employeeId}:${date}`;
       const hadDbEntry = dbMap.has(key);
-      const shift = hadDbEntry ? dbMap.get(key)! : getShiftForDate(date, employeeId);
+      const shift = hadDbEntry ? dbMap.get(key)! : getBaseShiftForDate(date, employeeId);
       return { userId: employeeId, date, shift, hadDbEntry };
     });
   };
 
   const applyApprovedLeaveToSchedule = async (request: LeaveRequest) => {
     const dates = enumerateDatesInRange(request.startDate, request.endDate);
+    const { startTime, endTime } = resolveLeaveTimesForSchedule(request);
+
     for (const date of dates) {
-      const originalShift = getShiftForDate(date, request.employeeId);
+      const originalShift = getOriginalShiftForLeaveDay({
+        employeeId: request.employeeId,
+        date,
+        shiftMode: request.shiftMode,
+        scheduleSnapshot: request.scheduleSnapshot,
+        getBaseShiftForDate,
+      });
       if (originalShift === "X") continue;
 
-      let startTime = request.startTime;
-      let endTime = request.endTime;
-      if (request.period === "morning") {
-        startTime = "08:30";
-        endTime = "12:00";
-      } else if (request.period === "afternoon") {
-        startTime = "13:30";
-        endTime = "18:00";
-      } else if (request.period === "full_day") {
+      if (request.period === "full_day") {
         await upsertScheduleShift(supabase, request.employeeId, date, "X", currentUser?.id);
         continue;
       }
@@ -1783,6 +1787,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } else {
       const dates = enumerateDatesInRange(request.startDate, request.endDate);
       for (const date of dates) {
+        const { data: row } = await supabase
+          .from("schedule_entries")
+          .select("shift_code")
+          .eq("user_id", request.employeeId)
+          .eq("date", date)
+          .maybeSingle();
+        if (!row) continue;
+
+        const baseShift = getOriginalShiftForLeaveDay({
+          employeeId: request.employeeId,
+          date,
+          shiftMode: request.shiftMode,
+          getBaseShiftForDate,
+        });
+        if (baseShift === row.shift_code) {
+          continue;
+        }
         await supabase
           .from("schedule_entries")
           .delete()
@@ -1905,10 +1926,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       if (prevStatus === "approved" && status !== "approved") {
         await revertApprovedLeaveFromSchedule(request);
-        await supabase
-          .from("leave_applications")
-          .update({ schedule_snapshot: null })
-          .eq("id", id);
       }
       if (status === "approved" && prevStatus !== "approved" && request.type === "補休假") {
         await supabase.from("comp_leave_ledger").insert({
@@ -1958,8 +1975,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteLeaveRequest = async (id: string) => {
-    const request = leaveRequests.find((item) => item.id === id);
-    if (request?.status === "approved") {
+    const { data: row, error: loadError } = await supabase
+      .from("leave_applications")
+      .select("*, users!leave_applications_user_id_fkey(name)")
+      .eq("id", id)
+      .single();
+
+    if (loadError || !row) {
+      throw new Error("未找到請假申請");
+    }
+
+    const startTime = formatDbTime(
+      row.start_time,
+      row.period === "morning" ? "08:30" : row.period === "afternoon" ? "13:30" : "08:30"
+    );
+    const endTime = formatDbTime(
+      row.end_time,
+      row.period === "full_day" ? "18:00" : row.period === "morning" ? "12:00" : "18:00"
+    );
+    let period: LeavePeriodMode = "full_day";
+    if (row.period === "morning") period = "morning";
+    else if (row.period === "afternoon") period = "afternoon";
+    else if (startTime && endTime) {
+      if (startTime === "08:30" && endTime === "12:00") period = "morning";
+      else if (startTime === "13:30" && endTime === "18:00") period = "afternoon";
+      else if (startTime === "08:30" && (endTime === "18:00" || endTime === "21:00")) period = "full_day";
+      else period = "custom";
+    }
+    const shiftRaw = row.shift_mode as string | null;
+    const shiftMode: LeaveRequest["shiftMode"] =
+      shiftRaw && shiftRaw !== "schedule" ? (shiftRaw as ShiftType) : "schedule";
+
+    const request: LeaveRequest = {
+      id: row.id,
+      employeeId: row.user_id,
+      employeeName: (row.users as { name?: string } | null)?.name ?? "",
+      startDate: row.leave_date,
+      endDate: row.end_date ?? row.leave_date,
+      startTime,
+      endTime,
+      period,
+      shiftMode,
+      leaveHours: Number(row.leave_hours ?? 0),
+      type: row.leave_type as LeaveType,
+      reason: row.reason,
+      rejectReason: row.reject_reason ?? undefined,
+      status: row.status as LeaveRequest["status"],
+      scheduleSnapshot: (row.schedule_snapshot as ScheduleSnapshotEntry[] | null) ?? undefined,
+      createdAt: row.created_at,
+    };
+
+    if (request.status === "approved") {
       await revertApprovedLeaveFromSchedule(request);
     }
 
@@ -1975,6 +2041,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     await loadLeaveRequests();
+    await loadScheduleOverrides();
   };
 
   // ─── Swap requests (Supabase) ────────────────────────────────────────────────
@@ -2220,7 +2287,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadOvertimeRequests();
   };
 
-  const updateOvertimeRequestStatus = async (id: string, status: "approved" | "rejected", rejectReason?: string) => {
+  const updateOvertimeRequestStatus = async (
+    id: string,
+    status: "approved" | "rejected" | "pending",
+    rejectReason?: string
+  ) => {
     const request = overtimeRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
 
@@ -2228,22 +2299,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("已過去的月份無法變更加班申請");
     }
 
-    await supabase
-      .from("overtime_applications")
-      .update({
-        status,
-        reviewed_by: currentUser?.id,
-        reviewed_at: new Date().toISOString(),
-        ...(rejectReason ? { reject_reason: rejectReason } : {}),
-      })
-      .eq("id", id);
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
+
+    if (isManagerActor) {
+      const res = await fetch("/api/applications/overtime/review", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, status, rejectReason }),
+      });
+      const payload = (await res.json()) as { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error || "加班審核失敗");
+      }
+    } else {
+      const { error } = await supabase
+        .from("overtime_applications")
+        .update({
+          status,
+          reviewed_by: currentUser?.id,
+          reviewed_at: new Date().toISOString(),
+          ...(rejectReason ? { reject_reason: rejectReason } : {}),
+        })
+        .eq("id", id);
+      if (error) throw error;
+    }
 
     if (request) {
       const hours = overtimeHoursBetween(request.startTime, request.endTime);
-      if (status === "approved" && prevStatus !== "approved" && request.compensationType === "time_off") {
+      if (
+        !isManagerActor &&
+        status === "approved" &&
+        prevStatus !== "approved" &&
+        request.compensationType === "time_off"
+      ) {
         const expiresAt = new Date();
         expiresAt.setMonth(expiresAt.getMonth() + 6);
-        await supabase.from("comp_leave_ledger").insert({
+        const { error } = await supabase.from("comp_leave_ledger").insert({
           user_id: request.employeeId,
           hours,
           source_type: "overtime_credit",
@@ -2251,15 +2343,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
           expires_at: expiresAt.toISOString(),
           note: `加班轉補休 ${request.date}`,
         });
+        if (error) throw error;
       }
-      if (prevStatus === "approved" && status !== "approved" && request.compensationType === "time_off") {
-        await supabase.from("comp_leave_ledger").insert({
+      if (
+        !isManagerActor &&
+        prevStatus === "approved" &&
+        status !== "approved" &&
+        request.compensationType === "time_off"
+      ) {
+        const { error } = await supabase.from("comp_leave_ledger").insert({
           user_id: request.employeeId,
           hours: -hours,
           source_type: "reversal",
           source_id: id,
           note: "加班補休核准取消，扣回時數",
         });
+        if (error) throw error;
       }
 
       // 加班核准時，移除當日遲到記錄
@@ -2920,6 +3019,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         schedule,
         updateShift,
         getShiftForDate,
+        getBaseShiftForDate,
         fixedShifts,
         addFixedShift,
         updateFixedShift,

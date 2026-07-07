@@ -4,11 +4,13 @@ import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
+import { formatCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 
 function formatCompLeaveAmount(hours: number): string {
   const rounded = Math.round(hours * 100) / 100;
   const minutes = Math.round(Math.abs(hours) * 60);
-  return `${rounded > 0 ? "+" : ""}${rounded} 小時（${minutes} 分鐘）`;
+  const displayHours = formatCompLeaveHours(rounded);
+  return `${rounded > 0 ? "+" : ""}${displayHours} 小時（${minutes} 分鐘）`;
 }
 
 export default function OvertimePage() {
@@ -134,6 +136,19 @@ export default function OvertimePage() {
 
   const getEmpName = (id: string) => employees.find(e => e.id === id)?.name ?? id;
 
+  const handleReviewOvertime = async (
+    id: string,
+    status: "approved" | "rejected" | "pending",
+    rejectReason?: string
+  ) => {
+    try {
+      await updateOvertimeRequestStatus(id, status, rejectReason);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "審核失敗，請稍後再試。");
+    }
+  };
+
   const visibleRequests = isManager
     ? overtimeRequests
     : overtimeRequests.filter(r => r.employeeId === currentUser?.id);
@@ -250,7 +265,7 @@ export default function OvertimePage() {
                   <option value="">— 選擇員工 —</option>
                   {staffEmployees.map((emp) => (
                     <option key={emp.id} value={emp.id}>
-                      {emp.name}（可用 {getCompLeaveBalance(emp.id)} 小時）
+                      {emp.name}（可用 {formatCompLeaveHours(getCompLeaveBalance(emp.id))} 小時）
                     </option>
                   ))}
                 </select>
@@ -316,7 +331,7 @@ export default function OvertimePage() {
                   <div key={emp.id} className="flex items-center justify-between px-3 py-2 text-sm">
                     <span className="text-gray-900">{emp.name}</span>
                     <span className="font-semibold text-emerald-700">
-                      {getCompLeaveBalance(emp.id)} 小時
+                      {formatCompLeaveHours(getCompLeaveBalance(emp.id))} 小時
                     </span>
                   </div>
                 ))}
@@ -454,14 +469,14 @@ export default function OvertimePage() {
                         <div className="flex gap-1 flex-wrap">
                           {req.status === "pending" && (
                             <>
-                              <button onClick={() => updateOvertimeRequestStatus(req.id, "approved")}
+                              <button onClick={() => handleReviewOvertime(req.id, "approved")}
                                 className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">核准</button>
                               <button onClick={() => setRejectModal({ id: req.id, reason: "" })}
                                 className="px-2 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600">駁回</button>
                             </>
                           )}
                           {req.status !== "pending" && (
-                            <button onClick={() => updateOvertimeRequestStatus(req.id, "pending" as "approved")}
+                            <button onClick={() => handleReviewOvertime(req.id, "pending")}
                               className="px-2 py-1 border rounded text-xs hover:bg-gray-50">取消審核</button>
                           )}
                           <button onClick={async () => {
@@ -493,7 +508,10 @@ export default function OvertimePage() {
               onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
               className="w-full border rounded-lg px-3 py-2 text-sm mb-3" rows={3} placeholder="請輸入駁回原因（選填）" />
             <div className="flex gap-2">
-              <button onClick={async () => { await updateOvertimeRequestStatus(rejectModal.id, "rejected", rejectModal.reason); setRejectModal(null); }}
+              <button onClick={async () => {
+                  await handleReviewOvertime(rejectModal.id, "rejected", rejectModal.reason);
+                  setRejectModal(null);
+                }}
                 className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">確認駁回</button>
               <button onClick={() => setRejectModal(null)} className="flex-1 py-2 border rounded-lg text-sm">取消</button>
             </div>
