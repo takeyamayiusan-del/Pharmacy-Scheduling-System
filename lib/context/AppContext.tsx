@@ -1823,6 +1823,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadScheduleOverrides();
   };
 
+  const restoreCompLeaveForLeaveApplication = async (
+    employeeId: string,
+    leaveId: string,
+    note: string
+  ) => {
+    const { data: entries, error } = await supabase
+      .from("comp_leave_ledger")
+      .select("hours")
+      .eq("source_id", leaveId);
+
+    if (error) throw error;
+    if (!entries?.length) return;
+
+    const netHours = entries.reduce((sum, entry) => sum + Number(entry.hours), 0);
+    if (netHours >= 0) return;
+
+    const { error: insertError } = await supabase.from("comp_leave_ledger").insert({
+      user_id: employeeId,
+      hours: -netHours,
+      source_type: "reversal",
+      source_id: leaveId,
+      note,
+    });
+    if (insertError) throw insertError;
+  };
+
   const addLeaveRequest = async (request: Omit<LeaveRequest, "id" | "createdAt">) => {
     if (hasPastMonthInRange(request.startDate, request.endDate)) {
       throw new Error("已過去的月份無法再提出請假申請");
@@ -1950,13 +1976,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         status !== "approved" &&
         request.type === "補休假"
       ) {
-        await supabase.from("comp_leave_ledger").insert({
-          user_id: request.employeeId,
-          hours: request.leaveHours,
-          source_type: "reversal",
-          source_id: id,
-          note: "請假審核取消，補休時數退回",
-        });
+        await restoreCompLeaveForLeaveApplication(
+          request.employeeId,
+          id,
+          "請假審核取消，補休時數退回"
+        );
       }
     }
 
@@ -2040,6 +2064,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await revertApprovedLeaveFromSchedule(request);
     }
 
+    if (request.type === "補休假") {
+      await restoreCompLeaveForLeaveApplication(
+        request.employeeId,
+        request.id,
+        "請假刪除，補休時數退回"
+      );
+    }
+
     const { data, error } = await supabase
       .from("leave_applications")
       .delete()
@@ -2053,9 +2085,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     await loadLeaveRequests();
     await loadScheduleOverrides();
+    await loadCompLeaveLedger();
   };
-
-  // ─── Swap requests (Supabase) ────────────────────────────────────────────────
 
   const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">) => {
     const touchesPastMonth =
