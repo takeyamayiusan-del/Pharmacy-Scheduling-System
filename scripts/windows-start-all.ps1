@@ -30,83 +30,14 @@ Set-Location $ProjectRoot
 
 $nodeDir = "C:\Program Files\nodejs"
 $npm = Join-Path $nodeDir "npm.cmd"
-
-function Test-PortListening([int]$Port) {
-    return [bool](netstat -ano | Select-String ":$Port\s" | Select-String "LISTENING")
-}
-
-function Stop-ProjectWebProcesses {
-    foreach ($port in @(3000)) {
-        if (-not (Test-PortListening $port)) { continue }
-        Write-Host "  Stopping process on port $port ..." -ForegroundColor Yellow
-        $pids = netstat -ano | Select-String ":$port\s" | Select-String "LISTENING" | ForEach-Object {
-            ($_ -split '\s+')[-1]
-        } | Select-Object -Unique
-        foreach ($procId in $pids) {
-            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
-        }
-    }
-
-    Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
-        Where-Object {
-            $cmd = $_.CommandLine
-            $cmd -like "*Pharmacy-Scheduling-System*" -or $cmd -like "*\\next\\*" -or $cmd -like "*next start*" -or $cmd -like "*next build*"
-        } |
-        ForEach-Object {
-            Write-Host "  Stopping node PID $($_.ProcessId) ..." -ForegroundColor Yellow
-            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
-        }
-
-    Start-Sleep -Seconds 3
-}
-
-function Clear-NextBuild {
-    $nextPath = Join-Path $ProjectRoot ".next"
-    if (-not (Test-Path -LiteralPath $nextPath)) { return }
-
-    Write-Host "  Cleaning .next build cache ..." -ForegroundColor Yellow
-    Start-Sleep -Seconds 2
-
-    $removed = $false
-    for ($i = 1; $i -le 3; $i++) {
-        try {
-            Remove-Item -LiteralPath $nextPath -Recurse -Force -ErrorAction Stop
-            $removed = $true
-            break
-        } catch {
-            Start-Sleep -Seconds 2
-        }
-    }
-
-    if (-not $removed -and (Test-Path -LiteralPath $nextPath)) {
-        $bakName = ".next.bak." + (Get-Date -Format "yyyyMMddHHmmss")
-        $bakPath = Join-Path $ProjectRoot $bakName
-        Write-Host "  Renaming locked .next -> $bakName ..." -ForegroundColor Yellow
-        try {
-            Rename-Item -LiteralPath $nextPath -NewName $bakName -Force -ErrorAction Stop
-            $removed = $true
-        } catch {
-            Write-Host "  Rename failed, trying robocopy cleanup ..." -ForegroundColor Yellow
-            $emptyDir = Join-Path $env:TEMP ("next-empty-" + [guid]::NewGuid().ToString())
-            New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
-            & robocopy $emptyDir $nextPath /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS /NC /NS | Out-Null
-            Remove-Item -LiteralPath $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
-            Remove-Item -LiteralPath $nextPath -Recurse -Force -ErrorAction SilentlyContinue
-            if (-not (Test-Path -LiteralPath $nextPath)) { $removed = $true }
-        }
-    }
-
-    if (Test-Path -LiteralPath $nextPath) {
-        throw "Unable to remove .next. Close Cursor terminals using this project and retry."
-    }
-}
+. (Join-Path $PSScriptRoot "windows-site-common.ps1")
 
 function Invoke-NpmBuild {
     Write-Host "  Building site ..."
     & $npm run build
     if ($LASTEXITCODE -ne 0) {
         Write-Host "  Build failed, cleaning .next and retrying once ..." -ForegroundColor Yellow
-        Clear-NextBuild
+        Clear-NextBuild -ProjectRoot $ProjectRoot
         & $npm run build
         if ($LASTEXITCODE -ne 0) {
             throw "npm run build failed with exit code $LASTEXITCODE"
@@ -167,12 +98,12 @@ if (-not $ok) {
 
 # 4) Start web app
 Invoke-Step "[4/5] Next.js site :3000" {
-    Stop-ProjectWebProcesses
-    Clear-NextBuild
+    Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+    Clear-NextBuild -ProjectRoot $ProjectRoot
     Invoke-NpmBuild
-    Start-Process -FilePath $npm -ArgumentList "start" -WorkingDirectory $ProjectRoot -WindowStyle Hidden
+    Start-SiteRunner -ProjectRoot $ProjectRoot
     Start-Sleep -Seconds 8
-    if (Test-PortListening 3000) {
+    if (Test-SiteHealthy) {
         Write-Host "  Site started: http://localhost:3000" -ForegroundColor Green
     } else {
         throw "Site did not start on port 3000. Run npm start manually in $ProjectRoot"
