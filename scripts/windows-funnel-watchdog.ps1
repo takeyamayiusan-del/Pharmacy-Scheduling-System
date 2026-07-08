@@ -30,10 +30,31 @@ function Get-FunnelUrl {
 function Test-FunnelHealthy([string]$BaseUrl) {
     if (-not $BaseUrl) { return $false }
     try {
-        $r = Invoke-WebRequest -Uri "$BaseUrl/login" -UseBasicParsing -TimeoutSec 20
+        $r = Invoke-WebRequest -Uri "$BaseUrl/login" -UseBasicParsing -TimeoutSec 8
         return $r.StatusCode -eq 200
     } catch {
         return $false
+    }
+}
+
+function Warmup-SiteRoutes {
+    param([string]$BaseUrl)
+
+    $targets = @("http://127.0.0.1:3000/", "http://127.0.0.1:3000/login")
+    if ($BaseUrl) {
+        $targets += "$BaseUrl/"
+        $targets += "$BaseUrl/login"
+    }
+
+    foreach ($uri in $targets) {
+        try {
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            $r = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 8
+            $sw.Stop()
+            Write-Log ("Warmup OK: {0} {1}ms (status {2})" -f $uri, $sw.ElapsedMilliseconds, $r.StatusCode)
+        } catch {
+            Write-Log ("Warmup FAIL: {0} ({1})" -f $uri, $_.Exception.Message)
+        }
     }
 }
 
@@ -59,6 +80,7 @@ $funnelConfigured = $funnelStatus -match "Funnel on" -and $funnelStatus -match "
 $healthy = $siteOk -and $funnelConfigured -and (Test-FunnelHealthy $funnelUrl)
 
 if ($healthy) {
+    Warmup-SiteRoutes -BaseUrl $funnelUrl
     Write-Log "OK: local site + $funnelUrl"
     exit 0
 }
@@ -69,6 +91,7 @@ Repair-Funnel
 Start-Sleep -Seconds 5
 $funnelUrl = Get-FunnelUrl
 if ($siteOk -and (Test-FunnelHealthy $funnelUrl)) {
+    Warmup-SiteRoutes -BaseUrl $funnelUrl
     Write-Log "Repaired OK: $funnelUrl"
     exit 0
 }

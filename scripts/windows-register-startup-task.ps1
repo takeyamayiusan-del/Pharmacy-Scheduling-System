@@ -40,12 +40,12 @@ Register-ScheduledTask `
     -Settings $settings `
     -Description "Yaosheng pharmacy: VM + Supabase proxy + Next.js + Tailscale Funnel"
 
-# 每 3 分鐘檢查本機網站與外網 Funnel，掛掉自動修復
+# 每 1 分鐘檢查本機網站與外網 Funnel，掛掉自動修復並持續保溫
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$WatchdogScript`""
 
 $triggerWatchdog = New-ScheduledTaskTrigger -Once -At (Get-Date).Date `
-    -RepetitionInterval (New-TimeSpan -Minutes 3) `
+    -RepetitionInterval (New-TimeSpan -Minutes 1) `
     -RepetitionDuration (New-TimeSpan -Days 3650)
 
 $watchdogSettings = New-ScheduledTaskSettingsSet `
@@ -61,7 +61,7 @@ Register-ScheduledTask `
     -Trigger $triggerWatchdog `
     -Principal $startPrincipal `
     -Settings $watchdogSettings `
-    -Description "Yaosheng pharmacy: auto-repair local site + Tailscale Funnel every 3 minutes"
+    -Description "Yaosheng pharmacy: auto-repair local site + Tailscale Funnel every 1 minute"
 
 $vm = Get-VM -Name "yaosheng-supabase" -ErrorAction SilentlyContinue
 if ($vm) {
@@ -72,7 +72,7 @@ if ($vm) {
 Write-Host ""
 Write-Host "Registered tasks:" -ForegroundColor Green
 Write-Host "  $StartTaskName  — AtStartup (+3min) + AtLogon"
-Write-Host "  $WatchdogTaskName — every 3 minutes (site + funnel)"
+Write-Host "  $WatchdogTaskName — every 1 minute (site + funnel + warmup)"
 Write-Host ""
 Write-Host "Logs:"
 Write-Host "  $ProjectRoot\data\logs\funnel-watchdog.log"

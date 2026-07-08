@@ -2310,6 +2310,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("已過去的月份無法再提出加班申請");
     }
 
+    const { data: existingRequests, error: existingError } = await supabase
+      .from("overtime_applications")
+      .select("id, status")
+      .eq("user_id", request.employeeId)
+      .eq("overtime_date", request.date)
+      .eq("start_time", request.startTime)
+      .eq("end_time", request.endTime)
+      .in("status", ["pending", "approved"]);
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    if ((existingRequests?.length ?? 0) > 0) {
+      throw new Error("同一天同時段的加班申請已存在，請勿重複送出");
+    }
+
     await supabase.from("overtime_applications").insert({
       user_id: request.employeeId,
       overtime_date: request.date,
