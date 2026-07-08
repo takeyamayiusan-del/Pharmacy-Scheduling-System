@@ -36,18 +36,22 @@ function Test-PortListening([int]$Port) {
 }
 
 function Stop-ProjectWebProcesses {
-    if (Test-PortListening 3000) {
-        Write-Host "  Stopping process on port 3000 ..." -ForegroundColor Yellow
-        $pid3000 = (netstat -ano | Select-String ":3000\s" | Select-String "LISTENING" | ForEach-Object {
+    foreach ($port in @(3000)) {
+        if (-not (Test-PortListening $port)) { continue }
+        Write-Host "  Stopping process on port $port ..." -ForegroundColor Yellow
+        $pids = netstat -ano | Select-String ":$port\s" | Select-String "LISTENING" | ForEach-Object {
             ($_ -split '\s+')[-1]
-        } | Select-Object -First 1)
-        if ($pid3000) {
-            Stop-Process -Id $pid3000 -Force -ErrorAction SilentlyContinue
+        } | Select-Object -Unique
+        foreach ($procId in $pids) {
+            Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
         }
     }
 
     Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -like "*Pharmacy-Scheduling-System*" } |
+        Where-Object {
+            $cmd = $_.CommandLine
+            $cmd -like "*Pharmacy-Scheduling-System*" -or $cmd -like "*\\next\\*" -or $cmd -like "*next start*" -or $cmd -like "*next build*"
+        } |
         ForEach-Object {
             Write-Host "  Stopping node PID $($_.ProcessId) ..." -ForegroundColor Yellow
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
@@ -57,15 +61,43 @@ function Stop-ProjectWebProcesses {
 }
 
 function Clear-NextBuild {
-    if (-not (Test-Path ".next")) { return }
+    $nextPath = Join-Path $ProjectRoot ".next"
+    if (-not (Test-Path -LiteralPath $nextPath)) { return }
+
     Write-Host "  Cleaning .next build cache ..." -ForegroundColor Yellow
-    Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue
-    if (Test-Path ".next") {
-        cmd /c "rmdir /s /q .next" | Out-Null
-    }
     Start-Sleep -Seconds 2
-    if (Test-Path ".next") {
-        throw "Unable to remove .next. Close editors or node processes and retry."
+
+    $removed = $false
+    for ($i = 1; $i -le 3; $i++) {
+        try {
+            Remove-Item -LiteralPath $nextPath -Recurse -Force -ErrorAction Stop
+            $removed = $true
+            break
+        } catch {
+            Start-Sleep -Seconds 2
+        }
+    }
+
+    if (-not $removed -and (Test-Path -LiteralPath $nextPath)) {
+        $bakName = ".next.bak." + (Get-Date -Format "yyyyMMddHHmmss")
+        $bakPath = Join-Path $ProjectRoot $bakName
+        Write-Host "  Renaming locked .next -> $bakName ..." -ForegroundColor Yellow
+        try {
+            Rename-Item -LiteralPath $nextPath -NewName $bakName -Force -ErrorAction Stop
+            $removed = $true
+        } catch {
+            Write-Host "  Rename failed, trying robocopy cleanup ..." -ForegroundColor Yellow
+            $emptyDir = Join-Path $env:TEMP ("next-empty-" + [guid]::NewGuid().ToString())
+            New-Item -ItemType Directory -Path $emptyDir -Force | Out-Null
+            & robocopy $emptyDir $nextPath /MIR /R:2 /W:2 /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+            Remove-Item -LiteralPath $emptyDir -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item -LiteralPath $nextPath -Recurse -Force -ErrorAction SilentlyContinue
+            if (-not (Test-Path -LiteralPath $nextPath)) { $removed = $true }
+        }
+    }
+
+    if (Test-Path -LiteralPath $nextPath) {
+        throw "Unable to remove .next. Close Cursor terminals using this project and retry."
     }
 }
 
