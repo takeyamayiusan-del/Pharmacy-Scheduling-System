@@ -36,13 +36,53 @@ function Stop-ProjectWebProcesses {
     Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
         Where-Object {
             $cmd = $_.CommandLine
-            $cmd -like "*Pharmacy-Scheduling-System*" -or $cmd -like "*\\next\\*" -or $cmd -like "*next start*" -or $cmd -like "*next build*"
+            $cmd -like "*Pharmacy-Scheduling-System*" -or $cmd -like "*\\next\\*" -or $cmd -like "*next start*" -or $cmd -like "*next build*" -or $cmd -like "*npm*start*" -or $cmd -like "*npm*run*build*"
         } |
         ForEach-Object {
             Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
         }
 
-    Start-Sleep -Seconds 3
+    Start-Sleep -Seconds 5
+}
+
+function Get-BuildLockPath {
+    param([string]$ProjectRoot)
+    return Join-Path $ProjectRoot "data\logs\.building"
+}
+
+function Invoke-NpmBuild {
+    param([string]$ProjectRoot)
+
+    $npm = "C:\Program Files\nodejs\npm.cmd"
+    $lockFile = Get-BuildLockPath -ProjectRoot $ProjectRoot
+    $logDir = Split-Path $lockFile -Parent
+    if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+    Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+
+    try {
+        New-Item -ItemType File -Path $lockFile -Force | Out-Null
+
+        Write-Host "  Building site ..."
+        Push-Location $ProjectRoot
+        try {
+            & $npm run build
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "  Build failed, cleaning .next and retrying once ..." -ForegroundColor Yellow
+                Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+                Clear-NextBuild -ProjectRoot $ProjectRoot
+                Start-Sleep -Seconds 3
+                & $npm run build
+                if ($LASTEXITCODE -ne 0) {
+                    throw "npm run build failed with exit code $LASTEXITCODE"
+                }
+            }
+        } finally {
+            Pop-Location
+        }
+    } finally {
+        Remove-Item -LiteralPath $lockFile -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Clear-NextBuild {
@@ -98,21 +138,12 @@ function Repair-SiteIfNeeded {
     & $WriteLog "Site unhealthy, repairing..."
     Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
 
-    $npm = "C:\Program Files\nodejs\npm.cmd"
     $buildIdPath = Join-Path $ProjectRoot ".next\BUILD_ID"
     if (-not (Test-Path -LiteralPath $buildIdPath)) {
         & $WriteLog "BUILD_ID missing, running npm run build..."
-        Push-Location $ProjectRoot
         try {
-            & $npm run build
-            if ($LASTEXITCODE -ne 0) {
-                Clear-NextBuild -ProjectRoot $ProjectRoot
-                & $npm run build
-            }
-        } finally {
-            Pop-Location
-        }
-        if ($LASTEXITCODE -ne 0) {
+            Invoke-NpmBuild -ProjectRoot $ProjectRoot
+        } catch {
             & $WriteLog "npm run build failed"
             return $false
         }

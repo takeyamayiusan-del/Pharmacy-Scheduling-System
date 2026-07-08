@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = "Continue"
 $LogDir = Join-Path $ProjectRoot "data\logs"
 $LogFile = Join-Path $LogDir "site-runner.log"
+$LockFile = Join-Path $LogDir ".building"
 $npm = "C:\Program Files\nodejs\npm.cmd"
 
 function Write-Log([string]$Message) {
@@ -17,6 +18,11 @@ Set-Location $ProjectRoot
 Write-Log "Site runner started (PID $PID)"
 
 while ($true) {
+    while (Test-Path -LiteralPath $LockFile) {
+        Write-Log "Build in progress, waiting..."
+        Start-Sleep -Seconds 5
+    }
+
     Write-Log "Launching npm start..."
     $proc = Start-Process -FilePath $npm -ArgumentList "start" -WorkingDirectory $ProjectRoot -PassThru -NoNewWindow -Wait
     $code = if ($null -ne $proc.ExitCode) { $proc.ExitCode } else { "unknown" }

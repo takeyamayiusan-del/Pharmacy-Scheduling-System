@@ -8,7 +8,8 @@
 param(
     [string]$VmName = "yaosheng-supabase",
     [string]$VmIp = "192.168.0.118",
-    [switch]$SkipTailscale
+    [switch]$SkipTailscale,
+    [switch]$Rebuild
 )
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
@@ -20,6 +21,7 @@ if (-not $isAdmin) {
     if ($VmName -ne "yaosheng-supabase") { $elevateArgs += " -VmName `"$VmName`"" }
     if ($VmIp -ne "192.168.0.118") { $elevateArgs += " -VmIp `"$VmIp`"" }
     if ($SkipTailscale) { $elevateArgs += " -SkipTailscale" }
+    if ($Rebuild) { $elevateArgs += " -Rebuild" }
     Start-Process powershell.exe -Verb RunAs -ArgumentList $elevateArgs
     exit 0
 }
@@ -31,19 +33,6 @@ Set-Location $ProjectRoot
 $nodeDir = "C:\Program Files\nodejs"
 $npm = Join-Path $nodeDir "npm.cmd"
 . (Join-Path $PSScriptRoot "windows-site-common.ps1")
-
-function Invoke-NpmBuild {
-    Write-Host "  Building site ..."
-    & $npm run build
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "  Build failed, cleaning .next and retrying once ..." -ForegroundColor Yellow
-        Clear-NextBuild -ProjectRoot $ProjectRoot
-        & $npm run build
-        if ($LASTEXITCODE -ne 0) {
-            throw "npm run build failed with exit code $LASTEXITCODE"
-        }
-    }
-}
 
 function Invoke-Step([string]$Title, [scriptblock]$Action) {
     Write-Host $Title -ForegroundColor Yellow
@@ -99,14 +88,28 @@ if (-not $ok) {
 # 4) Start web app
 Invoke-Step "[4/5] Next.js site :3000" {
     Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
-    Clear-NextBuild -ProjectRoot $ProjectRoot
-    Invoke-NpmBuild
+
+    $buildIdPath = Join-Path $ProjectRoot ".next\BUILD_ID"
+    if ($Rebuild) {
+        Write-Host "  Force rebuild requested (-Rebuild) ..." -ForegroundColor Yellow
+        Clear-NextBuild -ProjectRoot $ProjectRoot
+        Invoke-NpmBuild -ProjectRoot $ProjectRoot
+    } elseif (-not (Test-Path -LiteralPath $buildIdPath)) {
+        Write-Host "  No production build found, building ..."
+        Invoke-NpmBuild -ProjectRoot $ProjectRoot
+    } elseif (Test-SiteHealthy) {
+        Write-Host "  Site already healthy, skipping rebuild (use -Rebuild after git pull)" -ForegroundColor Green
+    } else {
+        Write-Host "  Site down but build exists, rebuilding ..."
+        Invoke-NpmBuild -ProjectRoot $ProjectRoot
+    }
+
     Start-SiteRunner -ProjectRoot $ProjectRoot
-    Start-Sleep -Seconds 8
+    Start-Sleep -Seconds 10
     if (Test-SiteHealthy) {
         Write-Host "  Site started: http://localhost:3000" -ForegroundColor Green
     } else {
-        throw "Site did not start on port 3000. Run npm start manually in $ProjectRoot"
+        throw "Site did not start on port 3000. Run: powershell -File scripts\windows-start-all.ps1 -Rebuild"
     }
 } | Out-Null
 
