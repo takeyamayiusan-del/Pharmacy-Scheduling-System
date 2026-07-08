@@ -22,7 +22,7 @@ Write-Log "Funnel setup start"
 # 確保本機網站已起來
 $portOk = [bool](netstat -ano | Select-String ":3000\s" | Select-String "LISTENING")
 if (-not $portOk) {
-    Write-Host "  Port 3000 not listening — start site first (重開機後啟動.bat)" -ForegroundColor Red
+    Write-Host "  Port 3000 not listening — start site first (scripts\windows-start-all.ps1)" -ForegroundColor Red
     Write-Log "Aborted: port 3000 not listening"
     throw "Port 3000 not listening"
 }

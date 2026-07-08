@@ -433,6 +433,7 @@ interface AppContextType {
   notifications: Notification[];
   markNotificationRead: (id: string) => void;
   deleteNotification: (id: string) => Promise<void>;
+  deleteAllNotifications: () => Promise<void>;
   refreshNotifications: () => Promise<void>;
   bulletinItems: BulletinItem[];
   addBulletinItem: (item: Omit<BulletinItem, "id" | "authorName" | "createdAt">) => Promise<void>;
@@ -3013,6 +3014,16 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 
+  const deleteAllNotifications = async () => {
+    if (!currentUser?.id) return;
+    const { error } = await supabase
+      .from("notifications")
+      .delete()
+      .eq("recipient_id", currentUser.id);
+    if (error) throw error;
+    setNotifications([]);
+  };
+
   // ─── Context value ────────────────────────────────────────────────────────────
 
   return (
@@ -3090,6 +3101,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         notifications,
         markNotificationRead,
         deleteNotification,
+        deleteAllNotifications,
         refreshNotifications,
         bulletinItems,
         addBulletinItem,

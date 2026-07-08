@@ -1,7 +1,9 @@
 # Yaosheng Pharmacy - Windows post-boot startup (Hyper-V VM)
-# Run as Administrator:
+# Primary startup script — use this instead of 重開機後啟動.bat
+# Run (auto-elevates to Administrator if needed):
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-start-all.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-start-all.ps1 -VmIp 192.168.0.118
+#   powershell -ExecutionPolicy Bypass -File scripts\windows-start-all.ps1 -SkipTailscale
 
 param(
     [string]$VmName = "yaosheng-supabase",
@@ -9,18 +11,75 @@ param(
     [switch]$SkipTailscale
 )
 
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)
+if (-not $isAdmin) {
+    Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
+    $elevateArgs = "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    if ($VmName -ne "yaosheng-supabase") { $elevateArgs += " -VmName `"$VmName`"" }
+    if ($VmIp -ne "192.168.0.118") { $elevateArgs += " -VmIp `"$VmIp`"" }
+    if ($SkipTailscale) { $elevateArgs += " -SkipTailscale" }
+    Start-Process powershell.exe -Verb RunAs -ArgumentList $elevateArgs
+    exit 0
+}
+
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 
 $nodeDir = "C:\Program Files\nodejs"
 $npm = Join-Path $nodeDir "npm.cmd"
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
-    [Security.Principal.WindowsBuiltInRole]::Administrator
-)
 
 function Test-PortListening([int]$Port) {
     return [bool](netstat -ano | Select-String ":$Port\s" | Select-String "LISTENING")
+}
+
+function Stop-ProjectWebProcesses {
+    if (Test-PortListening 3000) {
+        Write-Host "  Stopping process on port 3000 ..." -ForegroundColor Yellow
+        $pid3000 = (netstat -ano | Select-String ":3000\s" | Select-String "LISTENING" | ForEach-Object {
+            ($_ -split '\s+')[-1]
+        } | Select-Object -First 1)
+        if ($pid3000) {
+            Stop-Process -Id $pid3000 -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    Get-CimInstance Win32_Process -Filter "Name='node.exe'" -ErrorAction SilentlyContinue |
+        Where-Object { $_.CommandLine -like "*Pharmacy-Scheduling-System*" } |
+        ForEach-Object {
+            Write-Host "  Stopping node PID $($_.ProcessId) ..." -ForegroundColor Yellow
+            Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue
+        }
+
+    Start-Sleep -Seconds 3
+}
+
+function Clear-NextBuild {
+    if (-not (Test-Path ".next")) { return }
+    Write-Host "  Cleaning .next build cache ..." -ForegroundColor Yellow
+    Remove-Item -Recurse -Force .next -ErrorAction SilentlyContinue
+    if (Test-Path ".next") {
+        cmd /c "rmdir /s /q .next" | Out-Null
+    }
+    Start-Sleep -Seconds 2
+    if (Test-Path ".next") {
+        throw "Unable to remove .next. Close editors or node processes and retry."
+    }
+}
+
+function Invoke-NpmBuild {
+    Write-Host "  Building site ..."
+    & $npm run build
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  Build failed, cleaning .next and retrying once ..." -ForegroundColor Yellow
+        Clear-NextBuild
+        & $npm run build
+        if ($LASTEXITCODE -ne 0) {
+            throw "npm run build failed with exit code $LASTEXITCODE"
+        }
+    }
 }
 
 function Invoke-Step([string]$Title, [scriptblock]$Action) {
@@ -35,10 +94,7 @@ function Invoke-Step([string]$Title, [scriptblock]$Action) {
 }
 
 Write-Host "=== Yaosheng Pharmacy startup ===" -ForegroundColor Cyan
-if (-not $isAdmin) {
-    Write-Host "ERROR: Run as Administrator (right-click BAT -> Run as administrator)" -ForegroundColor Red
-    exit 1
-}
+Write-Host "  Running as Administrator" -ForegroundColor Green
 Write-Host ""
 
 # 1) Start Hyper-V VM
@@ -79,26 +135,9 @@ if (-not $ok) {
 
 # 4) Start web app
 Invoke-Step "[4/5] Next.js site :3000" {
-    if (Test-PortListening 3000) {
-        Write-Host "  Port 3000 in use, restarting site..." -ForegroundColor Yellow
-        $pid3000 = (netstat -ano | Select-String ":3000\s" | Select-String "LISTENING" | ForEach-Object {
-            ($_ -split '\s+')[-1]
-        } | Select-Object -First 1)
-        if ($pid3000) {
-            Stop-Process -Id $pid3000 -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-        }
-    }
-    if (-not (Test-Path ".next")) {
-        Write-Host "  First run: npm run build ..."
-        & $npm run build
-    } else {
-        Write-Host "  Rebuilding site (code may have changed) ..."
-        & $npm run build
-        if ($LASTEXITCODE -ne 0) {
-            throw "npm run build failed with exit code $LASTEXITCODE"
-        }
-    }
+    Stop-ProjectWebProcesses
+    Clear-NextBuild
+    Invoke-NpmBuild
     Start-Process -FilePath $npm -ArgumentList "start" -WorkingDirectory $ProjectRoot -WindowStyle Hidden
     Start-Sleep -Seconds 8
     if (Test-PortListening 3000) {

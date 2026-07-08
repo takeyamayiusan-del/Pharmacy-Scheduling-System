@@ -77,5 +77,5 @@ if (Test-FunnelHealthy $funnelUrl) {
     exit 0
 }
 
-Write-Log "Repair failed; run scripts\重開機後啟動.bat as Administrator"
+Write-Log "Repair failed; run scripts\windows-start-all.ps1 as Administrator"
 exit 1
