@@ -33,11 +33,23 @@ function Test-HttpOk([string]$Uri, [int]$TimeoutSec = 5) {
   }
 }
 
+function Get-Pm2ListeningPort([string]$Name) {
+  try {
+    $show = & pm2 show $Name 2>$null | Out-String
+    if ($show -match '(?im)PORT\s*[│|:]\s*(\d{2,5})') { return [int]$Matches[1] }
+    if ($show -match '(?im)\bport\b\s*[:=]\s*(\d{2,5})') { return [int]$Matches[1] }
+    if ($show -match '(?im)--port[=\s]+(\d{2,5})') { return [int]$Matches[1] }
+    if ($show -match '(?im)localhost:(\d{2,5})') { return [int]$Matches[1] }
+    if ($show -match '(?im)0\.0\.0\.0:(\d{2,5})') { return [int]$Matches[1] }
+  } catch {}
+  return $null
+}
+
 function Repair-Pm2App([string]$Name, [string]$Root, [string]$Ecosystem) {
   if (-not $Name) { return }
   & pm2 describe $Name 1>$null 2>$null
   if ($LASTEXITCODE -eq 0) {
-    & pm2 restart $Name *>> $LogFile
+    & pm2 restart $Name --update-env *>> $LogFile
   } elseif ($Root -and $Ecosystem -and (Test-Path (Join-Path $Root $Ecosystem))) {
     Push-Location $Root
     & pm2 start (Join-Path $Root $Ecosystem) *>> $LogFile
@@ -46,6 +58,29 @@ function Repair-Pm2App([string]$Name, [string]$Root, [string]$Ecosystem) {
     & pm2 resurrect *>> $LogFile
   }
   & pm2 save *>> $LogFile
+}
+
+function Test-SiteHealth([string]$Name, [int]$ConfiguredPort, [string]$HealthPath) {
+  if (-not $HealthPath) { $HealthPath = "/" }
+  $ports = @()
+  if ($ConfiguredPort -gt 0) { $ports += $ConfiguredPort }
+  $detected = Get-Pm2ListeningPort $Name
+  if ($detected -and ($ports -notcontains $detected)) { $ports += $detected }
+  foreach ($p in @(3001, 3002, 3003, 3080, 4000, 5000, 5173, 8080)) {
+    if ($ports -notcontains $p) { $ports += $p }
+  }
+
+  foreach ($port in $ports) {
+    $uri = "http://127.0.0.1:$port$HealthPath"
+    if (Test-HttpOk $uri 4) {
+      return @{ Ok = $true; Port = $port; Uri = $uri }
+    }
+    # also try without trailing path quirks
+    if ($HealthPath -ne "/" -and (Test-HttpOk "http://127.0.0.1:$port/" 3)) {
+      return @{ Ok = $true; Port = $port; Uri = "http://127.0.0.1:$port/" }
+    }
+  }
+  return @{ Ok = $false; Port = $ConfiguredPort; Uri = "http://127.0.0.1:$ConfiguredPort$HealthPath" }
 }
 
 Log "watchdog check (multi-site)"
@@ -74,49 +109,53 @@ if ($Global:YaoshengHostConfig.EnsureSupabase) {
 
 $allOk = $true
 
-# Configured sites
 foreach ($site in $Global:YaoshengSites) {
   $name = [string]$site.Name
   $port = [int]$site.Port
   $root = [string]$site.Root
   $health = [string]$site.HealthPath
-  if (-not $health) { $health = "/" }
-  if (-not $name -or -not $port) { continue }
+  if (-not $name) { continue }
   if ($root -and -not (Test-Path $root)) {
     Log "skip $name (root missing)"
     continue
   }
 
-  $uri = "http://127.0.0.1:$port$health"
-  $ok = Test-HttpOk $uri 5
-  if (-not $ok) {
-    Log "DOWN $name ($uri) -> repair"
+  $result = Test-SiteHealth $name $port $health
+  if (-not $result.Ok) {
+    Log "DOWN $name ($($result.Uri)) -> repair"
     Repair-Pm2App $name $root ([string]$site.Ecosystem)
-    Start-Sleep -Seconds 6
-    $ok = Test-HttpOk $uri 5
+    Start-Sleep -Seconds 8
+    $result = Test-SiteHealth $name $port $health
   }
-  if ($ok) { Log "OK $name :$port" } else { Log "FAIL $name :$port"; $allOk = $false }
+
+  if ($result.Ok) {
+    Log "OK $name :$($result.Port)"
+    if ($port -gt 0 -and $result.Port -ne $port) {
+      Log "NOTE $name configured Port=$port but healthy on $($result.Port). Update windows-sites.config.ps1"
+    }
+  } else {
+    Log "FAIL $name (tried configured + detected ports)"
+    $allOk = $false
+  }
 }
 
-# Also keep every other pm2 app online (both sites together)
+# Keep every pm2 app online (avoid jlist JSON duplicate-key crash on Windows)
 if ($Global:YaoshengHostConfig.WatchAllPm2) {
   try {
-    $raw = & pm2 jlist 2>$null
-    if ($raw) {
-      $apps = $raw | ConvertFrom-Json
-      foreach ($app in $apps) {
-        $status = [string]$app.pm2_env.status
-        $name = [string]$app.name
-        if (-not $name) { continue }
-        if ($status -eq "online") { continue }
-        Log "pm2 $name status=$status -> restart"
-        & pm2 restart $name *>> $LogFile
-        $allOk = $false
-      }
-      & pm2 save *>> $LogFile
+    $table = & pm2 list --no-color 2>$null | Out-String
+    $lines = $table -split "`r?`n"
+    foreach ($line in $lines) {
+      if ($line -notmatch 'errored|stopped') { continue }
+      if ($line -notmatch '\|\s*\d+\s*\|\s*([^\|]+?)\s*\|') { continue }
+      $name = $Matches[1].Trim()
+      if (-not $name -or $name -eq "name") { continue }
+      Log "pm2 $name not online -> restart"
+      & pm2 restart $name --update-env *>> $LogFile
+      $allOk = $false
     }
+    & pm2 save *>> $LogFile
   } catch {
-    Log "pm2 jlist parse skip: $($_.Exception.Message)"
+    Log "pm2 list parse skip: $($_.Exception.Message)"
   }
 }
 
