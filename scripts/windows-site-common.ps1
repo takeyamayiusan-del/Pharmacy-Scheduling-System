@@ -4,14 +4,65 @@ function Test-PortListening([int]$Port) {
     return [bool](netstat -ano | Select-String ":$Port\s" | Select-String "LISTENING")
 }
 
-function Test-SiteHealthy {
-    if (-not (Test-PortListening 3000)) { return $false }
+# 用 curl 硬超時：TCP 能連但 Next 不回時，Invoke-WebRequest 常會卡住不動
+function Test-HttpOk {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [int]$TimeoutSec = 5
+    )
+
     try {
-        $r = Invoke-WebRequest -Uri "http://127.0.0.1:3000/login" -UseBasicParsing -TimeoutSec 15
-        return $r.StatusCode -eq 200
+        $out = & curl.exe -s -o NUL -w "%{http_code}" --connect-timeout 3 --max-time $TimeoutSec $Uri 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $code = ("$out").Trim()
+        return ($code -eq "200" -or $code -eq "204" -or $code -eq "301" -or $code -eq "302" -or $code -eq "307" -or $code -eq "308")
     } catch {
         return $false
     }
+}
+
+function Test-SiteHealthy {
+    if (-not (Test-PortListening 3000)) { return $false }
+    # 埠開著但不回 HTTP = 殭屍進程，必須判定 unhealthy 才能自動殺進程重啟
+    return (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 5)
+}
+
+function Test-BuildInProgress {
+    param([string]$ProjectRoot)
+
+    $building = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and (
+                $_.CommandLine -like "*next*build*" -or
+                $_.CommandLine -like "*npm*run*build*" -or
+                $_.CommandLine -like "*windows-start-all.ps1*"
+            )
+        }
+    return [bool]$building
+}
+
+function Clear-StaleBuildLock {
+    param(
+        [string]$ProjectRoot,
+        [int]$MaxAgeMinutes = 45,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    $lockFile = Get-BuildLockPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $lockFile)) { return $false }
+
+    $age = (Get-Date) - (Get-Item -LiteralPath $lockFile).LastWriteTime
+    $inProgress = Test-BuildInProgress -ProjectRoot $ProjectRoot
+
+    # 有實際 build／start-all 進程：保留鎖檔（除非超過 MaxAge，視為卡死）
+    if ($inProgress -and $age.TotalMinutes -lt $MaxAgeMinutes) {
+        return $false
+    }
+
+    # 沒有 build 進程 = 殘留鎖，會讓 watchdog「永遠等 build」→ 網站卡死無人修
+    & $WriteLog ("Clearing stale build lock (age={0:N1}m, buildProcess={1})" -f $age.TotalMinutes, $inProgress)
+    Remove-Item -LiteralPath $lockFile -Force -ErrorAction SilentlyContinue
+    return $true
 }
 
 function Stop-ProjectWebProcesses {
@@ -50,6 +101,23 @@ function Get-BuildLockPath {
     return Join-Path $ProjectRoot "data\logs\.building"
 }
 
+function Wait-BuildLockRelease {
+    param(
+        [string]$ProjectRoot,
+        [int]$TimeoutSeconds = 180
+    )
+
+    $lockFile = Get-BuildLockPath -ProjectRoot $ProjectRoot
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while (Test-Path -LiteralPath $lockFile) {
+        if ((Get-Date) -ge $deadline) {
+            return $false
+        }
+        Start-Sleep -Seconds 2
+    }
+    return $true
+}
+
 function Invoke-NpmBuild {
     param([string]$ProjectRoot)
 
@@ -58,10 +126,13 @@ function Invoke-NpmBuild {
     $logDir = Split-Path $lockFile -Parent
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 
-    Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+    if (-not (Wait-BuildLockRelease -ProjectRoot $ProjectRoot -TimeoutSeconds 300)) {
+        throw "Another build is already running for over 5 minutes."
+    }
 
     try {
-        New-Item -ItemType File -Path $lockFile -Force | Out-Null
+        New-Item -ItemType File -Path $lockFile -ErrorAction Stop | Out-Null
+        Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
 
         Write-Host "  Building site ..."
         Push-Location $ProjectRoot
@@ -135,6 +206,19 @@ function Repair-SiteIfNeeded {
 
     if (Test-SiteHealthy) { return $true }
 
+    [void](Clear-StaleBuildLock -ProjectRoot $ProjectRoot -MaxAgeMinutes 45 -WriteLog $WriteLog)
+
+    $lockFile = Get-BuildLockPath -ProjectRoot $ProjectRoot
+    if (Test-Path -LiteralPath $lockFile) {
+        if (Test-BuildInProgress -ProjectRoot $ProjectRoot) {
+            # 主動 build 進行中：本輪略過，不要等 4 分鐘卡死整支 watchdog
+            & $WriteLog "Build in progress, skip repair this round"
+            return $false
+        }
+        & $WriteLog "Orphan build lock without build process, clearing..."
+        Remove-Item -LiteralPath $lockFile -Force -ErrorAction SilentlyContinue
+    }
+
     & $WriteLog "Site unhealthy, repairing..."
     Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
 
@@ -150,13 +234,16 @@ function Repair-SiteIfNeeded {
     }
 
     Start-SiteRunner -ProjectRoot $ProjectRoot
-    Start-Sleep -Seconds 12
 
-    if (Test-SiteHealthy) {
-        & $WriteLog "Site repaired"
-        return $true
+    # 最多等約 45 秒成為健康（每 5 秒用 curl 探一次）
+    for ($i = 1; $i -le 9; $i++) {
+        Start-Sleep -Seconds 5
+        if (Test-SiteHealthy) {
+            & $WriteLog "Site repaired"
+            return $true
+        }
     }
 
-    & $WriteLog "Site repair failed"
+    & $WriteLog "Site repair failed (port may be held by zombie; will retry next minute)"
     return $false
 }

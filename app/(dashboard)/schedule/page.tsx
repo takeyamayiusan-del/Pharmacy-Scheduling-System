@@ -10,6 +10,7 @@ import { calculateLeaveDisplayOnSchedule, getOriginalShiftForLeaveDay } from "@/
 import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
+import FlexibleAttendancePanel from "@/components/FlexibleAttendancePanel";
 
 const shiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
 
@@ -29,6 +30,7 @@ export default function SchedulePage() {
     countSaturdaysInMonth,
     getShiftForDate,
     getBaseShiftForDate,
+    refreshSchedule,
     getWednesdayOffDates,
     shiftTimeConfig,
     shiftDisplayConfig,
@@ -85,10 +87,42 @@ export default function SchedulePage() {
   const [activeLegendShift, setActiveLegendShift] = useState<ShiftType | null>(null);
   const [lockingMonth, setLockingMonth] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [typhoonDates, setTyphoonDates] = useState<Record<string, { title: string; periodLabel: string }>>({});
+  const [typhoonReloadKey, setTyphoonReloadKey] = useState(0);
   
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
   const daysInMonth = new Date(year, month, 0).getDate();
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { data } = await supabase
+        .from("flexible_attendance_days")
+        .select("day_date, title, period_mode, from_time, status")
+        .neq("status", "cancelled")
+        .gte("day_date", `${year}-${String(month).padStart(2, "0")}-01`)
+        .lte("day_date", `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`);
+      if (cancelled || !data) return;
+      const map: Record<string, { title: string; periodLabel: string }> = {};
+      data.forEach((row) => {
+        const date = String(row.day_date).slice(0, 10);
+        const periodLabel =
+          row.period_mode === "full_day"
+            ? "全日"
+            : `${String(row.from_time ?? "").slice(0, 5)}起`;
+        map[date] = {
+          title: String(row.title ?? "颱風假"),
+          periodLabel,
+        };
+      });
+      setTyphoonDates(map);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, year, month, daysInMonth, typhoonReloadKey]);
+
   const saturdayCount = countSaturdaysInMonth(year, month);
   const monthLocked = isLeaveMonthLocked(year, month);
   const viewingPastMonth = isPastMonth(year, month);
@@ -188,6 +222,7 @@ export default function SchedulePage() {
       shiftDisplayConfig,
       leaveRequests,
       overtimeRequests,
+      typhoonDates,
     });
     setShowExportModal(false);
   };
@@ -452,6 +487,10 @@ export default function SchedulePage() {
                 <span className="text-gray-600">國定假日 - 可編輯</span>
               </div>
               <div className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full bg-cyan-500"></div>
+                <span className="text-gray-600">青色「颱」- 颱風／彈性出勤日</span>
+              </div>
+              <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-violet-500"></div>
                 <span className="text-gray-600">紫色 - 當日請假</span>
               </div>
@@ -465,6 +504,15 @@ export default function SchedulePage() {
           </div>
         </div>
       </div>
+
+      {isManager && (
+        <FlexibleAttendancePanel
+          onScheduleChanged={() => {
+            void refreshSchedule();
+            setTyphoonReloadKey((k) => k + 1);
+          }}
+        />
+      )}
 
       {showExportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
@@ -707,9 +755,11 @@ export default function SchedulePage() {
                   const dayOfWeek = date.getDay();
                   const holidayInfo = getHolidayInfo(dateStr);
                   const isToday = dateStr === todayDateStr;
+                  const typhoon = typhoonDates[dateStr];
                   
                   let headerClass = "";
-                  if (dayOfWeek === 0) headerClass = "text-red-600 bg-red-50";
+                  if (typhoon) headerClass = "text-cyan-800 bg-cyan-100";
+                  else if (dayOfWeek === 0) headerClass = "text-red-600 bg-red-50";
                   else if (dayOfWeek === 6) headerClass = "text-orange-600 bg-orange-50";
                   else if (holidayInfo.isHoliday) headerClass = "text-yellow-700 bg-yellow-50";
                   
@@ -718,12 +768,18 @@ export default function SchedulePage() {
                       key={day}
                       className={`p-2 text-center text-sm font-medium min-w-[48px] ${headerClass} ${isToday ? "bg-red-100 border-x-4 border-red-500" : ""} cursor-pointer hover:brightness-95 transition`}
                       onClick={() => setSelectedDate(dateStr)}
-                      title="查看當日上班狀況"
+                      title={typhoon ? `${typhoon.title}（${typhoon.periodLabel}）` : "查看當日上班狀況"}
                     >
                       {isToday && <div className="text-[10px] font-bold text-red-700">今</div>}
+                      {typhoon && <div className="text-[10px] font-bold text-cyan-800">颱</div>}
                       <div>{day}</div>
                       <div className="text-xs text-gray-500">{dayLabels[dayOfWeek]}</div>
-                      {holidayInfo.isHoliday && !isSunday(dateStr) && (
+                      {typhoon && (
+                        <div className="text-[10px] text-cyan-700 whitespace-pre-line">
+                          {typhoon.periodLabel}
+                        </div>
+                      )}
+                      {holidayInfo.isHoliday && !isSunday(dateStr) && !typhoon && (
                         <div className="text-[10px] text-yellow-700 whitespace-pre-line">
                           {holidayInfo.name}
                         </div>
@@ -747,8 +803,9 @@ export default function SchedulePage() {
                     const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                     const shift = getShiftForDate(dateStr, emp.id);
                     const isToday = dateStr === todayDateStr;
+                    const isTyphoon = Boolean(typhoonDates[dateStr]);
                     return (
-                      <td key={day} className={`${isSunday(dateStr) ? 'bg-red-50/30' : ''} ${isToday ? "bg-red-50 border-x-4 border-red-500" : ""}`}>
+                      <td key={day} className={`${isSunday(dateStr) ? 'bg-red-50/30' : ''} ${isTyphoon ? 'bg-cyan-50/70 ring-1 ring-inset ring-cyan-200' : ''} ${isToday ? "bg-red-50 border-x-4 border-red-500" : ""}`}>
                         <ShiftCell date={dateStr} employeeId={emp.id} shift={shift} />
                       </td>
                     );

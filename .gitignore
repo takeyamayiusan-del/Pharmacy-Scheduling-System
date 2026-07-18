@@ -87,6 +87,12 @@ yaosheng-usb-*.zip
 /data/app-logs/*
 !/data/app-logs/.gitkeep
 
+# Hyper-V 虛擬碟與安裝 ISO（體積大，勿提交）
+/data/hyperv/**
+!/data/hyperv/.gitkeep
+*.vhdx
+*.iso
+
 # Sensitive files (auto-detected)
 .env.local
 node_modules

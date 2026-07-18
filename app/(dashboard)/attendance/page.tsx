@@ -434,7 +434,8 @@ export default function AttendancePage() {
                             punches.map((p, idx) => (
                               <div key={idx} className={`text-xs ${p.action === 'work_in' ? 'text-green-600' : 'text-blue-600'}`}>
                                 {p.action === 'work_in' ? '進' : '出'}：{p.time}
-                                {p.lateMinutes > 0 && <span className="text-red-500 ml-1">遲{p.lateMinutes}分</span>}
+                                {p.action === 'work_in' && p.lateMinutes > 0 && <span className="text-red-500 ml-1">遲{p.lateMinutes}分</span>}
+                                {p.action === 'work_out' && p.reason?.includes('加班') && <span className="text-blue-500 ml-1">逾時</span>}
                               </div>
                             ))
                           ) : (

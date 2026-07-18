@@ -105,11 +105,19 @@ Invoke-Step "[4/5] Next.js site :3000" {
     }
 
     Start-SiteRunner -ProjectRoot $ProjectRoot
-    Start-Sleep -Seconds 10
-    if (Test-SiteHealthy) {
+    $siteStarted = $false
+    for ($i = 1; $i -le 18; $i++) {
+        if (Test-SiteHealthy) {
+            $siteStarted = $true
+            break
+        }
+        Write-Host "  Waiting site startup ($i/18) ..."
+        Start-Sleep -Seconds 5
+    }
+    if ($siteStarted) {
         Write-Host "  Site started: http://localhost:3000" -ForegroundColor Green
     } else {
-        throw "Site did not start on port 3000. Run: powershell -File scripts\windows-start-all.ps1 -Rebuild"
+        throw "Site did not become healthy on port 3000 within 90 seconds. Run: powershell -File scripts\windows-start-all.ps1 -Rebuild"
     }
 } | Out-Null
 

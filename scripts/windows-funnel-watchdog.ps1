@@ -1,4 +1,4 @@
-# 每 3 分鐘檢查本機網站 + Tailscale Funnel，異常時自動修復
+# 每 1 分鐘檢查本機網站 + Tailscale Funnel，異常時自動修復（含 Next 殭屍進程）
 param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
 )
@@ -29,12 +29,7 @@ function Get-FunnelUrl {
 
 function Test-FunnelHealthy([string]$BaseUrl) {
     if (-not $BaseUrl) { return $false }
-    try {
-        $r = Invoke-WebRequest -Uri "$BaseUrl/login" -UseBasicParsing -TimeoutSec 8
-        return $r.StatusCode -eq 200
-    } catch {
-        return $false
-    }
+    return (Test-HttpOk -Uri "$BaseUrl/login" -TimeoutSec 8)
 }
 
 function Warmup-SiteRoutes {
@@ -47,13 +42,13 @@ function Warmup-SiteRoutes {
     }
 
     foreach ($uri in $targets) {
-        try {
-            $sw = [System.Diagnostics.Stopwatch]::StartNew()
-            $r = Invoke-WebRequest -Uri $uri -UseBasicParsing -TimeoutSec 8
-            $sw.Stop()
-            Write-Log ("Warmup OK: {0} {1}ms (status {2})" -f $uri, $sw.ElapsedMilliseconds, $r.StatusCode)
-        } catch {
-            Write-Log ("Warmup FAIL: {0} ({1})" -f $uri, $_.Exception.Message)
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $ok = Test-HttpOk -Uri $uri -TimeoutSec 8
+        $sw.Stop()
+        if ($ok) {
+            Write-Log ("Warmup OK: {0} {1}ms" -f $uri, $sw.ElapsedMilliseconds)
+        } else {
+            Write-Log ("Warmup FAIL: {0} ({1}ms)" -f $uri, $sw.ElapsedMilliseconds)
         }
     }
 }

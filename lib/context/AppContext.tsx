@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedType } from "@/lib/applications/statusMaps";
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
-import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, type PunchSlot } from "@/lib/attendance/punchSchedule";
+import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, todayDateStr, type PunchSlot } from "@/lib/attendance/punchSchedule";
 import {
   checkManagerLeaveAssignment,
   shouldSyncLeaveSelection,
@@ -365,6 +365,7 @@ interface AppContextType {
   updateShift: (date: string, employeeId: string, shift: ShiftType) => Promise<void>;
   getShiftForDate: (date: string, employeeId: string) => ShiftType;
   getBaseShiftForDate: (date: string, employeeId: string) => ShiftType;
+  refreshSchedule: () => Promise<void>;
   fixedShifts: FixedShift[];
   addFixedShift: (shift: FixedShift) => Promise<void>;
   updateFixedShift: (index: number, shift: FixedShift) => Promise<void>;
@@ -425,6 +426,8 @@ interface AppContextType {
   addTardinessRecord: (record: Omit<TardinessRecord, "id" | "createdAt">) => Promise<void>;
   deleteTardinessRecord: (id: string) => Promise<void>;
   punchRecords: PunchRecord[];
+  punchRecordsReady: boolean;
+  refreshTodayPunchRecords: () => Promise<void>;
   addPunchRecord: (record: Omit<PunchRecord, "id" | "createdAt">) => Promise<void>;
   updatePunchRecord: (id: string, updates: PunchRecordUpdate) => Promise<void>;
   deletePunchRecord: (id: string) => Promise<void>;
@@ -476,6 +479,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [overtimeRequests, setOvertimeRequests] = useState<OvertimeRequest[]>([]);
   const [tardinessRecords, setTardinessRecords] = useState<TardinessRecord[]>([]);
   const [punchRecords, setPunchRecords] = useState<PunchRecord[]>([]);
+  const [punchRecordsReady, setPunchRecordsReady] = useState(false);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [bulletinItems, setBulletinItems] = useState<BulletinItem[]>([]);
   const [bulletinReads, setBulletinReads] = useState<{ bulletinId: string; userId: string }[]>([]);
@@ -962,6 +966,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase]);
 
+  const mapPunchRecordRow = (r: {
+    id: string;
+    employee_id: string;
+    employee_name: string;
+    date: string;
+    action: string;
+    segment_index: number;
+    time: string;
+    shift: string;
+    late_minutes: number;
+    reason: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    created_at: string;
+  }): PunchRecord => ({
+    id: r.id,
+    employeeId: r.employee_id,
+    employeeName: r.employee_name,
+    date: r.date,
+    action: r.action as PunchRecord["action"],
+    segmentIndex: r.segment_index,
+    time: r.time.substring(0, 5),
+    shift: r.shift as ShiftType,
+    lateMinutes: r.late_minutes,
+    reason: r.reason ?? undefined,
+    latitude: Number(r.latitude ?? 0),
+    longitude: Number(r.longitude ?? 0),
+    createdAt: r.created_at,
+  });
+
+  const loadTodayPunchRecords = useCallback(async (employeeId: string, date = todayDateStr()) => {
+    const { data } = await supabase
+      .from("punch_records")
+      .select("*")
+      .eq("employee_id", employeeId)
+      .eq("date", date)
+      .order("time", { ascending: true });
+
+    if (data) {
+      const mapped = data.map(mapPunchRecordRow);
+      setPunchRecords((prev) => {
+        const rest = prev.filter((p) => !(p.employeeId === employeeId && p.date === date));
+        return [...rest, ...mapped];
+      });
+    }
+    setPunchRecordsReady(true);
+  }, [supabase]);
+
+  const refreshTodayPunchRecords = useCallback(async () => {
+    if (!currentUser) return;
+    await loadTodayPunchRecords(currentUser.id);
+  }, [currentUser, loadTodayPunchRecords]);
+
   const loadPunchRecords = useCallback(async () => {
     const { data } = await supabase
       .from("punch_records")
@@ -969,24 +1026,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .order("date", { ascending: false })
       .order("time", { ascending: true });
     if (data) {
-      setPunchRecords(
-        data.map((r) => ({
-          id: r.id,
-          employeeId: r.employee_id,
-          employeeName: r.employee_name,
-          date: r.date,
-          action: r.action as PunchRecord["action"],
-          segmentIndex: r.segment_index,
-          time: r.time.substring(0, 5), // HH:MM
-          shift: r.shift as ShiftType,
-          lateMinutes: r.late_minutes,
-          reason: r.reason ?? undefined,
-          latitude: Number(r.latitude ?? 0),
-          longitude: Number(r.longitude ?? 0),
-          createdAt: r.created_at,
-        }))
-      );
+      setPunchRecords(data.map(mapPunchRecordRow));
     }
+    setPunchRecordsReady(true);
   }, [supabase]);
 
   const loadNotifications = useCallback(async (userId: string) => {
@@ -1091,7 +1133,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 isWeekdayOffRule: userRow.is_weekday_off_rule ?? false,
               };
             setCurrentUser(emp);
-            // Load data in background without awaiting
+            await loadTodayPunchRecords(userRow.id);
+            // Load remaining data in background without blocking login UI
             Promise.allSettled([
               loadEmployees(),
               loadLeaveRequests(),
@@ -1131,6 +1174,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (event === "SIGNED_OUT" || !session) {
         setCurrentUser(null);
         setEmployees([]);
+        setPunchRecords([]);
+        setPunchRecordsReady(false);
         return;
       }
       
@@ -1155,7 +1200,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 isWeekdayOffRule: userRow.is_weekday_off_rule ?? false,
               };
               setCurrentUser(emp);
-              // Load data in background without awaiting
+              await loadTodayPunchRecords(userRow.id);
               Promise.allSettled([
                 loadEmployees(),
                 loadLeaveRequests(),
@@ -1191,7 +1236,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks, loadHolidays]);
+  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadTodayPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks, loadHolidays]);
 
   // ─── Auth functions ──────────────────────────────────────────────────────────
 
@@ -2742,6 +2787,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
   
 
 const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => {
+    const hasLocalDuplicate = punchRecords.some(
+      (p) =>
+        p.employeeId === record.employeeId &&
+        p.date === record.date &&
+        p.action === record.action &&
+        p.segmentIndex === record.segmentIndex
+    );
+    if (hasLocalDuplicate) {
+      throw new Error("此時段已打卡，請勿重複打卡");
+    }
+
     const isManagerActor =
       currentUser?.role === "owner" || currentUser?.role === "manager";
     const isForOtherEmployee =
@@ -2761,6 +2817,20 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       return;
     }
 
+    const { data: existing } = await supabase
+      .from("punch_records")
+      .select("id")
+      .eq("employee_id", record.employeeId)
+      .eq("date", record.date)
+      .eq("action", record.action)
+      .eq("segment_index", record.segmentIndex)
+      .maybeSingle();
+
+    if (existing) {
+      await loadTodayPunchRecords(record.employeeId, record.date);
+      throw new Error("此時段已打卡，請勿重複打卡");
+    }
+
     const { error } = await supabase.from("punch_records").insert({
       employee_id: record.employeeId,
       employee_name: record.employeeName,
@@ -2775,7 +2845,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       longitude: record.longitude,
     });
     if (error) throw error;
-    await loadPunchRecords();
+    await loadTodayPunchRecords(record.employeeId, record.date);
   };
 
   const updatePunchRecord = async (id: string, updates: PunchRecordUpdate) => {
@@ -3089,6 +3159,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         updateShift,
         getShiftForDate,
         getBaseShiftForDate,
+        refreshSchedule: loadScheduleOverrides,
         fixedShifts,
         addFixedShift,
         updateFixedShift,
@@ -3141,6 +3212,8 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         addTardinessRecord,
         deleteTardinessRecord,
         punchRecords,
+        punchRecordsReady,
+        refreshTodayPunchRecords,
         addPunchRecord,
         updatePunchRecord,
         deletePunchRecord,
