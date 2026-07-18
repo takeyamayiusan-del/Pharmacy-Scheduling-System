@@ -166,6 +166,14 @@ if ($funnelStatus -notmatch "Funnel on" -or $funnelStatus -notmatch "127\.0\.0\.
   Log "Funnel primary down -> funnel --bg $funnelPort"
   & tailscale funnel --bg --yes $funnelPort *>> $LogFile
   $funnelStatus = (& tailscale funnel status 2>&1 | Out-String)
+  if ($funnelStatus -match "Funnel on" -and $funnelStatus -match "127\.0\.0\.1:$funnelPort") {
+    Log "OK Funnel primary :443 -> 127.0.0.1:$funnelPort (repaired)"
+  } else {
+    Log "FAIL Funnel primary still missing after repair"
+    $allOk = $false
+  }
+} else {
+  Log "OK Funnel primary :443 -> 127.0.0.1:$funnelPort"
 }
 
 foreach ($site in $Global:YaoshengSites) {
@@ -185,6 +193,16 @@ foreach ($site in $Global:YaoshengSites) {
     Log "Funnel $($site.Name) down -> funnel --bg --https=$httpsPort $port"
     & tailscale funnel --bg --yes --https=$httpsPort $port *>> $LogFile
     $funnelStatus = (& tailscale funnel status 2>&1 | Out-String)
+    $hasHttps = $funnelStatus -match [regex]::Escape(":$httpsPort")
+    $hasProxy = $funnelStatus -match "127\.0\.0\.1:$port"
+    if ($hasHttps -and $hasProxy) {
+      Log "OK Funnel $($site.Name) :$httpsPort -> 127.0.0.1:$port (repaired)"
+    } else {
+      Log "FAIL Funnel $($site.Name) :$httpsPort still missing after repair"
+      $allOk = $false
+    }
+  } else {
+    Log "OK Funnel $($site.Name) :$httpsPort -> 127.0.0.1:$port"
   }
 }
 
