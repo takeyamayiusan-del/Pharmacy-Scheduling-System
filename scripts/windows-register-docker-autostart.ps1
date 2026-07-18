@@ -1,12 +1,12 @@
-# 註冊 Docker 方案的開機啟動 + 每分鐘守護
-# 請用系統管理員執行，或由 ENABLE-AUTO-START.bat 啟動
+# Register Docker auto-start + watchdog tasks
+# Run as Administrator (or via ENABLE-AUTO-START.bat)
 $ErrorActionPreference = "Stop"
 
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
 if (-not $isAdmin) {
-    Write-Host "需要系統管理員權限，正在提權..." -ForegroundColor Yellow
+    Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
     Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
     exit 0
 }
@@ -17,10 +17,9 @@ $WatchdogScript = Join-Path $ProjectRoot "scripts\windows-docker-watchdog.ps1"
 $BootTask = "YaoshengDockerBoot"
 $WatchdogTask = "YaoshengDockerWatchdog"
 
-if (-not (Test-Path $BootScript)) { throw "找不到 $BootScript" }
-if (-not (Test-Path $WatchdogScript)) { throw "找不到 $WatchdogScript" }
+if (-not (Test-Path $BootScript)) { throw "Missing: $BootScript" }
+if (-not (Test-Path $WatchdogScript)) { throw "Missing: $WatchdogScript" }
 
-# 用目前登入使用者（Docker Desktop 需要使用者工作階段）
 $userId = "$env:USERDOMAIN\$env:USERNAME"
 $principal = New-ScheduledTaskPrincipal -UserId $userId -LogonType Interactive -RunLevel Highest
 
@@ -48,8 +47,7 @@ Register-ScheduledTask `
     -Trigger @($triggerLogon, $triggerStartup) `
     -Principal $principal `
     -Settings $settings `
-    -Description "耀聖藥局：Docker + Supabase + 網站 + Funnel 自動啟動" |
-    Out-Null
+    -Description "Yaosheng pharmacy Docker boot: Supabase + web + Funnel" | Out-Null
 
 $watchAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$WatchdogScript`""
@@ -73,23 +71,21 @@ Register-ScheduledTask `
     -Trigger $watchTrigger `
     -Principal $principal `
     -Settings $watchSettings `
-    -Description "耀聖藥局：每分鐘檢查網站／Supabase／Funnel 並自動修復" |
-    Out-Null
+    -Description "Yaosheng pharmacy watchdog every 1 minute" | Out-Null
 
-# 立刻跑一次 boot + 確保 pm2
-Write-Host "正在執行一次啟動..." -ForegroundColor Cyan
+Write-Host "Running boot once..." -ForegroundColor Cyan
 & powershell -NoProfile -ExecutionPolicy Bypass -File $BootScript
 
 Write-Host ""
-Write-Host "=== 已啟用自動啟動 ===" -ForegroundColor Green
-Write-Host "  排程: $BootTask （登入時 + 開機後 2 分鐘）"
-Write-Host "  排程: $WatchdogTask （每 1 分鐘守護）"
-Write-Host "  日誌: $ProjectRoot\data\logs\docker-boot.log"
-Write-Host "  日誌: $ProjectRoot\data\logs\docker-watchdog.log"
+Write-Host "=== Auto-start ENABLED ===" -ForegroundColor Green
+Write-Host "  Task: $BootTask (AtLogOn + AtStartup+2min)"
+Write-Host "  Task: $WatchdogTask (every 1 minute)"
+Write-Host "  Logs: $ProjectRoot\data\logs\docker-boot.log"
+Write-Host "  Logs: $ProjectRoot\data\logs\docker-watchdog.log"
 Write-Host ""
-Write-Host "還需要手動確認：" -ForegroundColor Yellow
-Write-Host "  1) Docker Desktop → Start when you log in"
-Write-Host "  2) Windows 自動登入（netplwiz）— 斷電重開無人按鍵也能進桌面"
-Write-Host "  3) Tailscale 保持登入／開機自動連線"
+Write-Host "Manual checklist:" -ForegroundColor Yellow
+Write-Host "  1) Docker Desktop -> Start when you log in"
+Write-Host "  2) Win+R netplwiz -> enable Windows auto logon"
+Write-Host "  3) Keep Tailscale signed in"
 Write-Host ""
 pause

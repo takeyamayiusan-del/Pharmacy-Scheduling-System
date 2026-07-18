@@ -1,24 +1,27 @@
 @echo off
-chcp 65001 >nul
 cd /d "%~dp0"
-
 echo ========================================
-echo   耀聖藥局 — 一鍵啟用自動啟動／守護
+echo   Yaosheng Pharmacy - Enable Auto Start
 echo ========================================
 echo.
-echo 將會設定：
-echo   - 登入／開機自動啟動 Docker Supabase 網站 Funnel
-echo   - 每分鐘檢查，網站關掉會自動再開
+echo This will register:
+echo   - Boot/logon auto start (Docker, Supabase, web, Funnel)
+echo   - Watchdog every 1 minute (restart web if down)
 echo.
-echo 請在跳出的 UAC 視窗按「是」
+echo Please click YES on the UAC prompt.
 echo.
 
 powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0scripts\windows-register-docker-autostart.ps1"
+set ERR=%ERRORLEVEL%
 
 echo.
-echo 若上面成功，請再確認：
-echo   1. Docker Desktop 勾選 Start when you log in
-echo   2. Win+R 輸入 netplwiz → 取消「必須輸入密碼」→ 設自動登入
-echo   3. 員工網址: https://chiaho-pharmacy.tail7f62d0.ts.net/login
+if %ERR% NEQ 0 (
+  echo FAILED. Error code: %ERR%
+) else (
+  echo DONE. Please also check manually:
+  echo   1. Docker Desktop - Start when you log in
+  echo   2. Win+R netplwiz - enable Windows auto logon
+  echo   3. Employee URL: https://chiaho-pharmacy.tail7f62d0.ts.net/login
+)
 echo.
 pause
