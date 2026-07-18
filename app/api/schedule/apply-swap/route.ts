@@ -56,7 +56,7 @@ export async function POST(req: NextRequest) {
       }
 
       for (const entry of storedSnapshot) {
-        if (entry.hadDbEntry && entry.shift) {
+        if (entry.hadDbEntry && entry.shift != null) {
           const { error } = await admin.from("schedule_entries").upsert(
             {
               user_id: entry.userId,
