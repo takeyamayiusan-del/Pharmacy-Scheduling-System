@@ -95,5 +95,7 @@ yaosheng-usb-*.zip
 
 # Sensitive files (auto-detected)
 .env.local
+scripts/.env.local-db
+scripts/.env.cloud
 node_modules
 
