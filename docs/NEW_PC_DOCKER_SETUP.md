@@ -200,11 +200,17 @@ npm start
 
 瀏覽器開：http://localhost:3000 → 登入 → 確認班表／打卡資料都在。
 
-### 步驟 10：外網 Tailscale Funnel
+### 步驟 10：外網 Tailscale Funnel（排班 + 金流）
 
 ```powershell
-# 網站需已在 3000
-tailscale funnel --bg 3000
+# 排班：HTTPS 443 → 本機 3000
+# 金流：HTTPS 8443 → 本機 5000
+# （不要用 path 掛載 /site-5000，金流前端資源會壞；也不要用 serve 疊在 funnel 上）
+powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1
+
+# 或只補開金流（不動排班）
+powershell -ExecutionPolicy Bypass -File scripts\windows-enable-cashflow-funnel.ps1
+
 tailscale funnel status
 ```
 
@@ -212,11 +218,14 @@ tailscale funnel status
 
 外網網址會類似：
 
-`https://新電腦名稱.tailxxxx.ts.net`
+| 服務 | 網址 |
+|------|------|
+| 排班 | `https://新電腦名稱.tailxxxx.ts.net` |
+| 金流 | `https://新電腦名稱.tailxxxx.ts.net:8443` |
 
-手機改 **4G** 測試登入。
+手機改 **4G** 分別測試兩個網址。
 
-若前端／API 要走同一網域（與舊機作法相同），再把：
+若排班前端／API 要走同一網域（與舊機作法相同），再把：
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=https://新電腦名稱.tailxxxx.ts.net
@@ -276,8 +285,9 @@ tailscale funnel --bg 3000
 | 3 | `supabase status` running | |
 | 4 | http://localhost:3000 可登入 | |
 | 5 | 班表／打卡／員工資料正確 | |
-| 6 | Funnel HTTPS 外網可開 | |
-| 7 | 重開機後約數分鐘內會自動起來 | |
+| 6 | 排班 Funnel（443）外網可開 | |
+| 7 | 金流 Funnel（`:8443`）外網可開 | |
+| 8 | 重開機後約數分鐘內兩站都會自動起來 | |
 
 ---
 

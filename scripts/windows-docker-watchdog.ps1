@@ -159,12 +159,33 @@ if ($Global:YaoshengHostConfig.WatchAllPm2) {
   }
 }
 
-# Funnel primary
+# Funnel: primary + secondary HTTPS ports (must stay on `funnel`, not `serve`)
 $funnelPort = [int]$Global:YaoshengHostConfig.PrimaryFunnelPort
 $funnelStatus = (& tailscale funnel status 2>&1 | Out-String)
 if ($funnelStatus -notmatch "Funnel on" -or $funnelStatus -notmatch "127\.0\.0\.1:$funnelPort") {
-  Log "Funnel down -> funnel --bg $funnelPort"
-  & tailscale funnel --bg $funnelPort *>> $LogFile
+  Log "Funnel primary down -> funnel --bg $funnelPort"
+  & tailscale funnel --bg --yes $funnelPort *>> $LogFile
+  $funnelStatus = (& tailscale funnel status 2>&1 | Out-String)
+}
+
+foreach ($site in $Global:YaoshengSites) {
+  $port = [int]$site.Port
+  $httpsPort = 0
+  if ($site.ContainsKey("FunnelHttpsPort") -and $site.FunnelHttpsPort) {
+    $httpsPort = [int]$site.FunnelHttpsPort
+  }
+  if ($httpsPort -le 0) { continue }
+  if ($port -eq $funnelPort) { continue }
+  if (-not (Test-Path ([string]$site.Root))) { continue }
+
+  # Expect both the HTTPS listen port and local proxy target in status
+  $hasHttps = $funnelStatus -match [regex]::Escape(":$httpsPort")
+  $hasProxy = $funnelStatus -match "127\.0\.0\.1:$port"
+  if (-not $hasHttps -or -not $hasProxy) {
+    Log "Funnel $($site.Name) down -> funnel --bg --https=$httpsPort $port"
+    & tailscale funnel --bg --yes --https=$httpsPort $port *>> $LogFile
+    $funnelStatus = (& tailscale funnel status 2>&1 | Out-String)
+  }
 }
 
 if ($allOk) {

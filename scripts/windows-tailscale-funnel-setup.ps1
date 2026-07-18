@@ -1,9 +1,11 @@
-# Tailscale Funnel (new CLI): expose Next.js only; API via next.config.js rewrites
-# Run as Administrator:
+# Tailscale Funnel: pharmacy (443) + optional cashflow (8443)
+# Run as Administrator if prompted:
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1
 
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = "Continue"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "windows-sites.config.ps1")
+
 $LogDir = Join-Path $ProjectRoot "data\logs"
 $LogFile = Join-Path $LogDir "funnel-setup.log"
 
@@ -16,22 +18,46 @@ if (-not (Get-Command tailscale -ErrorAction SilentlyContinue)) {
     throw "tailscale not found. Install Tailscale first."
 }
 
-Write-Host "=== Tailscale Funnel ===" -ForegroundColor Cyan
-Write-Log "Funnel setup start"
+$primaryPort = [int]$Global:YaoshengHostConfig.PrimaryFunnelPort
+Write-Host "=== Tailscale Funnel (multi-site) ===" -ForegroundColor Cyan
+Write-Log "Funnel setup start (primary=$primaryPort)"
 
-# 確保本機網站已起來
-$portOk = [bool](netstat -ano | Select-String ":3000\s" | Select-String "LISTENING")
+$portOk = [bool](netstat -ano | Select-String ":$primaryPort\s" | Select-String "LISTENING")
 if (-not $portOk) {
-    Write-Host "  Port 3000 not listening — start site first (scripts\windows-start-all.ps1)" -ForegroundColor Red
-    Write-Log "Aborted: port 3000 not listening"
-    throw "Port 3000 not listening"
+    Write-Host "  Port $primaryPort not listening — start sites first (START-NOW.bat)" -ForegroundColor Red
+    Write-Log "Aborted: port $primaryPort not listening"
+    throw "Port $primaryPort not listening"
 }
 
+# Reset both so we do not leave a leftover `serve` mount that demotes Funnel
 tailscale funnel reset 2>$null
 tailscale serve reset 2>$null
 
-$setupOut = (tailscale funnel --bg --yes 3000 2>&1 | Out-String)
-Write-Log $setupOut.Trim()
+$setupOut = (tailscale funnel --bg --yes $primaryPort 2>&1 | Out-String)
+Write-Log ("primary: " + $setupOut.Trim())
+
+foreach ($site in $Global:YaoshengSites) {
+    $port = [int]$site.Port
+    $httpsPort = 0
+    if ($site.ContainsKey("FunnelHttpsPort") -and $site.FunnelHttpsPort) {
+        $httpsPort = [int]$site.FunnelHttpsPort
+    }
+    if ($httpsPort -le 0) { continue }
+    if ($port -eq $primaryPort) { continue }
+    if (-not (Test-Path ([string]$site.Root))) {
+        Write-Host "  skip $($site.Name): root missing" -ForegroundColor Yellow
+        continue
+    }
+
+    $listenOk = [bool](netstat -ano | Select-String ":$port\s" | Select-String "LISTENING")
+    if (-not $listenOk) {
+        Write-Host "  WARN: $($site.Name) port $port not listening yet — Funnel will still be configured" -ForegroundColor Yellow
+    }
+
+    $out = (tailscale funnel --bg --yes --https=$httpsPort $port 2>&1 | Out-String)
+    Write-Log ("$($site.Name) https=$httpsPort -> $port : " + $out.Trim())
+    Write-Host "  Funnel $($site.Name): https://<host>:$httpsPort -> 127.0.0.1:$port" -ForegroundColor Green
+}
 
 Start-Sleep -Seconds 3
 $statusOut = (tailscale funnel status 2>&1 | Out-String)
@@ -43,25 +69,38 @@ if ($statusOut -notmatch "Funnel on") {
     throw "Tailscale Funnel failed to start"
 }
 
-if ($setupOut -notmatch "Available on the internet" -and $statusOut -notmatch "proxy http://127\.0\.0\.1:3000") {
-    Write-Host "  Warning: Funnel may not be public yet" -ForegroundColor Yellow
-    Write-Log "Warning: missing 'Available on the internet'"
-}
-
 $url = $null
 if ($statusOut -match '(https://[a-z0-9-]+\.tail[a-z0-9]+\.ts\.net)') { $url = $Matches[1] }
 if ($url) {
     try {
         $r = Invoke-WebRequest -Uri "$url/login" -UseBasicParsing -TimeoutSec 25
         if ($r.StatusCode -eq 200) {
-            Write-Host "  External check OK: $url/login" -ForegroundColor Green
-            Write-Log "External check OK: $url/login"
+            Write-Host "  Pharmacy OK: $url/login" -ForegroundColor Green
+            Write-Log "Pharmacy OK: $url/login"
         }
     } catch {
-        Write-Host "  External check failed: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Log "External check failed: $($_.Exception.Message)"
+        Write-Host "  Pharmacy external check failed: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Log "Pharmacy external check failed: $($_.Exception.Message)"
+    }
+
+    foreach ($site in $Global:YaoshengSites) {
+        $httpsPort = 0
+        if ($site.ContainsKey("FunnelHttpsPort") -and $site.FunnelHttpsPort) {
+            $httpsPort = [int]$site.FunnelHttpsPort
+        }
+        if ($httpsPort -le 0) { continue }
+        $cashUrl = "$url`:$httpsPort/"
+        try {
+            $r2 = Invoke-WebRequest -Uri $cashUrl -UseBasicParsing -TimeoutSec 25
+            Write-Host "  $($site.Name) OK: $cashUrl (HTTP $($r2.StatusCode))" -ForegroundColor Green
+            Write-Log "$($site.Name) OK: $cashUrl"
+        } catch {
+            Write-Host "  $($site.Name) external check failed: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Log "$($site.Name) external check failed: $($_.Exception.Message)"
+        }
     }
 }
 
 Write-Host ""
-Write-Host "Employee URL: $url/login" -ForegroundColor Yellow
+Write-Host "排班（員工）: $url/login" -ForegroundColor Yellow
+Write-Host "金流:         $url`:8443/" -ForegroundColor Yellow

@@ -91,19 +91,24 @@ foreach ($site in $Global:YaoshengSites) {
 & pm2 save *>> $LogFile
 Start-Sleep -Seconds 5
 
-# 4) Funnel primary
+# 4) Funnel: primary (443) + optional secondary HTTPS ports (8443 / 10000)
+# IMPORTANT: do NOT use `tailscale serve` for extra sites — it can demote Funnel to tailnet-only.
+# Path mounts (/site-5000) also break SPAs that load assets from "/". Prefer --https=<port>.
 $funnelPort = [int]$Global:YaoshengHostConfig.PrimaryFunnelPort
 Log "tailscale funnel --bg $funnelPort"
-& tailscale funnel --bg $funnelPort *>> $LogFile
+& tailscale funnel --bg --yes $funnelPort *>> $LogFile
 
-# Optional: expose other site ports via serve path /site-<port>
 foreach ($site in $Global:YaoshengSites) {
   $port = [int]$site.Port
+  $httpsPort = 0
+  if ($site.ContainsKey("FunnelHttpsPort") -and $site.FunnelHttpsPort) {
+    $httpsPort = [int]$site.FunnelHttpsPort
+  }
+  if ($httpsPort -le 0) { continue }
   if ($port -eq $funnelPort) { continue }
   if (-not (Test-Path ([string]$site.Root))) { continue }
-  $path = "/site-$port"
-  Log "tailscale serve path $path -> 127.0.0.1:$port"
-  & tailscale serve --bg --set-path $path $port *>> $LogFile
+  Log "tailscale funnel --bg --https=$httpsPort $port  ($($site.Name))"
+  & tailscale funnel --bg --yes --https=$httpsPort $port *>> $LogFile
 }
 
 Log "=== multi-site boot done ==="
