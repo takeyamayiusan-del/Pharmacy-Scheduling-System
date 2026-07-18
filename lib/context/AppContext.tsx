@@ -16,7 +16,7 @@ import {
   enumerateDatesInRange,
 } from "@/lib/schedule/effectiveShift";
 import { roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
-import { buildSwapShiftsAndChanges } from "@/lib/schedule/swapSchedule";
+import { buildSwapShiftsAndChanges, swapSnapshotCells } from "@/lib/schedule/swapSchedule";
 import {
   applyScheduleChangesToState,
   revertSnapshotOnState,
@@ -2184,15 +2184,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     request: SwapRequest,
     isSelfSwap: boolean
   ): Promise<ScheduleSnapshotEntry[]> => {
-    const cells = isSelfSwap
-      ? [
-          { userId: request.requesterId, date: request.requesterDate },
-          { userId: request.requesterId, date: request.targetDate },
-        ]
-      : [
-          { userId: request.requesterId, date: request.requesterDate },
-          { userId: request.targetEmployeeId, date: request.targetDate },
-        ];
+    const cells = swapSnapshotCells(request, isSelfSwap);
     const userIds = Array.from(new Set(cells.map((c) => c.userId)));
     const dates = Array.from(new Set(cells.map((c) => c.date)));
     const dbMap = await fetchDbScheduleShifts(supabase, userIds, dates);
@@ -2221,10 +2213,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("已過去的月份無法變更換班申請");
     }
 
+    // 取消審核／駁回已核准：先還原班表到換班前
     if (request && prevStatus === "approved" && status !== "approved") {
       await revertApprovedSwap(request);
+      await loadScheduleOverrides();
     }
 
+    // 核准：寫入互換後班表，並立刻重載讓班表頁即時更新
     if (request && status === "approved" && prevStatus !== "approved") {
       const isSelfSwap = request.requesterId === request.targetEmployeeId;
       const snapshot = await buildSwapScheduleSnapshot(request, isSelfSwap);
@@ -2261,6 +2256,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .eq("id", id);
 
     if (statusError) {
+      // 狀態更新失敗時，班表可能已改；盡力重載避免畫面與 DB 不一致
+      await loadScheduleOverrides();
       throw new Error(`換班狀態更新失敗：${statusError.message}`);
     }
 
@@ -2333,9 +2330,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteSwapRequest = async (id: string) => {
     const request = swapRequests.find((item) => item.id === id);
 
-    // 僅已核准且已寫入班表的申請需要還原
+    // 僅已核准且已寫入班表的申請需要還原到換班前
     if (request?.status === "approved") {
       await revertApprovedSwap(request);
+      await loadScheduleOverrides();
     }
 
     const { error } = await supabase
@@ -2346,6 +2344,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) throw error;
 
     await loadSwapRequests();
+    await loadScheduleOverrides();
   };
 
   // ─── Overtime requests (Supabase) ────────────────────────────────────────────

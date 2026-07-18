@@ -34,7 +34,7 @@ export async function restoreScheduleSnapshot(
   updatedBy?: string
 ) {
   for (const entry of snapshot) {
-    if (entry.hadDbEntry && entry.shift) {
+    if (entry.hadDbEntry && entry.shift != null) {
       await supabase.from("schedule_entries").upsert(
         {
           user_id: entry.userId,

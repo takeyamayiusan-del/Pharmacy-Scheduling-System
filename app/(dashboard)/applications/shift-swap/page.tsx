@@ -100,9 +100,9 @@ export default function ShiftSwapPage() {
         )}
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-gray-700">
-        <span className="font-medium text-blue-800">換班流程：</span>
-        發起申請 → 對方確認 → 管理者審核 → 完成
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-gray-700 space-y-1">
+        <p><span className="font-medium text-blue-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
+        <p className="text-blue-900/80">與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
       </div>
 
       {source === "wednesday_conflict" && (

@@ -22,7 +22,8 @@ export function revertSnapshotOnState(
   const next: ScheduleData = { ...prev };
   for (const entry of snapshot) {
     const day = { ...(next[entry.date] ?? {}) };
-    if (entry.hadDbEntry && entry.shift) {
+    // shift 可能為 "X"；只要當初有 DB 列就還原，不可用 truthy 判斷漏掉休班
+    if (entry.hadDbEntry && entry.shift != null) {
       day[entry.userId] = entry.shift;
       next[entry.date] = day;
     } else {
