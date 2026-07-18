@@ -17,9 +17,9 @@ $Global:YaoshengSites = @(
   }
   @{
     Name       = "cashflow"
-    Port       = 3001
+    Port       = 5000
     Root       = "C:\cash-flow-app"
-    Ecosystem  = "ecosystem.config.cjs"
+    Ecosystem  = ""
     HealthPath = "/"
   }
 )
