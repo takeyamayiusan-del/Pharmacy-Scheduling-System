@@ -9,6 +9,11 @@ import {
   periodToTimes,
   type LeavePeriod,
 } from '@/lib/attendance/leaveHours';
+import { currentMonthMinDate } from '@/lib/schedule/monthAccess';
+import {
+  buildLeaveFormPrintData,
+  printLeaveApplicationForm,
+} from '@/lib/applications/printLeaveForm';
 
 const PERIOD_OPTIONS: { label: string; value: LeavePeriod }[] = [
   { label: '全天', value: 'full_day' },
@@ -114,6 +119,14 @@ export default function LeaveApplicationPage() {
       setSubmitError(`補休餘額不足（可用 ${compBalance} 小時，本次需要 ${estimatedHours} 小時）`);
       return;
     }
+    if (formData.type === '特休') {
+      const year = new Date(formData.startDate).getFullYear();
+      const balance = getAnnualLeaveBalance(currentUser.id, year);
+      if (balance < estimatedHours / 8) {
+        setSubmitError(`特休餘額不足（剩餘 ${balance.toFixed(1)} 天，本次需要 ${(estimatedHours / 8).toFixed(1)} 天）`);
+        return;
+      }
+    }
 
     let startTime = formData.startTime;
     let endTime = formData.endTime;
@@ -123,32 +136,36 @@ export default function LeaveApplicationPage() {
       endTime = times.endTime;
     }
 
-    await addLeaveRequest({
-      employeeId: currentUser.id,
-      employeeName: currentUser.name,
-      startDate: formData.startDate,
-      endDate: formData.endDate,
-      startTime,
-      endTime,
-      period: formData.period,
-      shiftMode: formData.shiftMode,
-      leaveHours: estimatedHours,
-      type: formData.type,
-      reason: formData.reason,
-      status: 'pending',
-    });
+    try {
+      await addLeaveRequest({
+        employeeId: currentUser.id,
+        employeeName: currentUser.name,
+        startDate: formData.startDate,
+        endDate: formData.endDate,
+        startTime,
+        endTime,
+        period: formData.period,
+        shiftMode: formData.shiftMode,
+        leaveHours: estimatedHours,
+        type: formData.type,
+        reason: formData.reason,
+        status: 'pending',
+      });
 
-    setShowForm(false);
-    setFormData({
-      startDate: '',
-      endDate: '',
-      startTime: '08:30',
-      endTime: '18:00',
-      period: 'full_day',
-      shiftMode: 'schedule',
-      type: '事假',
-      reason: '',
-    });
+      setShowForm(false);
+      setFormData({
+        startDate: '',
+        endDate: '',
+        startTime: '08:30',
+        endTime: '18:00',
+        period: 'full_day',
+        shiftMode: 'schedule',
+        type: '事假',
+        reason: '',
+      });
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : '申請失敗');
+    }
   };
 
   const handleReject = async () => {
@@ -162,10 +179,47 @@ export default function LeaveApplicationPage() {
   };
 
   const handleApprove = async (id: string) => {
+    const req = leaveRequests.find((r) => r.id === id);
+    if (!req) return;
     try {
       await updateLeaveRequestStatus(id, 'approved');
+      const reviewedAt = new Date().toISOString();
+      if (window.confirm('核准成功。是否列印請假簽名表？')) {
+        printLeaveApplicationForm(
+          buildLeaveFormPrintData(req, {
+            reviewedByName: currentUser?.name,
+            reviewedAt,
+            leaveHours: calcDisplayHours(req),
+          })
+        );
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : '核准失敗');
+    }
+  };
+
+  const calcDisplayHours = (req: (typeof leaveRequests)[number]) =>
+    req.leaveHours > 0
+      ? req.leaveHours
+      : calculateLeaveWorkHours({
+          startDate: req.startDate,
+          endDate: req.endDate,
+          startTime: req.startTime,
+          endTime: req.endTime,
+          period: req.period,
+          shiftMode: req.shiftMode,
+          employeeId: req.employeeId,
+          getShiftForDate,
+          shiftTimeConfig,
+        });
+
+  const handlePrintLeaveForm = (req: (typeof leaveRequests)[number]) => {
+    try {
+      printLeaveApplicationForm(
+        buildLeaveFormPrintData(req, { leaveHours: calcDisplayHours(req) })
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '列印失敗');
     }
   };
 
@@ -234,6 +288,7 @@ export default function LeaveApplicationPage() {
                 <input
                   type="date"
                   value={formData.startDate}
+                  min={currentMonthMinDate()}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -387,13 +442,14 @@ export default function LeaveApplicationPage() {
                 <th className="p-4 text-left font-medium text-gray-700">事由</th>
                 <th className="p-4 text-left font-medium text-gray-700">狀態</th>
                 <th className="p-4 text-left font-medium text-gray-700">審核說明</th>
+                <th className="p-4 text-left font-medium text-gray-700">簽名表</th>
                 {isManager && <th className="p-4 text-left font-medium text-gray-700">操作</th>}
               </tr>
             </thead>
             <tbody className="divide-y">
               {visibleRequests.length === 0 && (
                 <tr>
-                  <td colSpan={9} className="p-8 text-center text-gray-500">
+                  <td colSpan={isManager ? 10 : 9} className="p-8 text-center text-gray-500">
                     沒有請假申請
                   </td>
                 </tr>
@@ -401,20 +457,7 @@ export default function LeaveApplicationPage() {
               {visibleRequests.map((req) => {
                 const status = statusLabels[req.status];
                 const empName = req.employeeName || getEmpName(req.employeeId);
-                const displayHours =
-                  req.leaveHours > 0
-                    ? req.leaveHours
-                    : calculateLeaveWorkHours({
-                        startDate: req.startDate,
-                        endDate: req.endDate,
-                        startTime: req.startTime,
-                        endTime: req.endTime,
-                        period: req.period,
-                        shiftMode: req.shiftMode,
-                        employeeId: req.employeeId,
-                        getShiftForDate,
-                        shiftTimeConfig,
-                      });
+                const displayHours = calcDisplayHours(req);
                 return (
                   <tr key={req.id} className="hover:bg-gray-50">
                     <td className="p-4 font-medium text-gray-900">{empName}</td>
@@ -441,6 +484,19 @@ export default function LeaveApplicationPage() {
                         <span className="text-red-700">{req.rejectReason}</span>
                       ) : (
                         <span className="text-gray-400">—</span>
+                      )}
+                    </td>
+                    <td className="p-4">
+                      {req.status === 'approved' ? (
+                        <button
+                          type="button"
+                          onClick={() => handlePrintLeaveForm(req)}
+                          className="px-2 py-1 border border-blue-600 text-blue-600 rounded text-xs hover:bg-blue-50"
+                        >
+                          列印簽名表
+                        </button>
+                      ) : (
+                        <span className="text-gray-400 text-xs">—</span>
                       )}
                     </td>
                     {isManager && (

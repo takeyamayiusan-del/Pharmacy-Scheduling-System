@@ -51,6 +51,9 @@ build/
 .env
 .env.*
 !.env.example
+!.env.local.example
+!scripts/.env.cloud.example
+!scripts/.env.local-db.example
 
 # IDE files
 .vscode/
@@ -67,8 +70,32 @@ Thumbs.db
 *.temp
 .cache/
 
+# Supabase CLI local state
+supabase/.branches/
+
+# 本機執行資料（與專案同資料夾，可整包搬移；勿提交實際資料）
+/data/postgres/*
+!/data/postgres/.gitkeep
+/data/storage/*
+!/data/storage/.gitkeep
+/data/backups/*
+!/data/backups/.gitkeep
+!/data/backups/USB_README.txt
+
+# USB 打包產物（勿提交）
+yaosheng-usb-*.zip
+/data/app-logs/*
+!/data/app-logs/.gitkeep
+
+# Hyper-V 虛擬碟與安裝 ISO（體積大，勿提交）
+/data/hyperv/**
+!/data/hyperv/.gitkeep
+*.vhdx
+*.iso
+
 # Sensitive files (auto-detected)
 .env.local
-.env.local.example
+scripts/.env.local-db
+scripts/.env.cloud
 node_modules
 

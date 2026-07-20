@@ -3,6 +3,10 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 import { SHIFT_HOURS } from '@/lib/attendance/calculator';
+import {
+  calculateApprovedLeaveHoursOnDate,
+  calculateApprovedLeaveHoursTotal,
+} from '@/lib/attendance/leaveHours';
 import { buildEffectiveTardinessRecords } from '@/lib/tardiness';
 import { Download, FileText, Calendar, Clock } from 'lucide-react';
 import jsPDF from 'jspdf';
@@ -13,12 +17,16 @@ export default function AttendancePage() {
     employees,
     getShiftForDate,
     getHolidayInfo,
+    shiftTimeConfig,
     overtimeRequests,
     leaveRequests,
     tardinessRecords,
     punchRecords,
   } = useApp();
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [showMonthlyDetail, setShowMonthlyDetail] = useState(false);
   
   const year = currentDate.getFullYear();
@@ -50,24 +58,24 @@ export default function AttendancePage() {
       for (let day = 1; day <= daysInMonth; day += 1) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const shift = getShiftForDate(dateStr, emp.id);
-        // 檢查是否有核准的請假申請
-        const hasApprovedLeave = leaveRequests.some(
-          (req) =>
-            req.employeeId === emp.id &&
-            req.startDate <= dateStr &&
-            req.endDate >= dateStr &&
-            req.status === 'approved'
+        const shiftHours = SHIFT_HOURS[shift] ?? 0;
+        const leaveHoursOnDay = calculateApprovedLeaveHoursOnDate(
+          dateStr,
+          emp.id,
+          leaveRequests,
+          getShiftForDate,
+          shiftTimeConfig
         );
-        if (shift !== 'X' && !hasApprovedLeave) {
+        const creditedWorkHours = Math.max(0, shiftHours - leaveHoursOnDay);
+
+        if (shift !== 'X' && leaveHoursOnDay < shiftHours) {
           workDays += 1;
           if (getHolidayInfo(dateStr).isHoliday) {
-            holidayOvertimeHours += SHIFT_HOURS[shift] ?? 0;
+            holidayOvertimeHours += creditedWorkHours;
           }
         }
-        // 若有核准請假，則不計入班表工時
-        if (!hasApprovedLeave) {
-          workHours += SHIFT_HOURS[shift] ?? 0;
-        }
+
+        workHours += creditedWorkHours;
       }
 
       const overtimeHours = overtimeRequests
@@ -92,9 +100,13 @@ export default function AttendancePage() {
 
       const leaveHours = leaveRequests
         .filter((item) => item.employeeId === emp.id && item.status === 'approved')
-        .filter((item) => item.type !== '補休假')
         .filter((item) => item.endDate >= startDate && item.startDate <= endDate)
-        .reduce((sum, item) => sum + (item.leaveHours > 0 ? item.leaveHours : 0), 0);
+        .reduce(
+          (sum, item) =>
+            sum +
+            calculateApprovedLeaveHoursTotal(item, getShiftForDate, shiftTimeConfig),
+          0
+        );
 
       const effectiveTardinessRecords = buildEffectiveTardinessRecords(
         tardinessRecords,
@@ -122,7 +134,7 @@ export default function AttendancePage() {
         tardyMinutes,
       };
     });
-  }, [daysInMonth, displayEmployees, getShiftForDate, getHolidayInfo, leaveRequests, month, overtimeRequests, tardinessRecords, punchRecords, year]);
+  }, [daysInMonth, displayEmployees, getShiftForDate, getHolidayInfo, leaveRequests, month, overtimeRequests, shiftTimeConfig, tardinessRecords, punchRecords, year]);
 
   // 產生每月打卡明細數據
   const monthlyPunchData = useMemo(() => {
@@ -422,7 +434,8 @@ export default function AttendancePage() {
                             punches.map((p, idx) => (
                               <div key={idx} className={`text-xs ${p.action === 'work_in' ? 'text-green-600' : 'text-blue-600'}`}>
                                 {p.action === 'work_in' ? '進' : '出'}：{p.time}
-                                {p.lateMinutes > 0 && <span className="text-red-500 ml-1">遲{p.lateMinutes}分</span>}
+                                {p.action === 'work_in' && p.lateMinutes > 0 && <span className="text-red-500 ml-1">遲{p.lateMinutes}分</span>}
+                                {p.action === 'work_out' && p.reason?.includes('加班') && <span className="text-blue-500 ml-1">逾時</span>}
                               </div>
                             ))
                           ) : (

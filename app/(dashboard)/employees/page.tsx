@@ -9,6 +9,8 @@ export default function EmployeesPage() {
   const { currentUser, employees, addEmployee, updateEmployee, deleteEmployee } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [selfPassword, setSelfPassword] = useState({ newPassword: "", confirmPassword: "" });
+  const [changingOwnPassword, setChangingOwnPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
     role: "staff" as Role,
@@ -42,43 +44,54 @@ export default function EmployeesPage() {
   };
   
   // 提交表單
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    if (editingId) {
-      const updates: Partial<Employee> = {
-        name: formData.name,
-        role: formData.role,
-        username: formData.username.trim() || undefined,
-        hireDate: formData.hireDate,
-      };
-      if (formData.password) {
-        updates.password = formData.password;
+    try {
+      if (editingId) {
+        const updates: Partial<Employee> = {
+          name: formData.name,
+          role: formData.role,
+          username: formData.username.trim() || undefined,
+          hireDate: formData.hireDate,
+        };
+        if (formData.password) {
+          updates.password = formData.password;
+        }
+        await updateEmployee(editingId, updates);
+        alert("員工資料已更新！");
+      } else {
+        if (!formData.username.trim() || !formData.password) {
+          alert("新增員工請設定登入帳號與密碼");
+          return;
+        }
+        await addEmployee({
+          name: formData.name,
+          role: formData.role,
+          username: formData.username.trim(),
+          password: formData.password,
+          hireDate: formData.hireDate,
+        });
+        alert("員工已新增！");
       }
-      updateEmployee(editingId, updates);
-      alert("員工資料已更新！");
-    } else {
-      if (!formData.username.trim() || !formData.password) {
-        alert("新增員工請設定登入帳號與密碼");
-        return;
-      }
-      addEmployee({
-        name: formData.name,
-        role: formData.role,
-        username: formData.username.trim(),
-        password: formData.password,
-        hireDate: formData.hireDate,
-      });
-      alert("員工已新增！");
+      
+      resetForm();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "操作失敗");
     }
-    
-    resetForm();
   };
   
   // 確認刪除
-  const confirmDelete = (employee: Employee) => {
-    if (window.confirm(`確定要刪除員工 ${employee.name} 嗎？`)) {
-      deleteEmployee(employee.id);
+  const confirmDelete = async (employee: Employee) => {
+    if (employee.id === currentUser?.id) {
+      alert("無法刪除自己的帳號，請使用「變更我的密碼」修改密碼。");
+      return;
+    }
+    if (!window.confirm(`確定要停用員工 ${employee.name} 嗎？停用後將無法登入，歷史資料仍會保留。`)) return;
+    try {
+      await deleteEmployee(employee.id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "刪除失敗");
     }
   };
   
@@ -97,6 +110,29 @@ export default function EmployeesPage() {
       case "owner": return "bg-purple-100 text-purple-800";
       case "manager": return "bg-blue-100 text-blue-800";
       case "staff": return "bg-green-100 text-green-800";
+    }
+  };
+  
+  const handleChangeOwnPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentUser) return;
+    if (selfPassword.newPassword.length < 6) {
+      alert("新密碼至少需要 6 個字元");
+      return;
+    }
+    if (selfPassword.newPassword !== selfPassword.confirmPassword) {
+      alert("兩次輸入的密碼不一致");
+      return;
+    }
+    setChangingOwnPassword(true);
+    try {
+      await updateEmployee(currentUser.id, { password: selfPassword.newPassword });
+      setSelfPassword({ newPassword: "", confirmPassword: "" });
+      alert("您的密碼已更新！");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "密碼更新失敗");
+    } finally {
+      setChangingOwnPassword(false);
     }
   };
   
@@ -147,6 +183,51 @@ export default function EmployeesPage() {
         </div>
       </div>
       
+      {/* 變更自己的密碼 */}
+      {currentUser && (
+        <div className="bg-white rounded-xl shadow-sm border p-6">
+          <h3 className="font-medium text-gray-900 mb-1">變更我的密碼</h3>
+          <p className="text-sm text-gray-500 mb-4">
+            目前登入：{currentUser.name}（{getRoleLabel(currentUser.role as Role)}）
+          </p>
+          <form onSubmit={handleChangeOwnPassword} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">新密碼</label>
+              <input
+                type="password"
+                value={selfPassword.newPassword}
+                onChange={(e) => setSelfPassword({ ...selfPassword, newPassword: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="至少 6 個字元"
+                minLength={6}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">確認新密碼</label>
+              <input
+                type="password"
+                value={selfPassword.confirmPassword}
+                onChange={(e) => setSelfPassword({ ...selfPassword, confirmPassword: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder="再次輸入新密碼"
+                minLength={6}
+                required
+                autoComplete="new-password"
+              />
+            </div>
+            <button
+              type="submit"
+              disabled={changingOwnPassword}
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+            >
+              {changingOwnPassword ? "更新中…" : "更新我的密碼"}
+            </button>
+          </form>
+        </div>
+      )}
+      
       {/* 員工表單 */}
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -195,34 +276,34 @@ export default function EmployeesPage() {
               </div>
             </div>
             {formData.role === "staff" && (
-              <>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    登入帳號
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.username}
-                    onChange={e => setFormData({ ...formData, username: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
-                    placeholder="員工登入用"
-                    required={!editingId}
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    登入密碼{editingId ? "（留空則不變更）" : ""}
-                  </label>
-                  <input
-                    type="password"
-                    value={formData.password}
-                    onChange={e => setFormData({ ...formData, password: e.target.value })}
-                    className="w-full px-3 py-2 border rounded-lg"
-                    placeholder={editingId ? "不變更請留空" : "請設定密碼"}
-                    required={!editingId}
-                  />
-                </div>
-              </>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  登入帳號
+                </label>
+                <input
+                  type="text"
+                  value={formData.username}
+                  onChange={e => setFormData({ ...formData, username: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="員工登入用"
+                  required={!editingId}
+                />
+              </div>
+            )}
+            {(formData.role === "staff" || (editingId && formData.role === "manager")) && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  登入密碼{editingId ? "（留空則不變更）" : ""}
+                </label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={e => setFormData({ ...formData, password: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder={editingId ? "不變更請留空" : "請設定密碼"}
+                  required={!editingId && formData.role === "staff"}
+                />
+              </div>
             )}
             <div className="flex gap-3">
               <button

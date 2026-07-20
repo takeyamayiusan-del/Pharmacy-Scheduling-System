@@ -29,7 +29,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { currentUser, logout, notifications, markNotificationRead, deleteNotification, refreshNotifications, getLeaveSummary, isLoading } = useApp();
+  const { currentUser, logout, notifications, markNotificationRead, deleteNotification, deleteAllNotifications, refreshNotifications, getLeaveSummary, isLoading } = useApp();
   const router = useRouter();
   const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -112,6 +112,7 @@ export default function DashboardLayout({
   ).length;
 
   const navItems = [
+    { href: '/notifications', label: '通知中心', icon: Bell, allowed: true },
     { href: '/schedule', label: '班表', icon: Calendar, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
@@ -128,6 +129,15 @@ export default function DashboardLayout({
     { href: '/payroll', label: '薪資結算', icon: DollarSign, allowed: isManager },
   ];
 
+  const handleDeleteAllNotifications = async () => {
+    if (!window.confirm('確定刪除全部通知？此動作無法復原。')) return;
+    try {
+      await deleteAllNotifications();
+    } catch {
+      alert('刪除失敗，請稍後再試。');
+    }
+  };
+
   const handleNotificationClick = (notificationId: string, route?: string) => {
     markNotificationRead(notificationId);
     setShowNotifications(false);
@@ -138,9 +148,9 @@ export default function DashboardLayout({
     router.push('/notifications');
   };
 
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
+  const handleLogout = async () => {
+    await logout();
+    router.replace('/login');
   };
 
   const closeMobileSidebar = () => {
@@ -202,12 +212,22 @@ export default function DashboardLayout({
                   <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border z-50">
                     <div className="p-4 border-b flex items-center justify-between">
                       <h3 className="font-semibold text-gray-900">通知</h3>
-                      <button
-                        onClick={() => { setShowNotifications(false); router.push('/notifications'); }}
-                        className="text-xs text-blue-600 hover:underline"
-                      >
-                        全部查看
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {notifications.filter((n) => n.userId === currentUser.id).length > 0 && (
+                          <button
+                            onClick={handleDeleteAllNotifications}
+                            className="text-xs text-red-600 hover:underline"
+                          >
+                            一鍵刪除
+                          </button>
+                        )}
+                        <button
+                          onClick={() => { setShowNotifications(false); router.push('/notifications'); }}
+                          className="text-xs text-blue-600 hover:underline"
+                        >
+                          全部查看
+                        </button>
+                      </div>
                     </div>
                     <div className="max-h-96 overflow-y-auto">
                       {notifications

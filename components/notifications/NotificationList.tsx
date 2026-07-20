@@ -79,6 +79,25 @@ export function NotificationList() {
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
   };
 
+  const deleteAllNotifications = async () => {
+    if (!window.confirm('確定刪除全部通知？此動作無法復原。')) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) return;
+
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('recipient_id', session.user.id);
+
+    if (error) {
+      alert('刪除失敗，請稍後再試。');
+      return;
+    }
+
+    setNotifications([]);
+  };
+
   if (loading) {
     return (
       <div className="p-8 text-center text-gray-500">
@@ -91,14 +110,24 @@ export function NotificationList() {
     <div className="max-w-2xl mx-auto p-6">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-2xl font-bold text-gray-900">通知</h1>
-        {notifications.some(n => !n.is_read) && (
-          <button
-            onClick={markAllAsRead}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            全部標示為已讀
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          {notifications.some(n => !n.is_read) && (
+            <button
+              onClick={markAllAsRead}
+              className="text-sm text-blue-600 hover:text-blue-700"
+            >
+              全部標示為已讀
+            </button>
+          )}
+          {notifications.length > 0 && (
+            <button
+              onClick={deleteAllNotifications}
+              className="text-sm text-red-600 hover:text-red-700"
+            >
+              一鍵刪除
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-3">

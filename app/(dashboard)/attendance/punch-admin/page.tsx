@@ -401,8 +401,10 @@ export default function PunchAdminPage() {
                     )}
                   </td>
                   <td className="px-4 py-3 text-sm">
-                    {p.lateMinutes > 0 ? (
+                    {p.action === "work_in" && p.lateMinutes > 0 ? (
                       <span className="text-amber-600">{p.lateMinutes} 分</span>
+                    ) : p.action === "work_out" && p.reason?.includes("加班") ? (
+                      <span className="text-blue-600">逾時</span>
                     ) : (
                       <span className="text-gray-400">—</span>
                     )}

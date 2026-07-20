@@ -56,6 +56,7 @@ export type NotificationRelatedType =
  */
 export interface User {
   id: string; // UUID — references auth.users(id)
+  username?: string | null; // VARCHAR(50), UNIQUE — 登入帳號
   name: string; // VARCHAR(10), UNIQUE
   role: UserRole;
   is_active: boolean;

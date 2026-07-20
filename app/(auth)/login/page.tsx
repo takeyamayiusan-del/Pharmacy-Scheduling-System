@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 
 export default function LoginPage() {
-  const [activeTab, setActiveTab] = useState<"employee" | "manager">("employee");
+  const [activeTab, setActiveTab] = useState<"employee" | "manager">("manager");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -13,10 +13,11 @@ export default function LoginPage() {
   const { loginEmployee, loginManager, currentUser, isLoading } = useApp();
   const router = useRouter();
 
-  // 已登入則直接跳轉至上下班打卡頁面
+  // 已登入則依角色跳轉
   useEffect(() => {
     if (!isLoading && currentUser) {
-      router.replace("/attendance/punch");
+      const dest = currentUser.role === "owner" ? "/schedule" : "/attendance/punch";
+      router.replace(dest);
     }
   }, [currentUser, isLoading, router]);
 
@@ -29,7 +30,11 @@ export default function LoginPage() {
       if (success) {
         router.push("/attendance/punch");
       } else {
-        setError("帳號或密碼錯誤");
+        setError(
+          activeTab === "manager"
+            ? "帳號或密碼錯誤（店長/老闆請確認已選「店長/老闆登入」分頁）"
+            : "帳號或密碼錯誤（員工請確認已選「員工登入」分頁）"
+        );
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "登入失敗，請重試");
@@ -45,9 +50,13 @@ export default function LoginPage() {
     try {
       const success = await loginManager(username, password);
       if (success) {
-        router.push("/attendance/punch");
+        router.push("/schedule");
       } else {
-        setError("帳號或密碼錯誤");
+        setError(
+          activeTab === "manager"
+            ? "帳號或密碼錯誤（店長/老闆請確認已選「店長/老闆登入」分頁）"
+            : "帳號或密碼錯誤（員工請確認已選「員工登入」分頁）"
+        );
       }
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : "登入失敗，請重試");
@@ -100,9 +109,6 @@ export default function LoginPage() {
             onSubmit={activeTab === "employee" ? handleEmployeeLogin : handleManagerLogin}
             className="space-y-4"
           >
-            {activeTab === "employee" && (
-              <p className="text-center text-gray-500 mb-2">請輸入店長為您設定的帳號與密碼</p>
-            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
               <input

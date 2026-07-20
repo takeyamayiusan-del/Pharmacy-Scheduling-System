@@ -1,0 +1,13 @@
+# 將 Supabase 本機服務的資料固定存放在專案 data/ 目錄
+# 文件：https://supabase.com/docs/guides/local-development/overview
+#
+# 使用前請先執行：npm run data:setup-dirs
+# 若曾用過預設 Docker 磁碟區，請先 supabase stop --no-backup 再 supabase start
+
+services:
+  db:
+    volumes: !override
+      - ../data/postgres:/var/lib/postgresql/data
+  storage:
+    volumes: !override
+      - ../data/storage:/var/lib/storage
