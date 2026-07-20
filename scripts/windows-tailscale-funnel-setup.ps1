@@ -1,7 +1,8 @@
-# Tailscale Funnel: pharmacy (443) + optional cashflow (8443)
+﻿# Tailscale Funnel: pharmacy (443) + optional cashflow (8443)
 # Safe by default: does NOT reset unless -ForceReset (reset thrashing breaks public Funnel).
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1 -ForceReset
+# NOTE: Keep this file ASCII-only. Windows PowerShell 5.1 mis-parses UTF-8 Chinese without BOM.
 
 param(
   [switch]$ForceReset
@@ -33,7 +34,7 @@ Write-Log "Funnel setup start (primary=$primaryPort forceReset=$ForceReset)"
 
 $portOk = [bool](netstat -ano | Select-String ":$primaryPort\s" | Select-String "LISTENING")
 if (-not $portOk) {
-    Write-Host "  Port $primaryPort not listening — start sites first (START-NOW.bat)" -ForegroundColor Red
+    Write-Host "  Port $primaryPort not listening - start sites first (START-NOW.bat)" -ForegroundColor Red
     Write-Log "Aborted: port $primaryPort not listening"
     throw "Port $primaryPort not listening"
 }
@@ -83,7 +84,7 @@ foreach ($site in $Global:YaoshengSites) {
 
     $listenOk = [bool](netstat -ano | Select-String ":$port\s" | Select-String "LISTENING")
     if (-not $listenOk) {
-        Write-Host "  WARN: $($site.Name) port $port not listening yet — Funnel will still be configured" -ForegroundColor Yellow
+        Write-Host "  WARN: $($site.Name) port $port not listening yet - Funnel will still be configured" -ForegroundColor Yellow
     }
 
     $out = (tailscale funnel --bg --yes --https=$httpsPort $port 2>&1 | Out-String)
@@ -105,6 +106,6 @@ $url = $null
 if ($statusOut -match '(https://[a-z0-9-]+\.tail[a-z0-9]+\.ts\.net)') { $url = $Matches[1] }
 
 Write-Host ""
-Write-Host "排班（員工）: $url/login" -ForegroundColor Yellow
-Write-Host "金流:         $url`:8443/" -ForegroundColor Yellow
-Write-Host "注意: 主機 curl 外網網址可能假通；請用手機 4G 驗證。" -ForegroundColor Cyan
+Write-Host "Pharmacy: $url/login" -ForegroundColor Yellow
+Write-Host "Cashflow: $url`:8443/" -ForegroundColor Yellow
+Write-Host "NOTE: Host curl to funnel URL can be a false OK. Test on phone 4G (Wi-Fi off)." -ForegroundColor Cyan
