@@ -1,5 +1,9 @@
 import type { ShiftType, SwapRequest } from "@/lib/context/AppContext";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
+import {
+  assertNoSundayInSwapDates,
+  enforceSundayRestOnChanges,
+} from "@/lib/schedule/sundayRest";
 
 export type SwapScheduleChange = {
   userId: string;
@@ -118,12 +122,22 @@ export function buildSwapShiftsAndChanges(
     ? reqShift
     : getShiftFromSnapshot(snapshot, request.targetEmployeeId, request.requesterDate, "X");
 
-  const changes = computeSwapScheduleChanges(
-    request,
-    reqShift,
-    targetShift,
-    requesterOnTargetDate,
-    targetOnRequesterDate
+  const sundayGuard = assertNoSundayInSwapDates(
+    request.requesterDate,
+    request.targetDate
+  );
+  if (!sundayGuard.ok) {
+    throw new Error(sundayGuard.message);
+  }
+
+  const changes = enforceSundayRestOnChanges(
+    computeSwapScheduleChanges(
+      request,
+      reqShift,
+      targetShift,
+      requesterOnTargetDate,
+      targetOnRequesterDate
+    )
   );
 
   if (changes.length < 2) {

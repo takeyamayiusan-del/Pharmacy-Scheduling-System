@@ -9,6 +9,11 @@ import {
   checkManagerLeaveAssignment,
   shouldSyncLeaveSelection,
 } from "@/lib/schedule/leaveSelectionRules";
+import {
+  assertNoSundayInSwapDates,
+  assertSundayShiftAllowed,
+  isFixedSundayRest,
+} from "@/lib/schedule/sundayRest";
 import { hasPastMonthInRange, isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import { resolveAnnualLeaveQuotaDays } from "@/lib/attendance/annualLeave";
 import {
@@ -281,7 +286,8 @@ type LeaveSelections = Record<string, string[]>;
 
 // ─── Helper constants ─────────────────────────────────────────────────────────
 
-export const isSunday = (dateStr: string): boolean => new Date(dateStr).getDay() === 0;
+/** 禮拜日固定公休（本地日曆判斷） */
+export const isSunday = (dateStr: string): boolean => isFixedSundayRest(dateStr);
 export const isSaturday = (dateStr: string): boolean => new Date(dateStr).getDay() === 6;
 export const isTuesday = (dateStr: string): boolean => new Date(dateStr).getDay() === 2;
 export const isWednesday = (dateStr: string): boolean => new Date(dateStr).getDay() === 3;
@@ -1403,12 +1409,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getShiftForDate = (date: string, employeeId: string): ShiftType => {
+    // 禮拜日固定公休：覆寫（含錯誤換班）不可蓋過
+    if (isSunday(date)) return "X";
     const override = schedule[date]?.[employeeId];
     if (override) return override;
     return getBaseShiftForDate(date, employeeId);
   };
 
   const updateShift = async (date: string, employeeId: string, shift: ShiftType) => {
+    const sundayCheck = assertSundayShiftAllowed(date, shift);
+    if (!sundayCheck.ok) {
+      throw new Error(sundayCheck.message);
+    }
+
     if (isPastDate(date)) {
       throw new Error("已過去的月份無法修改班表");
     }
@@ -2134,6 +2147,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">) => {
+    const sundayCheck = assertNoSundayInSwapDates(
+      request.requesterDate,
+      request.targetDate
+    );
+    if (!sundayCheck.ok) {
+      throw new Error(sundayCheck.message);
+    }
+
     const touchesPastMonth =
       isPastDate(request.requesterDate) || isPastDate(request.targetDate);
     if (touchesPastMonth) {

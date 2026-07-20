@@ -3,6 +3,7 @@ import { assertManagerAuth } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
 import { buildSwapShiftsAndChanges } from "@/lib/schedule/swapSchedule";
+import { assertNoSundayInSwapDates } from "@/lib/schedule/sundayRest";
 
 type SwapAction = "approve" | "revert";
 
@@ -98,6 +99,14 @@ export async function POST(req: NextRequest) {
       requesterDate: swapRow.swap_date,
       targetDate: swapRow.target_swap_date || swapRow.swap_date,
     };
+
+    const sundayGuard = assertNoSundayInSwapDates(
+      swapRequest.requesterDate,
+      swapRequest.targetDate
+    );
+    if (!sundayGuard.ok) {
+      return NextResponse.json({ error: sundayGuard.message }, { status: 400 });
+    }
 
     let changes;
     try {

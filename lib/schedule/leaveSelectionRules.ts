@@ -2,8 +2,14 @@ import type { Employee } from "@/lib/context/AppContext";
 
 export type LeaveSelectionsMap = Record<string, string[]>;
 
-const isSunday = (dateStr: string) => new Date(dateStr).getDay() === 0;
-const isSaturday = (dateStr: string) => new Date(dateStr).getDay() === 6;
+import { isFixedSundayRest } from "@/lib/schedule/sundayRest";
+
+const isSunday = (dateStr: string) => isFixedSundayRest(dateStr);
+const isSaturday = (dateStr: string) => {
+  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
+  if (!parts) return false;
+  return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])).getDay() === 6;
+};
 
 const isInMonth = (dateStr: string, year: number, month: number) => {
   const date = new Date(dateStr);

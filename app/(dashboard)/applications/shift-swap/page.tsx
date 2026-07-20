@@ -4,6 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
 import { useSearchParams } from "next/navigation";
 import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
+import {
+  assertNoSundayInSwapDates,
+  isFixedSundayRest,
+  SUNDAY_REST_MESSAGE,
+} from "@/lib/schedule/sundayRest";
 
 export default function ShiftSwapPage() {
   const {
@@ -54,6 +59,14 @@ export default function ShiftSwapPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
+    const sundayCheck = assertNoSundayInSwapDates(
+      formData.requesterDate,
+      formData.targetDate
+    );
+    if (!sundayCheck.ok) {
+      alert(sundayCheck.message);
+      return;
+    }
     const targetEmployee = employees.find(emp => emp.id === formData.targetEmployeeId);
     if (!targetEmployee) return;
     try {
@@ -103,6 +116,7 @@ export default function ShiftSwapPage() {
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-gray-700 space-y-1">
         <p><span className="font-medium text-blue-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
         <p className="text-blue-900/80">與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
+        <p className="text-red-700/90 font-medium">禮拜日為全店固定公休，不可列入換班。</p>
       </div>
 
       {source === "wednesday_conflict" && (
@@ -127,14 +141,24 @@ export default function ShiftSwapPage() {
                 <input type="date" value={formData.requesterDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, requesterDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
-                {previewRequesterShift && <p className="text-xs text-gray-500 mt-1">當日班別：{previewRequesterShift}</p>}
+                {isFixedSundayRest(formData.requesterDate) && (
+                  <p className="text-xs text-red-600 mt-1">{SUNDAY_REST_MESSAGE}</p>
+                )}
+                {previewRequesterShift && !isFixedSundayRest(formData.requesterDate) && (
+                  <p className="text-xs text-gray-500 mt-1">當日班別：{previewRequesterShift}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">對方日期（換入）</label>
                 <input type="date" value={formData.targetDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, targetDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
-                {previewTargetShift && <p className="text-xs text-gray-500 mt-1">對方班別：{previewTargetShift}</p>}
+                {isFixedSundayRest(formData.targetDate) && (
+                  <p className="text-xs text-red-600 mt-1">{SUNDAY_REST_MESSAGE}</p>
+                )}
+                {previewTargetShift && !isFixedSundayRest(formData.targetDate) && (
+                  <p className="text-xs text-gray-500 mt-1">對方班別：{previewTargetShift}</p>
+                )}
               </div>
             </div>
             <div>

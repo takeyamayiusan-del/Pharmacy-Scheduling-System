@@ -47,13 +47,29 @@ describe("computeSwapScheduleChanges", () => {
     ]);
   });
 
-  it("休班也可對換", () => {
+  it("休班也可對換（非禮拜日）", () => {
     expect(computeSwapScheduleChanges(base, "X", "B", "A", "C")).toEqual([
       { userId: "user-a", date: "2026-07-09", shift: "C" },
       { userId: "user-a", date: "2026-07-10", shift: "B" },
       { userId: "user-b", date: "2026-07-10", shift: "A" },
       { userId: "user-b", date: "2026-07-09", shift: "X" },
     ]);
+  });
+
+  it("buildSwapShiftsAndChanges 拒絕涉及禮拜日的換班", () => {
+    const sundayReq = {
+      requesterId: "user-a",
+      targetEmployeeId: "user-b",
+      requesterDate: "2026-07-19",
+      targetDate: "2026-07-20",
+    };
+    const snapshot = [
+      { userId: "user-a", date: "2026-07-19", shift: "X" as const, hadDbEntry: false },
+      { userId: "user-a", date: "2026-07-20", shift: "B" as const, hadDbEntry: false },
+      { userId: "user-b", date: "2026-07-19", shift: "X" as const, hadDbEntry: false },
+      { userId: "user-b", date: "2026-07-20", shift: "A" as const, hadDbEntry: false },
+    ];
+    expect(() => buildSwapShiftsAndChanges(sundayReq, snapshot)).toThrow(/禮拜日/);
   });
 });
 
