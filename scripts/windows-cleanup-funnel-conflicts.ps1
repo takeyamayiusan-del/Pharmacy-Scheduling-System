@@ -1,5 +1,4 @@
-# One-shot cleanup: remove duplicate Yaosheng tasks + set Funnel once (no thrashing)
-# Run as Administrator:
+﻿# One-shot cleanup + ensure Funnel. ASCII-only.
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-cleanup-funnel-conflicts.ps1
 
 $ErrorActionPreference = "Continue"
@@ -31,15 +30,19 @@ foreach ($name in $oldTasks) {
   }
 }
 
-# Keep only these two
 Get-ScheduledTask | Where-Object { $_.TaskName -like "Yaosheng*" } |
   Select-Object TaskName, State | Format-Table -AutoSize
 
 Write-Host ""
-Write-Host "=== Reset Funnel ONCE, then set pharmacy+cashflow ===" -ForegroundColor Cyan
+Write-Host "=== Ensure Funnel once (idempotent, ForceReset) ===" -ForegroundColor Cyan
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") -ForceReset
 
 Write-Host ""
+Write-Host "=== Run watchdog once ===" -ForegroundColor Cyan
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-docker-watchdog.ps1")
+Get-Content (Join-Path $ProjectRoot "data\logs\docker-watchdog.log") -Tail 25
+
+Write-Host ""
 Write-Host "Done. Keep only YaoshengDockerBoot + YaoshengDockerWatchdog." -ForegroundColor Green
-Write-Host "Do NOT manually spam: funnel reset / funnel --bg / START-NOW repeatedly." -ForegroundColor Yellow
-Write-Host "Test on phone 4G (Wi-Fi off): https://chiaho-pharmacy.tail7f62d0.ts.net/login"
+Write-Host "Do NOT spam funnel reset. Watchdog re-ensures mounts every minute." -ForegroundColor Yellow
+Write-Host "Phone 4G test: https://chiaho-pharmacy.tail7f62d0.ts.net/login"

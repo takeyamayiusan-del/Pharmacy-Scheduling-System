@@ -1,9 +1,11 @@
-# Boot: Docker -> Supabase -> all configured sites (pm2) -> Funnel
+﻿# Boot: Docker -> Supabase -> sites (only if needed) -> Funnel ensure (idempotent, no reset)
+# ASCII-only for Windows PowerShell 5.1
 $ErrorActionPreference = "Continue"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $ProjectRoot
 
 . (Join-Path $PSScriptRoot "windows-sites.config.ps1")
+. (Join-Path $PSScriptRoot "windows-funnel-ensure.ps1")
 
 $LogDir = Join-Path $ProjectRoot "data\logs"
 $LogFile = Join-Path $LogDir "docker-boot.log"
@@ -23,15 +25,29 @@ $env:Path = @(
   "C:\Program Files\Tailscale"
 ) -join ";"
 
+function Test-LocalOk([string]$Uri) {
+  return (Test-YaoshengLocalHttp -Uri $Uri -TimeoutSec 4)
+}
+
 function Ensure-Pm2Site($site) {
   $name = [string]$site.Name
   $root = [string]$site.Root
   $ecoRel = [string]$site.Ecosystem
+  $port = [int]$site.Port
+  $health = [string]$site.HealthPath
+  if (-not $health) { $health = "/" }
   if (-not $name) { return }
+
+  # If already healthy on the expected port, do NOT restart (avoids flapping)
+  if ($port -gt 0 -and (Test-LocalOk "http://127.0.0.1:$port$health")) {
+    Log "OK site $name already healthy :$port"
+    return
+  }
 
   & pm2 describe $name 1>$null 2>$null
   if ($LASTEXITCODE -eq 0) {
-    & pm2 restart $name *>> $LogFile
+    Log "restart unhealthy pm2 app $name"
+    & pm2 restart $name --update-env *>> $LogFile
     return
   }
 
@@ -69,12 +85,17 @@ Log "Docker ready"
 
 # 2) Supabase
 if ($Global:YaoshengHostConfig.EnsureSupabase) {
-  Log "supabase start"
-  & supabase start *>> $LogFile
-  Start-Sleep -Seconds 20
+  $supaUrl = [string]$Global:YaoshengHostConfig.SupabaseHealthUrl
+  if (-not (Test-LocalOk $supaUrl)) {
+    Log "supabase start"
+    & supabase start *>> $LogFile
+    Start-Sleep -Seconds 20
+  } else {
+    Log "OK supabase already healthy"
+  }
 }
 
-# 3) Restore previous pm2 list, then ensure each configured site
+# 3) Restore previous pm2 list, then ensure each configured site (no pointless restart)
 Log "pm2 resurrect"
 & pm2 resurrect *>> $LogFile
 Start-Sleep -Seconds 3
@@ -89,28 +110,13 @@ foreach ($site in $Global:YaoshengSites) {
 }
 
 & pm2 save *>> $LogFile
-Start-Sleep -Seconds 5
+Start-Sleep -Seconds 3
 
-# 4) Funnel: primary (443) + optional secondary HTTPS ports (8443 / 10000)
-# IMPORTANT: do NOT use `tailscale serve` for extra sites — it can demote Funnel to tailnet-only.
-# Path mounts (/site-5000) also break SPAs that load assets from "/". Prefer --https=<port>.
-$funnelPort = [int]$Global:YaoshengHostConfig.PrimaryFunnelPort
-Log "tailscale funnel --bg $funnelPort"
-& tailscale funnel --bg --yes $funnelPort *>> $LogFile
-
-foreach ($site in $Global:YaoshengSites) {
-  $port = [int]$site.Port
-  $httpsPort = 0
-  if ($site.ContainsKey("FunnelHttpsPort") -and $site.FunnelHttpsPort) {
-    $httpsPort = [int]$site.FunnelHttpsPort
-  }
-  if ($httpsPort -le 0) { continue }
-  if ($port -eq $funnelPort) { continue }
-  if (-not (Test-Path ([string]$site.Root))) { continue }
-  Log "tailscale funnel --bg --https=$httpsPort $port  ($($site.Name))"
-  & tailscale funnel --bg --yes --https=$httpsPort $port *>> $LogFile
-}
+# 4) Funnel ensure (idempotent; never reset)
+Log "ensure funnel mounts (no reset)"
+Ensure-YaoshengFunnelMounts -HostConfig $Global:YaoshengHostConfig -Sites $Global:YaoshengSites -Log { param($m) Log $m } | Out-Null
 
 Log "=== multi-site boot done ==="
 & pm2 list *>> $LogFile
+& tailscale funnel status *>> $LogFile
 exit 0
