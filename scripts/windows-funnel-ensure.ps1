@@ -40,13 +40,31 @@ function Resolve-YaoshengIpv4 {
   param([string]$HostName)
   if (-not $HostName) { return $null }
   try {
+    $recs = Resolve-DnsName -Name $HostName -Type A -Server 8.8.8.8 -DnsOnly -ErrorAction Stop
+    $ip = ($recs | Where-Object { $_.IPAddress } | Select-Object -First 1).IPAddress
+    if ($ip) { return [string]$ip }
+  } catch {}
+  try {
     $out = (& nslookup $HostName 8.8.8.8 2>&1 | Out-String)
-    $ips = [regex]::Matches($out, '(?m)^\s*Address:\s*(\d{1,3}(?:\.\d{1,3}){3})\s*$') |
-      ForEach-Object { $_.Groups[1].Value } |
-      Where-Object { $_ -ne "8.8.8.8" }
-    if ($ips -and $ips.Count -gt 0) { return $ips[0] }
+    $ips = @(
+      [regex]::Matches($out, '(?m)^\s*Address(?:es)?\s*:\s*(\d{1,3}(?:\.\d{1,3}){3})\s*$') |
+        ForEach-Object { $_.Groups[1].Value }
+    ) | Where-Object { $_ -and $_ -ne "8.8.8.8" }
+    if ($ips.Count -gt 0) { return [string]$ips[0] }
   } catch {}
   return $null
+}
+
+function Test-YaoshengFunnelMountConfigured {
+  param(
+    [string]$StatusText,
+    [int]$LocalPort,
+    [int]$HttpsPort = 443
+  )
+  if ($StatusText -notmatch "(?i)Funnel on") { return $false }
+  if ($StatusText -notmatch "127\.0\.0\.1:$LocalPort") { return $false }
+  if ($HttpsPort -eq 443) { return $true }
+  return ($StatusText -match [regex]::Escape(":$HttpsPort"))
 }
 
 function Test-YaoshengPublicFunnelIpv4 {

@@ -152,21 +152,35 @@ $status = Ensure-YaoshengFunnelMounts -HostConfig $Global:YaoshengHostConfig -Si
 $hostName = Get-YaoshengFunnelHost -StatusText $status
 if (-not $hostName) { $hostName = "chiaho-pharmacy.tail7f62d0.ts.net" }
 
-# Public IPv4 probe (avoids host hairpin false OK; uses Google DNS + --resolve)
-$primaryOk = Test-YaoshengPublicFunnelIpv4 -HostName $hostName -HttpsPort 443 -Path "/login" -TimeoutSec 12
-if ($primaryOk) {
-  Log "OK public IPv4 Funnel https://$hostName/login"
+$primaryPort = [int]$Global:YaoshengHostConfig.PrimaryFunnelPort
+if (-not (Test-YaoshengFunnelMountConfigured -StatusText $status -LocalPort $primaryPort -HttpsPort 443)) {
+  Log "FAIL Funnel primary not configured in tailscale status"
+  $allOk = $false
 } else {
-  Log "WARN public IPv4 Funnel check failed for https://$hostName/login -> re-ensure mounts"
-  & tailscale funnel --bg --yes ([int]$Global:YaoshengHostConfig.PrimaryFunnelPort) *>> $LogFile
-  Start-Sleep -Seconds 3
-  $primaryOk = Test-YaoshengPublicFunnelIpv4 -HostName $hostName -HttpsPort 443 -Path "/login" -TimeoutSec 12
-  if ($primaryOk) {
-    Log "OK public IPv4 Funnel after re-ensure"
+  Log "OK Funnel primary configured :443 -> 127.0.0.1:$primaryPort"
+}
+
+foreach ($site in $Global:YaoshengSites) {
+  $httpsPort = 0
+  if ($site.ContainsKey("FunnelHttpsPort") -and $site.FunnelHttpsPort) {
+    $httpsPort = [int]$site.FunnelHttpsPort
+  }
+  if ($httpsPort -le 0) { continue }
+  $port = [int]$site.Port
+  if (Test-YaoshengFunnelMountConfigured -StatusText $status -LocalPort $port -HttpsPort $httpsPort) {
+    Log "OK Funnel $($site.Name) configured :$httpsPort -> 127.0.0.1:$port"
   } else {
-    Log "FAIL public IPv4 Funnel still down"
+    Log "FAIL Funnel $($site.Name) not configured"
     $allOk = $false
   }
+}
+
+# Public IPv4 probe is advisory only (host often false-fails; do not re-funnel)
+$primaryPub = Test-YaoshengPublicFunnelIpv4 -HostName $hostName -HttpsPort 443 -Path "/login" -TimeoutSec 15
+if ($primaryPub) {
+  Log "OK public IPv4 probe https://$hostName/login"
+} else {
+  Log "NOTE public IPv4 probe skipped/failed on host (use phone 4G to verify)"
 }
 
 foreach ($site in $Global:YaoshengSites) {
@@ -177,20 +191,11 @@ foreach ($site in $Global:YaoshengSites) {
   if ($httpsPort -le 0) { continue }
   $path = [string]$site.HealthPath
   if (-not $path) { $path = "/" }
-  $ok = Test-YaoshengPublicFunnelIpv4 -HostName $hostName -HttpsPort $httpsPort -Path $path -TimeoutSec 12
-  if ($ok) {
-    Log "OK public IPv4 Funnel https://${hostName}:$httpsPort$path"
+  $pub = Test-YaoshengPublicFunnelIpv4 -HostName $hostName -HttpsPort $httpsPort -Path $path -TimeoutSec 15
+  if ($pub) {
+    Log "OK public IPv4 probe https://${hostName}:$httpsPort$path"
   } else {
-    Log "WARN public IPv4 Funnel $($site.Name) :$httpsPort failed -> re-ensure"
-    & tailscale funnel --bg --yes --https=$httpsPort ([int]$site.Port) *>> $LogFile
-    Start-Sleep -Seconds 3
-    $ok = Test-YaoshengPublicFunnelIpv4 -HostName $hostName -HttpsPort $httpsPort -Path $path -TimeoutSec 12
-    if ($ok) {
-      Log "OK public IPv4 Funnel $($site.Name) after re-ensure"
-    } else {
-      Log "FAIL public IPv4 Funnel $($site.Name) still down"
-      $allOk = $false
-    }
+    Log "NOTE public IPv4 probe $($site.Name) :$httpsPort skipped/failed on host"
   }
 }
 

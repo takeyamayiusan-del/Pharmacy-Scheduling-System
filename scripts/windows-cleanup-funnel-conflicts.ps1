@@ -1,5 +1,10 @@
 ﻿# One-shot cleanup + ensure Funnel. ASCII-only.
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-cleanup-funnel-conflicts.ps1
+#   powershell -ExecutionPolicy Bypass -File scripts\windows-cleanup-funnel-conflicts.ps1 -ForceReset
+
+param(
+  [switch]$ForceReset
+)
 
 $ErrorActionPreference = "Continue"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -34,8 +39,10 @@ Get-ScheduledTask | Where-Object { $_.TaskName -like "Yaosheng*" } |
   Select-Object TaskName, State | Format-Table -AutoSize
 
 Write-Host ""
-Write-Host "=== Ensure Funnel once (idempotent, ForceReset) ===" -ForegroundColor Cyan
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") -ForceReset
+Write-Host "=== Ensure Funnel (idempotent, no reset unless -ForceReset) ===" -ForegroundColor Cyan
+$setupArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1"))
+if ($ForceReset) { $setupArgs += "-ForceReset" }
+& powershell @setupArgs
 
 Write-Host ""
 Write-Host "=== Run watchdog once ===" -ForegroundColor Cyan
