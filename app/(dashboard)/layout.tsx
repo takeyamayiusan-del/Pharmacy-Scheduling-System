@@ -373,30 +373,46 @@ export default function DashboardLayout({
             <div className="flex items-start gap-3 mb-4">
               <Calendar className="h-6 w-6 text-blue-500 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold text-gray-900">記得排休下個月班表！</p>
+                <p className="font-bold text-gray-900">記得安排下個月休假！</p>
                 <p className="text-sm text-gray-600 mt-1">
-                  已到每月排休提醒時間，您尚未選擇下個月的排休日期，請記得前往排休選擇頁面完成選擇。
+                  已到每月提醒時間，您尚未選擇下個月排休。建議依序完成：
                 </p>
+                <ol className="mt-2 text-sm text-gray-700 list-decimal list-inside space-y-1">
+                  <li>先討論休假日；若撞晚班／禮三晚班，先換班</li>
+                  <li>再到排休選擇勾選日期</li>
+                </ol>
               </div>
             </div>
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={dismissLeaveReminder}
-                className="flex-1 py-2 border rounded-lg text-gray-600 text-sm"
-              >
-                本月不再提醒
-              </button>
+            <div className="flex flex-col gap-2">
               <button
                 type="button"
                 onClick={() => {
                   dismissLeaveReminder();
-                  router.push('/leave-selection');
+                  router.push('/applications/shift-swap');
                 }}
-                className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                className="w-full py-2 border border-blue-200 bg-blue-50 text-blue-800 rounded-lg text-sm hover:bg-blue-100"
               >
-                前往排休選擇
+                先去換班（有衝突時）
               </button>
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={dismissLeaveReminder}
+                  className="flex-1 py-2 border rounded-lg text-gray-600 text-sm"
+                >
+                  本月不再提醒
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissLeaveReminder();
+                    router.push('/leave-selection');
+                  }}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
+                >
+                  前往排休選擇
+                </button>
+              </div>
             </div>
           </div>
         </div>

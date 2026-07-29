@@ -6,6 +6,7 @@ import { useApp } from "@/lib/context/AppContext";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastMonth } from "@/lib/schedule/monthAccess";
+import { LeaveOrderGuide } from "@/components/schedule/LeaveOrderGuide";
 
 /** 含晚班的全天班（與班表邏輯一致） */
 const FULL_DAY_EVENING_SHIFT = "A" as const;
@@ -201,6 +202,8 @@ export default function LeaveSelectionPage() {
           </button>
         </div>
       </div>
+
+      <LeaveOrderGuide />
 
       <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
         <h3 className="font-medium text-blue-800 mb-2">📋 排休規則說明</h3>

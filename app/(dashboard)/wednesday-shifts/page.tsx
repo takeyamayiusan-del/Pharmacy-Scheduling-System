@@ -133,6 +133,9 @@ export default function WednesdayShiftsPage() {
         <div className="text-sm text-slate-700 space-y-1">
           <p>每月可選「不輪晚班」上限：{offLimit} 天（依本月禮拜三數量自動調整）。</p>
           <p>若與另一位輪值員工衝突，系統會提示換班。</p>
+          <p className="text-emerald-800 font-medium">
+            建議：禮三晚班有衝突時，先完成換班，再去「排休選擇」勾休假日。
+          </p>
           <p>
             目前輪值員工：
             <strong> {rotationEmployees.map((e) => e.name).join("、")}</strong>
