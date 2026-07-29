@@ -334,8 +334,9 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
         <div>
           <h3 className="font-medium text-gray-900">颱風／彈性出勤日</h3>
           <p className="text-xs text-gray-600 mt-1">
-            流程：發布公告 → 確認預計出勤並更新班表 → 當日打卡後一鍵結算獎勵。原本休假者完全不受影響。
-            取消後可重新設定；已結算紀錄本月保留，跨月自動清除（補休帳本仍保留）。
+            流程：發布公告 → 確認預計出勤並更新班表 → 當日打卡後一鍵結算獎勵。
+            時段停班會依班別截斷（如 19:00 停班時白班不變、全天班未出席晚班則改日間班）；全日停班可為有來者選擇全天／半天班別，沒來則休假。
+            原本休假者完全不受影響。取消後可重新設定；已結算紀錄本月保留，跨月自動清除（補休帳本仍保留）。
           </p>
         </div>
         <button
