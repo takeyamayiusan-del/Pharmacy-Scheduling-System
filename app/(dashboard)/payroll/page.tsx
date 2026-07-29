@@ -283,7 +283,8 @@ export default function PayrollPage() {
       const effectiveTardinessRecords = buildEffectiveTardinessRecords(
         tardinessRecords,
         punchRecords,
-        overtimeRequests
+        overtimeRequests,
+        leaveRequests
       );
 
       const tardinessMinutes = effectiveTardinessRecords

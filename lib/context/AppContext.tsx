@@ -1848,6 +1848,97 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadScheduleOverrides();
   };
 
+  /** 請假核准後清除該時段遲到，避免已請假仍被記遲到 */
+  const clearTardinessForApprovedLeave = async (request: LeaveRequest) => {
+    const dates = enumerateDatesInRange(request.startDate, request.endDate);
+    const { startTime, endTime } = resolveLeaveTimesForSchedule(request);
+
+    for (const date of dates) {
+      const punches = punchRecords.filter(
+        (p) =>
+          p.employeeId === request.employeeId &&
+          p.date === date &&
+          p.action === "work_in" &&
+          p.lateMinutes > 0
+      );
+
+      for (const p of punches) {
+        let shouldClear = request.period === "full_day";
+        if (!shouldClear) {
+          const slot = getPunchSlotsForShift(p.shift, shiftTimeConfig).find(
+            (s: PunchSlot) => s.action === "work_in" && s.segmentIndex === p.segmentIndex
+          );
+          if (slot) {
+            const scheduled = timeToMinutes(slot.scheduledTime);
+            const leaveStart = timeToMinutes(startTime);
+            const leaveEnd = timeToMinutes(endTime);
+            shouldClear = scheduled >= leaveStart && scheduled < leaveEnd;
+          }
+        }
+        if (!shouldClear) continue;
+
+        const lateMinutesBeforeClear = p.lateMinutes;
+        await updatePunchRecord(p.id, { lateMinutes: 0, reason: null });
+        const matchingTardiness = tardinessRecords.filter(
+          (t) =>
+            t.employeeId === p.employeeId &&
+            t.date === p.date &&
+            t.minutes === lateMinutesBeforeClear
+        );
+        for (const t of matchingTardiness) {
+          await deleteTardinessRecord(t.id);
+        }
+      }
+
+      // 全日請假：清掉當日所有遲到管理紀錄（含手動新增）
+      if (request.period === "full_day") {
+        const tardinessToRemove = tardinessRecords.filter(
+          (t) => t.employeeId === request.employeeId && t.date === date
+        );
+        for (const t of tardinessToRemove) {
+          await deleteTardinessRecord(t.id);
+        }
+      }
+    }
+  };
+
+  /** 請假取消核准時，依打卡紀錄恢復遲到（與加班邏輯一致） */
+  const restoreTardinessAfterLeaveCancelled = async (request: LeaveRequest) => {
+    const dates = enumerateDatesInRange(request.startDate, request.endDate);
+    for (const date of dates) {
+      const punchesToRestore = punchRecords.filter(
+        (p) =>
+          p.employeeId === request.employeeId &&
+          p.date === date &&
+          p.action === "work_in"
+      );
+      for (const p of punchesToRestore) {
+        if (p.lateMinutes !== 0 || p.reason !== null) continue;
+        // 若班別已是休假，不恢復遲到
+        if (p.shift === "X") continue;
+        const slot = getPunchSlotsForShift(p.shift, shiftTimeConfig).find(
+          (s: PunchSlot) => s.action === "work_in" && s.segmentIndex === p.segmentIndex
+        );
+        if (!slot) continue;
+        const actual = timeToMinutes(p.time);
+        const scheduled = timeToMinutes(slot.scheduledTime);
+        const diff = minutesDiff(actual, scheduled);
+        const lateMinutes = diff >= 30 ? diff : calcLateMinutes(actual, scheduled);
+        if (lateMinutes > 0) {
+          const reason = diff >= 30 ? "遲到超過30分鐘" : "遲到";
+          await updatePunchRecord(p.id, { lateMinutes, reason });
+          await addTardinessRecord({
+            employeeId: p.employeeId,
+            employeeName: p.employeeName,
+            date: p.date,
+            minutes: lateMinutes,
+            notes: reason,
+          });
+        }
+      }
+    }
+  };
+
   const revertApprovedLeaveFromSchedule = async (request: LeaveRequest) => {
     if (request.scheduleSnapshot?.length) {
       await restoreScheduleSnapshot(supabase, request.scheduleSnapshot, currentUser?.id);
@@ -2016,9 +2107,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ? { ...request, scheduleSnapshot: leaveSnapshot }
           : request;
         await applyApprovedLeaveToSchedule(requestWithSnapshot);
+        await clearTardinessForApprovedLeave(requestWithSnapshot);
       }
       if (prevStatus === "approved" && status !== "approved") {
         await revertApprovedLeaveFromSchedule(request);
+        await restoreTardinessAfterLeaveCancelled(request);
       }
       if (status === "approved" && prevStatus !== "approved" && request.type === "補休假") {
         await supabase.from("comp_leave_ledger").insert({
