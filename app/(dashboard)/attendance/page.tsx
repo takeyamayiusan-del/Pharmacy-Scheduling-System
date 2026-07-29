@@ -111,7 +111,8 @@ export default function AttendancePage() {
       const effectiveTardinessRecords = buildEffectiveTardinessRecords(
         tardinessRecords,
         punchRecords,
-        overtimeRequests
+        overtimeRequests,
+        leaveRequests
       );
 
       const tardy = effectiveTardinessRecords
