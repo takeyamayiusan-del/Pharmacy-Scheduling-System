@@ -9,6 +9,13 @@ import {
   PAYROLL_LEAVE_RATE_KEYS,
   type LeaveType,
 } from "@/lib/attendance/leaveHours";
+import {
+  FORMULA_TYPE_OPTIONS,
+  calculateRateAmount,
+  deriveHourlyRateFromBase,
+  describeRateFormula,
+  type PayrollFormulaType,
+} from "@/lib/payroll/rateFormulas";
 import XLSX from "xlsx-js-style";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -37,6 +44,8 @@ type RateConfig = {
   unit: string;
   isDeduction: boolean;
   sortOrder: number;
+  formulaType: PayrollFormulaType;
+  percentage: number;
 };
 
 type Adjustment = {
@@ -164,7 +173,14 @@ export default function PayrollPage() {
   const [editingSalary, setEditingSalary] = useState<string | null>(null);
   const [salaryForm, setSalaryForm] = useState<Omit<SalaryConfig, "userId">>(emptySalaryForm);
   const [editingRate, setEditingRate] = useState<string | null>(null);
-  const [rateForm, setRateForm] = useState({ label: "", amount: 0, unit: "元/小時", isDeduction: true });
+  const [rateForm, setRateForm] = useState({
+    label: "",
+    amount: 0,
+    unit: "元/小時",
+    isDeduction: true,
+    formulaType: "fixed_amount" as PayrollFormulaType,
+    percentage: 0,
+  });
   const [newAdjForm, setNewAdjForm] = useState({ userId: "", label: "", amount: 0, isDeduction: false });
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
@@ -206,6 +222,8 @@ export default function PayrollPage() {
           id: r.id, itemKey: r.item_key, label: r.label,
           amount: Number(r.amount), unit: r.unit,
           isDeduction: r.is_deduction, sortOrder: r.sort_order,
+          formulaType: (r.formula_type as PayrollFormulaType) || "fixed_amount",
+          percentage: Number(r.percentage ?? 0),
         })));
       }
       if (adjRes.data) {
@@ -230,17 +248,21 @@ export default function PayrollPage() {
 
   const computePayroll = useCallback((): EmployeePayroll[] => {
     const monthStr = `${year}-${String(month).padStart(2, "0")}`;
-    const overtimeRate = rateConfigs.find((r) => r.itemKey === "overtime_hourly")?.amount ?? 0;
-    const tardinessRate = rateConfigs.find((r) => r.itemKey === "tardiness_per_min")?.amount ?? 0;
+    const overtimeRateCfg = rateConfigs.find((r) => r.itemKey === "overtime_hourly");
+    const tardinessRateCfg = rateConfigs.find((r) => r.itemKey === "tardiness_per_min");
 
-    const leaveRateByType = (type: LeaveType) => {
-      if (type === "補休假") return 0;
+    const leaveRateCfgByType = (type: LeaveType) => {
+      if (type === "補休假") return null;
       const key = PAYROLL_LEAVE_RATE_KEYS[type as Exclude<LeaveType, "補休假">];
-      return rateConfigs.find((r) => r.itemKey === key)?.amount ?? 0;
+      return rateConfigs.find((r) => r.itemKey === key) ?? null;
     };
 
     return displayEmployees.map((emp) => {
       const cfg = salaryConfigs[emp.id] ?? { ...emptySalaryForm, userId: emp.id };
+      const salaryBasis = {
+        baseSalary: cfg.baseSalary,
+        hourlyRate: cfg.hourlyRate,
+      };
 
       const empLeaves = leaveRequests.filter(
         (r) =>
@@ -262,7 +284,10 @@ export default function PayrollPage() {
           shiftTimeConfig
         );
         leaveHours += hours;
-        leaveDeduction += hours * leaveRateByType(r.type);
+        const leaveRate = leaveRateCfgByType(r.type);
+        if (leaveRate) {
+          leaveDeduction += calculateRateAmount(hours, leaveRate, salaryBasis);
+        }
       }
       leaveHours = Math.round(leaveHours * 100) / 100;
       leaveDeduction = Math.round(leaveDeduction * 100) / 100;
@@ -277,7 +302,8 @@ export default function PayrollPage() {
       const overtimeHours = empOvertimes.reduce((acc, r) => {
         const s = r.startTime.split(":").map(Number);
         const e = r.endTime.split(":").map(Number);
-        return acc + (e[0] * 60 + e[1] - (s[0] * 60 + s[1])) / 60;
+        const mins = e[0] * 60 + e[1] - (s[0] * 60 + s[1]);
+        return acc + Math.max(0, mins) / 60;
       }, 0);
 
       const effectiveTardinessRecords = buildEffectiveTardinessRecords(
@@ -294,8 +320,12 @@ export default function PayrollPage() {
       const empAdj = adjustments.filter((a) => a.userId === emp.id);
       const bonusTotal = empAdj.reduce((acc, a) => acc + (a.isDeduction ? -a.amount : a.amount), 0);
 
-      const overtimePay = Math.round(overtimeHours * overtimeRate * 100) / 100;
-      const tardinessDeduction = Math.round(tardinessMinutes * tardinessRate * 100) / 100;
+      const overtimePay = overtimeRateCfg
+        ? calculateRateAmount(overtimeHours, overtimeRateCfg, salaryBasis)
+        : 0;
+      const tardinessDeduction = tardinessRateCfg
+        ? calculateRateAmount(tardinessMinutes, tardinessRateCfg, salaryBasis)
+        : 0;
 
       const finalPay =
         cfg.baseSalary -
@@ -399,9 +429,42 @@ export default function PayrollPage() {
   // ─── Save rate config ───────────────────────────────────────────────────────
 
   const saveRateConfig = async (id: string) => {
-    await supabase.from("payroll_rate_config")
-      .update({ amount: rateForm.amount, updated_by: currentUser?.id }).eq("id", id);
-    setRateConfigs((prev) => prev.map((r) => (r.id === id ? { ...r, amount: rateForm.amount } : r)));
+    const payload: Record<string, unknown> = {
+      amount: rateForm.amount,
+      formula_type: rateForm.formulaType,
+      percentage: rateForm.percentage,
+      updated_by: currentUser?.id,
+    };
+    const { error } = await supabase.from("payroll_rate_config").update(payload).eq("id", id);
+    if (error) {
+      // 舊資料庫尚未跑 migration 時，至少先存金額
+      if (String(error.message || "").includes("formula_type") || String(error.message || "").includes("percentage")) {
+        const { error: fallbackError } = await supabase
+          .from("payroll_rate_config")
+          .update({ amount: rateForm.amount, updated_by: currentUser?.id })
+          .eq("id", id);
+        if (fallbackError) {
+          alert("儲存費率失敗：" + fallbackError.message);
+          return;
+        }
+        alert("已儲存金額。請套用資料庫 migration 後即可儲存自訂公式。");
+      } else {
+        alert("儲存費率失敗：" + error.message);
+        return;
+      }
+    }
+    setRateConfigs((prev) =>
+      prev.map((r) =>
+        r.id === id
+          ? {
+              ...r,
+              amount: rateForm.amount,
+              formulaType: rateForm.formulaType,
+              percentage: rateForm.percentage,
+            }
+          : r
+      )
+    );
     setEditingRate(null);
   };
 
@@ -650,28 +713,115 @@ export default function PayrollPage() {
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <h2 className="font-semibold text-gray-900 mb-4">計算費率設定</h2>
             <p className="text-sm text-gray-600 mb-3">
-              請假依假別分項計算扣薪；補休假不計費率（由補休時數帳本抵扣）。加班費僅計「選擇加班費」且已核准的申請。
+              可自訂公式：固定金額、底薪百分比、或員工時薪倍數。
+              請假依假別分項計算；補休假不計費率（由補休帳本抵扣）。加班費僅計「選擇加班費」且已核准的申請。
+              時薪請在員工薪資設定填寫，或用「底薪 ÷ 本月正常時數」推算。
             </p>
             <div className="space-y-3">
               {rateConfigs
                 .filter((rate) => rate.itemKey !== "leave_hourly")
                 .sort((a, b) => a.sortOrder - b.sortOrder)
                 .map((rate) => (
-                <div key={rate.id} className="flex items-center gap-4 p-3 bg-gray-50 rounded-lg">
-                  <span className="flex-1 text-sm font-medium text-gray-700">{rate.label}</span>
+                <div key={rate.id} className="p-3 bg-gray-50 rounded-lg space-y-2">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <span className="flex-1 text-sm font-medium text-gray-700 min-w-[8rem]">{rate.label}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${rate.isDeduction ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>
+                      {rate.isDeduction ? "扣款" : "加項"}
+                    </span>
+                    {editingRate !== rate.id && (
+                      <button
+                        onClick={() => {
+                          setEditingRate(rate.id);
+                          setRateForm({
+                            label: rate.label,
+                            amount: rate.amount,
+                            unit: rate.unit,
+                            isDeduction: rate.isDeduction,
+                            formulaType: rate.formulaType || "fixed_amount",
+                            percentage: rate.percentage || 0,
+                          });
+                        }}
+                        className="px-3 py-1 bg-blue-600 text-white text-xs rounded"
+                      >
+                        編輯
+                      </button>
+                    )}
+                  </div>
                   {editingRate === rate.id ? (
-                    <>
-                      <input type="number" value={rateForm.amount} onChange={(e) => setRateForm({ ...rateForm, amount: Number(e.target.value) })} className="w-28 border rounded px-2 py-1 text-sm" />
-                      <span className="text-xs text-gray-500">{rate.unit}</span>
-                      <button onClick={() => saveRateConfig(rate.id)} className="px-3 py-1 bg-blue-600 text-white text-xs rounded">儲存</button>
-                      <button onClick={() => setEditingRate(null)} className="px-3 py-1 border text-xs rounded">取消</button>
-                    </>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                      <div>
+                        <label className="block text-xs text-gray-500 mb-1">計算公式</label>
+                        <select
+                          value={rateForm.formulaType}
+                          onChange={(e) =>
+                            setRateForm({
+                              ...rateForm,
+                              formulaType: e.target.value as PayrollFormulaType,
+                            })
+                          }
+                          className="w-full border rounded px-2 py-1.5 text-sm"
+                        >
+                          {FORMULA_TYPE_OPTIONS.map((opt) => (
+                            <option key={opt.value} value={opt.value}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="text-[11px] text-gray-500 mt-1">
+                          {FORMULA_TYPE_OPTIONS.find((o) => o.value === rateForm.formulaType)?.hint}
+                        </p>
+                      </div>
+                      {rateForm.formulaType === "base_salary_percent" ? (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">底薪百分比（%）</label>
+                          <input
+                            type="number"
+                            step="0.0001"
+                            value={rateForm.percentage}
+                            onChange={(e) =>
+                              setRateForm({ ...rateForm, percentage: Number(e.target.value) })
+                            }
+                            className="w-full border rounded px-2 py-1.5 text-sm"
+                          />
+                          <p className="text-[11px] text-gray-500 mt-1">
+                            例：月薪÷240 ≈ 填 0.4167；單位金額＝底薪×百分比÷100
+                          </p>
+                        </div>
+                      ) : (
+                        <div>
+                          <label className="block text-xs text-gray-500 mb-1">
+                            {rateForm.formulaType === "hourly_rate" ? "時薪倍數" : `固定金額（${rate.unit}）`}
+                          </label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            value={rateForm.amount}
+                            onChange={(e) =>
+                              setRateForm({ ...rateForm, amount: Number(e.target.value) })
+                            }
+                            className="w-full border rounded px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                      )}
+                      <div className="md:col-span-2 flex gap-2">
+                        <button
+                          onClick={() => void saveRateConfig(rate.id)}
+                          className="px-3 py-1.5 bg-blue-600 text-white text-xs rounded"
+                        >
+                          儲存
+                        </button>
+                        <button
+                          onClick={() => setEditingRate(null)}
+                          className="px-3 py-1.5 border text-xs rounded"
+                        >
+                          取消
+                        </button>
+                      </div>
+                    </div>
                   ) : (
-                    <>
-                      <span className="text-sm text-gray-900 font-medium">${rate.amount.toLocaleString()} {rate.unit}</span>
-                      <span className={`text-xs px-2 py-0.5 rounded-full ${rate.isDeduction ? "bg-red-100 text-red-700" : "bg-green-100 text-green-700"}`}>{rate.isDeduction ? "扣款" : "加項"}</span>
-                      <button onClick={() => { setEditingRate(rate.id); setRateForm({ label: rate.label, amount: rate.amount, unit: rate.unit, isDeduction: rate.isDeduction }); }} className="px-3 py-1 bg-blue-600 text-white text-xs rounded">編輯</button>
-                    </>
+                    <p className="text-xs text-gray-600">
+                      {describeRateFormula(rate, rate.unit)}
+                    </p>
                   )}
                 </div>
               ))}
@@ -727,7 +877,24 @@ export default function PayrollPage() {
                             />
                           </div>
                         ))}
-                        <div className="col-span-2 md:col-span-4 flex gap-2 pt-2">
+                        <div className="col-span-2 md:col-span-4 flex flex-wrap gap-2 pt-2 items-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const derived = deriveHourlyRateFromBase(
+                                Number(salaryForm.baseSalary),
+                                Number(salaryForm.normalHours)
+                              );
+                              if (derived <= 0) {
+                                alert("請先填寫底薪與本月正常時數，才能推算時薪。");
+                                return;
+                              }
+                              setSalaryForm({ ...salaryForm, hourlyRate: derived });
+                            }}
+                            className="px-3 py-2 border text-sm rounded text-sky-700 border-sky-200 bg-sky-50"
+                          >
+                            用底薪÷正常時數推算時薪
+                          </button>
                           <button onClick={() => saveSalaryConfig(emp.id)} className="px-4 py-2 bg-blue-600 text-white text-sm rounded">儲存</button>
                           <button onClick={() => setEditingSalary(null)} className="px-4 py-2 border text-sm rounded">取消</button>
                         </div>
