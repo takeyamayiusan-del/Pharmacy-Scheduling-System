@@ -26,7 +26,9 @@ type ConfirmAttendeesBody = {
   action: "confirm_attendees";
   dayId: string;
   expectedAttendeeIds: string[];
-  /** 全日停班時：有來者的出勤時段選擇（userId → keep/full_day/morning/afternoon） */
+  /** 有來者的指定班別（userId → A/B/C/D/E） */
+  attendeeShifts?: Record<string, string>;
+  /** 相容舊版：全日快捷時段（若未給 attendeeShifts 才使用） */
   attendeeChoices?: Record<string, AttendeeShiftChoice>;
 };
 
@@ -295,10 +297,17 @@ export async function POST(req: NextRequest) {
       const fromTime = formatTime(day.from_time);
       const shiftTimeConfig = await loadShiftTimeConfig(admin);
       const attendeeChoices = body.attendeeChoices ?? {};
+      const attendeeShifts = body.attendeeShifts ?? {};
+      const validShifts = new Set(["A", "B", "C", "D", "E", "X"]);
 
-      // 依班別 × 颱風時段 × 是否出席 更新班表
+      // 依班別 × 颱風時段 × 是否出席（可指定班別）更新班表
       for (const entry of originallyOn) {
         const willCome = expected.includes(entry.userId);
+        const rawAssigned = attendeeShifts[entry.userId];
+        const assignedShift =
+          willCome && rawAssigned && validShifts.has(rawAssigned)
+            ? (rawAssigned as ShiftType)
+            : undefined;
         const nextShift = resolveTyphoonScheduleShift({
           originalShift: entry.shift,
           willAttend: willCome,
@@ -306,6 +315,7 @@ export async function POST(req: NextRequest) {
           fromTime,
           shiftTimeConfig,
           attendeeChoice: attendeeChoices[entry.userId] ?? "keep",
+          assignedShift,
         });
 
         const { error: upsertError } = await admin.from("schedule_entries").upsert(

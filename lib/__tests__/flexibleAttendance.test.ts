@@ -222,4 +222,26 @@ describe("typhoon schedule shift resolution", () => {
       })
     ).toBe("D");
   });
+
+  it("有來者可直接指定班別（全日／時段皆可）", () => {
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "A",
+        willAttend: true,
+        periodMode: "full_day",
+        shiftTimeConfig: config,
+        assignedShift: "C",
+      })
+    ).toBe("C");
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "A",
+        willAttend: true,
+        periodMode: "from_time",
+        fromTime: "19:00",
+        shiftTimeConfig: config,
+        assignedShift: "B",
+      })
+    ).toBe("B");
+  });
 });
