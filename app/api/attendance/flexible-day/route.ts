@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { assertManagerAuth } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import type {
+  AttendeeShiftChoice,
   OriginalScheduleEntry,
   SettlementPreviewRow,
 } from "@/lib/attendance/flexibleAttendance";
+import {
+  resolveTyphoonScheduleShift,
+} from "@/lib/attendance/flexibleAttendance";
+import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
 
 type CreateBody = {
   action: "create";
@@ -21,6 +26,8 @@ type ConfirmAttendeesBody = {
   action: "confirm_attendees";
   dayId: string;
   expectedAttendeeIds: string[];
+  /** 全日停班時：有來者的出勤時段選擇（userId → keep/full_day/morning/afternoon） */
+  attendeeChoices?: Record<string, AttendeeShiftChoice>;
 };
 
 type SettleBody = {
@@ -85,6 +92,30 @@ async function archiveBulletin(admin: AdminClient, bulletinId: string | null | u
     .from("bulletin_board")
     .update({ status: "archived", is_pinned: false, is_urgent: false })
     .eq("id", bulletinId);
+}
+
+const DEFAULT_SHIFT_TIME_CONFIG: ShiftTimeConfig = {
+  A: ["08:30-12:00", "13:30-17:00", "19:00-21:00"],
+  B: ["08:30-12:00", "13:30-18:00"],
+  C: ["08:30-12:00"],
+  D: ["13:30-18:00"],
+  E: ["13:30-17:00", "19:00-21:00"],
+  X: ["休假"],
+};
+
+async function loadShiftTimeConfig(admin: AdminClient): Promise<ShiftTimeConfig> {
+  const { data } = await admin
+    .from("shift_time_config")
+    .select("shift_code, time_ranges");
+  if (!data?.length) return DEFAULT_SHIFT_TIME_CONFIG;
+  const config: ShiftTimeConfig = { ...DEFAULT_SHIFT_TIME_CONFIG };
+  for (const row of data) {
+    const code = row.shift_code as ShiftType;
+    if (Array.isArray(row.time_ranges) && row.time_ranges.length > 0) {
+      config[code] = row.time_ranges as string[];
+    }
+  }
+  return config;
 }
 
 /**
@@ -260,11 +291,23 @@ export async function POST(req: NextRequest) {
       const originallyOn = original.filter((e) => e.shift !== "X");
       const originallyOnIds = new Set(originallyOn.map((e) => e.userId));
       const expected = body.expectedAttendeeIds.filter((id) => originallyOnIds.has(id));
+      const periodMode = day.period_mode as "full_day" | "from_time";
+      const fromTime = formatTime(day.from_time);
+      const shiftTimeConfig = await loadShiftTimeConfig(admin);
+      const attendeeChoices = body.attendeeChoices ?? {};
 
-      // 預計會來：還原／維持原班別；無法來：改為 X（原本休假者不動）
+      // 依班別 × 颱風時段 × 是否出席 更新班表
       for (const entry of originallyOn) {
         const willCome = expected.includes(entry.userId);
-        const nextShift = willCome ? entry.shift : "X";
+        const nextShift = resolveTyphoonScheduleShift({
+          originalShift: entry.shift,
+          willAttend: willCome,
+          periodMode,
+          fromTime,
+          shiftTimeConfig,
+          attendeeChoice: attendeeChoices[entry.userId] ?? "keep",
+        });
+
         const { error: upsertError } = await admin.from("schedule_entries").upsert(
           {
             user_id: entry.userId,

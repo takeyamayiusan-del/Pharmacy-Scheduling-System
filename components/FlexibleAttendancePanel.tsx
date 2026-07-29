@@ -5,8 +5,12 @@ import { useApp } from "@/lib/context/AppContext";
 import { createClient } from "@/lib/supabase/client";
 import {
   FLEXIBLE_PERIOD_PRESETS,
+  FULL_DAY_ATTENDEE_CHOICES,
   buildOriginalScheduleSnapshot,
   buildSettlementPreview,
+  calculateAffectedShiftHours,
+  resolveTyphoonScheduleShift,
+  type AttendeeShiftChoice,
   type FlexibleAttendanceDay,
   type OriginalScheduleEntry,
   type PendingMakeupHours,
@@ -93,6 +97,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
 
   const [confirmDayId, setConfirmDayId] = useState<string | null>(null);
   const [selectedAttendees, setSelectedAttendees] = useState<string[]>([]);
+  const [attendeeChoices, setAttendeeChoices] = useState<Record<string, AttendeeShiftChoice>>({});
   const [settleDayId, setSettleDayId] = useState<string | null>(null);
   const [makeupDraft, setMakeupDraft] = useState<Record<string, string>>({});
 
@@ -160,6 +165,11 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
     setSelectedAttendees(
       day.expectedAttendeeIds.length > 0 ? [...day.expectedAttendeeIds] : originallyOn
     );
+    const initialChoices: Record<string, AttendeeShiftChoice> = {};
+    for (const id of originallyOn) {
+      initialChoices[id] = "keep";
+    }
+    setAttendeeChoices(initialChoices);
     setConfirmDayId(day.id);
   };
 
@@ -220,17 +230,24 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
 
   const handleConfirmAttendees = async () => {
     if (!confirmDayId) return;
+    const target = days.find((d) => d.id === confirmDayId);
+    if (!target) return;
     setBusy(true);
     try {
       await callApi({
         action: "confirm_attendees",
         dayId: confirmDayId,
         expectedAttendeeIds: selectedAttendees,
+        attendeeChoices: target.periodMode === "full_day" ? attendeeChoices : undefined,
       });
       setConfirmDayId(null);
       await loadData();
       onScheduleChanged?.();
-      alert("已更新班表：預計出勤者維持原班，無法來者改為休假（原本就休假者不動）。");
+      alert(
+        target.periodMode === "full_day"
+          ? "已更新班表：有來者依設定班別出勤，沒來者改為休假。"
+          : "已更新班表：有來維持原班；未出席受影響時段者截斷至停班時刻（不受影響的班別如白班維持原樣）。"
+      );
     } catch (err) {
       alert(err instanceof Error ? err.message : "確認失敗");
     } finally {
@@ -317,8 +334,9 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
         <div>
           <h3 className="font-medium text-gray-900">颱風／彈性出勤日</h3>
           <p className="text-xs text-gray-600 mt-1">
-            流程：發布公告 → 確認預計出勤並更新班表 → 當日打卡後一鍵結算獎勵。原本休假者完全不受影響。
-            取消後可重新設定；已結算紀錄本月保留，跨月自動清除（補休帳本仍保留）。
+            流程：發布公告 → 確認預計出勤並更新班表 → 當日打卡後一鍵結算獎勵。
+            時段停班會依班別截斷（如 19:00 停班時白班不變、全天班未出席晚班則改日間班）；全日停班可為有來者選擇全天／半天班別，沒來則休假。
+            原本休假者完全不受影響。取消後可重新設定；已結算紀錄本月保留，跨月自動清除（補休帳本仍保留）。
           </p>
         </div>
         <button
@@ -594,36 +612,105 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
                 確認預計出勤 · {confirmTarget.date}
               </h3>
               <p className="text-xs text-gray-500 mt-1">
-                勾選「願意／預計會來」的人。未勾選且原本有排班者，班表會改為休假，結算時列入待補。
-                原本就休假者不會出現在可勾選名單，也不會被改動。
+                {confirmTarget.periodMode === "full_day"
+                  ? "全日颱風假：勾選有來的人，並選擇出勤時段（全天／半天）。沒來者班表改休假。"
+                  : `時段停班（${confirmTarget.fromTime ?? ""} 起）：勾選會來上受影響時段的人。未勾選者班表截斷至停班時刻；白班等不受影響者維持原班。`}
+                {" "}原本就休假者不動作。
               </p>
             </div>
             <div className="overflow-y-auto p-4 space-y-2">
               {confirmOriginallyOn.length === 0 ? (
                 <p className="text-sm text-gray-500">當天原本沒有人排班</p>
               ) : (
-                confirmOriginallyOn.map((entry) => (
-                  <label
-                    key={entry.userId}
-                    className="flex items-center justify-between gap-2 border rounded-lg px-3 py-2 text-sm cursor-pointer hover:bg-gray-50"
-                  >
-                    <span>
-                      {getEmpName(entry.userId)}
-                      <span className="text-gray-400 ml-2">原班 {entry.shift}</span>
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={selectedAttendees.includes(entry.userId)}
-                      onChange={(e) => {
-                        setSelectedAttendees((prev) =>
-                          e.target.checked
-                            ? [...prev, entry.userId]
-                            : prev.filter((id) => id !== entry.userId)
+                confirmOriginallyOn.map((entry) => {
+                  const willCome = selectedAttendees.includes(entry.userId);
+                  const affected =
+                    confirmTarget.periodMode === "from_time"
+                      ? calculateAffectedShiftHours(
+                          entry.shift,
+                          shiftTimeConfig,
+                          "from_time",
+                          confirmTarget.fromTime
+                        )
+                      : calculateAffectedShiftHours(
+                          entry.shift,
+                          shiftTimeConfig,
+                          "full_day"
                         );
-                      }}
-                    />
-                  </label>
-                ))
+                  const nextShift = resolveTyphoonScheduleShift({
+                    originalShift: entry.shift,
+                    willAttend: willCome,
+                    periodMode: confirmTarget.periodMode,
+                    fromTime: confirmTarget.fromTime,
+                    shiftTimeConfig,
+                    attendeeChoice: attendeeChoices[entry.userId] ?? "keep",
+                  });
+                  const unaffected = confirmTarget.periodMode === "from_time" && affected <= 0;
+
+                  return (
+                    <div
+                      key={entry.userId}
+                      className="border rounded-lg px-3 py-2 text-sm space-y-2"
+                    >
+                      <label className="flex items-center justify-between gap-2 cursor-pointer">
+                        <span>
+                          {getEmpName(entry.userId)}
+                          <span className="text-gray-400 ml-2">原班 {entry.shift}</span>
+                          {unaffected && (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">
+                              不受此時段影響
+                            </span>
+                          )}
+                          {!unaffected && affected > 0 && (
+                            <span className="ml-2 text-[10px] text-cyan-700">
+                              受影響 {affected}h
+                            </span>
+                          )}
+                        </span>
+                        <input
+                          type="checkbox"
+                          disabled={unaffected}
+                          checked={unaffected ? true : willCome}
+                          onChange={(e) => {
+                            setSelectedAttendees((prev) =>
+                              e.target.checked
+                                ? [...prev, entry.userId]
+                                : prev.filter((id) => id !== entry.userId)
+                            );
+                          }}
+                        />
+                      </label>
+                      {confirmTarget.periodMode === "full_day" && willCome && (
+                        <div className="flex items-center gap-2 pl-1">
+                          <span className="text-xs text-gray-500 shrink-0">出勤時段</span>
+                          <select
+                            value={attendeeChoices[entry.userId] ?? "keep"}
+                            onChange={(e) =>
+                              setAttendeeChoices((prev) => ({
+                                ...prev,
+                                [entry.userId]: e.target.value as AttendeeShiftChoice,
+                              }))
+                            }
+                            className="flex-1 border rounded px-2 py-1 text-xs"
+                          >
+                            {FULL_DAY_ATTENDEE_CHOICES.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      <p className="text-[11px] text-gray-500 pl-1">
+                        班表將更新為：
+                        <span className="font-medium text-gray-800 ml-1">{nextShift}</span>
+                        {nextShift !== entry.shift && (
+                          <span className="text-amber-700 ml-1">（由 {entry.shift} 調整）</span>
+                        )}
+                      </p>
+                    </div>
+                  );
+                })
               )}
               {confirmOriginallyOff.length > 0 && (
                 <div className="pt-2 border-t">

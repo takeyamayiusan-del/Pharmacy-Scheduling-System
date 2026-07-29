@@ -4,6 +4,8 @@ import {
   buildSettlementPreview,
   calculateAffectedShiftHours,
   calculateActualPunchHoursInPeriod,
+  resolveShiftAfterTyphoonCutoff,
+  resolveTyphoonScheduleShift,
 } from "@/lib/attendance/flexibleAttendance";
 import type { PunchRecord, ShiftTimeConfig } from "@/lib/context/AppContext";
 
@@ -122,5 +124,102 @@ describe("flexibleAttendance", () => {
       },
     ];
     expect(calculateActualPunchHoursInPeriod(punches, "from_time", "18:00")).toBe(2);
+  });
+});
+
+describe("typhoon schedule shift resolution", () => {
+  it("19:00 停班：白班不受影響", () => {
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "B",
+        willAttend: false,
+        periodMode: "from_time",
+        fromTime: "19:00",
+        shiftTimeConfig: config,
+      })
+    ).toBe("B");
+  });
+
+  it("19:00 停班：全天班未出席晚班 → 截成白天班（到下午）", () => {
+    expect(resolveShiftAfterTyphoonCutoff("A", "19:00", config)).toBe("B");
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "A",
+        willAttend: false,
+        periodMode: "from_time",
+        fromTime: "19:00",
+        shiftTimeConfig: config,
+      })
+    ).toBe("B");
+  });
+
+  it("19:00 停班：全天班有出席 → 維持原班", () => {
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "A",
+        willAttend: true,
+        periodMode: "from_time",
+        fromTime: "19:00",
+        shiftTimeConfig: config,
+      })
+    ).toBe("A");
+  });
+
+  it("17:00 停班：白班未出席仍對應日間班", () => {
+    expect(resolveShiftAfterTyphoonCutoff("B", "17:00", config)).toBe("B");
+  });
+
+  it("12:00 停班：白班未出席 → 只剩上午", () => {
+    expect(resolveShiftAfterTyphoonCutoff("B", "12:00", config)).toBe("C");
+  });
+
+  it("全日停班：沒來 → 休假", () => {
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "A",
+        willAttend: false,
+        periodMode: "full_day",
+        shiftTimeConfig: config,
+      })
+    ).toBe("X");
+  });
+
+  it("全日停班：有來可選全天／半天", () => {
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "A",
+        willAttend: true,
+        periodMode: "full_day",
+        shiftTimeConfig: config,
+        attendeeChoice: "keep",
+      })
+    ).toBe("A");
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "B",
+        willAttend: true,
+        periodMode: "full_day",
+        shiftTimeConfig: config,
+        attendeeChoice: "full_day",
+      })
+    ).toBe("B");
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "A",
+        willAttend: true,
+        periodMode: "full_day",
+        shiftTimeConfig: config,
+        attendeeChoice: "morning",
+      })
+    ).toBe("C");
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "A",
+        willAttend: true,
+        periodMode: "full_day",
+        shiftTimeConfig: config,
+        attendeeChoice: "afternoon",
+      })
+    ).toBe("D");
   });
 });

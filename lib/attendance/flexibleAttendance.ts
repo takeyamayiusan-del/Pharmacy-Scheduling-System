@@ -199,6 +199,160 @@ export function buildOriginalScheduleSnapshot(
     }));
 }
 
+function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function rangesKey(ranges: Array<{ start: number; end: number }>): string {
+  return ranges.map((r) => `${minutesToTime(r.start)}-${minutesToTime(r.end)}`).join("|");
+}
+
+/** 截斷班別時段：只保留 cutoff 之前的部分 */
+export function truncateShiftRangesBefore(
+  shift: ShiftType,
+  cutoffTime: string,
+  config: ShiftTimeConfig
+): Array<{ start: number; end: number }> {
+  const cutoff = timeToMinutes(cutoffTime);
+  const remaining: Array<{ start: number; end: number }> = [];
+  for (const range of parseShiftRanges(config, shift)) {
+    if (range.end <= cutoff) {
+      remaining.push(range);
+      continue;
+    }
+    if (range.start >= cutoff) continue;
+    remaining.push({ start: range.start, end: cutoff });
+  }
+  return remaining;
+}
+
+/**
+ * 將剩餘時段對應回標準班別。
+ * - 精確符合 → 該班別
+ * - 無剩餘 → X
+ * - 否則找涵蓋剩餘時段、且多餘時段最少的班別（例如全天去掉晚班後接近白班）
+ */
+export function matchShiftFromRanges(
+  remaining: Array<{ start: number; end: number }>,
+  config: ShiftTimeConfig
+): ShiftType {
+  if (remaining.length === 0) return "X";
+
+  const targetKey = rangesKey(remaining);
+  const candidates: ShiftType[] = ["C", "D", "B", "E", "A"];
+
+  for (const code of candidates) {
+    const ranges = parseShiftRanges(config, code);
+    if (ranges.length > 0 && rangesKey(ranges) === targetKey) return code;
+  }
+
+  let best: { code: ShiftType; score: number } | null = null;
+  for (const code of candidates) {
+    const candidate = parseShiftRanges(config, code);
+    if (candidate.length === 0) continue;
+
+    let covered = 0;
+    let missing = 0;
+    for (const need of remaining) {
+      let needCovered = 0;
+      for (const slot of candidate) {
+        const start = Math.max(need.start, slot.start);
+        const end = Math.min(need.end, slot.end);
+        if (end > start) needCovered += end - start;
+      }
+      const needMinutes = need.end - need.start;
+      covered += needCovered;
+      missing += Math.max(0, needMinutes - needCovered);
+    }
+
+    let extra = 0;
+    for (const slot of candidate) {
+      let slotCovered = 0;
+      for (const need of remaining) {
+        const start = Math.max(need.start, slot.start);
+        const end = Math.min(need.end, slot.end);
+        if (end > start) slotCovered += end - start;
+      }
+      extra += Math.max(0, slot.end - slot.start - slotCovered);
+    }
+
+    // 必須完整涵蓋剩餘時段；多餘越少越好
+    if (missing > 0) continue;
+    const score = covered * 1000 - extra;
+    if (!best || score > best.score) best = { code, score };
+  }
+
+  return best?.code ?? "X";
+}
+
+/** 時段颱風假：未出席受影響時段時，班表改為 cutoff 前的剩餘班別 */
+export function resolveShiftAfterTyphoonCutoff(
+  originalShift: ShiftType,
+  cutoffTime: string,
+  config: ShiftTimeConfig
+): ShiftType {
+  if (originalShift === "X") return "X";
+  const remaining = truncateShiftRangesBefore(originalShift, cutoffTime, config);
+  return matchShiftFromRanges(remaining, config);
+}
+
+export type AttendeeShiftChoice = "keep" | "full_day" | "morning" | "afternoon";
+
+/** 全日颱風假：有來者依店長選擇的出勤時段對應班別 */
+export function resolveFullDayAttendeeShift(
+  originalShift: ShiftType,
+  choice: AttendeeShiftChoice = "keep"
+): ShiftType {
+  if (choice === "morning") return "C";
+  if (choice === "afternoon") return "D";
+  if (choice === "full_day") {
+    if (originalShift === "A" || originalShift === "E") return originalShift;
+    return "B";
+  }
+  return originalShift === "X" ? "B" : originalShift;
+}
+
+/**
+ * 依颱風時段、原班別、是否出席（及全日出勤選擇）決定班表應寫入的班別。
+ * - 時段停班且原班不受影響（如白班 vs 19:00）：維持原班
+ * - 時段停班且未出席受影響時段：截斷到停班時刻
+ * - 時段停班且有出席：維持原班
+ * - 全日停班且未出席：休假 X
+ * - 全日停班且有出席：依出勤時段設定班別
+ */
+export function resolveTyphoonScheduleShift(params: {
+  originalShift: ShiftType;
+  willAttend: boolean;
+  periodMode: FlexiblePeriodMode;
+  fromTime?: string;
+  shiftTimeConfig: ShiftTimeConfig;
+  attendeeChoice?: AttendeeShiftChoice;
+}): ShiftType {
+  const { originalShift, willAttend, periodMode, fromTime, shiftTimeConfig, attendeeChoice } =
+    params;
+
+  if (originalShift === "X" && !willAttend) return "X";
+
+  if (periodMode === "full_day") {
+    if (!willAttend) return "X";
+    return resolveFullDayAttendeeShift(originalShift === "X" ? "B" : originalShift, attendeeChoice);
+  }
+
+  const cutoff = fromTime || "00:00";
+  const affected = calculateAffectedShiftHours(
+    originalShift,
+    shiftTimeConfig,
+    "from_time",
+    cutoff
+  );
+  // 白班等：時段完全不受颱風影響 → 班表不動
+  if (affected <= 0) return originalShift;
+  if (willAttend) return originalShift;
+  return resolveShiftAfterTyphoonCutoff(originalShift, cutoff, shiftTimeConfig);
+}
+
 export const FLEXIBLE_PERIOD_PRESETS: Array<{
   label: string;
   periodMode: FlexiblePeriodMode;
@@ -210,4 +364,14 @@ export const FLEXIBLE_PERIOD_PRESETS: Array<{
   { label: "17:00 起停班", periodMode: "from_time", fromTime: "17:00" },
   { label: "18:00 起停班", periodMode: "from_time", fromTime: "18:00" },
   { label: "19:00 起停班", periodMode: "from_time", fromTime: "19:00" },
+];
+
+export const FULL_DAY_ATTENDEE_CHOICES: Array<{
+  value: AttendeeShiftChoice;
+  label: string;
+}> = [
+  { value: "keep", label: "維持原班" },
+  { value: "full_day", label: "全天出勤" },
+  { value: "morning", label: "上午半天" },
+  { value: "afternoon", label: "下午半天" },
 ];
