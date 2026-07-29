@@ -3241,7 +3241,8 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   };
 
   const deleteNotification = async (id: string) => {
-    await supabase.from("notifications").delete().eq("id", id);
+    const { error } = await supabase.from("notifications").delete().eq("id", id);
+    if (error) throw error;
     setNotifications((prev) => prev.filter((n) => n.id !== id));
   };
 

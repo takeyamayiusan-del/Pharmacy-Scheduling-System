@@ -315,12 +315,13 @@ export function resolveFullDayAttendeeShift(
 }
 
 /**
- * 依颱風時段、原班別、是否出席（及全日出勤選擇）決定班表應寫入的班別。
+ * 依颱風時段、原班別、是否出席（及店長指定班別）決定班表應寫入的班別。
  * - 時段停班且原班不受影響（如白班 vs 19:00）：維持原班
  * - 時段停班且未出席受影響時段：截斷到停班時刻
- * - 時段停班且有出席：維持原班
+ * - 有出席且有指定班別：使用指定班別
+ * - 時段停班且有出席未指定：維持原班
  * - 全日停班且未出席：休假 X
- * - 全日停班且有出席：依出勤時段設定班別
+ * - 全日停班且有出席：指定班別，或依快捷時段（全天／半天）
  */
 export function resolveTyphoonScheduleShift(params: {
   originalShift: ShiftType;
@@ -329,14 +330,24 @@ export function resolveTyphoonScheduleShift(params: {
   fromTime?: string;
   shiftTimeConfig: ShiftTimeConfig;
   attendeeChoice?: AttendeeShiftChoice;
+  /** 店長直接指定有來者當天班別（優先於 attendeeChoice） */
+  assignedShift?: ShiftType;
 }): ShiftType {
-  const { originalShift, willAttend, periodMode, fromTime, shiftTimeConfig, attendeeChoice } =
-    params;
+  const {
+    originalShift,
+    willAttend,
+    periodMode,
+    fromTime,
+    shiftTimeConfig,
+    attendeeChoice,
+    assignedShift,
+  } = params;
 
   if (originalShift === "X" && !willAttend) return "X";
 
   if (periodMode === "full_day") {
     if (!willAttend) return "X";
+    if (assignedShift) return assignedShift;
     return resolveFullDayAttendeeShift(originalShift === "X" ? "B" : originalShift, attendeeChoice);
   }
 
@@ -349,7 +360,7 @@ export function resolveTyphoonScheduleShift(params: {
   );
   // 白班等：時段完全不受颱風影響 → 班表不動
   if (affected <= 0) return originalShift;
-  if (willAttend) return originalShift;
+  if (willAttend) return assignedShift ?? originalShift;
   return resolveShiftAfterTyphoonCutoff(originalShift, cutoff, shiftTimeConfig);
 }
 
@@ -365,6 +376,9 @@ export const FLEXIBLE_PERIOD_PRESETS: Array<{
   { label: "18:00 起停班", periodMode: "from_time", fromTime: "18:00" },
   { label: "19:00 起停班", periodMode: "from_time", fromTime: "19:00" },
 ];
+
+/** 確認出勤時可指定的班別選項 */
+export const ATTENDEE_SHIFT_OPTIONS: ShiftType[] = ["A", "B", "C", "D", "E"];
 
 export const FULL_DAY_ATTENDEE_CHOICES: Array<{
   value: AttendeeShiftChoice;

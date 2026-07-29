@@ -209,27 +209,29 @@ export default function DashboardLayout({
                 
                 {/* 通知下拉選單 */}
                 {showNotifications && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border z-50">
-                    <div className="p-4 border-b flex items-center justify-between">
+                  <div className="fixed inset-x-3 top-16 z-50 sm:absolute sm:inset-x-auto sm:right-0 sm:top-auto sm:mt-2 sm:w-80 max-h-[min(28rem,70dvh)] bg-white rounded-lg shadow-lg border overflow-hidden flex flex-col">
+                    <div className="p-3 sm:p-4 border-b flex items-center justify-between gap-2 shrink-0">
                       <h3 className="font-semibold text-gray-900">通知</h3>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap justify-end">
                         {notifications.filter((n) => n.userId === currentUser.id).length > 0 && (
                           <button
-                            onClick={handleDeleteAllNotifications}
-                            className="text-xs text-red-600 hover:underline"
+                            type="button"
+                            onClick={() => void handleDeleteAllNotifications()}
+                            className="min-h-10 px-3 py-2 text-sm text-red-700 bg-red-50 rounded-lg hover:bg-red-100"
                           >
                             一鍵刪除
                           </button>
                         )}
                         <button
+                          type="button"
                           onClick={() => { setShowNotifications(false); router.push('/notifications'); }}
-                          className="text-xs text-blue-600 hover:underline"
+                          className="min-h-10 px-3 py-2 text-sm text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100"
                         >
                           全部查看
                         </button>
                       </div>
                     </div>
-                    <div className="max-h-96 overflow-y-auto">
+                    <div className="overflow-y-auto flex-1">
                       {notifications
                         .filter((n) => n.userId === currentUser.id)
                         .slice(0, 10)
@@ -244,29 +246,31 @@ export default function DashboardLayout({
                           return (
                             <div
                               key={notification.id}
-                              className={`p-4 border-b hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}
+                              className={`p-3 sm:p-4 border-b hover:bg-gray-50 ${!notification.read ? 'bg-blue-50' : ''}`}
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
                                   <div className="font-medium text-gray-900 text-sm">{notification.title}</div>
-                                  <div className="text-sm text-gray-600 mt-0.5 truncate">{notification.message}</div>
+                                  <div className="text-sm text-gray-600 mt-0.5 line-clamp-2">{notification.message}</div>
                                   <div className="text-xs text-gray-400 mt-1">
                                     {new Date(notification.createdAt).toLocaleString('zh-TW', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                   </div>
                                 </div>
-                                <div className="flex gap-1 shrink-0">
+                                <div className="flex flex-col gap-1 shrink-0">
                                   <button
+                                    type="button"
                                     onClick={() => handleNotificationClick(notification.id, autoRoute)}
-                                    className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+                                    className="min-h-10 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                                   >
                                     查看
                                   </button>
                                   <button
-                                    onClick={() => deleteNotification(notification.id)}
-                                    className="text-xs px-2 py-1 bg-red-100 text-red-600 rounded hover:bg-red-200"
-                                    title="刪除"
+                                    type="button"
+                                    onClick={() => void deleteNotification(notification.id).catch(() => alert('刪除失敗，請稍後再試。'))}
+                                    className="min-h-10 px-3 py-2 text-sm bg-red-100 text-red-600 rounded-lg hover:bg-red-200"
+                                    aria-label="刪除通知"
                                   >
-                                    ✕
+                                    刪除
                                   </button>
                                 </div>
                               </div>
