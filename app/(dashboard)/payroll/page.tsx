@@ -14,6 +14,10 @@ import {
   calculateRateAmount,
   deriveHourlyRateFromBase,
   describeRateFormula,
+  isHourlyMultiplierFormula,
+  isPercentageFormula,
+  normalizePayrollFormulaType,
+  suggestFormulaTypeForItem,
   type PayrollFormulaType,
 } from "@/lib/payroll/rateFormulas";
 import XLSX from "xlsx-js-style";
@@ -222,7 +226,7 @@ export default function PayrollPage() {
           id: r.id, itemKey: r.item_key, label: r.label,
           amount: Number(r.amount), unit: r.unit,
           isDeduction: r.is_deduction, sortOrder: r.sort_order,
-          formulaType: (r.formula_type as PayrollFormulaType) || "fixed_amount",
+          formulaType: normalizePayrollFormulaType(r.formula_type),
           percentage: Number(r.percentage ?? 0),
         })));
       }
@@ -286,7 +290,7 @@ export default function PayrollPage() {
         leaveHours += hours;
         const leaveRate = leaveRateCfgByType(r.type);
         if (leaveRate) {
-          leaveDeduction += calculateRateAmount(hours, leaveRate, salaryBasis);
+          leaveDeduction += calculateRateAmount(hours, leaveRate, salaryBasis, "hour");
         }
       }
       leaveHours = Math.round(leaveHours * 100) / 100;
@@ -321,10 +325,10 @@ export default function PayrollPage() {
       const bonusTotal = empAdj.reduce((acc, a) => acc + (a.isDeduction ? -a.amount : a.amount), 0);
 
       const overtimePay = overtimeRateCfg
-        ? calculateRateAmount(overtimeHours, overtimeRateCfg, salaryBasis)
+        ? calculateRateAmount(overtimeHours, overtimeRateCfg, salaryBasis, "hour")
         : 0;
       const tardinessDeduction = tardinessRateCfg
-        ? calculateRateAmount(tardinessMinutes, tardinessRateCfg, salaryBasis)
+        ? calculateRateAmount(tardinessMinutes, tardinessRateCfg, salaryBasis, "minute")
         : 0;
 
       const finalPay =
@@ -713,8 +717,8 @@ export default function PayrollPage() {
           <div className="bg-white rounded-xl shadow-sm border p-6">
             <h2 className="font-semibold text-gray-900 mb-4">計算費率設定</h2>
             <p className="text-sm text-gray-600 mb-3">
-              可自訂公式：固定金額、底薪百分比、或員工時薪倍數。
-              請假依假別分項計算；補休假不計費率（由補休帳本抵扣）。加班費僅計「選擇加班費」且已核准的申請。
+              費率可選「小時公式」或「分鐘公式」。請假／加班以小時計算；遲到以分鐘計算；若公式單位不同會自動換算。
+              補休假不計費率（由補休帳本抵扣）。加班費僅計「選擇加班費」且已核准的申請。
               時薪請在員工薪資設定填寫，或用「底薪 ÷ 本月正常時數」推算。
             </p>
             <div className="space-y-3">
@@ -732,12 +736,27 @@ export default function PayrollPage() {
                       <button
                         onClick={() => {
                           setEditingRate(rate.id);
+                          const raw = rate.formulaType || "fixed_amount";
+                          let nextFormula: PayrollFormulaType = raw;
+                          if (raw === "fixed_amount") {
+                            nextFormula = suggestFormulaTypeForItem(rate.itemKey);
+                          } else if (raw === "base_salary_percent") {
+                            nextFormula =
+                              suggestFormulaTypeForItem(rate.itemKey) === "fixed_per_minute"
+                                ? "base_salary_percent_per_minute"
+                                : "base_salary_percent_per_hour";
+                          } else if (raw === "hourly_rate") {
+                            nextFormula =
+                              suggestFormulaTypeForItem(rate.itemKey) === "fixed_per_minute"
+                                ? "hourly_rate_per_minute"
+                                : "hourly_rate_per_hour";
+                          }
                           setRateForm({
                             label: rate.label,
                             amount: rate.amount,
                             unit: rate.unit,
                             isDeduction: rate.isDeduction,
-                            formulaType: rate.formulaType || "fixed_amount",
+                            formulaType: nextFormula,
                             percentage: rate.percentage || 0,
                           });
                         }}
@@ -761,17 +780,26 @@ export default function PayrollPage() {
                           }
                           className="w-full border rounded px-2 py-1.5 text-sm"
                         >
-                          {FORMULA_TYPE_OPTIONS.map((opt) => (
-                            <option key={opt.value} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
+                          <optgroup label="小時公式（請假／加班建議）">
+                            {FORMULA_TYPE_OPTIONS.filter((o) => o.group === "hour").map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </optgroup>
+                          <optgroup label="分鐘公式（遲到建議）">
+                            {FORMULA_TYPE_OPTIONS.filter((o) => o.group === "minute").map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </optgroup>
                         </select>
                         <p className="text-[11px] text-gray-500 mt-1">
                           {FORMULA_TYPE_OPTIONS.find((o) => o.value === rateForm.formulaType)?.hint}
                         </p>
                       </div>
-                      {rateForm.formulaType === "base_salary_percent" ? (
+                      {isPercentageFormula(rateForm.formulaType) ? (
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">底薪百分比（%）</label>
                           <input
@@ -784,13 +812,17 @@ export default function PayrollPage() {
                             className="w-full border rounded px-2 py-1.5 text-sm"
                           />
                           <p className="text-[11px] text-gray-500 mt-1">
-                            例：月薪÷240 ≈ 填 0.4167；單位金額＝底薪×百分比÷100
+                            小時例：月薪÷240 ≈ 0.4167；分鐘例：月薪÷240÷60 ≈ 0.00695
                           </p>
                         </div>
                       ) : (
                         <div>
                           <label className="block text-xs text-gray-500 mb-1">
-                            {rateForm.formulaType === "hourly_rate" ? "時薪倍數" : `固定金額（${rate.unit}）`}
+                            {isHourlyMultiplierFormula(rateForm.formulaType)
+                              ? "時薪倍數"
+                              : rateForm.formulaType.includes("minute")
+                                ? "固定金額（元／分鐘）"
+                                : "固定金額（元／小時）"}
                           </label>
                           <input
                             type="number"
