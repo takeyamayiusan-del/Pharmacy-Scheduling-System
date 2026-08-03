@@ -533,7 +533,7 @@ export default function PayrollPage() {
       // 準備三欄資料：A=約定薪資結構, B=非固定支付, C=應代扣
       const colA: [string, number | string][] = [
         ["薪資", p.baseSalary],
-        ["退休金提撥", p.pensionDeduction],
+        ["退休金提撥", -p.pensionDeduction],
       ];
       if (p.leaveDeduction > 0) colA.push(["請假扣款", -p.leaveDeduction]);
       if (p.tardinessDeduction > 0) colA.push(["遲到扣款", -p.tardinessDeduction]);
@@ -549,17 +549,18 @@ export default function PayrollPage() {
         ["勞保費", p.laborInsurance],
         ["健保費", p.healthInsurance],
       ];
-      if (p.unionFee > 0) colC.push(["職業工會費", p.unionFee]);
+      // 職業工會補助費為公司補助說明，不列入應代扣（與畫面實領公式一致）
 
       const subA = colA.reduce((s, [, v]) => s + Number(v), 0);
       const subB = colB.reduce((s, [, v]) => s + v, 0);
       const subC = colC.reduce((s, [, v]) => s + v, 0);
-      const finalPay = subA + subB - subC;
+      // 與薪資頁 finalPay 一致，避免匯出與畫面不符
+      const finalPay = p.finalPay;
 
       // 正常工時薪資 = 正常時數 × 時薪
       const normalPay = Math.round(p.normalHours * p.hourlyRate);
-      // 加班薪資
-      const overtimePay2 = Math.round(p.overtimeHours * p.hourlyRate);
+      // 加班金額改用費率公式結果（與畫面一致）
+      const overtimePay2 = p.overtimePay;
       // 公司提撥退休金金額
       const companyPensionAmt = Math.round(p.companyPensionBase * p.companyPensionRate / 100);
 
@@ -718,7 +719,7 @@ export default function PayrollPage() {
             <h2 className="font-semibold text-gray-900 mb-4">計算費率設定</h2>
             <p className="text-sm text-gray-600 mb-3">
               費率可選「小時公式」或「分鐘公式」。請假／加班以小時計算；遲到以分鐘計算；若公式單位不同會自動換算。
-              補休假不計費率（由補休帳本抵扣）。加班費僅計「選擇加班費」且已核准的申請。
+              補休假不計費率（由補休帳本抵扣）。加班費僅計「選擇加班費」且已核准的申請（國定假日排班不會自動列入，需加班申請或下方加減項）。
               時薪請在員工薪資設定填寫，或用「底薪 ÷ 本月正常時數」推算。
             </p>
             <div className="space-y-3">

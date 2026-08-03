@@ -2123,11 +2123,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ) => {
     const request = leaveRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
 
+    // 員工不可改過去月份；店長／老闆仍可審核，以便月底結薪
     if (
       request &&
       status !== prevStatus &&
-      hasPastMonthInRange(request.startDate, request.endDate)
+      hasPastMonthInRange(request.startDate, request.endDate) &&
+      !isManagerActor
     ) {
       throw new Error("已過去的月份無法變更請假申請");
     }
@@ -2401,11 +2405,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const request = swapRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
     const dbStatus = mapSwapStatusToDb(status);
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
 
     if (
       request &&
       status !== prevStatus &&
-      (isPastDate(request.requesterDate) || isPastDate(request.targetDate))
+      (isPastDate(request.requesterDate) || isPastDate(request.targetDate)) &&
+      !isManagerActor
     ) {
       throw new Error("已過去的月份無法變更換班申請");
     }
@@ -2608,13 +2615,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ) => {
     const request = overtimeRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
-
-    if (request && status !== prevStatus && isPastDate(request.date)) {
-      throw new Error("已過去的月份無法變更加班申請");
-    }
-
     const isManagerActor =
       currentUser?.role === "owner" || currentUser?.role === "manager";
+
+    // 員工不可改過去月份；店長／老闆仍可審核，以便月底結薪
+    if (request && status !== prevStatus && isPastDate(request.date) && !isManagerActor) {
+      throw new Error("已過去的月份無法變更加班申請");
+    }
 
     if (isManagerActor) {
       const res = await fetch("/api/applications/overtime/review", {
