@@ -43,6 +43,7 @@ import {
 import {
   buildHolidayOneClickChanges,
   type HolidayOneClickMode,
+  type HolidayWorkShiftChoice,
 } from "@/lib/schedule/holidayOneClick";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -382,7 +383,8 @@ interface AppContextType {
   /** 國定假日一鍵設為上班／休假；已排休或全日請假者維持休假。不寫入排休選擇。 */
   applyNationalHolidayOneClick: (
     date: string,
-    mode: HolidayOneClickMode
+    mode: HolidayOneClickMode,
+    options?: { workShiftChoice?: HolidayWorkShiftChoice }
   ) => Promise<{ updated: number; preservedLeave: number }>;
   refreshSchedule: () => Promise<void>;
   fixedShifts: FixedShift[];
@@ -1526,7 +1528,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const applyNationalHolidayOneClick = async (
     date: string,
-    mode: HolidayOneClickMode
+    mode: HolidayOneClickMode,
+    options?: { workShiftChoice?: HolidayWorkShiftChoice }
   ): Promise<{ updated: number; preservedLeave: number }> => {
     if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
       throw new Error("僅店長或老闆可一鍵設定國定假日班表");
@@ -1560,6 +1563,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       getWorkShift: (employeeId) => getWorkShiftIgnoringLeave(date, employeeId),
       hasLeaveSelection: (employeeId) => (leaveSelections[employeeId] ?? []).includes(date),
       hasApprovedFullDayLeave,
+      workShiftChoice: mode === "work" ? options?.workShiftChoice ?? "auto" : undefined,
     });
 
     const preservedLeave = targets.filter((e) => {

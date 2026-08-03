@@ -7,6 +7,10 @@ import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import { calculateLeaveDisplayOnSchedule, getOriginalShiftForLeaveDay } from "@/lib/schedule/leaveSchedule";
+import {
+  HOLIDAY_WORK_SHIFT_OPTIONS,
+  type HolidayWorkShiftChoice,
+} from "@/lib/schedule/holidayOneClick";
 import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
@@ -51,6 +55,9 @@ export default function SchedulePage() {
   const [holidayRefreshMessage, setHolidayRefreshMessage] = useState<string | null>(null);
   const [holidayOneClickBusy, setHolidayOneClickBusy] = useState<string | null>(null);
   const [holidayOneClickMessage, setHolidayOneClickMessage] = useState<string | null>(null);
+  const [holidayWorkShiftByDate, setHolidayWorkShiftByDate] = useState<
+    Record<string, HolidayWorkShiftChoice>
+  >({});
   const [editingCell, setEditingCell] = useState<{ date: string; employeeId: string } | null>(null);
 
   // 班表規則說明（可編輯）
@@ -181,22 +188,40 @@ export default function SchedulePage() {
     };
   }).filter((item): item is NonNullable<typeof item> => item !== null);
 
-  const handleHolidayOneClick = async (date: string, mode: "work" | "off") => {
+  const handleHolidayOneClick = async (
+    date: string,
+    mode: "work" | "off",
+    workShiftChoice?: HolidayWorkShiftChoice
+  ) => {
     if (!isManager || holidayOneClickBusy) return;
-    const label = mode === "work" ? "設為上班（已排休／全日請假維持休假）" : "設為全員休假";
+    const shiftLabel =
+      mode === "work"
+        ? workShiftChoice && workShiftChoice !== "auto"
+          ? `班別 ${workShiftChoice}`
+          : "依固定班"
+        : "";
+    const label =
+      mode === "work"
+        ? `設為上班（${shiftLabel}；已排休／全日請假維持休假）`
+        : "設為全員休假";
     if (!window.confirm(`確定對 ${date} ${label}？`)) return;
 
     setHolidayOneClickBusy(`${date}:${mode}`);
     setHolidayOneClickMessage(null);
     try {
-      const result = await applyNationalHolidayOneClick(date, mode);
+      const result = await applyNationalHolidayOneClick(
+        date,
+        mode,
+        mode === "work" ? { workShiftChoice: workShiftChoice ?? "auto" } : undefined
+      );
       await refreshSchedule();
       const leaveNote =
         mode === "work" && result.preservedLeave > 0
           ? `，已保留 ${result.preservedLeave} 人休假`
           : "";
+      const shiftNote = mode === "work" ? `（${shiftLabel}）` : "";
       setHolidayOneClickMessage(
-        `${date} 已更新 ${result.updated} 人班表${leaveNote}`
+        `${date} 已更新 ${result.updated} 人班表${shiftNote}${leaveNote}`
       );
     } catch (error) {
       alert(error instanceof Error ? error.message : "國定假日一鍵設定失敗");
@@ -558,12 +583,13 @@ export default function SchedulePage() {
         <div className="app-card p-4 border-amber-200 bg-amber-50/40">
           <h3 className="font-medium text-amber-900 mb-1">國定假日一鍵設定</h3>
           <p className="text-sm text-amber-800/80 mb-3">
-            店長決定當日是否營業：設為上班會依固定班／基準班排班；已排休或全日請假的人維持休假。設為休假則全員 X（不寫入排休選擇）。
+            設為上班前可先選班別（A–E），或「依固定班」。已排休或全日請假的人維持休假。設為休假則全員 X（不寫入排休選擇）。
           </p>
           <div className="space-y-2">
             {monthNationalHolidays.map((h) => {
               const busyWork = holidayOneClickBusy === `${h.date}:work`;
               const busyOff = holidayOneClickBusy === `${h.date}:off`;
+              const workShiftChoice = holidayWorkShiftByDate[h.date] ?? "auto";
               return (
                 <div
                   key={h.date}
@@ -574,11 +600,31 @@ export default function SchedulePage() {
                     <span className="ml-2 text-amber-800">{h.name}</span>
                     {h.isPast && <span className="ml-2 text-xs text-gray-400">已過</span>}
                   </div>
-                  <div className="flex gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-xs text-gray-600 flex items-center gap-1">
+                      上班班別
+                      <select
+                        value={workShiftChoice}
+                        disabled={h.isPast || Boolean(holidayOneClickBusy)}
+                        onChange={(e) =>
+                          setHolidayWorkShiftByDate((prev) => ({
+                            ...prev,
+                            [h.date]: e.target.value as HolidayWorkShiftChoice,
+                          }))
+                        }
+                        className="border rounded-lg px-2 py-1.5 text-xs bg-white disabled:opacity-50"
+                      >
+                        {HOLIDAY_WORK_SHIFT_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <button
                       type="button"
                       disabled={h.isPast || Boolean(holidayOneClickBusy)}
-                      onClick={() => void handleHolidayOneClick(h.date, "work")}
+                      onClick={() => void handleHolidayOneClick(h.date, "work", workShiftChoice)}
                       className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
                       {busyWork ? "處理中…" : "一鍵設為上班"}

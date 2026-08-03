@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildHolidayOneClickChanges,
   resolveHolidayOneClickShift,
+  resolveHolidayWorkShift,
 } from "@/lib/schedule/holidayOneClick";
 
 describe("resolveHolidayOneClickShift", () => {
@@ -61,6 +62,16 @@ describe("resolveHolidayOneClickShift", () => {
   });
 });
 
+describe("resolveHolidayWorkShift", () => {
+  it("auto 使用基準班", () => {
+    expect(resolveHolidayWorkShift("auto", "C")).toBe("C");
+  });
+
+  it("指定班別優先於基準班", () => {
+    expect(resolveHolidayWorkShift("A", "C")).toBe("A");
+  });
+});
+
 describe("buildHolidayOneClickChanges", () => {
   it("略過無需變更的員工，並保留排休者為 X", () => {
     const changes = buildHolidayOneClickChanges({
@@ -75,6 +86,23 @@ describe("buildHolidayOneClickChanges", () => {
 
     expect(changes).toEqual([
       { employeeId: "a", date: "2026-10-10", from: "X", to: "A" },
+    ]);
+  });
+
+  it("指定班別時全員寫入該班，排休者仍維持 X", () => {
+    const changes = buildHolidayOneClickChanges({
+      date: "2026-10-10",
+      mode: "work",
+      workShiftChoice: "C",
+      employeeIds: ["a", "b", "c"],
+      getCurrentShift: (id) => (id === "a" ? "B" : id === "b" ? "C" : "X"),
+      getWorkShift: () => "B",
+      hasLeaveSelection: (id) => id === "c",
+      hasApprovedFullDayLeave: () => false,
+    });
+
+    expect(changes).toEqual([
+      { employeeId: "a", date: "2026-10-10", from: "B", to: "C" },
     ]);
   });
 });
