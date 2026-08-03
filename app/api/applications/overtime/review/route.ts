@@ -5,6 +5,7 @@ import {
   canChooseOvertimePay,
   calcOvertimeHours,
 } from "@/lib/attendance/overtimeCompensation";
+import { isPastDate } from "@/lib/schedule/monthAccess";
 
 type ReviewStatus = "approved" | "rejected" | "pending";
 
@@ -43,10 +44,12 @@ export async function PATCH(req: NextRequest) {
     let compensation = row.compensation === "comp_leave" ? "time_off" : "pay";
 
     // 超過半小時卻選加班費：核准時自動改為補休
+    // 過去月份維持原選擇（避免月底補審時把已申請的加班費改成補休）
     const forceCompLeave =
       status === "approved" &&
       compensation === "pay" &&
-      !canChooseOvertimePay(startTime, endTime);
+      !canChooseOvertimePay(startTime, endTime) &&
+      !isPastDate(String(row.overtime_date).slice(0, 10));
     if (forceCompLeave) {
       compensation = "time_off";
     }
