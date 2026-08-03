@@ -40,6 +40,10 @@ import {
   upsertScheduleShift,
   type ScheduleSnapshotEntry,
 } from "@/lib/schedule/scheduleSnapshot";
+import {
+  buildHolidayOneClickChanges,
+  type HolidayOneClickMode,
+} from "@/lib/schedule/holidayOneClick";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -375,6 +379,11 @@ interface AppContextType {
   updateShift: (date: string, employeeId: string, shift: ShiftType) => Promise<void>;
   getShiftForDate: (date: string, employeeId: string) => ShiftType;
   getBaseShiftForDate: (date: string, employeeId: string) => ShiftType;
+  /** 國定假日一鍵設為上班／休假；已排休或全日請假者維持休假。不寫入排休選擇。 */
+  applyNationalHolidayOneClick: (
+    date: string,
+    mode: HolidayOneClickMode
+  ) => Promise<{ updated: number; preservedLeave: number }>;
   refreshSchedule: () => Promise<void>;
   fixedShifts: FixedShift[];
   addFixedShift: (shift: FixedShift) => Promise<void>;
@@ -1373,17 +1382,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Schedule (localStorage) ─────────────────────────────────────────────────
 
-  const getBaseShiftForDate = (date: string, employeeId: string): ShiftType => {
+  /** 基準上班班別（忽略排休勾選；禮拜日仍為 X） */
+  const getWorkShiftIgnoringLeave = (date: string, employeeId: string): ShiftType => {
     if (isSunday(date)) return "X";
 
     const emp = employees.find((e) => e.id === employeeId);
     const isWednesdayRotation = emp?.isWednesdayRotation ?? false;
 
-    if (isSaturday(date)) {
-      return (leaveSelections[employeeId] ?? []).includes(date) ? "X" : "C";
-    }
-
-    if ((leaveSelections[employeeId] ?? []).includes(date)) return "X";
+    if (isSaturday(date)) return "C";
 
     const dayOfWeek = new Date(date).getDay();
 
@@ -1410,6 +1416,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       (s) => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek
     );
     return fixedShift?.shift ?? "B";
+  };
+
+  const getBaseShiftForDate = (date: string, employeeId: string): ShiftType => {
+    if (isSunday(date)) return "X";
+
+    if (isSaturday(date)) {
+      return (leaveSelections[employeeId] ?? []).includes(date) ? "X" : "C";
+    }
+
+    if ((leaveSelections[employeeId] ?? []).includes(date)) return "X";
+
+    return getWorkShiftIgnoringLeave(date, employeeId);
   };
 
   const getShiftForDate = (date: string, employeeId: string): ShiftType => {
@@ -1504,6 +1522,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
       { user_id: employeeId, date, shift_code: shift, updated_by: currentUser?.id },
       { onConflict: "user_id,date" }
     );
+  };
+
+  const applyNationalHolidayOneClick = async (
+    date: string,
+    mode: HolidayOneClickMode
+  ): Promise<{ updated: number; preservedLeave: number }> => {
+    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
+      throw new Error("僅店長或老闆可一鍵設定國定假日班表");
+    }
+    if (isPastDate(date)) {
+      throw new Error("已過去的日期無法修改班表");
+    }
+    if (isSunday(date)) {
+      throw new Error("禮拜日為固定公休，無法一鍵設定");
+    }
+    if (!getHolidayInfo(date).isHoliday) {
+      throw new Error("僅能對國定假日使用一鍵設定");
+    }
+
+    const targets = employees.filter((e) => e.role !== "owner");
+    const hasApprovedFullDayLeave = (employeeId: string) =>
+      leaveRequests.some(
+        (r) =>
+          r.employeeId === employeeId &&
+          r.status === "approved" &&
+          r.period === "full_day" &&
+          date >= r.startDate &&
+          date <= r.endDate
+      );
+
+    const changes = buildHolidayOneClickChanges({
+      date,
+      mode,
+      employeeIds: targets.map((e) => e.id),
+      getCurrentShift: (employeeId) => getShiftForDate(date, employeeId),
+      getWorkShift: (employeeId) => getWorkShiftIgnoringLeave(date, employeeId),
+      hasLeaveSelection: (employeeId) => (leaveSelections[employeeId] ?? []).includes(date),
+      hasApprovedFullDayLeave,
+    });
+
+    const preservedLeave = targets.filter((e) => {
+      const keepLeave =
+        (leaveSelections[e.id] ?? []).includes(date) || hasApprovedFullDayLeave(e.id);
+      return mode === "work" && keepLeave;
+    }).length;
+
+    if (changes.length > 0) {
+      setSchedule((prev) => {
+        const nextDay = { ...prev[date] };
+        for (const change of changes) {
+          nextDay[change.employeeId] = change.to;
+        }
+        return { ...prev, [date]: nextDay };
+      });
+
+      for (const change of changes) {
+        await upsertScheduleShift(supabase, change.employeeId, date, change.to, currentUser.id);
+      }
+    }
+
+    return { updated: changes.length, preservedLeave };
   };
 
   // ─── Fixed shifts ────────────────────────────────────────────────────────────
@@ -3291,6 +3370,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         updateShift,
         getShiftForDate,
         getBaseShiftForDate,
+        applyNationalHolidayOneClick,
         refreshSchedule: loadScheduleOverrides,
         fixedShifts,
         addFixedShift,

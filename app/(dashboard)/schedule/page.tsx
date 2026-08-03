@@ -30,6 +30,7 @@ export default function SchedulePage() {
     countSaturdaysInMonth,
     getShiftForDate,
     getBaseShiftForDate,
+    applyNationalHolidayOneClick,
     refreshSchedule,
     getWednesdayOffDates,
     shiftTimeConfig,
@@ -48,6 +49,8 @@ export default function SchedulePage() {
   const [holidayRefreshYear, setHolidayRefreshYear] = useState<number>(new Date().getFullYear());
   const [isRefreshingHolidays, setIsRefreshingHolidays] = useState(false);
   const [holidayRefreshMessage, setHolidayRefreshMessage] = useState<string | null>(null);
+  const [holidayOneClickBusy, setHolidayOneClickBusy] = useState<string | null>(null);
+  const [holidayOneClickMessage, setHolidayOneClickMessage] = useState<string | null>(null);
   const [editingCell, setEditingCell] = useState<{ date: string; employeeId: string } | null>(null);
 
   // 班表規則說明（可編輯）
@@ -164,6 +167,43 @@ export default function SchedulePage() {
       ? rotationEmployees.map((e) => e.name).join("/")
       : "尚未設定";
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+
+  const monthNationalHolidays = Array.from({ length: daysInMonth }, (_, i) => {
+    const day = i + 1;
+    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+    const info = getHolidayInfo(dateStr);
+    if (!info.isHoliday || isSunday(dateStr)) return null;
+    return {
+      date: dateStr,
+      day,
+      name: (info.name ?? "國定假日").replace(/\n/g, ""),
+      isPast: isPastDate(dateStr),
+    };
+  }).filter((item): item is NonNullable<typeof item> => item !== null);
+
+  const handleHolidayOneClick = async (date: string, mode: "work" | "off") => {
+    if (!isManager || holidayOneClickBusy) return;
+    const label = mode === "work" ? "設為上班（已排休／全日請假維持休假）" : "設為全員休假";
+    if (!window.confirm(`確定對 ${date} ${label}？`)) return;
+
+    setHolidayOneClickBusy(`${date}:${mode}`);
+    setHolidayOneClickMessage(null);
+    try {
+      const result = await applyNationalHolidayOneClick(date, mode);
+      await refreshSchedule();
+      const leaveNote =
+        mode === "work" && result.preservedLeave > 0
+          ? `，已保留 ${result.preservedLeave} 人休假`
+          : "";
+      setHolidayOneClickMessage(
+        `${date} 已更新 ${result.updated} 人班表${leaveNote}`
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "國定假日一鍵設定失敗");
+    } finally {
+      setHolidayOneClickBusy(null);
+    }
+  };
 
   const prevMonth = () => {
     setCurrentDate(new Date(year, month - 2, 1));
@@ -484,7 +524,7 @@ export default function SchedulePage() {
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                <span className="text-gray-600">國定假日 - 可編輯</span>
+                <span className="text-gray-600">國定假日 - 可編輯／可一鍵設定</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-cyan-500"></div>
@@ -512,6 +552,54 @@ export default function SchedulePage() {
             setTyphoonReloadKey((k) => k + 1);
           }}
         />
+      )}
+
+      {isManager && monthNationalHolidays.length > 0 && (
+        <div className="app-card p-4 border-amber-200 bg-amber-50/40">
+          <h3 className="font-medium text-amber-900 mb-1">國定假日一鍵設定</h3>
+          <p className="text-sm text-amber-800/80 mb-3">
+            店長決定當日是否營業：設為上班會依固定班／基準班排班；已排休或全日請假的人維持休假。設為休假則全員 X（不寫入排休選擇）。
+          </p>
+          <div className="space-y-2">
+            {monthNationalHolidays.map((h) => {
+              const busyWork = holidayOneClickBusy === `${h.date}:work`;
+              const busyOff = holidayOneClickBusy === `${h.date}:off`;
+              return (
+                <div
+                  key={h.date}
+                  className="flex flex-wrap items-center gap-2 justify-between rounded-lg bg-white/80 border border-amber-100 px-3 py-2"
+                >
+                  <div className="text-sm text-gray-800">
+                    <span className="font-medium">{month}/{h.day}</span>
+                    <span className="ml-2 text-amber-800">{h.name}</span>
+                    {h.isPast && <span className="ml-2 text-xs text-gray-400">已過</span>}
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      disabled={h.isPast || Boolean(holidayOneClickBusy)}
+                      onClick={() => void handleHolidayOneClick(h.date, "work")}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                    >
+                      {busyWork ? "處理中…" : "一鍵設為上班"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={h.isPast || Boolean(holidayOneClickBusy)}
+                      onClick={() => void handleHolidayOneClick(h.date, "off")}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                    >
+                      {busyOff ? "處理中…" : "一鍵設為休假"}
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {holidayOneClickMessage && (
+            <p className="mt-2 text-sm text-emerald-700">{holidayOneClickMessage}</p>
+          )}
+        </div>
       )}
 
       {showExportModal && (
