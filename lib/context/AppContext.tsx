@@ -21,6 +21,10 @@ import {
   enumerateDatesInRange,
 } from "@/lib/schedule/effectiveShift";
 import { roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
+import {
+  resolveAllowedCompensationType,
+  validateOvertimeCompensation,
+} from "@/lib/attendance/overtimeCompensation";
 import { buildSwapShiftsAndChanges, swapSnapshotCells } from "@/lib/schedule/swapSchedule";
 import {
   applyScheduleChangesToState,
@@ -2468,6 +2472,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("已過去的月份無法再提出加班申請");
     }
 
+    const compensationError = validateOvertimeCompensation(
+      request.startTime,
+      request.endTime,
+      request.compensationType
+    );
+    if (compensationError) {
+      throw new Error(compensationError);
+    }
+    const compensationType = resolveAllowedCompensationType(
+      request.startTime,
+      request.endTime,
+      request.compensationType
+    );
+
     const { data: existingRequests, error: existingError } = await supabase
       .from("overtime_applications")
       .select("id, status")
@@ -2491,7 +2509,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       start_time: request.startTime,
       end_time: request.endTime,
       reason: request.reason,
-      compensation: request.compensationType === "time_off" ? "comp_leave" : "pay",
+      compensation: compensationType === "time_off" ? "comp_leave" : "pay",
       status: "pending",
     });
     await notifyManagers({

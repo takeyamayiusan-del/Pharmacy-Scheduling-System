@@ -1,14 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertManagerAuth } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import {
+  canChooseOvertimePay,
+  calcOvertimeHours,
+} from "@/lib/attendance/overtimeCompensation";
 
 type ReviewStatus = "approved" | "rejected" | "pending";
-
-function overtimeHoursBetween(startTime: string, endTime: string): number {
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
-  return Math.round((((eh * 60 + em) - (sh * 60 + sm)) / 60) * 100) / 100;
-}
 
 export async function PATCH(req: NextRequest) {
   try {
@@ -40,7 +38,18 @@ export async function PATCH(req: NextRequest) {
     }
 
     const prevStatus = row.status as ReviewStatus;
-    const compensation = row.compensation === "comp_leave" ? "time_off" : "pay";
+    const startTime = String(row.start_time).slice(0, 5);
+    const endTime = String(row.end_time).slice(0, 5);
+    let compensation = row.compensation === "comp_leave" ? "time_off" : "pay";
+
+    // 超過半小時卻選加班費：核准時自動改為補休
+    const forceCompLeave =
+      status === "approved" &&
+      compensation === "pay" &&
+      !canChooseOvertimePay(startTime, endTime);
+    if (forceCompLeave) {
+      compensation = "time_off";
+    }
 
     const { error: updateError } = await admin
       .from("overtime_applications")
@@ -48,6 +57,7 @@ export async function PATCH(req: NextRequest) {
         status,
         reviewed_by: auth.callerId,
         reviewed_at: new Date().toISOString(),
+        ...(forceCompLeave ? { compensation: "comp_leave" } : {}),
         ...(status === "rejected" && rejectReason?.trim()
           ? { reject_reason: rejectReason.trim() }
           : status !== "rejected"
@@ -61,10 +71,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (compensation === "time_off") {
-      const hours = overtimeHoursBetween(
-        String(row.start_time).slice(0, 5),
-        String(row.end_time).slice(0, 5)
-      );
+      const hours = calcOvertimeHours(startTime, endTime);
       if (status === "approved" && prevStatus !== "approved") {
         const expiresAt = new Date();
         expiresAt.setMonth(expiresAt.getMonth() + 6);
@@ -74,7 +81,9 @@ export async function PATCH(req: NextRequest) {
           source_type: "overtime_credit",
           source_id: id,
           expires_at: expiresAt.toISOString(),
-          note: `加班轉補休 ${row.overtime_date}`,
+          note: forceCompLeave
+            ? `加班逾半小時改補休 ${row.overtime_date}`
+            : `加班轉補休 ${row.overtime_date}`,
         });
         if (creditError) {
           return NextResponse.json({ error: creditError.message }, { status: 500 });
@@ -94,7 +103,10 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      convertedToCompLeave: forceCompLeave,
+    });
   } catch (err) {
     console.error("[applications/overtime/review PATCH]", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

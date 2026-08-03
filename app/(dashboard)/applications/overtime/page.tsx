@@ -5,6 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
 import { formatCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
+import {
+  calcOvertimeHours,
+  canChooseOvertimePay,
+  overtimeCompensationHint,
+  resolveAllowedCompensationType,
+  validateOvertimeCompensation,
+} from "@/lib/attendance/overtimeCompensation";
 
 function formatCompLeaveAmount(hours: number): string {
   const rounded = Math.round(hours * 100) / 100;
@@ -28,7 +35,13 @@ export default function OvertimePage() {
   } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" as "pay" | "time_off" });
+  const [formData, setFormData] = useState({
+    date: "",
+    startTime: "",
+    endTime: "",
+    reason: "",
+    compensationType: "time_off" as "pay" | "time_off",
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -103,6 +116,23 @@ export default function OvertimePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser || isSubmitting) return;
+
+    const compensationError = validateOvertimeCompensation(
+      formData.startTime,
+      formData.endTime,
+      formData.compensationType
+    );
+    if (compensationError) {
+      alert(compensationError);
+      return;
+    }
+
+    const compensationType = resolveAllowedCompensationType(
+      formData.startTime,
+      formData.endTime,
+      formData.compensationType
+    );
+
     setIsSubmitting(true);
     try {
       await addOvertimeRequest({
@@ -112,10 +142,10 @@ export default function OvertimePage() {
         startTime: formData.startTime,
         endTime: formData.endTime,
         reason: formData.reason,
-        compensationType: formData.compensationType,
+        compensationType,
         status: "pending",
       });
-      setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" });
+      setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "time_off" });
       setShowForm(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : "申請失敗");
@@ -124,13 +154,11 @@ export default function OvertimePage() {
     }
   };
 
-  const calcHours = (s: string, e: string) => {
-    if (!s || !e) return 0;
-    const [sh, sm] = s.split(":").map(Number);
-    const [eh, em] = e.split(":").map(Number);
-    const h = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
-    return Math.round(h * 100) / 100;
-  };
+  const overtimeMinutesPreview =
+    formData.startTime && formData.endTime
+      ? calcOvertimeHours(formData.startTime, formData.endTime)
+      : 0;
+  const payAllowed = canChooseOvertimePay(formData.startTime, formData.endTime);
 
   const statusLabels: Record<string, { label: string; color: string }> = {
     pending:  { label: "待審核", color: "bg-yellow-100 text-yellow-800" },
@@ -209,17 +237,48 @@ export default function OvertimePage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">開始時間</label>
-                <input type="time" value={formData.startTime} onChange={e => setFormData({ ...formData, startTime: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg" required />
+                <input
+                  type="time"
+                  value={formData.startTime}
+                  onChange={(e) => {
+                    const startTime = e.target.value;
+                    const nextComp = resolveAllowedCompensationType(
+                      startTime,
+                      formData.endTime,
+                      formData.compensationType
+                    );
+                    setFormData({ ...formData, startTime, compensationType: nextComp });
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">結束時間</label>
-                <input type="time" value={formData.endTime} onChange={e => setFormData({ ...formData, endTime: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg" required />
+                <input
+                  type="time"
+                  value={formData.endTime}
+                  onChange={(e) => {
+                    const endTime = e.target.value;
+                    const nextComp = resolveAllowedCompensationType(
+                      formData.startTime,
+                      endTime,
+                      formData.compensationType
+                    );
+                    setFormData({ ...formData, endTime, compensationType: nextComp });
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
               </div>
             </div>
             {formData.startTime && formData.endTime && (
-              <p className="text-xs text-gray-500">預估加班：{calcHours(formData.startTime, formData.endTime)} 小時</p>
+              <p className="text-xs text-gray-500">
+                預估加班：{overtimeMinutesPreview} 小時
+                <span className="ml-2 text-amber-700">
+                  {overtimeCompensationHint(formData.startTime, formData.endTime)}
+                </span>
+              </p>
             )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">加班原因</label>
@@ -228,16 +287,38 @@ export default function OvertimePage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">補償方式</label>
-              <div className="flex gap-4">
-                {[{ v: "pay", l: "加班費" }, { v: "time_off", l: "補休" }].map(opt => (
-                  <label key={opt.v} className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="comp" value={opt.v}
-                      checked={formData.compensationType === opt.v}
-                      onChange={() => setFormData({ ...formData, compensationType: opt.v as "pay" | "time_off" })} />
-                    <span>{opt.l}</span>
-                  </label>
-                ))}
+              <div className="flex flex-wrap gap-4">
+                <label
+                  className={`flex items-center gap-2 ${payAllowed ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
+                >
+                  <input
+                    type="radio"
+                    name="comp"
+                    value="pay"
+                    disabled={!payAllowed}
+                    checked={formData.compensationType === "pay"}
+                    onChange={() =>
+                      setFormData({ ...formData, compensationType: "pay" })
+                    }
+                  />
+                  <span>加班費（限半小時內）</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="comp"
+                    value="time_off"
+                    checked={formData.compensationType === "time_off"}
+                    onChange={() =>
+                      setFormData({ ...formData, compensationType: "time_off" })
+                    }
+                  />
+                  <span>補休</span>
+                </label>
               </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {overtimeCompensationHint(formData.startTime, formData.endTime)}
+              </p>
             </div>
             <div className="flex gap-3">
               <button
@@ -438,7 +519,7 @@ export default function OvertimePage() {
               )}
               {visibleRequests.map(req => {
                 const st = statusLabels[req.status];
-                const h = calcHours(req.startTime, req.endTime);
+                const h = calcOvertimeHours(req.startTime, req.endTime);
                 const empName = req.employeeName || getEmpName(req.employeeId);
                 return (
                   <tr key={req.id} className="hover:bg-gray-50">
