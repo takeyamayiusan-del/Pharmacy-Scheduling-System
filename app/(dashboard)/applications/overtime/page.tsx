@@ -35,7 +35,13 @@ export default function OvertimePage() {
   } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" as "pay" | "time_off" });
+  const [formData, setFormData] = useState({
+    date: "",
+    startTime: "",
+    endTime: "",
+    reason: "",
+    compensationType: "time_off" as "pay" | "time_off",
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -139,7 +145,7 @@ export default function OvertimePage() {
         compensationType,
         status: "pending",
       });
-      setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" });
+      setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "time_off" });
       setShowForm(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : "申請失敗");
