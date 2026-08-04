@@ -22,6 +22,21 @@ describe("isEmployeeActiveOnDate", () => {
       isEmployeeActiveOnDate({ hireDate: "2026-01-01", endDate: "2026-08-15" }, "2026-08-16")
     ).toBe(false);
   });
+
+  it("supports ISO datetime strings from database", () => {
+    expect(
+      isEmployeeActiveOnDate(
+        { hireDate: "2026-08-03T00:00:00+08:00", endDate: null },
+        "2026-08-02"
+      )
+    ).toBe(false);
+    expect(
+      isEmployeeActiveOnDate(
+        { hireDate: "2026-08-03T00:00:00+08:00", endDate: null },
+        "2026-08-03"
+      )
+    ).toBe(true);
+  });
 });
 
 describe("isEmployeeActiveInMonth", () => {
@@ -53,5 +68,15 @@ describe("isEmployeeActiveInMonth", () => {
     expect(
       isEmployeeActiveInMonth({ hireDate: "2026-08-20", endDate: "2026-09-10" }, 2026, 8)
     ).toBe(true);
+  });
+
+  it("hides month before hire when hireDate contains time", () => {
+    expect(
+      isEmployeeActiveInMonth(
+        { hireDate: "2026-08-03T00:00:00+08:00", endDate: null },
+        2026,
+        7
+      )
+    ).toBe(false);
   });
 });
