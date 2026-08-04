@@ -54,10 +54,14 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
 }
 
-Write-Host "Clean redeploy: pharmacy-web + cashflow (stop→restart, no resurrect stack)..."
+Write-Host "Clean redeploy: pharmacy-web + cashflow (restart only, no stacking)..."
 $ok = Restart-DualSitesClean -ProjectRoot $ProjectRoot -WriteLog $log
 if (-not $ok) {
-    Write-Host "WARN: one or both apps may not be online — check pm2 status" -ForegroundColor Yellow
+    Write-Host "WARN: one or both apps may not be online - check pm2 status" -ForegroundColor Yellow
+    Write-Host "If pharmacy-web missing, run once:" -ForegroundColor Yellow
+    Write-Host '  cd C:\Pharmacy-Scheduling-System'
+    Write-Host '  cmd /c "pm2 start node_modules\next\dist\bin\next --name pharmacy-web -- start"'
+    Write-Host "  pm2 save"
 }
 
 Start-Sleep -Seconds 3
