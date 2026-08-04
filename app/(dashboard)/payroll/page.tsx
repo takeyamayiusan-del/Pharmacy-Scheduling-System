@@ -20,6 +20,10 @@ import {
   suggestFormulaTypeForItem,
   type PayrollFormulaType,
 } from "@/lib/payroll/rateFormulas";
+import {
+  getDefaultPayrollPeriod,
+  computeMonthlyAttendanceHours,
+} from "@/lib/payroll/monthlyHours";
 import XLSX from "xlsx-js-style";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -66,7 +70,12 @@ type EmployeePayroll = {
   position: string;
   bankAccount: string;
   hourlyRate: number;
+  /** 薪資設定的正常時數；若為 0 則試算改用出勤應出勤時數 */
   normalHours: number;
+  /** 班表彙總應出勤工時（已扣請假） */
+  workHours: number;
+  /** 實際用於明細／試算的正常時數 */
+  effectiveNormalHours: number;
   companyPensionRate: number;
   companyPensionBase: number;
   payDate: string;
@@ -77,6 +86,11 @@ type EmployeePayroll = {
   pensionDeduction: number;
   leaveHours: number;
   leaveDeduction: number;
+  /** 加班申請（選加班費）時數 */
+  overtimeAppHours: number;
+  /** 國定假日排班工時 */
+  holidayOvertimeHours: number;
+  /** 加班費合計時數（申請加班費＋國定假） */
   overtimeHours: number;
   overtimePay: number;
   tardinessMinutes: number;
@@ -157,6 +171,7 @@ export default function PayrollPage() {
     tardinessRecords,
     punchRecords,
     getShiftForDate,
+    getHolidayInfo,
     shiftTimeConfig,
     payrollRecords,
     publishPayrollRecord,
@@ -165,9 +180,10 @@ export default function PayrollPage() {
   } = useApp();
   const supabase = createClient();
 
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
+  const defaultPeriod = getDefaultPayrollPeriod();
+  const [year, setYear] = useState(defaultPeriod.year);
+  const [month, setMonth] = useState(defaultPeriod.month);
+  const [showTrial, setShowTrial] = useState(true);
 
   const [salaryConfigs, setSalaryConfigs] = useState<Record<string, SalaryConfig>>({});
   const [rateConfigs, setRateConfigs] = useState<RateConfig[]>([]);
@@ -251,7 +267,6 @@ export default function PayrollPage() {
   // ─── Compute payroll ────────────────────────────────────────────────────────
 
   const computePayroll = useCallback((): EmployeePayroll[] => {
-    const monthStr = `${year}-${String(month).padStart(2, "0")}`;
     const overtimeRateCfg = rateConfigs.find((r) => r.itemKey === "overtime_hourly");
     const tardinessRateCfg = rateConfigs.find((r) => r.itemKey === "tardiness_per_min");
 
@@ -261,6 +276,13 @@ export default function PayrollPage() {
       return rateConfigs.find((r) => r.itemKey === key) ?? null;
     };
 
+    const effectiveTardinessRecords = buildEffectiveTardinessRecords(
+      tardinessRecords,
+      punchRecords,
+      overtimeRequests,
+      leaveRequests
+    );
+
     return displayEmployees.map((emp) => {
       const cfg = salaryConfigs[emp.id] ?? { ...emptySalaryForm, userId: emp.id };
       const salaryBasis = {
@@ -268,13 +290,25 @@ export default function PayrollPage() {
         hourlyRate: cfg.hourlyRate,
       };
 
+      const attendanceHours = computeMonthlyAttendanceHours({
+        employeeId: emp.id,
+        year,
+        month,
+        getShiftForDate,
+        getHolidayInfo,
+        shiftTimeConfig,
+        leaveRequests,
+        overtimeRequests,
+      });
+
       const empLeaves = leaveRequests.filter(
         (r) =>
           r.employeeId === emp.id &&
           r.status === "approved" &&
           r.type !== "補休假" &&
-          r.endDate >= `${monthStr}-01` &&
-          r.startDate <= `${monthStr}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
+          r.endDate >= `${year}-${String(month).padStart(2, "0")}-01` &&
+          r.startDate <=
+            `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
       );
 
       let leaveHours = 0;
@@ -296,26 +330,12 @@ export default function PayrollPage() {
       leaveHours = Math.round(leaveHours * 100) / 100;
       leaveDeduction = Math.round(leaveDeduction * 100) / 100;
 
-      const empOvertimes = overtimeRequests.filter(
-        (r) =>
-          r.employeeId === emp.id &&
-          r.status === "approved" &&
-          r.compensationType === "pay" &&
-          r.date.startsWith(monthStr)
-      );
-      const overtimeHours = empOvertimes.reduce((acc, r) => {
-        const s = r.startTime.split(":").map(Number);
-        const e = r.endTime.split(":").map(Number);
-        const mins = e[0] * 60 + e[1] - (s[0] * 60 + s[1]);
-        return acc + Math.max(0, mins) / 60;
-      }, 0);
-
-      const effectiveTardinessRecords = buildEffectiveTardinessRecords(
-        tardinessRecords,
-        punchRecords,
-        overtimeRequests,
-        leaveRequests
-      );
+      const overtimeAppHours = attendanceHours.overtimePayHours;
+      const holidayOvertimeHours = attendanceHours.holidayOvertimeHours;
+      const overtimeHours = Math.round((overtimeAppHours + holidayOvertimeHours) * 100) / 100;
+      const workHours = attendanceHours.workHours;
+      const effectiveNormalHours =
+        cfg.normalHours > 0 ? cfg.normalHours : workHours;
 
       const tardinessMinutes = effectiveTardinessRecords
         .filter((r) => r.employeeId === emp.id && isDateInMonth(r.date, year, month))
@@ -348,6 +368,8 @@ export default function PayrollPage() {
         bankAccount: cfg.bankAccount,
         hourlyRate: cfg.hourlyRate,
         normalHours: cfg.normalHours,
+        workHours,
+        effectiveNormalHours,
         companyPensionRate: cfg.companyPensionRate,
         companyPensionBase: cfg.companyPensionBase,
         payDate: cfg.payDate,
@@ -356,9 +378,11 @@ export default function PayrollPage() {
         laborInsurance: cfg.laborInsurance,
         healthInsurance: cfg.healthInsurance,
         pensionDeduction: cfg.pensionDeduction,
-        leaveHours: Math.round(leaveHours * 100) / 100,
+        leaveHours,
         leaveDeduction,
-        overtimeHours: Math.round(overtimeHours * 100) / 100,
+        overtimeAppHours,
+        holidayOvertimeHours,
+        overtimeHours,
         overtimePay,
         tardinessMinutes,
         tardinessDeduction,
@@ -367,9 +391,29 @@ export default function PayrollPage() {
         finalPay: Math.round(finalPay * 100) / 100,
       };
     });
-  }, [displayEmployees, salaryConfigs, rateConfigs, adjustments, leaveRequests, overtimeRequests, tardinessRecords, punchRecords, year, month, getShiftForDate, shiftTimeConfig]);
+  }, [
+    displayEmployees,
+    salaryConfigs,
+    rateConfigs,
+    adjustments,
+    leaveRequests,
+    overtimeRequests,
+    tardinessRecords,
+    punchRecords,
+    year,
+    month,
+    getShiftForDate,
+    getHolidayInfo,
+    shiftTimeConfig,
+  ]);
 
   const payrollData = computePayroll();
+
+  const runTrial = () => {
+    setShowTrial(true);
+    void loadData();
+    void loadPayrollRecords(year, month);
+  };
 
   // ─── Publish Payroll ────────────────────────────────────────────────────────
   const handlePublish = async (employeeId: string) => {
@@ -557,8 +601,8 @@ export default function PayrollPage() {
       // 與薪資頁 finalPay 一致，避免匯出與畫面不符
       const finalPay = p.finalPay;
 
-      // 正常工時薪資 = 正常時數 × 時薪
-      const normalPay = Math.round(p.normalHours * p.hourlyRate);
+      // 正常工時薪資 = 有效正常時數 × 時薪（設定為 0 時改用出勤匯入時數）
+      const normalPay = Math.round(p.effectiveNormalHours * p.hourlyRate);
       // 加班金額改用費率公式結果（與畫面一致）
       const overtimePay2 = p.overtimePay;
       // 公司提撥退休金金額
@@ -599,9 +643,15 @@ export default function PayrollPage() {
       aoa.push([`小計(A)`, subA, `小計(B)`, subB, `小計(C)`, subC]);
       aoa.push([]);
 
-      // 工時區塊（左側）
-      aoa.push(["正常時數", p.normalHours, normalPay]);
+      // 工時區塊（左側）— 時數由班表／請假／加班／國定假彙總匯入
+      aoa.push(["正常時數", p.effectiveNormalHours, normalPay]);
       aoa.push(["額外時數", p.overtimeHours, overtimePay2]);
+      if (p.holidayOvertimeHours > 0) {
+        aoa.push(["其中國定假加班", p.holidayOvertimeHours, ""]);
+      }
+      if (p.leaveHours > 0) {
+        aoa.push(["請假時數", p.leaveHours, p.leaveDeduction > 0 ? -p.leaveDeduction : 0]);
+      }
       aoa.push([]);
       aoa.push(["總計", null, p.baseSalary]);
       aoa.push([`時薪：`, `${p.hourlyRate} /HR`]);
@@ -698,16 +748,30 @@ export default function PayrollPage() {
     <div className="space-y-6">
       {/* 頁頭 */}
       <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-bold text-gray-900">月底薪資結算</h1>
-        <div className="flex items-center gap-3">
-          <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border rounded-lg px-3 py-2 text-sm">
-            {[2025, 2026, 2027].map((y) => <option key={y} value={y}>{y}年（民國{toROC(y)}年）</option>)}
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">月底薪資結算</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            預設為上個月（本月結上月薪）。可先「試算」確認出勤時數與金額，再發布薪資單。
+          </p>
+        </div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <select value={year} onChange={(e) => { setYear(Number(e.target.value)); setShowTrial(false); }} className="border rounded-lg px-3 py-2 text-sm">
+            {Array.from({ length: 5 }, (_, i) => defaultPeriod.year - 2 + i).map((y) => (
+              <option key={y} value={y}>{y}年（民國{toROC(y)}年）</option>
+            ))}
           </select>
-          <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className="border rounded-lg px-3 py-2 text-sm">
+          <select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setShowTrial(false); }} className="border rounded-lg px-3 py-2 text-sm">
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
+          <button
+            type="button"
+            onClick={runTrial}
+            className="flex items-center gap-2 px-4 py-2 bg-sky-600 text-white rounded-lg hover:bg-sky-700 text-sm font-medium"
+          >
+            試算
+          </button>
           <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
-            📥 匯出 Excel（每人一份）
+            匯出 Excel（每人一份）
           </button>
         </div>
       </div>
@@ -719,8 +783,8 @@ export default function PayrollPage() {
             <h2 className="font-semibold text-gray-900 mb-4">計算費率設定</h2>
             <p className="text-sm text-gray-600 mb-3">
               費率可選「小時公式」或「分鐘公式」。請假／加班以小時計算；遲到以分鐘計算；若公式單位不同會自動換算。
-              補休假不計費率（由補休帳本抵扣）。加班費僅計「選擇加班費」且已核准的申請（國定假日排班不會自動列入，需加班申請或下方加減項）。
-              時薪請在員工薪資設定填寫，或用「底薪 ÷ 本月正常時數」推算。
+              補休假不計費率（由補休帳本抵扣）。加班費＝已核准且選「加班費」的申請時數＋國定假日排班工時。
+              試算會從班表／請假／加班自動匯入時數；「本月正常時數」若未填，明細改用出勤應出勤時數。
             </p>
             <div className="space-y-3">
               {rateConfigs
@@ -914,6 +978,29 @@ export default function PayrollPage() {
                           <button
                             type="button"
                             onClick={() => {
+                              const hours = computeMonthlyAttendanceHours({
+                                employeeId: emp.id,
+                                year,
+                                month,
+                                getShiftForDate,
+                                getHolidayInfo,
+                                shiftTimeConfig,
+                                leaveRequests,
+                                overtimeRequests,
+                              });
+                              if (hours.workHours <= 0) {
+                                alert("此月份尚無班表應出勤時數可匯入。");
+                                return;
+                              }
+                              setSalaryForm({ ...salaryForm, normalHours: hours.workHours });
+                            }}
+                            className="px-3 py-2 border text-sm rounded text-emerald-700 border-emerald-200 bg-emerald-50"
+                          >
+                            匯入本月出勤時數
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
                               const derived = deriveHourlyRateFromBase(
                                 Number(salaryForm.baseSalary),
                                 Number(salaryForm.normalHours)
@@ -974,29 +1061,92 @@ export default function PayrollPage() {
             </div>
           </div>
 
-          {/* ── 薪資結算預覽 ── */}
+          {/* ── 薪資試算結果 ── */}
           <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="p-6 border-b flex items-center justify-between">
-              <h2 className="font-semibold text-gray-900">民國{toROC(year)}年{month}月 薪資結算預覽</h2>
-              <button onClick={exportSummaryExcel} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">📥 匯出全體薪資總表</button>
+            <div className="p-6 border-b flex items-center justify-between flex-wrap gap-3">
+              <div>
+                <h2 className="font-semibold text-gray-900">
+                  民國{toROC(year)}年{month}月 薪資試算
+                </h2>
+                <p className="text-xs text-gray-500 mt-1">
+                  時數來自班表、核准請假／加班與國定假；金額為試算結果，發布後員工才看得到薪資單。
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={runTrial}
+                  className="px-4 py-2 bg-sky-600 text-white rounded-lg text-sm"
+                >
+                  重新試算
+                </button>
+                <button onClick={exportSummaryExcel} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg text-sm">
+                  匯出全體薪資總表
+                </button>
+              </div>
             </div>
+            {!showTrial ? (
+              <div className="p-8 text-center text-gray-500 text-sm">
+                已變更結算月份，請按上方「試算」重新匯入時數並計算。
+              </div>
+            ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50">
                   <tr>
-	                    {["姓名", "職位", "底薪", "勞保", "健保", "退休金", "請假扣", "加班費", "遲到扣", "異動", "實領", "狀態"].map((h) => (
-	                      <th key={h} className="px-3 py-3 text-right font-medium text-gray-700 first:text-left">{h}</th>
-	                    ))}
-	                  </tr>
-	                </thead>
-	                <tbody className="divide-y">
-	                  {payrollData.map((p) => {
+                    {[
+                      "姓名",
+                      "出勤時數",
+                      "請假時數",
+                      "加班時數",
+                      "底薪",
+                      "勞保",
+                      "健保",
+                      "退休金",
+                      "請假扣",
+                      "加班費",
+                      "遲到扣",
+                      "異動",
+                      "實領",
+                      "狀態",
+                    ].map((h) => (
+                      <th key={h} className="px-3 py-3 text-right font-medium text-gray-700 first:text-left whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y">
+                  {payrollData.map((p) => {
                       const record = payrollRecords.find(r => r.userId === p.userId && r.year === year && r.month === month);
                       const isPublished = record?.isPublished;
+                      const otDetail =
+                        p.holidayOvertimeHours > 0
+                          ? `（申請 ${p.overtimeAppHours}＋國定假 ${p.holidayOvertimeHours}）`
+                          : "";
                       return (
                         <tr key={p.userId} className="hover:bg-gray-50">
-                          <td className="px-3 py-3 font-medium">{p.name}</td>
-                          <td className="px-3 py-3 text-right text-gray-500">{p.position || "—"}</td>
+                          <td className="px-3 py-3 font-medium">
+                            <div>{p.name}</div>
+                            {p.position ? <div className="text-xs text-gray-400">{p.position}</div> : null}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            <div>{p.workHours > 0 ? p.workHours : "—"}</div>
+                            {p.normalHours > 0 && p.normalHours !== p.workHours ? (
+                              <div className="text-[10px] text-gray-400">設定 {p.normalHours}</div>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            {p.leaveHours > 0 ? p.leaveHours : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            {p.overtimeHours > 0 ? (
+                              <>
+                                <div>{p.overtimeHours}</div>
+                                {otDetail ? <div className="text-[10px] text-gray-400">{otDetail}</div> : null}
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                           <td className="px-3 py-3 text-right">${p.baseSalary.toLocaleString()}</td>
                           <td className="px-3 py-3 text-right text-red-600">-${p.laborInsurance.toLocaleString()}</td>
                           <td className="px-3 py-3 text-right text-red-600">-${p.healthInsurance.toLocaleString()}</td>
@@ -1036,6 +1186,7 @@ export default function PayrollPage() {
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         </>
       )}

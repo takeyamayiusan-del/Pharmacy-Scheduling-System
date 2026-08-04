@@ -61,6 +61,7 @@ export interface User {
   role: UserRole;
   is_active: boolean;
   hire_date: string; // DATE (YYYY-MM-DD)
+  end_date?: string | null; // DATE — 到期日；NULL=持續在職
   created_at: string; // TIMESTAMPTZ (ISO 8601 string)
   updated_at: string; // TIMESTAMPTZ (ISO 8601 string)
 }
