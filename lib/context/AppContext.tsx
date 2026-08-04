@@ -5,6 +5,7 @@ import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedTyp
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
 import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, todayDateStr, type PunchSlot } from "@/lib/attendance/punchSchedule";
+import { resolveLateAfterLeaveApproval } from "@/lib/attendance/punchLeaveAdjust";
 import {
   checkManagerLeaveAssignment,
   shouldSyncLeaveSelection,
@@ -1935,49 +1936,86 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadScheduleOverrides();
   };
 
-  /** 請假核准後清除該時段遲到，避免已請假仍被記遲到 */
+  /** 請假核准後清除／重算該時段遲到，避免已請假仍被記遲到 */
   const clearTardinessForApprovedLeave = async (request: LeaveRequest) => {
     const dates = enumerateDatesInRange(request.startDate, request.endDate);
     const { startTime, endTime } = resolveLeaveTimesForSchedule(request);
 
+    const { data: punchRows } = await supabase
+      .from("punch_records")
+      .select("*")
+      .eq("employee_id", request.employeeId)
+      .in("date", dates)
+      .eq("action", "work_in")
+      .gt("late_minutes", 0);
+
+    const punchesFromDb = (punchRows ?? []).map(mapPunchRecordRow);
+
     for (const date of dates) {
-      const punches = punchRecords.filter(
-        (p) =>
-          p.employeeId === request.employeeId &&
-          p.date === date &&
-          p.action === "work_in" &&
-          p.lateMinutes > 0
-      );
+      const originalShift = getOriginalShiftForLeaveDay({
+        employeeId: request.employeeId,
+        date,
+        shiftMode: request.shiftMode,
+        scheduleSnapshot: request.scheduleSnapshot,
+        getBaseShiftForDate,
+      });
+
+      const punches = punchesFromDb.filter((p) => p.date === date);
 
       for (const p of punches) {
-        let shouldClear = request.period === "full_day";
-        if (!shouldClear) {
-          const slot = getPunchSlotsForShift(p.shift, shiftTimeConfig).find(
-            (s: PunchSlot) => s.action === "work_in" && s.segmentIndex === p.segmentIndex
-          );
-          if (slot) {
-            const scheduled = timeToMinutes(slot.scheduledTime);
-            const leaveStart = timeToMinutes(startTime);
-            const leaveEnd = timeToMinutes(endTime);
-            shouldClear = scheduled >= leaveStart && scheduled < leaveEnd;
-          }
-        }
-        if (!shouldClear) continue;
+        const decision = resolveLateAfterLeaveApproval({
+          period: request.period,
+          leaveStartTime: startTime,
+          leaveEndTime: endTime,
+          punchShift: p.shift,
+          segmentIndex: p.segmentIndex,
+          punchTime: p.time,
+          originalShift,
+          shiftTimeConfig,
+        });
 
-        const lateMinutesBeforeClear = p.lateMinutes;
-        await updatePunchRecord(p.id, { lateMinutes: 0, reason: null });
-        const matchingTardiness = tardinessRecords.filter(
-          (t) =>
-            t.employeeId === p.employeeId &&
-            t.date === p.date &&
-            t.minutes === lateMinutesBeforeClear
-        );
-        for (const t of matchingTardiness) {
-          await deleteTardinessRecord(t.id);
+        if (decision.clear) {
+          const lateMinutesBeforeClear = p.lateMinutes;
+          await updatePunchRecord(p.id, { lateMinutes: 0, reason: null });
+          const matchingTardiness = tardinessRecords.filter(
+            (t) =>
+              t.employeeId === p.employeeId &&
+              t.date === p.date &&
+              (t.minutes === lateMinutesBeforeClear || request.period === "full_day")
+          );
+          for (const t of matchingTardiness) {
+            await deleteTardinessRecord(t.id);
+          }
+          continue;
+        }
+
+        if (decision.lateMinutes !== p.lateMinutes) {
+          const lateMinutesBefore = p.lateMinutes;
+          await updatePunchRecord(p.id, {
+            lateMinutes: decision.lateMinutes,
+            reason: decision.lateMinutes > 0 ? "遲到" : null,
+          });
+          const matchingTardiness = tardinessRecords.filter(
+            (t) =>
+              t.employeeId === p.employeeId &&
+              t.date === p.date &&
+              t.minutes === lateMinutesBefore
+          );
+          for (const t of matchingTardiness) {
+            await deleteTardinessRecord(t.id);
+          }
+          if (decision.lateMinutes > 0) {
+            await addTardinessRecord({
+              employeeId: p.employeeId,
+              employeeName: p.employeeName,
+              date: p.date,
+              minutes: decision.lateMinutes,
+              notes: "請假核准後依剩餘班別重算遲到",
+            });
+          }
         }
       }
 
-      // 全日請假：清掉當日所有遲到管理紀錄（含手動新增）
       if (request.period === "full_day") {
         const tardinessToRemove = tardinessRecords.filter(
           (t) => t.employeeId === request.employeeId && t.date === date
@@ -1987,6 +2025,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       }
     }
+
+    await loadPunchRecords();
+    await loadTardinessRecords();
   };
 
   /** 請假取消核准時，依打卡紀錄恢復遲到（與加班邏輯一致） */

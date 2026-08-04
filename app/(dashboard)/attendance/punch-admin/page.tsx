@@ -2,7 +2,11 @@
 
 import { useState } from "react";
 import { useApp, type PunchRecord, type ShiftType } from "@/lib/context/AppContext";
-import { calcLateMinutes, getPunchSlotsForShift, minutesDiff, timeToMinutes } from "@/lib/attendance/punchSchedule";
+import { getPunchSlotsForShift, minutesDiff, timeToMinutes } from "@/lib/attendance/punchSchedule";
+import {
+  adjustPunchSlotsForApprovedLeave,
+  resolvePunchLateMinutes,
+} from "@/lib/attendance/punchLeaveAdjust";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
 
 type EditablePunchFields = {
@@ -17,6 +21,7 @@ export default function PunchAdminPage() {
     employees,
     punchRecords,
     tardinessRecords,
+    leaveRequests,
     addPunchRecord,
     updatePunchRecord,
     deletePunchRecord,
@@ -62,7 +67,14 @@ export default function PunchAdminPage() {
     ? getShiftForDate(selectedDate, selectedEmpId)
     : "A";
   const slots =
-    shift !== "X" ? getPunchSlotsForShift(shift, shiftTimeConfig) : [];
+    shift !== "X" && selectedEmpId
+      ? adjustPunchSlotsForApprovedLeave(
+          getPunchSlotsForShift(shift, shiftTimeConfig),
+          selectedEmpId,
+          selectedDate,
+          leaveRequests
+        )
+      : [];
 
   const findSlot = (record: EditablePunchFields) =>
     slots.find(
@@ -72,14 +84,19 @@ export default function PunchAdminPage() {
 
   const getLateInfo = (record: EditablePunchFields) => {
     const slot = findSlot(record);
-    if (!slot || record.action !== "work_in") {
+    if (!slot || record.action !== "work_in" || !selectedEmpId) {
       return { lateMinutes: 0, reason: undefined as string | undefined };
     }
 
     const actual = timeToMinutes(record.time);
-    const scheduled = timeToMinutes(slot.scheduledTime);
-    const diff = minutesDiff(actual, scheduled);
-    const lateMinutes = diff >= 30 ? diff : calcLateMinutes(actual, scheduled);
+    const lateMinutes = resolvePunchLateMinutes({
+      employeeId: selectedEmpId,
+      date: selectedDate,
+      scheduledTime: slot.scheduledTime,
+      actualMinutes: actual,
+      leaveRequests,
+    });
+    const diff = minutesDiff(actual, timeToMinutes(slot.scheduledTime));
 
     if (lateMinutes <= 0) {
       return { lateMinutes: 0, reason: undefined as string | undefined };
