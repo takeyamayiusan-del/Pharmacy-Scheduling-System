@@ -278,6 +278,9 @@ export default function EmployeesPage() {
                   className="w-full px-3 py-2 border rounded-lg"
                   required
                 />
+                <p className="text-xs text-gray-500 mt-1">
+                  入職月之前不顯示於班表；入職當月，入職日前顯示休假
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

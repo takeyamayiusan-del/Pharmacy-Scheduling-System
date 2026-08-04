@@ -1454,6 +1454,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getShiftForDate = (date: string, employeeId: string): ShiftType => {
     // 禮拜日固定公休：覆寫（含錯誤換班）不可蓋過
     if (isSunday(date)) return "X";
+    // 入職日前／到期日後一律休假（X），舊覆寫不可蓋過
+    const emp = employees.find((e) => e.id === employeeId);
+    if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
     const override = schedule[date]?.[employeeId];
     if (override) return override;
     return getBaseShiftForDate(date, employeeId);
@@ -1463,6 +1466,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const sundayCheck = assertSundayShiftAllowed(date, shift);
     if (!sundayCheck.ok) {
       throw new Error(sundayCheck.message);
+    }
+
+    const empForActive = employees.find((e) => e.id === employeeId);
+    if (empForActive && !isEmployeeActiveOnDate(empForActive, date)) {
+      throw new Error("該日尚未到職或已過到期日，僅能顯示休假");
     }
 
     if (isPastDate(date)) {

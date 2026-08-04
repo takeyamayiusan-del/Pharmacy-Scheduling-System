@@ -31,10 +31,22 @@ describe("isEmployeeActiveInMonth", () => {
     ).toBe(false);
   });
 
+  it("hides whole month when hire is after month end", () => {
+    expect(
+      isEmployeeActiveInMonth({ hireDate: "2026-09-15", endDate: null }, 2026, 8)
+    ).toBe(false);
+  });
+
   it("hides whole month when already ended", () => {
     expect(
       isEmployeeActiveInMonth({ hireDate: "2025-01-01", endDate: "2026-07-31" }, 2026, 8)
     ).toBe(false);
+  });
+
+  it("shows hire month even if hired mid-month (pre-hire days are X elsewhere)", () => {
+    expect(
+      isEmployeeActiveInMonth({ hireDate: "2026-08-20", endDate: null }, 2026, 8)
+    ).toBe(true);
   });
 
   it("shows month that overlaps employment", () => {
