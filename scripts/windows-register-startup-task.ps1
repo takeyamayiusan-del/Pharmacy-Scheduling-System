@@ -47,7 +47,7 @@ Register-ScheduledTask `
     -Trigger @($triggerStartup, $triggerLogon) `
     -Principal $startPrincipal `
     -Settings $settings `
-    -Description "Yaosheng: Docker Supabase + PM2 pharmacy-web + cashflow + Tailscale Funnel :3000/:8443"
+    -Description "Yaosheng: Docker Supabase + PM2 pharmacy-web + cashflow + Tailscale Funnel :3000/:5000"
 
 # 每 1 分鐘：雙站 + Auth + Funnel，掛掉自動修（長期重複，避免到期後停止）
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
@@ -73,7 +73,7 @@ Register-ScheduledTask `
     -Trigger $triggerWatchdog `
     -Principal $startPrincipal `
     -Settings $watchdogSettings `
-    -Description "Yaosheng: every 1 min keep pharmacy-web + cashflow + Auth + Funnel :3000/:8443 alive"
+    -Description "Yaosheng: every 1 min keep pharmacy-web + cashflow + Auth + Funnel :3000/:5000 alive"
 
 Write-Host ""
 Write-Host "Registered tasks (dual-site always-on):" -ForegroundColor Green
@@ -82,7 +82,7 @@ Write-Host "  $WatchdogTaskName — every 1 minute → windows-funnel-watchdog.p
 Write-Host ""
 Write-Host "Monitors / restarts:" -ForegroundColor Cyan
 Write-Host "  - pharmacy-web  (:3000) + Funnel"
-Write-Host "  - cashflow      (:8443) + Funnel"
+Write-Host "  - cashflow      (:5000 預設) + Funnel"
 Write-Host "  - Supabase Auth (:54321)"
 Write-Host ""
 Write-Host "Logs:"
@@ -91,7 +91,7 @@ Write-Host "  $ProjectRoot\data\logs\funnel-watchdog.log"
 Write-Host ""
 Write-Host "One-time: ensure cashflow is in PM2 and saved:" -ForegroundColor Yellow
 Write-Host "  cd C:\cash-flow-app"
-Write-Host "  pm2 start ... --name cashflow"
+Write-Host "  pm2 start backend\index.js --name cashflow --cwd C:\cash-flow-app"
 Write-Host "  pm2 save"
 Write-Host "  pm2 startup   # 開機自動 resurrect"
 Write-Host ""

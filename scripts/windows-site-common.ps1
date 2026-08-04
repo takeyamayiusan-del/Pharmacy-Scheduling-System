@@ -264,16 +264,21 @@ function Start-SiteRunner {
 }
 
 function Test-CashflowHealthy {
-    # 金流本機常見埠：8443（外網 Funnel）或 3001
-    if (Test-PortListening 8443) {
-        if (Test-HttpOk -Uri "http://127.0.0.1:8443/" -TimeoutSec 5) { return $true }
-        # 埠有在聽但 HTTP 失敗仍視為「進程可能活著」，交由 pm2 restart 再判
+    # 金流實際預設 :5000；若設 PORT=8443 也可能在 :8443
+    foreach ($port in @(5000, 8443, 3001)) {
+        if (-not (Test-PortListening $port)) { continue }
+        if (Test-HttpOk -Uri "http://127.0.0.1:$port/" -TimeoutSec 5) { return $true }
+        # 埠有在聽就算起來（部分路徑可能非 /）
         return $true
     }
-    if (Test-PortListening 3001) {
-        return (Test-HttpOk -Uri "http://127.0.0.1:3001/" -TimeoutSec 5)
-    }
     return $false
+}
+
+function Get-CashflowListenPort {
+    foreach ($port in @(5000, 8443, 3001)) {
+        if (Test-PortListening $port) { return $port }
+    }
+    return 5000
 }
 
 function Test-Pm2AppExists([string]$Name) {
@@ -423,7 +428,7 @@ function Get-CashflowAppRoot {
     return $null
 }
 
-# 寫入暫存 ecosystem，固定 PORT=8443，避免 npm start 沒帶埠而秒退
+# 金流：用 node backend/index.js（不要 pm2 start npm，Windows 會把 npm.cmd 當 JS 執行而炸）
 function Start-CashflowPm2Fresh {
     param([scriptblock]$WriteLog = { param($m) Write-Host $m })
 
@@ -433,94 +438,56 @@ function Start-CashflowPm2Fresh {
         return $false
     }
 
-    & $WriteLog ("Starting cashflow from {0}" -f $root)
+    $entry = Join-Path $root "backend\index.js"
+    if (-not (Test-Path -LiteralPath $entry)) {
+        & $WriteLog ("cashflow entry missing: {0}" -f $entry)
+        return $false
+    }
+
+    & $WriteLog ("Starting cashflow: node backend/index.js from {0}" -f $root)
 
     if (Test-Pm2AppExists -Name "cashflow") {
         & pm2 delete cashflow 2>$null | Out-Null
     }
-
-    $nextBin = Join-Path $root "node_modules\next\dist\bin\next"
-    $pkg = Join-Path $root "package.json"
-    $hasNpmStart = $false
-    if (Test-Path -LiteralPath $pkg) {
-        try {
-            $pkgJson = Get-Content -LiteralPath $pkg -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($pkgJson.scripts -and $pkgJson.scripts.start) { $hasNpmStart = $true }
-        } catch { }
+    if (Test-Pm2AppExists -Name "cashflow.ecosystem") {
+        & pm2 delete cashflow.ecosystem 2>$null | Out-Null
     }
+
+    # 預設跟程式一樣用 5000；可用環境變數 CASHFLOW_PORT 改（例如 8443）
+    $port = "5000"
+    if ($env:CASHFLOW_PORT) { $port = "$env:CASHFLOW_PORT" }
+
+    Clear-ListeningPorts -Ports @([int]$port) -WriteLog $WriteLog
 
     $ecoDir = Join-Path $env:TEMP "yaosheng-pm2"
     if (-not (Test-Path -LiteralPath $ecoDir)) {
         New-Item -ItemType Directory -Path $ecoDir -Force | Out-Null
     }
-    $ecoPath = Join-Path $ecoDir "cashflow.ecosystem.cjs"
+    $ecoPath = Join-Path $ecoDir "cashflow-eco.cjs"
     $rootEsc = $root.Replace("\", "\\")
-
-    if (Test-Path -LiteralPath $nextBin) {
-        $scriptEsc = $nextBin.Replace("\", "\\")
-        $eco = @"
+    $entryEsc = $entry.Replace("\", "\\")
+    $eco = @"
 module.exports = {
   apps: [{
     name: 'cashflow',
     cwd: '$rootEsc',
-    script: '$scriptEsc',
-    args: 'start -p 8443',
-    env: { PORT: '8443', NODE_ENV: 'production' },
+    script: '$entryEsc',
+    env: { PORT: '$port', NODE_ENV: 'production' },
     max_restarts: 20,
-    min_uptime: 5000
+    min_uptime: 3000
   }]
 };
 "@
-    } elseif ($hasNpmStart) {
-        $eco = @"
-module.exports = {
-  apps: [{
-    name: 'cashflow',
-    cwd: '$rootEsc',
-    script: 'npm',
-    args: 'start',
-    interpreter: 'none',
-    env: { PORT: '8443', NODE_ENV: 'production' },
-    max_restarts: 20,
-    min_uptime: 5000
-  }]
-};
-"@
-    } else {
-        $serverJs = @(
-            (Join-Path $root "server.js"),
-            (Join-Path $root "index.js"),
-            (Join-Path $root "dist\server.js")
-        ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-        if (-not $serverJs) {
-            & $WriteLog "cashflow: no start script / next / server.js found"
-            return $false
-        }
-        $scriptEsc = $serverJs.Replace("\", "\\")
-        $eco = @"
-module.exports = {
-  apps: [{
-    name: 'cashflow',
-    cwd: '$rootEsc',
-    script: '$scriptEsc',
-    env: { PORT: '8443', NODE_ENV: 'production' },
-    max_restarts: 20,
-    min_uptime: 5000
-  }]
-};
-"@
-    }
-
     Set-Content -LiteralPath $ecoPath -Value $eco -Encoding ASCII
-    & $WriteLog ("pm2 start ecosystem: {0}" -f $ecoPath)
+    & $WriteLog ("pm2 start ecosystem PORT=$port")
     [void](Invoke-Pm2ViaCmd -Pm2Args ("start `"" + $ecoPath + "`""))
 
-    Start-Sleep -Seconds 6
+    Start-Sleep -Seconds 5
     [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog $WriteLog)
     & pm2 save 2>$null | Out-Null
 
     if (Test-CashflowHealthy -or (Get-Pm2Online -Name "cashflow")) {
-        & $WriteLog "cashflow started OK"
+        & $WriteLog ("cashflow started OK on :{0}" -f (Get-CashflowListenPort))
         return $true
     }
     & $WriteLog "cashflow start attempted but not healthy - run: pm2 logs cashflow --lines 50"
@@ -578,6 +545,7 @@ function Stop-OrphanWebStacks {
     $skipPorts = @{}
     if ((Get-Pm2Online -Name "pharmacy-web") -and (Test-SiteHealthy)) { $skipPorts[3000] = $true }
     if ((Get-Pm2Online -Name "cashflow") -and (Test-CashflowHealthy)) {
+        $skipPorts[5000] = $true
         $skipPorts[8443] = $true
         $skipPorts[3001] = $true
     }
@@ -665,12 +633,13 @@ function Restart-DualSitesClean {
     )
 
     # 先停 PM2 再強制清埠，避免 EADDRINUSE 重啟死循環
-    & $WriteLog "pm2 delete pharmacy-web / cashflow then free :3000 :8443"
+    & $WriteLog "pm2 delete pharmacy-web / cashflow then free :3000 :5000 :8443"
     if (Test-Pm2AppExists -Name "pharmacy-web") { & pm2 delete pharmacy-web 2>$null | Out-Null }
     if (Test-Pm2AppExists -Name "cashflow") { & pm2 delete cashflow 2>$null | Out-Null }
-    Clear-ListeningPorts -Ports @(3000, 8443) -WriteLog $WriteLog
+    if (Test-Pm2AppExists -Name "cashflow.ecosystem") { & pm2 delete cashflow.ecosystem 2>$null | Out-Null }
+    Clear-ListeningPorts -Ports @(3000, 5000, 8443) -WriteLog $WriteLog
 
-    Stop-OrphanWebStacks -ProjectRoot $ProjectRoot -Ports @(3000, 8443) -WriteLog $WriteLog
+    Stop-OrphanWebStacks -ProjectRoot $ProjectRoot -Ports @(3000, 5000, 8443) -WriteLog $WriteLog
 
     $okPharmacy = Start-PharmacyWebPm2Fresh -ProjectRoot $ProjectRoot -WriteLog $WriteLog
 

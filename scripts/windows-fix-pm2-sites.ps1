@@ -34,8 +34,9 @@ Write-Host -NoNewline "Auth  :54321 -> "
 & curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 "http://127.0.0.1:54321/auth/v1/health"
 Write-Host -NoNewline "Site  :3000  -> "
 & curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 "http://127.0.0.1:3000/login"
-Write-Host -NoNewline "Cash  :8443  -> "
-& curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 "http://127.0.0.1:8443/"
+$cashPort = Get-CashflowListenPort
+Write-Host -NoNewline "Cash  :$cashPort -> "
+& curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 "http://127.0.0.1:$cashPort/"
 
 if (-not $ok) {
     Write-Host ""

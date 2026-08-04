@@ -38,7 +38,7 @@ Write-Host "pm2 restart (free ports then start)..."
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
     if (Test-Pm2AppExists -Name "pharmacy-web") { pm2 delete pharmacy-web 2>$null | Out-Null }
     if (Test-Pm2AppExists -Name "cashflow") { pm2 delete cashflow 2>$null | Out-Null }
-    Clear-ListeningPorts -Ports @(3000, 8443) -WriteLog $log
+    Clear-ListeningPorts -Ports @(3000, 5000, 8443) -WriteLog $log
 
     [void](Start-PharmacyWebPm2Fresh -ProjectRoot $ProjectRoot -WriteLog $log)
     if (Get-CashflowAppRoot) {
@@ -56,5 +56,5 @@ curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://1
 Write-Host -NoNewline "Site  : "
 curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:3000/login
 Write-Host -NoNewline "Cash  : "
-curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:8443/
-Write-Host "Done. Watchdog will keep both online." -ForegroundColor Green
+curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:5000/
+Write-Host "Done. Watchdog will keep both online. Cashflow default port is 5000." -ForegroundColor Green
