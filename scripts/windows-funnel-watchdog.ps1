@@ -109,7 +109,8 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
             Write-Log $m
         }
         if (-not $cashflowOk) {
-            Write-Log "cashflow still unhealthy after repair - trying fresh start"
+            Write-Log "cashflow still unhealthy after repair - free :8443 and fresh start"
+            Clear-ListeningPorts -Ports @(8443) -WriteLog { param($m) Write-Log $m }
             $cashflowOk = Start-CashflowPm2Fresh -WriteLog { param($m) Write-Log $m }
         }
         $hasCashflow = Test-Pm2AppExists -Name "cashflow"

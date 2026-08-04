@@ -527,7 +527,32 @@ module.exports = {
     return (Get-Pm2Online -Name "cashflow")
 }
 
-# 清掉非 PM2 的殘留：舊 runner；僅在「該埠沒有對應 PM2 app」時才殺佔埠行程
+# 強制釋放埠（EADDRINUSE 救援）：刪掉佔用 PID，不因「PM2 有同名」就跳過
+function Clear-ListeningPorts {
+    param(
+        [int[]]$Ports = @(3000, 8443),
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    foreach ($port in $Ports) {
+        if (-not (Test-PortListening $port)) { continue }
+        $listenPids = netstat -ano | Select-String ":$port\s" | Select-String "LISTENING" | ForEach-Object {
+            ($_ -split '\s+')[-1]
+        } | Select-Object -Unique
+        foreach ($procIdText in $listenPids) {
+            $procId = 0
+            if (-not [int]::TryParse("$procIdText", [ref]$procId)) { continue }
+            if ($procId -le 0) { continue }
+            & $WriteLog ("Free port :{0} kill PID {1}" -f $port, $procId)
+            try { & taskkill.exe /PID $procId /T /F 2>$null | Out-Null } catch {
+                Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Start-Sleep -Seconds 2
+}
+
+# 清掉非 PM2 的殘留 runner；佔埠殭屍在「PM2 非 online」時也清掉
 function Stop-OrphanWebStacks {
     param(
         [string]$ProjectRoot,
@@ -549,13 +574,17 @@ function Stop-OrphanWebStacks {
     }
 
     $protected = Get-Pm2ProtectedPids
+    # 只有「真的 online」才保護埠；errored/stopped 時必須清掉佔埠殭屍（EADDRINUSE）
     $skipPorts = @{}
-    if (Test-Pm2AppExists -Name "pharmacy-web") { $skipPorts[3000] = $true }
-    if (Test-Pm2AppExists -Name "cashflow") { $skipPorts[8443] = $true; $skipPorts[3001] = $true }
+    if ((Get-Pm2Online -Name "pharmacy-web") -and (Test-SiteHealthy)) { $skipPorts[3000] = $true }
+    if ((Get-Pm2Online -Name "cashflow") -and (Test-CashflowHealthy)) {
+        $skipPorts[8443] = $true
+        $skipPorts[3001] = $true
+    }
 
     foreach ($port in $Ports) {
         if ($skipPorts.ContainsKey($port)) {
-            & $WriteLog ("Skip killing :{0} (managed by PM2)" -f $port)
+            & $WriteLog ("Skip killing :{0} (PM2 healthy)" -f $port)
             continue
         }
         if (-not (Test-PortListening $port)) { continue }
@@ -566,13 +595,16 @@ function Stop-OrphanWebStacks {
             $procId = 0
             if (-not [int]::TryParse("$procIdText", [ref]$procId)) { continue }
             if ($procId -le 0) { continue }
-            if ($protected.ContainsKey($procId)) { continue }
-            & $WriteLog ("Killing orphan listener on :{0} PID {1}" -f $port, $procId)
+            if ($protected.ContainsKey($procId) -and (Get-Pm2Online -Name "pharmacy-web" -or Get-Pm2Online -Name "cashflow")) {
+                # protected but app not healthy: still kill to break EADDRINUSE loop
+            }
+            & $WriteLog ("Killing listener on :{0} PID {1}" -f $port, $procId)
             try { & taskkill.exe /PID $procId /T /F 2>$null | Out-Null } catch {
                 Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
             }
         }
     }
+    Start-Sleep -Seconds 1
 }
 
 # 乾淨重啟：去重 -> restart；僅在完全沒有時才 resurrect / 新建（避免 npm 疊加）
@@ -632,18 +664,21 @@ function Restart-DualSitesClean {
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
 
+    # 先停 PM2 再強制清埠，避免 EADDRINUSE 重啟死循環
+    & $WriteLog "pm2 delete pharmacy-web / cashflow then free :3000 :8443"
+    if (Test-Pm2AppExists -Name "pharmacy-web") { & pm2 delete pharmacy-web 2>$null | Out-Null }
+    if (Test-Pm2AppExists -Name "cashflow") { & pm2 delete cashflow 2>$null | Out-Null }
+    Clear-ListeningPorts -Ports @(3000, 8443) -WriteLog $WriteLog
+
     Stop-OrphanWebStacks -ProjectRoot $ProjectRoot -Ports @(3000, 8443) -WriteLog $WriteLog
-    [void](Repair-Pm2NameDuplicates -Name "pharmacy-web" -WriteLog $WriteLog)
-    [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog $WriteLog)
 
-    $okPharmacy = Restart-Pm2AppClean -Name "pharmacy-web" -WriteLog $WriteLog -StartCwd $ProjectRoot
+    $okPharmacy = Start-PharmacyWebPm2Fresh -ProjectRoot $ProjectRoot -WriteLog $WriteLog
 
-    # 金流：有 PM2 就重啟；沒有但本機有 C:\cash-flow-app 就自動新建
     $okCashflow = $true
-    if ((Test-Pm2AppExists -Name "cashflow") -or (Get-CashflowAppRoot)) {
-        $okCashflow = Restart-Pm2AppClean -Name "cashflow" -WriteLog $WriteLog
+    if (Get-CashflowAppRoot) {
+        $okCashflow = Start-CashflowPm2Fresh -WriteLog $WriteLog
     } else {
-        & $WriteLog "cashflow not found (no pm2 entry / no CASHFLOW_ROOT) - skip"
+        & $WriteLog "cashflow folder not found - skip (start manually later)"
     }
 
     & pm2 save 2>$null | Out-Null
@@ -728,9 +763,16 @@ function Repair-SiteIfNeeded {
     }
 
     & $WriteLog "Site unhealthy, repairing..."
-    # 若用 pm2：不要亂殺 node，交給 pm2 restart；否則清掉殘留 runner
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+    if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+        & $WriteLog "Free :3000 then restart pharmacy-web"
+        if (Test-Pm2AppExists -Name "pharmacy-web") {
+            & pm2 delete pharmacy-web 2>$null | Out-Null
+        }
+        Clear-ListeningPorts -Ports @(3000) -WriteLog $WriteLog
+        [void](Start-PharmacyWebPm2Fresh -ProjectRoot $ProjectRoot -WriteLog $WriteLog)
+    } else {
         Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+        Start-SiteRunner -ProjectRoot $ProjectRoot
     }
 
     $buildIdPath = Join-Path $ProjectRoot ".next\BUILD_ID"
@@ -738,13 +780,14 @@ function Repair-SiteIfNeeded {
         & $WriteLog "BUILD_ID missing, running npm run build..."
         try {
             Invoke-NpmBuild -ProjectRoot $ProjectRoot
+            if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+                [void](Start-PharmacyWebPm2Fresh -ProjectRoot $ProjectRoot -WriteLog $WriteLog)
+            }
         } catch {
             & $WriteLog "npm run build failed"
             return $false
         }
     }
-
-    Start-SiteViaPm2OrRunner -ProjectRoot $ProjectRoot -WriteLog $WriteLog
 
     # 最多等約 45 秒成為健康（每 5 秒用 curl 探一次）
     for ($i = 1; $i -le 9; $i++) {
@@ -755,6 +798,6 @@ function Repair-SiteIfNeeded {
         }
     }
 
-    & $WriteLog "Site repair failed (port may be held by zombie; will retry next minute)"
+    & $WriteLog "Site repair failed (will retry next minute)"
     return $false
 }
