@@ -40,12 +40,13 @@ if ($cashflowPort) {
 tailscale funnel reset 2>$null
 tailscale serve reset 2>$null
 
-$setupOut = (tailscale funnel --bg --yes 3000 2>&1 | Out-String)
-Write-Log ("pharmacy funnel: " + $setupOut.Trim())
+# 公開埠必須分開：443→排班、8443→金流（否則後蓋前）
+$setupOut = (tailscale funnel --bg --yes --https=443 3000 2>&1 | Out-String)
+Write-Log ("pharmacy funnel https=443 -> :3000 : " + $setupOut.Trim())
 
 if ($cashflowPort) {
-    $cfOut = (tailscale funnel --bg --yes $cashflowPort 2>&1 | Out-String)
-    Write-Log ("cashflow funnel :$cashflowPort : " + $cfOut.Trim())
+    $cfOut = (tailscale funnel --bg --yes --https=$cashflowPort $cashflowPort 2>&1 | Out-String)
+    Write-Log ("cashflow funnel https=$cashflowPort -> :$cashflowPort : " + $cfOut.Trim())
     Write-Host $cfOut
 }
 
@@ -65,7 +66,7 @@ if ($statusOut -notmatch "127\.0\.0\.1:3000") {
 
 if ($cashflowPort -and $statusOut -notmatch ("127\.0\.0\.1:" + $cashflowPort)) {
     Write-Host "  Warning: Funnel missing cashflow :$cashflowPort - retry" -ForegroundColor Yellow
-    [void](tailscale funnel --bg --yes $cashflowPort 2>&1)
+    [void](tailscale funnel --bg --yes --https=$cashflowPort $cashflowPort 2>&1)
     Start-Sleep -Seconds 2
     $statusOut = (tailscale funnel status 2>&1 | Out-String)
     Write-Log $statusOut.Trim()
