@@ -317,7 +317,7 @@ function Repair-Pm2NameDuplicates {
     $apps = @(Get-Pm2AppsByName -Name $Name)
     if ($apps.Count -le 1) { return 0 }
 
-    & $WriteLog ("PM2 duplicate '$Name' x{0} — keeping one, deleting extras" -f $apps.Count)
+    & $WriteLog ("PM2 duplicate '$Name' x{0} - keeping one, deleting extras" -f $apps.Count)
     $keep = $apps | Where-Object { $_.pm2_env.status -eq "online" } | Select-Object -First 1
     if (-not $keep) { $keep = $apps[0] }
     foreach ($app in $apps) {
@@ -327,7 +327,79 @@ function Repair-Pm2NameDuplicates {
     return ($apps.Count - 1)
 }
 
-# 清掉非 PM2 的殘留：舊 windows-run-site、手動 npm start、佔埠殭屍
+function Get-ProcessDescendantIds([int]$RootPid) {
+    $result = New-Object System.Collections.Generic.List[int]
+    if ($RootPid -le 0) { return @() }
+    $result.Add($RootPid) | Out-Null
+    $queue = New-Object System.Collections.Generic.Queue[int]
+    $queue.Enqueue($RootPid)
+    $all = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Select-Object ProcessId, ParentProcessId)
+    while ($queue.Count -gt 0) {
+        $parent = $queue.Dequeue()
+        foreach ($child in ($all | Where-Object { $_.ParentProcessId -eq $parent })) {
+            $cid = [int]$child.ProcessId
+            if (-not $result.Contains($cid)) {
+                $result.Add($cid) | Out-Null
+                $queue.Enqueue($cid)
+            }
+        }
+    }
+    return @($result)
+}
+
+function Get-Pm2ProtectedPids {
+    $protected = @{}
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $protected }
+    try {
+        $apps = @((& pm2 jlist 2>$null) | ConvertFrom-Json)
+        foreach ($a in $apps) {
+            $root = 0
+            if ($a.pid) { $root = [int]$a.pid }
+            if ($root -gt 0) {
+                foreach ($pid in (Get-ProcessDescendantIds -RootPid $root)) {
+                    $protected[$pid] = $true
+                }
+            }
+        }
+    } catch { }
+    return $protected
+}
+
+# 透過 cmd 呼叫 pm2，避免 PowerShell 吃掉 "--" 導致變成 Script not found: ...\start
+function Invoke-Pm2ViaCmd {
+    param([Parameter(Mandatory = $true)][string]$Pm2Args)
+    $cmdLine = "pm2 $Pm2Args"
+    & cmd.exe /c $cmdLine
+    return ($LASTEXITCODE -eq 0)
+}
+
+# 用 next 二進位啟動排班（Windows 上比 pm2 start npm -- start 可靠）
+function Start-PharmacyWebPm2Fresh {
+    param(
+        [Parameter(Mandatory = $true)][string]$ProjectRoot,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    $nextBin = Join-Path $ProjectRoot "node_modules\next\dist\bin\next"
+    Push-Location $ProjectRoot
+    try {
+        if (Test-Path -LiteralPath $nextBin) {
+            & $WriteLog "pm2 start next bin (pharmacy-web)"
+            # 路徑含空白時需引號；整段交給 cmd
+            $quoted = '"' + $nextBin + '"'
+            [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name pharmacy-web -- start")
+        } else {
+            & $WriteLog "pm2 start npm (pharmacy-web) via cmd"
+            [void](Invoke-Pm2ViaCmd -Pm2Args "start npm --name pharmacy-web -- start")
+        }
+    } finally {
+        Pop-Location
+    }
+    Start-Sleep -Seconds 4
+    return (Get-Pm2Online -Name "pharmacy-web")
+}
+
+# 清掉非 PM2 的殘留：舊 runner；僅在「該埠沒有對應 PM2 app」時才殺佔埠行程
 function Stop-OrphanWebStacks {
     param(
         [string]$ProjectRoot,
@@ -348,17 +420,16 @@ function Stop-OrphanWebStacks {
         }
     }
 
-    $pm2Pids = @{}
-    if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-        try {
-            $apps = @((& pm2 jlist 2>$null) | ConvertFrom-Json)
-            foreach ($a in $apps) {
-                if ($a.pid) { $pm2Pids[[int]$a.pid] = $true }
-            }
-        } catch { }
-    }
+    $protected = Get-Pm2ProtectedPids
+    $skipPorts = @{}
+    if (Test-Pm2AppExists -Name "pharmacy-web") { $skipPorts[3000] = $true }
+    if (Test-Pm2AppExists -Name "cashflow") { $skipPorts[8443] = $true; $skipPorts[3001] = $true }
 
     foreach ($port in $Ports) {
+        if ($skipPorts.ContainsKey($port)) {
+            & $WriteLog ("Skip killing :{0} (managed by PM2)" -f $port)
+            continue
+        }
         if (-not (Test-PortListening $port)) { continue }
         $listenPids = netstat -ano | Select-String ":$port\s" | Select-String "LISTENING" | ForEach-Object {
             ($_ -split '\s+')[-1]
@@ -367,8 +438,8 @@ function Stop-OrphanWebStacks {
             $procId = 0
             if (-not [int]::TryParse("$procIdText", [ref]$procId)) { continue }
             if ($procId -le 0) { continue }
-            if ($pm2Pids.ContainsKey($procId)) { continue }
-            & $WriteLog ("Killing non-PM2 listener on :{0} PID {1}" -f $port, $procId)
+            if ($protected.ContainsKey($procId)) { continue }
+            & $WriteLog ("Killing orphan listener on :{0} PID {1}" -f $port, $procId)
             try { & taskkill.exe /PID $procId /T /F 2>$null | Out-Null } catch {
                 Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
             }
@@ -376,13 +447,12 @@ function Stop-OrphanWebStacks {
     }
 }
 
-# 乾淨重啟：去重 → restart；僅在完全沒有時才 resurrect（避免 npm 疊加）
+# 乾淨重啟：去重 -> restart；僅在完全沒有時才 resurrect / 新建（避免 npm 疊加）
 function Restart-Pm2AppClean {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
         [scriptblock]$WriteLog = { param($m) Write-Host $m },
-        [string]$StartCwd = "",
-        [string[]]$StartArgs = @()
+        [string]$StartCwd = ""
     )
 
     if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
@@ -393,45 +463,38 @@ function Restart-Pm2AppClean {
     [void](Repair-Pm2NameDuplicates -Name $Name -WriteLog $WriteLog)
 
     if (Test-Pm2AppExists -Name $Name) {
-        & $WriteLog "pm2 restart $Name (no resurrect — avoid stacking)"
-        & pm2 stop $Name 2>$null | Out-Null
-        Start-Sleep -Seconds 1
-        & pm2 restart $Name --update-env 2>$null | Out-Null
-        Start-Sleep -Seconds 3
+        & $WriteLog "pm2 restart $Name (no resurrect - avoid stacking)"
+        # 不要先 stop 再 restart：Windows 上 stop 後子進程 PID 對不齊容易掛掉
+        [void](Invoke-Pm2ViaCmd -Pm2Args "restart $Name --update-env")
+        Start-Sleep -Seconds 4
         if (Get-Pm2Online -Name $Name) { return $true }
-        & $WriteLog "restart failed, pm2 delete + start once"
+
+        & $WriteLog "restart failed - delete and start once"
         & pm2 delete $Name 2>$null | Out-Null
+        Start-Sleep -Seconds 1
     } else {
-        & $WriteLog "pm2 app missing: try resurrect once then start $Name"
+        & $WriteLog "pm2 app missing: try resurrect once for $Name"
         & pm2 resurrect 2>$null | Out-Null
         [void](Repair-Pm2NameDuplicates -Name $Name -WriteLog $WriteLog)
         if (Test-Pm2AppExists -Name $Name) {
-            & pm2 restart $Name --update-env 2>$null | Out-Null
-            Start-Sleep -Seconds 3
+            [void](Invoke-Pm2ViaCmd -Pm2Args "restart $Name --update-env")
+            Start-Sleep -Seconds 4
             if (Get-Pm2Online -Name $Name) { return $true }
+            & pm2 delete $Name 2>$null | Out-Null
         }
     }
 
-    if ($StartCwd) {
-        Push-Location $StartCwd
-        try {
-            & $WriteLog ("pm2 start {0} in {1}" -f $Name, $StartCwd)
-            if ($Name -eq "pharmacy-web") {
-                & pm2 start npm --name "pharmacy-web" -- start 2>$null | Out-Null
-            } elseif ($StartArgs.Count -gt 0) {
-                & pm2 start @StartArgs 2>$null | Out-Null
-            } else {
-                & pm2 start $Name 2>$null | Out-Null
-            }
-        } finally {
-            Pop-Location
-        }
-        Start-Sleep -Seconds 3
-    } else {
-        & pm2 start $Name 2>$null | Out-Null
-        Start-Sleep -Seconds 3
+    if ($Name -eq "pharmacy-web" -and $StartCwd) {
+        return (Start-PharmacyWebPm2Fresh -ProjectRoot $StartCwd -WriteLog $WriteLog)
     }
 
+    if ($Name -eq "cashflow") {
+        & $WriteLog "cashflow needs existing PM2 entry; cannot auto-create without app path"
+        return $false
+    }
+
+    & pm2 start $Name 2>$null | Out-Null
+    Start-Sleep -Seconds 3
     [void](Repair-Pm2NameDuplicates -Name $Name -WriteLog $WriteLog)
     return (Get-Pm2Online -Name $Name)
 }
@@ -446,14 +509,13 @@ function Restart-DualSitesClean {
     [void](Repair-Pm2NameDuplicates -Name "pharmacy-web" -WriteLog $WriteLog)
     [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog $WriteLog)
 
-    $okPharmacy = Restart-Pm2AppClean -Name "pharmacy-web" -WriteLog $WriteLog `
-        -StartCwd $ProjectRoot -StartArgs @("npm", "--name", "pharmacy-web", "--", "start")
+    $okPharmacy = Restart-Pm2AppClean -Name "pharmacy-web" -WriteLog $WriteLog -StartCwd $ProjectRoot
 
     $okCashflow = $true
     if (Test-Pm2AppExists -Name "cashflow") {
         $okCashflow = Restart-Pm2AppClean -Name "cashflow" -WriteLog $WriteLog
     } else {
-        & $WriteLog "cashflow not in pm2 — skip (register once with pm2 start --name cashflow && pm2 save)"
+        & $WriteLog "cashflow not in pm2 - skip (register once: pm2 start --name cashflow && pm2 save)"
     }
 
     & pm2 save 2>$null | Out-Null
