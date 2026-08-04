@@ -17,13 +17,19 @@ export type LeaveForPunchAdjust = LeaveRequestForTardiness & {
   period: LeavePeriodMode;
 };
 
-/** 依已核准請假過濾打卡格：請假時段內的上下班格不顯示、不要求打卡 */
-export function filterPunchSlotsForApprovedLeave(
-  slots: PunchSlot[],
+function minutesToTime(mins: number): string {
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+type LeaveWindow = { start: number; end: number };
+
+function approvedLeaveWindows(
   employeeId: string,
   date: string,
   leaveRequests: LeaveForPunchAdjust[]
-): PunchSlot[] {
+): { fullDay: boolean; windows: LeaveWindow[] } {
   const approved = leaveRequests.filter(
     (r) =>
       r.employeeId === employeeId &&
@@ -31,21 +37,108 @@ export function filterPunchSlotsForApprovedLeave(
       r.startDate <= date &&
       r.endDate >= date
   );
-  if (approved.length === 0) return slots;
-
-  if (approved.some((r) => r.period === "full_day")) return [];
-
-  return slots.filter((slot) => {
-    // 上班格：預定時刻落在請假時段 → 隱藏
-    if (slot.action === "work_in") {
-      return !isCoveredByApprovedLeave(employeeId, date, approved, slot.scheduledTime);
-    }
-    // 下班格：結束時刻落在請假時段內 → 隱藏
-    if (slot.action === "work_out") {
-      return !isCoveredByApprovedLeave(employeeId, date, approved, slot.scheduledTime);
-    }
-    return true;
+  if (approved.some((r) => r.period === "full_day")) {
+    return { fullDay: true, windows: [] };
+  }
+  const windows = approved.map((r) => {
+    const { startTime, endTime } = resolveLeaveTimesForSchedule(r);
+    return { start: timeToMinutes(startTime), end: timeToMinutes(endTime) };
   });
+  return { fullDay: false, windows };
+}
+
+/**
+ * 依已核准請假調整打卡格：
+ * - 整段被請假蓋住 → 隱藏
+ * - 請假蓋住上班開頭（如 08:30–10:00）→ 上班改為請假結束時刻（10:00），保留下班
+ * - 請假蓋住下班前（如 10:00–12:00）→ 下班改為請假開始時刻，保留上班
+ */
+export function adjustPunchSlotsForApprovedLeave(
+  slots: PunchSlot[],
+  employeeId: string,
+  date: string,
+  leaveRequests: LeaveForPunchAdjust[]
+): PunchSlot[] {
+  const { fullDay, windows } = approvedLeaveWindows(employeeId, date, leaveRequests);
+  if (fullDay) return [];
+  if (windows.length === 0) return slots;
+
+  const bySegment = new Map<number, { work_in?: PunchSlot; work_out?: PunchSlot }>();
+  for (const slot of slots) {
+    const row = bySegment.get(slot.segmentIndex) ?? {};
+    if (slot.action === "work_in") row.work_in = { ...slot };
+    if (slot.action === "work_out") row.work_out = { ...slot };
+    bySegment.set(slot.segmentIndex, row);
+  }
+
+  const result: PunchSlot[] = [];
+  const segmentIndexes = Array.from(bySegment.keys()).sort((a, b) => a - b);
+
+  for (const index of segmentIndexes) {
+    const row = bySegment.get(index)!;
+    if (!row.work_in || !row.work_out) {
+      if (row.work_in) result.push(row.work_in);
+      if (row.work_out) result.push(row.work_out);
+      continue;
+    }
+
+    let inMin = timeToMinutes(row.work_in.scheduledTime);
+    let outMin = timeToMinutes(row.work_out.scheduledTime);
+    let drop = false;
+
+    for (const leave of windows) {
+      // 整段被蓋住
+      if (leave.start <= inMin && leave.end >= outMin) {
+        drop = true;
+        break;
+      }
+      // 蓋住開頭：上班延後到請假結束
+      if (leave.start <= inMin && leave.end > inMin && leave.end < outMin) {
+        inMin = leave.end;
+        continue;
+      }
+      // 蓋住結尾：下班提前到請假開始
+      if (leave.start > inMin && leave.start < outMin && leave.end >= outMin) {
+        outMin = leave.start;
+        continue;
+      }
+      // 蓋住中段：保留請假前一段（下班提前）；後半段另開一段較複雜，此處先保留請假前
+      if (leave.start > inMin && leave.end < outMin) {
+        outMin = leave.start;
+      }
+    }
+
+    if (drop || inMin >= outMin) continue;
+
+    result.push({
+      ...row.work_in,
+      scheduledTime: minutesToTime(inMin),
+      label:
+        minutesToTime(inMin) !== row.work_in.scheduledTime
+          ? `${row.work_in.label}（請假後 ${minutesToTime(inMin)} 起）`
+          : row.work_in.label,
+    });
+    result.push({
+      ...row.work_out,
+      scheduledTime: minutesToTime(outMin),
+      label:
+        minutesToTime(outMin) !== row.work_out.scheduledTime
+          ? `${row.work_out.label}（請假至 ${minutesToTime(outMin)}）`
+          : row.work_out.label,
+    });
+  }
+
+  return result;
+}
+
+/** @deprecated 使用 adjustPunchSlotsForApprovedLeave */
+export function filterPunchSlotsForApprovedLeave(
+  slots: PunchSlot[],
+  employeeId: string,
+  date: string,
+  leaveRequests: LeaveForPunchAdjust[]
+): PunchSlot[] {
+  return adjustPunchSlotsForApprovedLeave(slots, employeeId, date, leaveRequests);
 }
 
 /**
@@ -81,7 +174,7 @@ export type LateAfterLeaveDecision = {
 /**
  * 請假核准後，決定既有上班打卡遲到要清除或重算。
  * - 全日／原預定上班落在請假時段 → 清除
- * - 否則依請假後剩餘班別重算；若不遲到則清除
+ * - 否則依請假後調整的上班時刻重算；若不遲到則清除
  */
 export function resolveLateAfterLeaveApproval(params: {
   period: LeavePeriodMode;
@@ -107,13 +200,43 @@ export function resolveLateAfterLeaveApproval(params: {
   const leaveEnd = timeToMinutes(endTime);
 
   const originalSlots = getPunchSlotsForShift(params.punchShift, params.shiftTimeConfig);
+  const adjusted = adjustPunchSlotsForApprovedLeave(
+    originalSlots,
+    "emp",
+    "2099-01-01",
+    [
+      {
+        employeeId: "emp",
+        startDate: "2099-01-01",
+        endDate: "2099-01-01",
+        status: "approved",
+        period: params.period,
+        startTime,
+        endTime,
+      },
+    ]
+  );
+
   const punchedInSlot = originalSlots.find(
     (s) => s.action === "work_in" && s.segmentIndex === params.segmentIndex
   );
   if (punchedInSlot) {
     const scheduled = timeToMinutes(punchedInSlot.scheduledTime);
-    if (scheduled >= leaveStart && scheduled <= leaveEnd) {
-      return { clear: true, lateMinutes: 0 };
+    // 原上班時刻完全落在請假內 → 這格本不該打，清除遲到
+    if (scheduled >= leaveStart && scheduled < leaveEnd) {
+      // 改以調整後同段上班時刻重算（例如 08:30 假到 10:00，打卡 10:05 → 對 10:00）
+      const adjustedIn = adjusted.find(
+        (s) => s.action === "work_in" && s.segmentIndex === params.segmentIndex
+      );
+      if (!adjustedIn) {
+        return { clear: true, lateMinutes: 0 };
+      }
+      const lateMinutes = calcLateMinutes(
+        timeToMinutes(params.punchTime),
+        timeToMinutes(adjustedIn.scheduledTime)
+      );
+      if (lateMinutes <= 0) return { clear: true, lateMinutes: 0 };
+      return { clear: false, lateMinutes };
     }
   }
 
@@ -122,21 +245,25 @@ export function resolveLateAfterLeaveApproval(params: {
     startTime,
     endTime
   );
-  if (!effective || effective === "X") {
-    return { clear: true, lateMinutes: 0 };
-  }
 
-  const remainingIns = getPunchSlotsForShift(effective, params.shiftTimeConfig).filter(
-    (s) => s.action === "work_in"
-  );
-  if (remainingIns.length === 0) {
+  // 優先用調整後的上班格
+  const remainingIns = adjusted.filter((s) => s.action === "work_in");
+  const fallbackIns =
+    remainingIns.length > 0
+      ? remainingIns
+      : effective && effective !== "X"
+        ? getPunchSlotsForShift(effective, params.shiftTimeConfig).filter(
+            (s) => s.action === "work_in"
+          )
+        : [];
+
+  if (fallbackIns.length === 0) {
     return { clear: true, lateMinutes: 0 };
   }
 
   const actual = timeToMinutes(params.punchTime);
-  // 對應最接近且不晚於打卡時間（允許提早窗口）的剩餘上班格
-  let best = remainingIns[0];
-  for (const s of remainingIns) {
+  let best = fallbackIns[0];
+  for (const s of fallbackIns) {
     if (timeToMinutes(s.scheduledTime) <= actual + EARLY_PUNCH_MINUTES) {
       best = s;
     }

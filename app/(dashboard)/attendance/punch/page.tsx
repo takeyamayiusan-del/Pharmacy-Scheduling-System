@@ -22,7 +22,7 @@ import {
   type PunchSlot,
 } from "@/lib/attendance/punchSchedule";
 import {
-  filterPunchSlotsForApprovedLeave,
+  adjustPunchSlotsForApprovedLeave,
   resolvePunchLateMinutes,
 } from "@/lib/attendance/punchLeaveAdjust";
 import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X } from "lucide-react";
@@ -119,7 +119,7 @@ export default function PunchPage() {
   const slots = useMemo(() => {
     if (shift === "X" || !currentUser) return [];
     const raw = getPunchSlotsForShift(shift, shiftTimeConfig);
-    return filterPunchSlotsForApprovedLeave(raw, currentUser.id, today, leaveRequests);
+    return adjustPunchSlotsForApprovedLeave(raw, currentUser.id, today, leaveRequests);
   }, [shift, shiftTimeConfig, currentUser, today, leaveRequests]);
 
   const todayPunches = currentUser ? getTodayPunchRecords(currentUser.id, today) : [];
