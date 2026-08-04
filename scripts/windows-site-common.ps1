@@ -1,4 +1,4 @@
-# Shared helpers for site start / watchdog / repair
+# Shared helpers for site start / watchdog / repair (Docker + PM2)
 
 function Test-PortListening([int]$Port) {
     return [bool](netstat -ano | Select-String ":$Port\s" | Select-String "LISTENING")
@@ -27,6 +27,71 @@ function Test-SiteHealthy {
     return (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 5)
 }
 
+function Test-AuthHealthy {
+    return (Test-HttpOk -Uri "http://127.0.0.1:54321/auth/v1/health" -TimeoutSec 5)
+}
+
+# 清除舊 Hyper-V 留下的 54321 portproxy（會把流量轉去不存在的 VM）
+function Clear-StaleSupabasePortProxy {
+    param([scriptblock]$WriteLog = { param($m) Write-Host $m })
+
+    $raw = (netsh interface portproxy show all 2>$null | Out-String)
+    if (-not $raw) { return $false }
+    if ($raw -notmatch "54321") { return $false }
+
+    & $WriteLog "Removing stale portproxy on 54321 (old Hyper-V forward)..."
+    netsh interface portproxy delete v4tov4 listenport=54321 listenaddress=0.0.0.0 2>$null | Out-Null
+    netsh interface portproxy delete v4tov4 listenport=54321 listenaddress=127.0.0.1 2>$null | Out-Null
+    return $true
+}
+
+function Repair-AuthIfNeeded {
+    param(
+        [string]$ProjectRoot,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    [void](Clear-StaleSupabasePortProxy -WriteLog $WriteLog)
+
+    if (Test-AuthHealthy) { return $true }
+
+    & $WriteLog "Auth unhealthy, repairing Docker Supabase..."
+
+    $names = @(docker ps --format "{{.Names}}" 2>$null)
+    $kong = ($names | Where-Object { $_ -like "*supabase_kong*" } | Select-Object -First 1)
+    $auth = ($names | Where-Object { $_ -like "*supabase_auth*" } | Select-Object -First 1)
+    if ($kong) {
+        docker restart $kong 2>$null | Out-Null
+    }
+    if ($auth) {
+        docker restart $auth 2>$null | Out-Null
+    }
+
+    Start-Sleep -Seconds 6
+    if (Test-AuthHealthy) {
+        & $WriteLog "Auth repaired via docker restart"
+        return $true
+    }
+
+    if (Get-Command supabase -ErrorAction SilentlyContinue) {
+        & $WriteLog "Running supabase start..."
+        Push-Location $ProjectRoot
+        try {
+            & supabase start 2>$null | Out-Null
+        } finally {
+            Pop-Location
+        }
+        Start-Sleep -Seconds 8
+        if (Test-AuthHealthy) {
+            & $WriteLog "Auth repaired via supabase start"
+            return $true
+        }
+    }
+
+    & $WriteLog "Auth still unhealthy"
+    return $false
+}
+
 function Test-BuildInProgress {
     param([string]$ProjectRoot)
 
@@ -35,7 +100,7 @@ function Test-BuildInProgress {
             $_.CommandLine -and (
                 $_.CommandLine -like "*next*build*" -or
                 $_.CommandLine -like "*npm*run*build*" -or
-                $_.CommandLine -like "*windows-start-all.ps1*"
+                $_.CommandLine -like "*windows-docker-boot.ps1*"
             )
         }
     return [bool]$building
@@ -198,6 +263,33 @@ function Start-SiteRunner {
         -WindowStyle Hidden
 }
 
+function Start-SiteViaPm2OrRunner {
+    param(
+        [string]$ProjectRoot,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+        & $WriteLog "Restarting pharmacy-web via pm2..."
+        & pm2 resurrect 2>$null | Out-Null
+        & pm2 restart pharmacy-web --update-env 2>$null | Out-Null
+        if ($LASTEXITCODE -eq 0) { return }
+
+        & $WriteLog "pm2 restart failed, starting pharmacy-web..."
+        Push-Location $ProjectRoot
+        try {
+            & pm2 start npm --name "pharmacy-web" -- start 2>$null | Out-Null
+            & pm2 save 2>$null | Out-Null
+        } finally {
+            Pop-Location
+        }
+        return
+    }
+
+    & $WriteLog "pm2 not found, starting windows-run-site.ps1..."
+    Start-SiteRunner -ProjectRoot $ProjectRoot
+}
+
 function Repair-SiteIfNeeded {
     param(
         [string]$ProjectRoot,
@@ -220,7 +312,10 @@ function Repair-SiteIfNeeded {
     }
 
     & $WriteLog "Site unhealthy, repairing..."
-    Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+    # 若用 pm2：不要亂殺 node，交給 pm2 restart；否則清掉殘留 runner
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+        Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+    }
 
     $buildIdPath = Join-Path $ProjectRoot ".next\BUILD_ID"
     if (-not (Test-Path -LiteralPath $buildIdPath)) {
@@ -233,7 +328,7 @@ function Repair-SiteIfNeeded {
         }
     }
 
-    Start-SiteRunner -ProjectRoot $ProjectRoot
+    Start-SiteViaPm2OrRunner -ProjectRoot $ProjectRoot -WriteLog $WriteLog
 
     # 最多等約 45 秒成為健康（每 5 秒用 curl 探一次）
     for ($i = 1; $i -le 9; $i++) {

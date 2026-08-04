@@ -1,4 +1,4 @@
-# 每 1 分鐘檢查本機網站 + Tailscale Funnel，異常時自動修復（含 Next 殭屍進程）
+# 每 1 分鐘檢查：本機網站 + Supabase Auth + Tailscale Funnel，異常自動修復
 param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
 )
@@ -60,11 +60,18 @@ function Repair-Funnel {
 
 Write-Log "Watchdog check start"
 
+$authOk = Repair-AuthIfNeeded -ProjectRoot $ProjectRoot -WriteLog {
+    param($m)
+    Write-Log $m
+}
+if (-not $authOk) {
+    Write-Log "Auth still unhealthy after repair"
+}
+
 $siteOk = Repair-SiteIfNeeded -ProjectRoot $ProjectRoot -WriteLog {
     param($m)
     Write-Log $m
 }
-
 if (-not $siteOk) {
     Write-Log "Local site still unhealthy after repair"
 }
@@ -72,24 +79,24 @@ if (-not $siteOk) {
 $funnelUrl = Get-FunnelUrl
 $funnelStatus = (tailscale funnel status 2>&1 | Out-String)
 $funnelConfigured = $funnelStatus -match "Funnel on" -and $funnelStatus -match "127\.0\.0\.1:3000"
-$healthy = $siteOk -and $funnelConfigured -and (Test-FunnelHealthy $funnelUrl)
+$healthy = $authOk -and $siteOk -and $funnelConfigured -and (Test-FunnelHealthy $funnelUrl)
 
 if ($healthy) {
     Warmup-SiteRoutes -BaseUrl $funnelUrl
-    Write-Log "OK: local site + $funnelUrl"
+    Write-Log "OK: auth + local site + $funnelUrl"
     exit 0
 }
 
-Write-Log "UNHEALTHY siteOk=$siteOk funnelConfigured=$funnelConfigured url=$funnelUrl"
+Write-Log "UNHEALTHY authOk=$authOk siteOk=$siteOk funnelConfigured=$funnelConfigured url=$funnelUrl"
 Repair-Funnel
 
 Start-Sleep -Seconds 5
 $funnelUrl = Get-FunnelUrl
-if ($siteOk -and (Test-FunnelHealthy $funnelUrl)) {
+if ($authOk -and $siteOk -and (Test-FunnelHealthy $funnelUrl)) {
     Warmup-SiteRoutes -BaseUrl $funnelUrl
     Write-Log "Repaired OK: $funnelUrl"
     exit 0
 }
 
-Write-Log "Repair failed; run scripts\windows-start-all.ps1 as Administrator"
+Write-Log "Repair failed; run scripts\windows-docker-boot.ps1 (and scripts\windows-clear-portproxy.ps1 if Auth=000)"
 exit 1

@@ -60,7 +60,6 @@ ls -lh data/backups/yaosheng-migrate-*.sql
 
 3. 把檔案從 VM 拷到 Windows（任選一種）：
    - VM 內若有共享資料夾／`scp` 到 Windows
-   - 或在 Windows 用既有腳本：`scripts\copy-sql-to-vm.ps1` 的反向（從 VM 拉回）
    - 最簡單：在 VM 用 `python3 -m http.server` 暫時下載，或 U 盤掛進 VM
 
 4. 再把 SQL + 舊 `.env.local` 拷到 USB。
@@ -263,7 +262,9 @@ pm2 resurrect
 tailscale funnel --bg 3000
 ```
 
-> 舊機的 `windows-start-all.ps1` 是給 **Hyper-V VM** 用的，新機 Docker 方案不要當主流程。
+> 舊的 Hyper-V 腳本（`windows-start-all.ps1` / portproxy）已移除。  
+> 請用：`scripts\windows-docker-boot.ps1`（開機）＋ `scripts\windows-funnel-watchdog.ps1`（每分鐘監測重啟）。  
+> 若 Auth 回 `000`：先跑 `scripts\windows-clear-portproxy.ps1` 清掉舊轉埠。
 
 ---
 
