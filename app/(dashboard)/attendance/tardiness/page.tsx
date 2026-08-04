@@ -3,6 +3,11 @@
 import { useMemo, useState } from "react";
 import { useApp, type TardinessRecord } from "@/lib/context/AppContext";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
+import {
+  MonthFilterBar,
+  getCurrentYearMonth,
+  isDateInYearMonth,
+} from "@/components/MonthFilterBar";
 
 export default function TardinessPage() {
   const {
@@ -21,11 +26,14 @@ export default function TardinessPage() {
     employeeId: "",
     date: "",
     minutes: 0,
-    notes: ""
+    notes: "",
   });
+  const initialPeriod = getCurrentYearMonth();
+  const [filterYear, setFilterYear] = useState(initialPeriod.year);
+  const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
-  
+
   // 提交遲到記錄
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,12 +63,12 @@ export default function TardinessPage() {
         error instanceof Error
           ? error.message
           : typeof error === "object" && error !== null && "message" in error
-          ? (error as { message?: string }).message || "新增遲到記錄失敗，請稍後重試"
-          : "新增遲到記錄失敗，請稍後重試";
+            ? (error as { message?: string }).message || "新增遲到記錄失敗，請稍後重試"
+            : "新增遲到記錄失敗，請稍後重試";
       alert(message);
     }
   };
-  
+
   type LinkedTardinessRecord = TardinessRecord & { sourcePunchId?: string };
 
   const linkedTardinessRecords = useMemo<LinkedTardinessRecord[]>(() => {
@@ -79,10 +87,18 @@ export default function TardinessPage() {
     }));
   }, [employees, punchRecords, tardinessRecords, overtimeRequests, leaveRequests]);
 
-  // 計算統計數據
+  const monthRecords = useMemo(
+    () =>
+      linkedTardinessRecords.filter((r) =>
+        isDateInYearMonth(r.date, filterYear, filterMonth)
+      ),
+    [linkedTardinessRecords, filterYear, filterMonth]
+  );
+
+  // 計算統計數據（依目前選擇月份）
   const getStats = () => {
     const stats: Record<string, { count: number; totalMinutes: number }> = {};
-    linkedTardinessRecords.forEach(r => {
+    monthRecords.forEach((r) => {
       if (!stats[r.employeeId]) {
         stats[r.employeeId] = { count: 0, totalMinutes: 0 };
       }
@@ -111,7 +127,7 @@ export default function TardinessPage() {
       alert(error instanceof Error ? error.message : "刪除失敗");
     }
   };
-  
+
   if (!isManager) {
     return (
       <div className="min-h-full flex items-center justify-center">
@@ -126,67 +142,81 @@ export default function TardinessPage() {
   return (
     <div className="space-y-6">
       {/* 頁頭 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl font-bold text-gray-900">遲到管理</h2>
-        {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
-          <button
-            onClick={() => setShowForm(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-          >
-            新增記錄
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          <MonthFilterBar
+            year={filterYear}
+            month={filterMonth}
+            onYearChange={setFilterYear}
+            onMonthChange={setFilterMonth}
+            count={monthRecords.length}
+          />
+          {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
+            <button
+              onClick={() => setShowForm(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            >
+              新增記錄
+            </button>
+          )}
+        </div>
       </div>
-      
+
       {/* 統計卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="font-medium text-gray-900 mb-2">總遲到次數</h3>
-          <p className="text-2xl font-bold text-blue-600">{linkedTardinessRecords.length}次</p>
+          <h3 className="font-medium text-gray-900 mb-2">本月總遲到次數</h3>
+          <p className="text-2xl font-bold text-blue-600">{monthRecords.length}次</p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="font-medium text-gray-900 mb-2">總遲到分鐘</h3>
+          <h3 className="font-medium text-gray-900 mb-2">本月總遲到分鐘</h3>
           <p className="text-2xl font-bold text-orange-600">
-            {linkedTardinessRecords.reduce((sum, r) => sum + r.minutes, 0)}分鐘
+            {monthRecords.reduce((sum, r) => sum + r.minutes, 0)}分鐘
           </p>
         </div>
         <div className="bg-white rounded-xl shadow-sm border p-4">
-          <h3 className="font-medium text-gray-900 mb-2">平均每次遲到</h3>
+          <h3 className="font-medium text-gray-900 mb-2">本月平均每次遲到</h3>
           <p className="text-2xl font-bold text-green-600">
-            {linkedTardinessRecords.length > 0 
-              ? Math.round(linkedTardinessRecords.reduce((sum, r) => sum + r.minutes, 0) / linkedTardinessRecords.length) 
-              : 0}分鐘
+            {monthRecords.length > 0
+              ? Math.round(
+                  monthRecords.reduce((sum, r) => sum + r.minutes, 0) / monthRecords.length
+                )
+              : 0}
+            分鐘
           </p>
         </div>
       </div>
-      
+
       {/* 員工統計 */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         <div className="p-4 border-b bg-gray-50">
-          <h3 className="font-medium text-gray-900">員工遲到統計</h3>
+          <h3 className="font-medium text-gray-900">員工遲到統計（{filterYear}/{filterMonth}）</h3>
         </div>
         <div className="p-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {employees.filter(e => e.role !== "owner").map(emp => {
-              const empStats = stats[emp.id] || { count: 0, totalMinutes: 0 };
-              return (
-                <div key={emp.id} className="border rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900">{emp.name}</h4>
-                  <div className="mt-2 space-y-1 text-sm">
-                    <p className="text-gray-600">
-                      次數: <span className="font-medium text-red-600">{empStats.count}</span>
-                    </p>
-                    <p className="text-gray-600">
-                      總分鐘: <span className="font-medium text-orange-600">{empStats.totalMinutes}</span>
-                    </p>
+            {employees
+              .filter((e) => e.role !== "owner")
+              .map((emp) => {
+                const empStats = stats[emp.id] || { count: 0, totalMinutes: 0 };
+                return (
+                  <div key={emp.id} className="border rounded-lg p-4">
+                    <h4 className="font-medium text-gray-900">{emp.name}</h4>
+                    <div className="mt-2 space-y-1 text-sm">
+                      <p className="text-gray-600">
+                        次數: <span className="font-medium text-red-600">{empStats.count}</span>
+                      </p>
+                      <p className="text-gray-600">
+                        總分鐘: <span className="font-medium text-orange-600">{empStats.totalMinutes}</span>
+                      </p>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
           </div>
         </div>
       </div>
-      
+
       {/* 新增表單 */}
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border p-6">
@@ -194,54 +224,50 @@ export default function TardinessPage() {
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  員工
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">員工</label>
                 <select
                   value={formData.employeeId}
-                  onChange={e => setFormData({ ...formData, employeeId: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, employeeId: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg"
                   required
                 >
                   <option value="">請選擇</option>
-                  {employees.filter(e => e.role !== "owner").map(emp => (
-                    <option key={emp.id} value={emp.id}>{emp.name}</option>
-                  ))}
+                  {employees
+                    .filter((e) => e.role !== "owner")
+                    .map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name}
+                      </option>
+                    ))}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  日期
-                </label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
                 <input
                   type="date"
                   value={formData.date}
-                  onChange={e => setFormData({ ...formData, date: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, date: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg"
                   required
                 />
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                遲到分鐘
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">遲到分鐘</label>
               <input
                 type="number"
                 min={1}
                 value={formData.minutes}
-                onChange={e => setFormData({ ...formData, minutes: Number(e.target.value) })}
+                onChange={(e) => setFormData({ ...formData, minutes: Number(e.target.value) })}
                 className="w-full px-3 py-2 border rounded-lg"
                 required
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                備註
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">備註</label>
               <textarea
                 value={formData.notes}
-                onChange={e => setFormData({ ...formData, notes: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg"
                 rows={3}
                 placeholder="說明遲到原因..."
@@ -265,11 +291,11 @@ export default function TardinessPage() {
           </form>
         </div>
       )}
-      
+
       {/* 遲到記錄列表 */}
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
         <div className="p-4 border-b bg-gray-50">
-          <h3 className="font-medium text-gray-900">遲到記錄</h3>
+          <h3 className="font-medium text-gray-900">遲到記錄（{filterYear}/{filterMonth}）</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -283,40 +309,33 @@ export default function TardinessPage() {
               </tr>
             </thead>
             <tbody className="divide-y">
-              {linkedTardinessRecords.length === 0 ? (
+              {monthRecords.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
-                    沒有遲到記錄
+                    本月沒有遲到記錄
                   </td>
                 </tr>
               ) : (
-                linkedTardinessRecords
-                  .map(record => (
-                    <tr key={record.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 text-sm font-medium text-gray-900">
-                        {record.employeeName}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {record.date}
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        <span className="text-red-600 font-medium">{record.minutes}分鐘</span>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-gray-600">
-                        {record.notes}
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
-                          <button
-                            onClick={() => void handleDeleteRecord(record)}
-                            className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
-                          >
-                            刪除
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  ))
+                monthRecords.map((record) => (
+                  <tr key={record.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 text-sm font-medium text-gray-900">{record.employeeName}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{record.date}</td>
+                    <td className="px-4 py-3 text-sm text-gray-600">
+                      <span className="text-red-600 font-medium">{record.minutes}分鐘</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-gray-600">{record.notes}</td>
+                    <td className="px-4 py-3 text-sm">
+                      {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
+                        <button
+                          onClick={() => void handleDeleteRecord(record)}
+                          className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                        >
+                          刪除
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))
               )}
             </tbody>
           </table>
