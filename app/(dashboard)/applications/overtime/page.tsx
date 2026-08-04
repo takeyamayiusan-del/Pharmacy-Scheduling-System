@@ -12,6 +12,11 @@ import {
   resolveAllowedCompensationType,
   validateOvertimeCompensation,
 } from "@/lib/attendance/overtimeCompensation";
+import {
+  MonthFilterBar,
+  getCurrentYearMonth,
+  isDateInYearMonth,
+} from "@/components/MonthFilterBar";
 
 function formatCompLeaveAmount(hours: number): string {
   const rounded = Math.round(hours * 100) / 100;
@@ -67,6 +72,9 @@ export default function OvertimePage() {
   const [historyEmployeeId, setHistoryEmployeeId] = useState("");
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [isGranting, setIsGranting] = useState(false);
+  const initialPeriod = getCurrentYearMonth();
+  const [filterYear, setFilterYear] = useState(initialPeriod.year);
+  const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
   const staffEmployees = useMemo(
@@ -203,9 +211,12 @@ export default function OvertimePage() {
     }
   };
 
-  const visibleRequests = isManager
-    ? overtimeRequests
-    : overtimeRequests.filter(r => r.employeeId === currentUser?.id);
+  const visibleRequests = useMemo(() => {
+    const scoped = isManager
+      ? overtimeRequests
+      : overtimeRequests.filter((r) => r.employeeId === currentUser?.id);
+    return scoped.filter((r) => isDateInYearMonth(r.date, filterYear, filterMonth));
+  }, [isManager, overtimeRequests, currentUser?.id, filterYear, filterMonth]);
 
   const handleGrantCompLeave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -516,8 +527,15 @@ export default function OvertimePage() {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="p-4 border-b bg-gray-50">
+        <div className="p-4 border-b bg-gray-50 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-medium text-gray-900">加班申請記錄</h3>
+          <MonthFilterBar
+            year={filterYear}
+            month={filterMonth}
+            onYearChange={setFilterYear}
+            onMonthChange={setFilterMonth}
+            count={visibleRequests.length}
+          />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
@@ -537,7 +555,7 @@ export default function OvertimePage() {
             </thead>
             <tbody className="divide-y">
               {visibleRequests.length === 0 && (
-                <tr><td colSpan={9} className="p-8 text-center text-gray-500">沒有加班申請記錄</td></tr>
+                <tr><td colSpan={9} className="p-8 text-center text-gray-500">本月沒有加班申請記錄</td></tr>
               )}
               {visibleRequests.map(req => {
                 const st = statusLabels[req.status];

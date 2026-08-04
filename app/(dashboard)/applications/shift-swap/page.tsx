@@ -10,6 +10,11 @@ import {
   isFixedSundayRest,
   SUNDAY_REST_MESSAGE,
 } from "@/lib/schedule/sundayRest";
+import {
+  MonthFilterBar,
+  getCurrentYearMonth,
+  isDateInYearMonth,
+} from "@/components/MonthFilterBar";
 
 export default function ShiftSwapPage() {
   const {
@@ -21,6 +26,9 @@ export default function ShiftSwapPage() {
   const [formData, setFormData] = useState({ requesterDate: "", targetDate: "", targetEmployeeId: "" });
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const initialPeriod = getCurrentYearMonth();
+  const [filterYear, setFilterYear] = useState(initialPeriod.year);
+  const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
 
   const runSwapAction = async (id: string, action: () => Promise<void>) => {
     if (actionId) return;
@@ -104,6 +112,14 @@ export default function ShiftSwapPage() {
   }[status] ?? "bg-gray-100 text-gray-800");
 
   const getEmpName = (id: string) => employees.find(e => e.id === id)?.name ?? id;
+
+  const visibleRequests = useMemo(() => {
+    return swapRequests.filter(
+      (r) =>
+        isDateInYearMonth(r.requesterDate, filterYear, filterMonth) ||
+        isDateInYearMonth(r.targetDate, filterYear, filterMonth)
+    );
+  }, [swapRequests, filterYear, filterMonth]);
 
   return (
     <div className="space-y-6">
@@ -189,14 +205,21 @@ export default function ShiftSwapPage() {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="p-4 border-b bg-gray-50">
+        <div className="p-4 border-b bg-gray-50 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-medium text-gray-900">換班申請記錄</h3>
+          <MonthFilterBar
+            year={filterYear}
+            month={filterMonth}
+            onYearChange={setFilterYear}
+            onMonthChange={setFilterMonth}
+            count={visibleRequests.length}
+          />
         </div>
         <div className="divide-y">
-          {swapRequests.length === 0 && (
-            <div className="p-8 text-center text-gray-500">沒有換班申請記錄</div>
+          {visibleRequests.length === 0 && (
+            <div className="p-8 text-center text-gray-500">本月沒有換班申請記錄</div>
           )}
-          {swapRequests.map(req => {
+          {visibleRequests.map(req => {
             const requesterName = req.requesterName || getEmpName(req.requesterId);
             const targetName = req.targetEmployeeName || getEmpName(req.targetEmployeeId);
             const isSelfSwap = req.requesterId === req.targetEmployeeId;

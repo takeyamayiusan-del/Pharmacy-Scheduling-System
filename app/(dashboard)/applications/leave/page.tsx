@@ -14,6 +14,11 @@ import {
   buildLeaveFormPrintData,
   printLeaveApplicationForm,
 } from '@/lib/applications/printLeaveForm';
+import {
+  MonthFilterBar,
+  doesRangeOverlapYearMonth,
+  getCurrentYearMonth,
+} from '@/components/MonthFilterBar';
 
 const PERIOD_OPTIONS: { label: string; value: LeavePeriod }[] = [
   { label: '全天', value: 'full_day' },
@@ -59,6 +64,9 @@ export default function LeaveApplicationPage() {
   });
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
   const [submitError, setSubmitError] = useState('');
+  const initialPeriod = getCurrentYearMonth();
+  const [filterYear, setFilterYear] = useState(initialPeriod.year);
+  const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
 
   const isManager = currentUser?.role === 'owner' || currentUser?.role === 'manager';
 
@@ -238,9 +246,14 @@ export default function LeaveApplicationPage() {
 
   const getEmpName = (id: string) => employees.find((e) => e.id === id)?.name ?? id;
 
-  const visibleRequests = isManager
-    ? leaveRequests
-    : leaveRequests.filter((r) => r.employeeId === currentUser?.id);
+  const visibleRequests = useMemo(() => {
+    const scoped = isManager
+      ? leaveRequests
+      : leaveRequests.filter((r) => r.employeeId === currentUser?.id);
+    return scoped.filter((r) =>
+      doesRangeOverlapYearMonth(r.startDate, r.endDate, filterYear, filterMonth)
+    );
+  }, [isManager, leaveRequests, currentUser?.id, filterYear, filterMonth]);
 
   return (
     <div className="space-y-6">
@@ -430,6 +443,16 @@ export default function LeaveApplicationPage() {
       )}
 
       <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="p-4 border-b bg-gray-50 flex flex-wrap items-center justify-between gap-3">
+          <h3 className="font-medium text-gray-900">請假申請記錄</h3>
+          <MonthFilterBar
+            year={filterYear}
+            month={filterMonth}
+            onYearChange={setFilterYear}
+            onMonthChange={setFilterMonth}
+            count={visibleRequests.length}
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50">
@@ -450,7 +473,7 @@ export default function LeaveApplicationPage() {
               {visibleRequests.length === 0 && (
                 <tr>
                   <td colSpan={isManager ? 10 : 9} className="p-8 text-center text-gray-500">
-                    沒有請假申請
+                    本月沒有請假申請
                   </td>
                 </tr>
               )}
