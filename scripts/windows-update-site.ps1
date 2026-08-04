@@ -1,5 +1,5 @@
-# 安全更新網站內容（不會動到 portproxy / Hyper-V）
-# 平時放著不管沒問題；只有「更新程式」時才需要跑這個。
+# 安全更新排班網站（不會動到 portproxy / Hyper-V）
+# 更新後會一起 restart PM2 的 pharmacy-web + cashflow；平時靠 watchdog 雙站常駐。
 #
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1 -Branch cursor/xxx-774b
@@ -39,18 +39,33 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) { throw "npm run build failed" }
 }
 
-Write-Host "pm2 restart pharmacy-web (+ cashflow if present) ..."
+Write-Host "pm2 restart pharmacy-web + cashflow ..."
+pm2 resurrect 2>$null
 pm2 restart pharmacy-web --update-env
-pm2 restart cashflow --update-env 2>$null
+if ($LASTEXITCODE -ne 0) { throw "pm2 restart pharmacy-web failed" }
+pm2 restart cashflow --update-env
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "WARN: cashflow restart failed or not registered in pm2" -ForegroundColor Yellow
+} else {
+    Write-Host "cashflow restarted OK"
+}
+pm2 save 2>$null
 
-Start-Sleep -Seconds 3
+Start-Sleep -Seconds 4
 Write-Host ""
-Write-Host -NoNewline "Auth: "
+Write-Host -NoNewline "Auth:      "
 curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:54321/auth/v1/health
-Write-Host -NoNewline "Site: "
+Write-Host -NoNewline "排班 :3000 "
 curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:3000/login
+Write-Host -NoNewline "金流 :8443 "
+curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:8443/
 
 Write-Host ""
-Write-Host "Done. If Auth is not 200, run as Admin:" -ForegroundColor Yellow
+Write-Host "Done. Both apps stay under PM2; watchdog keeps Funnel for :3000 and :8443." -ForegroundColor Green
+Write-Host "If Auth is not 200, run as Admin:" -ForegroundColor Yellow
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-clear-portproxy.ps1"
-Write-Host "Then login at http://127.0.0.1:3000/login or Funnel URL."
+Write-Host "Then:"
+Write-Host "  排班 http://127.0.0.1:3000/login"
+Write-Host "  金流 http://127.0.0.1:8443/"
+Write-Host "  pm2 status"
+Write-Host "  tailscale funnel status"

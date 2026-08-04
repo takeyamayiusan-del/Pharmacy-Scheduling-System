@@ -267,13 +267,26 @@ function Test-CashflowHealthy {
     # 金流本機常見埠：8443（外網 Funnel）或 3001
     if (Test-PortListening 8443) {
         if (Test-HttpOk -Uri "http://127.0.0.1:8443/" -TimeoutSec 5) { return $true }
-        # HTTPS only locally uncommon; port open still counts as process up
+        # 埠有在聽但 HTTP 失敗仍視為「進程可能活著」，交由 pm2 restart 再判
         return $true
     }
     if (Test-PortListening 3001) {
         return (Test-HttpOk -Uri "http://127.0.0.1:3001/" -TimeoutSec 5)
     }
     return $false
+}
+
+function Test-Pm2AppExists([string]$Name) {
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $false }
+    $j = & pm2 jlist 2>$null
+    if (-not $j) { return $false }
+    try {
+        $apps = $j | ConvertFrom-Json
+        $app = $apps | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+        return [bool]$app
+    } catch {
+        return (($j | Out-String) -match ('"name"\s*:\s*"' + [regex]::Escape($Name) + '"'))
+    }
 }
 
 function Get-Pm2Online([string]$Name) {
@@ -314,10 +327,23 @@ function Repair-Pm2AppIfNeeded {
     & $WriteLog "Repairing pm2 app: $Name"
     & pm2 resurrect 2>$null | Out-Null
     & pm2 restart $Name --update-env 2>$null | Out-Null
-    Start-Sleep -Seconds 4
+    Start-Sleep -Seconds 5
+
+    if (-not (Get-Pm2Online -Name $Name)) {
+        & $WriteLog "pm2 restart did not bring $Name online, trying start from dump..."
+        & pm2 start $Name 2>$null | Out-Null
+        Start-Sleep -Seconds 4
+    }
+
+    & pm2 save 2>$null | Out-Null
 
     if ($HealthyCheck) {
-        if (& $HealthyCheck) { return $true }
+        if ((& $HealthyCheck) -and (Get-Pm2Online -Name $Name)) { return $true }
+        # 埠健康但 pm2 狀態遲滯時，只要埠通也算修復成功
+        if (& $HealthyCheck) {
+            & $WriteLog "$Name port healthy after repair (pm2 status may lag)"
+            return $true
+        }
     } elseif (Get-Pm2Online -Name $Name) {
         return $true
     }
@@ -333,14 +359,13 @@ function Start-SiteViaPm2OrRunner {
     )
 
     if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-        & $WriteLog "Restarting pharmacy-web (+ cashflow if present) via pm2..."
+        & $WriteLog "Restarting pharmacy-web + cashflow via pm2..."
         & pm2 resurrect 2>$null | Out-Null
         & pm2 restart pharmacy-web --update-env 2>$null | Out-Null
-        if (Get-Pm2Online -Name "cashflow") {
-            & pm2 restart cashflow --update-env 2>$null | Out-Null
-        } elseif ((pm2 jlist 2>$null) -match '"name"\s*:\s*"cashflow"') {
+        if (Test-Pm2AppExists -Name "cashflow") {
             & pm2 restart cashflow --update-env 2>$null | Out-Null
         }
+        & pm2 save 2>$null | Out-Null
         if ($LASTEXITCODE -eq 0) { return }
 
         & $WriteLog "pm2 restart failed, starting pharmacy-web..."
