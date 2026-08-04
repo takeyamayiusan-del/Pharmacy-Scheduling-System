@@ -3,9 +3,13 @@
 import { useMemo, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 import { SHIFT_HOURS } from '@/lib/attendance/calculator';
+import {
+  calculateApprovedLeaveHoursOnDate,
+  calculateApprovedLeaveHoursTotal,
+} from '@/lib/attendance/leaveHours';
 import { buildEffectiveTardinessRecords } from '@/lib/tardiness';
 import { Download, FileText, Calendar, Clock } from 'lucide-react';
-import jsPDF from 'jspdf';
+import { exportMonthlyPunchPdf as exportPunchPdfDocument } from '@/lib/attendance/exportPunchPdf';
 
 export default function AttendancePage() {
   const {
@@ -13,12 +17,16 @@ export default function AttendancePage() {
     employees,
     getShiftForDate,
     getHolidayInfo,
+    shiftTimeConfig,
     overtimeRequests,
     leaveRequests,
     tardinessRecords,
     punchRecords,
   } = useApp();
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
   const [showMonthlyDetail, setShowMonthlyDetail] = useState(false);
   
   const year = currentDate.getFullYear();
@@ -50,24 +58,24 @@ export default function AttendancePage() {
       for (let day = 1; day <= daysInMonth; day += 1) {
         const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
         const shift = getShiftForDate(dateStr, emp.id);
-        // 檢查是否有核准的請假申請
-        const hasApprovedLeave = leaveRequests.some(
-          (req) =>
-            req.employeeId === emp.id &&
-            req.startDate <= dateStr &&
-            req.endDate >= dateStr &&
-            req.status === 'approved'
+        const shiftHours = SHIFT_HOURS[shift] ?? 0;
+        const leaveHoursOnDay = calculateApprovedLeaveHoursOnDate(
+          dateStr,
+          emp.id,
+          leaveRequests,
+          getShiftForDate,
+          shiftTimeConfig
         );
-        if (shift !== 'X' && !hasApprovedLeave) {
+        const creditedWorkHours = Math.max(0, shiftHours - leaveHoursOnDay);
+
+        if (shift !== 'X' && leaveHoursOnDay < shiftHours) {
           workDays += 1;
           if (getHolidayInfo(dateStr).isHoliday) {
-            holidayOvertimeHours += SHIFT_HOURS[shift] ?? 0;
+            holidayOvertimeHours += creditedWorkHours;
           }
         }
-        // 若有核准請假，則不計入班表工時
-        if (!hasApprovedLeave) {
-          workHours += SHIFT_HOURS[shift] ?? 0;
-        }
+
+        workHours += creditedWorkHours;
       }
 
       const overtimeHours = overtimeRequests
@@ -92,14 +100,19 @@ export default function AttendancePage() {
 
       const leaveHours = leaveRequests
         .filter((item) => item.employeeId === emp.id && item.status === 'approved')
-        .filter((item) => item.type !== '補休假')
         .filter((item) => item.endDate >= startDate && item.startDate <= endDate)
-        .reduce((sum, item) => sum + (item.leaveHours > 0 ? item.leaveHours : 0), 0);
+        .reduce(
+          (sum, item) =>
+            sum +
+            calculateApprovedLeaveHoursTotal(item, getShiftForDate, shiftTimeConfig),
+          0
+        );
 
       const effectiveTardinessRecords = buildEffectiveTardinessRecords(
         tardinessRecords,
         punchRecords,
-        overtimeRequests
+        overtimeRequests,
+        leaveRequests
       );
 
       const tardy = effectiveTardinessRecords
@@ -122,7 +135,7 @@ export default function AttendancePage() {
         tardyMinutes,
       };
     });
-  }, [daysInMonth, displayEmployees, getShiftForDate, getHolidayInfo, leaveRequests, month, overtimeRequests, tardinessRecords, punchRecords, year]);
+  }, [daysInMonth, displayEmployees, getShiftForDate, getHolidayInfo, leaveRequests, month, overtimeRequests, shiftTimeConfig, tardinessRecords, punchRecords, year]);
 
   // 產生每月打卡明細數據
   const monthlyPunchData = useMemo(() => {
@@ -192,158 +205,20 @@ export default function AttendancePage() {
     URL.revokeObjectURL(url);
   };
 
-  // 匯出整月打卡明細 PDF
-  const exportMonthlyPunchPdf = () => {
-    // 頁面尺寸
-    const pageWidth = 842; // A4 landscape
-    const pageHeight = 595;
-    const marginLeft = 20;
-    const marginTop = 30;
-    const lineHeight = 16;
-    const colWidths = [50, 35, 40, 120]; // 日期, 星期, 班別, 打卡時間
-    
-    const dayLabels = ['日', '一', '二', '三', '四', '五', '六'];
-    
-    // 創建 PDF
-    const pdf = new jsPDF({
-      orientation: 'landscape',
-      unit: 'pt',
-      format: 'a4'
-    });
-    
-    let currentY = marginTop;
-    let pageCount = 0;
-    
-    // 繪製標題
-    const drawTitle = () => {
-      currentY = marginTop;
-      pageCount++;
-      if (pageCount > 1) {
-        pdf.addPage();
-      }
-      pdf.setFillColor(5, 150, 105); // emerald-600
-      pdf.rect(0, 0, pageWidth, 40, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(16);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(`${year} 年 ${month} 月 打卡記錄明細`, pageWidth / 2, 26, { align: 'center' });
-      currentY = 50;
-    };
-    
-    drawTitle();
-    
-    // 繪製每個員工
-    monthlyPunchData.forEach((empData) => {
-      // 每個員工需要的空間：標題(20) + 表頭(20) + 分隔線(5) + 每日數據(daysInMonth * lineHeight) + 間距(10)
-      const neededHeight = 20 + 20 + 5 + (daysInMonth * lineHeight) + 10;
-      
-      // 如果空間不夠，換頁
-      if (currentY + neededHeight > pageHeight - 30) {
-        drawTitle();
-      }
-      
-      // 員工姓名
-      pdf.setTextColor(31, 41, 55);
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(empData.name, marginLeft, currentY);
-      currentY += 18;
-      
-      // 表頭
-      pdf.setTextColor(55, 65, 81);
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'bold');
-      let x = marginLeft;
-      pdf.text('日期', x, currentY);
-      x += colWidths[0];
-      pdf.text('星期', x, currentY);
-      x += colWidths[1];
-      pdf.text('班別', x, currentY);
-      x += colWidths[2];
-      pdf.text('打卡時間', x, currentY);
-      currentY += lineHeight;
-      
-      // 分隔線
-      pdf.setDrawColor(229, 231, 235);
-      pdf.setLineWidth(0.5);
-      pdf.line(marginLeft, currentY - 2, pageWidth - marginLeft, currentY - 2);
-      
-      // 每日數據
-      pdf.setFont('helvetica', 'normal');
-      for (let day = 1; day <= daysInMonth; day++) {
-        // 檢查是否需要換頁
-        if (currentY + lineHeight > pageHeight - 20) {
-          drawTitle();
-          // 重新繪製表頭
-          pdf.setTextColor(55, 65, 81);
-          pdf.setFontSize(9);
-          pdf.setFont('helvetica', 'bold');
-          x = marginLeft;
-          pdf.text('日期', x, currentY);
-          x += colWidths[0];
-          pdf.text('星期', x, currentY);
-          x += colWidths[1];
-          pdf.text('班別', x, currentY);
-          x += colWidths[2];
-          pdf.text('打卡時間', x, currentY);
-          currentY += lineHeight;
-          pdf.line(marginLeft, currentY - 2, pageWidth - marginLeft, currentY - 2);
-          pdf.setFont('helvetica', 'normal');
-        }
-        
-        const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const date = new Date(dateStr);
-        const dayOfWeek = dayLabels[date.getDay()];
-        const shift = getShiftForDate(dateStr, empData.id);
-        const punches = empData.byDate[dateStr] || [];
-        
-        x = marginLeft;
-        
-        // 日期
-        pdf.setTextColor(55, 65, 81);
-        pdf.text(`${month}/${day}`, x, currentY);
-        x += colWidths[0];
-        
-        // 星期（週末紅色）
-        if (dayOfWeek === '六' || dayOfWeek === '日') {
-          pdf.setTextColor(220, 38, 38);
-        } else {
-          pdf.setTextColor(55, 65, 81);
-        }
-        pdf.text(dayOfWeek, x, currentY);
-        x += colWidths[1];
-        
-        // 班別
-        pdf.setTextColor(55, 65, 81);
-        pdf.text(shift, x, currentY);
-        x += colWidths[2];
-        
-        // 打卡時間
-        if (punches.length > 0) {
-          pdf.setTextColor(5, 150, 105);
-          const times = punches.map((p) => p.time).join(' ');
-          pdf.text(times, x, currentY);
-        } else {
-          pdf.setTextColor(156, 163, 175);
-          pdf.text('無打卡', x, currentY);
-        }
-        
-        currentY += lineHeight;
-      }
-      
-      currentY += 8; // 員工之間的間距
-    });
-    
-    // 添加頁碼
-    const totalPages = pdf.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-      pdf.setPage(i);
-      pdf.setTextColor(156, 163, 175);
-      pdf.setFontSize(8);
-      pdf.text(`第 ${i} 頁 / 共 ${totalPages} 頁`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+  // 匯出整月打卡明細 PDF（HTML 轉圖，避免中文亂碼）
+  const exportMonthlyPunchPdf = async () => {
+    try {
+      await exportPunchPdfDocument({
+        year,
+        month,
+        daysInMonth,
+        employees: monthlyPunchData,
+        getShiftForDate,
+      });
+    } catch (error) {
+      console.error('[attendance] export punch pdf failed', error);
+      alert('匯出打卡 PDF 失敗，請稍後再試');
     }
-    
-    pdf.save(`打卡記錄_${year}_${String(month).padStart(2, '0')}.pdf`);
   };
 
   return (
@@ -355,7 +230,7 @@ export default function AttendancePage() {
           <button onClick={nextMonth} className="p-2 border rounded hover:bg-gray-50">▶</button>
         </div>
         {canExport && (
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setShowMonthlyDetail(!showMonthlyDetail)}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700"
@@ -363,7 +238,10 @@ export default function AttendancePage() {
               <Calendar className="h-4 w-4" />
               {showMonthlyDetail ? '隱藏打卡明細' : '查看打卡明細'}
             </button>
-            <button onClick={exportMonthlyPunchPdf} className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700">
+            <button
+              onClick={() => void exportMonthlyPunchPdf()}
+              className="flex items-center gap-2 px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700"
+            >
               <Download className="h-4 w-4" />
               匯出打卡 PDF
             </button>
@@ -422,7 +300,8 @@ export default function AttendancePage() {
                             punches.map((p, idx) => (
                               <div key={idx} className={`text-xs ${p.action === 'work_in' ? 'text-green-600' : 'text-blue-600'}`}>
                                 {p.action === 'work_in' ? '進' : '出'}：{p.time}
-                                {p.lateMinutes > 0 && <span className="text-red-500 ml-1">遲{p.lateMinutes}分</span>}
+                                {p.action === 'work_in' && p.lateMinutes > 0 && <span className="text-red-500 ml-1">遲{p.lateMinutes}分</span>}
+                                {p.action === 'work_out' && p.reason?.includes('加班') && <span className="text-blue-500 ml-1">逾時</span>}
                               </div>
                             ))
                           ) : (

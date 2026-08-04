@@ -1,17 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useApp, type ShiftType, type Employee } from "@/lib/context/AppContext";
 
 const shiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
-const shiftLabels: Record<ShiftType, string> = {
-  A: "全天",
-  B: "白班",
-  C: "上午",
-  D: "下午",
-  E: "下午+晚",
-  X: "休假",
-};
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
 export default function FixedShiftsPage() {
@@ -24,6 +16,8 @@ export default function FixedShiftsPage() {
     deleteFixedShift,
     shiftTimeConfig,
     updateShiftTimeConfig,
+    shiftDisplayConfig,
+    updateShiftDisplayConfig,
     updateEmployee,
   } = useApp();
 
@@ -38,7 +32,28 @@ export default function FixedShiftsPage() {
     E: shiftTimeConfig.E.join(", "),
     X: shiftTimeConfig.X.join(", "),
   });
+  const [shiftDisplayInputs, setShiftDisplayInputs] = useState<
+    Record<ShiftType, { label: string; displayText: string; bgColor: string; textColor: string; borderColor: string }>
+  >({
+    A: { ...shiftDisplayConfig.A },
+    B: { ...shiftDisplayConfig.B },
+    C: { ...shiftDisplayConfig.C },
+    D: { ...shiftDisplayConfig.D },
+    E: { ...shiftDisplayConfig.E },
+    X: { ...shiftDisplayConfig.X },
+  });
   const [savingRule, setSavingRule] = useState<string | null>(null);
+
+  useEffect(() => {
+    setShiftDisplayInputs({
+      A: { ...shiftDisplayConfig.A },
+      B: { ...shiftDisplayConfig.B },
+      C: { ...shiftDisplayConfig.C },
+      D: { ...shiftDisplayConfig.D },
+      E: { ...shiftDisplayConfig.E },
+      X: { ...shiftDisplayConfig.X },
+    });
+  }, [shiftDisplayConfig]);
 
   // 只顯示員工（不包含老闆）
   const displayEmployees = employees.filter((e) => e.role !== "owner");
@@ -73,6 +88,10 @@ export default function FixedShiftsPage() {
       .map((item) => item.trim())
       .filter(Boolean);
     updateShiftTimeConfig(shift, ranges.length > 0 ? ranges : ["未設定"]);
+  };
+
+  const handleSaveShiftDisplay = async (shift: ShiftType) => {
+    await updateShiftDisplayConfig(shift, shiftDisplayInputs[shift]);
   };
 
   const handleToggleRule = async (
@@ -205,7 +224,7 @@ export default function FixedShiftsPage() {
               className="grid grid-cols-1 md:grid-cols-[120px_1fr_auto] gap-3 items-center"
             >
               <div className="text-sm font-medium text-gray-700">
-                {shift} 班（{shiftLabels[shift]}）
+                {shift} 班（{shiftDisplayConfig[shift].label}）
               </div>
               <input
                 value={shiftTimeInputs[shift]}
@@ -231,6 +250,97 @@ export default function FixedShiftsPage() {
       </div>
 
       {/* ── 新增固定班表 ── */}
+      <div className="bg-white rounded-xl shadow-sm border p-6">
+        <h3 className="font-medium text-gray-900 mb-4">班別顯示設定（文字 / 顏色）</h3>
+        <div className="space-y-3">
+          {shiftOptions.map((shift) => (
+            <div
+              key={shift}
+              className="grid grid-cols-1 md:grid-cols-[100px_90px_1fr_1fr_1fr_1fr_auto] gap-3 items-center"
+            >
+              <div
+                className="h-10 rounded border-2 flex items-center justify-center text-sm font-medium"
+                style={{
+                  backgroundColor: shiftDisplayInputs[shift].bgColor,
+                  color: shiftDisplayInputs[shift].textColor,
+                  borderColor: shiftDisplayInputs[shift].borderColor,
+                }}
+              >
+                {shiftDisplayInputs[shift].displayText}
+              </div>
+              <input
+                value={shiftDisplayInputs[shift].displayText}
+                onChange={(e) =>
+                  setShiftDisplayInputs((prev) => ({
+                    ...prev,
+                    [shift]: { ...prev[shift], displayText: e.target.value.slice(0, 4) || shift },
+                  }))
+                }
+                className="border rounded-lg px-2 py-2 text-sm"
+                placeholder="框內字"
+              />
+              <input
+                value={shiftDisplayInputs[shift].label}
+                onChange={(e) =>
+                  setShiftDisplayInputs((prev) => ({
+                    ...prev,
+                    [shift]: { ...prev[shift], label: e.target.value },
+                  }))
+                }
+                className="border rounded-lg px-3 py-2 text-sm"
+                placeholder="圖例文字"
+              />
+              <input
+                type="color"
+                value={shiftDisplayInputs[shift].bgColor}
+                onChange={(e) =>
+                  setShiftDisplayInputs((prev) => ({
+                    ...prev,
+                    [shift]: { ...prev[shift], bgColor: e.target.value },
+                  }))
+                }
+                className="h-10 border rounded-lg px-2 py-1"
+                title="背景色"
+              />
+              <input
+                type="color"
+                value={shiftDisplayInputs[shift].borderColor}
+                onChange={(e) =>
+                  setShiftDisplayInputs((prev) => ({
+                    ...prev,
+                    [shift]: { ...prev[shift], borderColor: e.target.value },
+                  }))
+                }
+                className="h-10 border rounded-lg px-2 py-1"
+                title="框線色"
+              />
+              <input
+                type="color"
+                value={shiftDisplayInputs[shift].textColor}
+                onChange={(e) =>
+                  setShiftDisplayInputs((prev) => ({
+                    ...prev,
+                    [shift]: { ...prev[shift], textColor: e.target.value },
+                  }))
+                }
+                className="h-10 border rounded-lg px-2 py-1"
+                title="文字色"
+              />
+              <button
+                type="button"
+                onClick={() => handleSaveShiftDisplay(shift)}
+                className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+              >
+                儲存樣式
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500 mt-3">
+          可客製每個班別在班表中的框色、顯示文字與圖例名稱。
+        </p>
+      </div>
+
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">新增固定班表</h3>
         <div className="flex flex-wrap gap-4">
@@ -272,7 +382,7 @@ export default function FixedShiftsPage() {
             >
               {shiftOptions.map((shift) => (
                 <option key={shift} value={shift}>
-                  {shiftLabels[shift]}
+                  {shiftDisplayConfig[shift].label}
                 </option>
               ))}
             </select>
@@ -334,7 +444,7 @@ export default function FixedShiftsPage() {
                     >
                       {shiftOptions.map((shift) => (
                         <option key={shift} value={shift}>
-                          {shiftLabels[shift]}
+                          {shiftDisplayConfig[shift].label}
                         </option>
                       ))}
                     </select>

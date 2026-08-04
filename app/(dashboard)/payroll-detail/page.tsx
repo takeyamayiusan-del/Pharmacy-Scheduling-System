@@ -3,8 +3,8 @@
 import { useState, useEffect } from "react";
 import { useApp, type PayrollRecord } from "@/lib/context/AppContext";
 import { createClient } from "@/lib/supabase/client";
-import { jsPDF } from "jspdf";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
+import { exportPayslipPdf } from "@/lib/payroll/exportPayslipPdf";
 
 export default function PayrollDetailPage() {
   const { currentUser, payrollRecords, setPayrollRecords } = useApp();
@@ -85,141 +85,10 @@ export default function PayrollDetailPage() {
     setShowDetailModal(true);
   };
 
-  // 下載薪資單 PDF
-  // 下載薪資單 PDF
   const downloadSalaryPDF = async (record: PayrollRecord) => {
     if (!currentUser) return;
     try {
-      const pageWidth = 595;
-      const marginLeft = 30;
-      const marginRight = 30;
-      const contentWidth = pageWidth - marginLeft - marginRight;
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' });
-      let y = 30;
-      const rowHeight = 28;
-      
-      // 頂部綠色條
-      pdf.setFillColor(16, 185, 129);
-      pdf.rect(0, 0, pageWidth, 10, 'F');
-      y += 25;
-      
-      // 標題
-      pdf.setTextColor(5, 150, 105);
-      pdf.setFontSize(22);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('薪資單', pageWidth / 2, y, { align: 'center' });
-      y += 28;
-      
-      // 分隔線
-      pdf.setDrawColor(229, 231, 235);
-      pdf.line(marginLeft, y, pageWidth - marginRight, y);
-      y += 25;
-      
-      // 基本資訊背景
-      pdf.setFillColor(249, 250, 251);
-      pdf.rect(marginLeft, y, contentWidth, 50, 'F');
-      pdf.setTextColor(55, 65, 81);
-      pdf.setFontSize(10);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text('員工：' + currentUser.name, marginLeft + 10, y + 15);
-      pdf.text(record.year + '年' + record.month + '月', marginLeft + 200, y + 15);
-      pdf.text('發布：' + (record.publishedAt ? new Date(record.publishedAt).toLocaleDateString('zh-TW') : '-'), marginLeft + 10, y + 38);
-      pdf.text('列印：' + new Date().toLocaleDateString('zh-TW'), marginLeft + 200, y + 38);
-      y += 60;
-      
-      // 應發項目背景
-      pdf.setFillColor(16, 185, 129);
-      pdf.rect(marginLeft, y, contentWidth, 22, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(11);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('應發項目', marginLeft + 10, y + 15);
-      y += 30;
-      
-      const earnings = [
-        ['底薪', record.baseSalary ?? 0],
-        ['加班費', record.overtimePay ?? 0],
-        ['獎金', record.bonusTotal > 0 ? record.bonusTotal : 0],
-      ];
-      pdf.setFont('helvetica', 'normal');
-      pdf.setTextColor(55, 65, 81);
-      pdf.setFontSize(10);
-      earnings.forEach((item) => {
-        pdf.text(item[0] as string, marginLeft + 10, y + 5);
-        pdf.setTextColor(5, 150, 105);
-        pdf.text((item[1] as number).toLocaleString() + ' 元', pageWidth - marginRight - 10, y + 5, { align: 'right' });
-        pdf.setTextColor(55, 65, 81);
-        y += rowHeight;
-      });
-      
-      const totalEarnings = (record.baseSalary ?? 0) + (record.overtimePay ?? 0) + (record.bonusTotal > 0 ? record.bonusTotal : 0);
-      pdf.setDrawColor(16, 185, 129);
-      pdf.line(marginLeft + 10, y, pageWidth - marginRight - 10, y);
-      y += 10;
-      pdf.setTextColor(5, 150, 105);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('應發合計', marginLeft + 10, y + 5);
-      pdf.text(totalEarnings.toLocaleString() + ' 元', pageWidth - marginRight - 10, y + 5, { align: 'right' });
-      y += 38;
-      
-      // 扣除項目背景
-      pdf.setFillColor(239, 68, 68);
-      pdf.rect(marginLeft, y, contentWidth, 22, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(11);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('扣除項目', marginLeft + 10, y + 15);
-      y += 30;
-
-      const deductions = [
-        ['請假扣款', record.leaveDeduction ?? 0],
-        ['遲到扣款', record.tardinessDeduction ?? 0],
-        ['勞保', record.laborInsurance ?? 0],
-        ['健保', record.healthInsurance ?? 0],
-        ['退休金', record.pensionDeduction ?? 0],
-      ];
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(10);
-      deductions.forEach((item) => {
-        pdf.setTextColor(55, 65, 81);
-        pdf.text(item[0] as string, marginLeft + 10, y + 5);
-        pdf.setTextColor(239, 68, 68);
-        pdf.text('- ' + (item[1] as number).toLocaleString() + ' 元', pageWidth - marginRight - 10, y + 5, { align: 'right' });
-        y += rowHeight;
-      });
-
-      const totalDeductions = (record.leaveDeduction ?? 0) + (record.tardinessDeduction ?? 0) +
-        (record.laborInsurance ?? 0) + (record.healthInsurance ?? 0) + (record.pensionDeduction ?? 0);
-      pdf.setDrawColor(239, 68, 68);
-      pdf.line(marginLeft + 10, y, pageWidth - marginRight - 10, y);
-      y += 10;
-      pdf.setTextColor(239, 68, 68);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('扣除合計', marginLeft + 10, y + 5);
-      pdf.text('- ' + totalDeductions.toLocaleString() + ' 元', pageWidth - marginRight - 10, y + 5, { align: 'right' });
-      y += 42;
-
-      // 實領金額背景
-      pdf.setFillColor(30, 64, 175);
-      pdf.rect(marginLeft, y, contentWidth, 42, 'F');
-      pdf.setTextColor(255, 255, 255);
-      pdf.setFontSize(12);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text('實領金額', marginLeft + 15, y + 16);
-      pdf.setFontSize(18);
-      pdf.text('NT$ ' + record.finalPay.toLocaleString() + ' 元', pageWidth - marginRight - 15, y + 30, { align: 'right' });
-      y += 58;
-
-      // 備註
-      pdf.setDrawColor(229, 231, 235);
-      pdf.line(marginLeft, y, pageWidth - marginRight, y);
-      y += 18;
-      pdf.setTextColor(156, 163, 175);
-      pdf.setFontSize(9);
-      pdf.setFont('helvetica', 'normal');
-      pdf.text('耀聖藥局排班系統產生 | ' + new Date().toLocaleString('zh-TW'), pageWidth / 2, y, { align: 'center' });
-
-      pdf.save('薪資單_' + currentUser.name + '_' + record.year + '_' + record.month + '.pdf');
+      await exportPayslipPdf(record, currentUser.name);
     } catch (err) {
       console.error('PDF generation error:', err);
       alert('PDF 生成失敗');

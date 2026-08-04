@@ -1,0 +1,25 @@
+耀聖藥局 — 搬到新電腦（USB 清單）
+================================
+
+完整步驟請看專案內：
+  docs\NEW_PC_DOCKER_SETUP.md
+
+本 USB 應有
+----------
+  [ ] yaosheng-migrate-YYYY-MM-DD.sql   ← 舊機 VM 匯出的最新資料庫
+  [ ] env.local.OLD.txt                 ← 舊機 .env.local 備份（僅參考）
+
+不要放
+------
+  - yaosheng-supabase.vhdx（約 20GB 虛擬機）
+  - node_modules、.next
+
+新機程式碼
+----------
+  git clone -b deploy/local-production https://github.com/takeyamayiusan-del/Pharmacy-Scheduling-System.git
+
+新機還原（supabase start 之後）
+--------------------------------
+  $Db = (docker ps --format "{{.Names}}" | Select-String "supabase_db").ToString().Trim()
+  Get-Content "E:\yaosheng-migrate\yaosheng-migrate-日期.sql" -Raw -Encoding UTF8 |
+    docker exec -i $Db psql -U postgres -d postgres

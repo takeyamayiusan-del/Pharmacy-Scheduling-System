@@ -3,6 +3,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
 import { useSearchParams } from "next/navigation";
+import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
+import { LeaveOrderGuide } from "@/components/schedule/LeaveOrderGuide";
+import {
+  assertNoSundayInSwapDates,
+  isFixedSundayRest,
+  SUNDAY_REST_MESSAGE,
+} from "@/lib/schedule/sundayRest";
 
 export default function ShiftSwapPage() {
   const {
@@ -13,6 +20,19 @@ export default function ShiftSwapPage() {
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({ requesterDate: "", targetDate: "", targetEmployeeId: "" });
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
+
+  const runSwapAction = async (id: string, action: () => Promise<void>) => {
+    if (actionId) return;
+    setActionId(id);
+    try {
+      await action();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "操作失敗，請稍後再試");
+    } finally {
+      setActionId(null);
+    }
+  };
 
   const source = searchParams.get("source");
   const sourceNote = searchParams.get("source_note");
@@ -37,22 +57,34 @@ export default function ShiftSwapPage() {
   const previewTargetShift = formData.targetEmployeeId && formData.targetDate
     ? getShiftForDate(formData.targetDate, formData.targetEmployeeId) : null;
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
+    const sundayCheck = assertNoSundayInSwapDates(
+      formData.requesterDate,
+      formData.targetDate
+    );
+    if (!sundayCheck.ok) {
+      alert(sundayCheck.message);
+      return;
+    }
     const targetEmployee = employees.find(emp => emp.id === formData.targetEmployeeId);
     if (!targetEmployee) return;
-    addSwapRequest({
-      requesterId: currentUser.id,
-      requesterName: currentUser.name,
-      targetEmployeeId: targetEmployee.id,
-      targetEmployeeName: targetEmployee.name,
-      requesterDate: formData.requesterDate,
-      targetDate: formData.targetDate,
-      status: "pending_confirmation",
-    });
-    setFormData({ requesterDate: "", targetDate: "", targetEmployeeId: "" });
-    setShowForm(false);
+    try {
+      await addSwapRequest({
+        requesterId: currentUser.id,
+        requesterName: currentUser.name,
+        targetEmployeeId: targetEmployee.id,
+        targetEmployeeName: targetEmployee.name,
+        requesterDate: formData.requesterDate,
+        targetDate: formData.targetDate,
+        status: "pending_confirmation",
+      });
+      setFormData({ requesterDate: "", targetDate: "", targetEmployeeId: "" });
+      setShowForm(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "申請失敗");
+    }
   };
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
@@ -82,14 +114,26 @@ export default function ShiftSwapPage() {
         )}
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-gray-700">
-        <span className="font-medium text-blue-800">換班流程：</span>
-        發起申請 → 對方確認 → 管理者審核 → 完成
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-gray-700 space-y-1">
+        <p><span className="font-medium text-blue-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
+        <p className="text-blue-900/80">與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
+        <p className="text-red-700/90 font-medium">禮拜日為全店固定公休，不可列入換班。</p>
+        <p className="text-emerald-800 pt-1">
+          建議：若是為了排休／晚班衝突，請<strong>先完成換班</strong>，再到「排休選擇」勾日期。
+        </p>
       </div>
+
+      <LeaveOrderGuide compact className="bg-emerald-50 border border-emerald-200 rounded-xl p-4" />
 
       {source === "wednesday_conflict" && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
           {sourceNote || "由禮三晚班衝突引導建立換班申請"}
+        </div>
+      )}
+
+      {source === "leave_evening_conflict" && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
+          {sourceNote || "由排休選擇（全天班含晚班）引導建立換班申請"}
         </div>
       )}
 
@@ -100,17 +144,27 @@ export default function ShiftSwapPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">我的日期（換出）</label>
-                <input type="date" value={formData.requesterDate}
+                <input type="date" value={formData.requesterDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, requesterDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
-                {previewRequesterShift && <p className="text-xs text-gray-500 mt-1">當日班別：{previewRequesterShift}</p>}
+                {isFixedSundayRest(formData.requesterDate) && (
+                  <p className="text-xs text-red-600 mt-1">{SUNDAY_REST_MESSAGE}</p>
+                )}
+                {previewRequesterShift && !isFixedSundayRest(formData.requesterDate) && (
+                  <p className="text-xs text-gray-500 mt-1">當日班別：{previewRequesterShift}</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">對方日期（換入）</label>
-                <input type="date" value={formData.targetDate}
+                <input type="date" value={formData.targetDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, targetDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
-                {previewTargetShift && <p className="text-xs text-gray-500 mt-1">對方班別：{previewTargetShift}</p>}
+                {isFixedSundayRest(formData.targetDate) && (
+                  <p className="text-xs text-red-600 mt-1">{SUNDAY_REST_MESSAGE}</p>
+                )}
+                {previewTargetShift && !isFixedSundayRest(formData.targetDate) && (
+                  <p className="text-xs text-gray-500 mt-1">對方班別：{previewTargetShift}</p>
+                )}
               </div>
             </div>
             <div>
@@ -177,12 +231,11 @@ export default function ShiftSwapPage() {
                     {canConfirm && (
                       <>
                         <button
-                          onClick={async () => {
-                            await updateSwapRequestStatus(req.id, "pending_approval");
-                          }}
-                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700"
+                          disabled={actionId === req.id}
+                          onClick={() => runSwapAction(req.id, () => updateSwapRequestStatus(req.id, "pending_approval"))}
+                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
                         >
-                          確認換班
+                          {actionId === req.id ? "處理中…" : "確認換班"}
                         </button>
                         <button
                           onClick={() => setRejectModal({ id: req.id, reason: "" })}
@@ -195,16 +248,26 @@ export default function ShiftSwapPage() {
                     {/* 管理者審核 */}
                     {canManagerAct && (
                       <>
-                        <button onClick={() => updateSwapRequestStatus(req.id, "approved")}
-                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700">核准</button>
+                        <button
+                          disabled={actionId === req.id}
+                          onClick={() => runSwapAction(req.id, () => updateSwapRequestStatus(req.id, "approved"))}
+                          className="px-3 py-1 bg-green-600 text-white rounded text-sm hover:bg-green-700 disabled:opacity-50"
+                        >
+                          {actionId === req.id ? "處理中…" : "核准"}
+                        </button>
                         <button onClick={() => setRejectModal({ id: req.id, reason: "" })}
                           className="px-3 py-1 bg-orange-500 text-white rounded text-sm hover:bg-orange-600">駁回</button>
                       </>
                     )}
                     {/* 管理者取消審核 */}
                     {isManager && (req.status === "approved" || req.status === "rejected") && (
-                      <button onClick={() => updateSwapRequestStatus(req.id, "pending_approval")}
-                        className="px-2 py-1 border rounded text-xs hover:bg-gray-50">取消審核</button>
+                      <button
+                        disabled={actionId === req.id}
+                        onClick={() => runSwapAction(req.id, () => updateSwapRequestStatus(req.id, "pending_approval"))}
+                        className="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-50"
+                      >
+                        {actionId === req.id ? "處理中…" : "取消審核"}
+                      </button>
                     )}
                     {/* 刪除 */}
                     {isManager && (
@@ -235,10 +298,19 @@ export default function ShiftSwapPage() {
               onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
               className="w-full border rounded-lg px-3 py-2 text-sm mb-3" rows={3} placeholder="請輸入原因（選填）" />
             <div className="flex gap-2">
-              <button onClick={async () => {
-                await updateSwapRequestStatus(rejectModal.id, "rejected", rejectModal.reason);
-                setRejectModal(null);
-              }} className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">確認</button>
+              <button
+                disabled={!!actionId}
+                onClick={() => {
+                  if (!rejectModal) return;
+                  void runSwapAction(rejectModal.id, async () => {
+                    await updateSwapRequestStatus(rejectModal.id, "rejected", rejectModal.reason);
+                    setRejectModal(null);
+                  });
+                }}
+                className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {actionId ? "處理中…" : "確認"}
+              </button>
               <button onClick={() => setRejectModal(null)} className="flex-1 py-2 border rounded-lg text-sm">取消</button>
             </div>
           </div>

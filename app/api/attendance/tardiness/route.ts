@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { assertManagerAuth } from "@/lib/auth/server";
 
 export async function DELETE(req: NextRequest) {
   try {
+    const auth = await assertManagerAuth(req);
+    if ("error" in auth) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status });
+    }
+
     const body = await req.json();
     const { id, match } = body as {
       id?: string;

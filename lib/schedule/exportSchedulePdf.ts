@@ -1,19 +1,12 @@
 import { jsPDF } from "jspdf";
-import type { ShiftType } from "@/lib/context/AppContext";
+import type { ShiftType, ShiftDisplayConfig } from "@/lib/context/AppContext";
 
 export type ExportEmployee = { id: string; name: string };
 export type ExportLayout = "landscape" | "portrait";
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
-const exportShiftPalette: Record<ShiftType, { bg: string; text: string; border: string }> = {
-  A: { bg: "#dbeafe", text: "#1d4ed8", border: "#93c5fd" },
-  B: { bg: "#dcfce7", text: "#15803d", border: "#86efac" },
-  C: { bg: "#fef9c3", text: "#a16207", border: "#fde68a" },
-  D: { bg: "#ede9fe", text: "#6d28d9", border: "#c4b5fd" },
-  E: { bg: "#fce7f3", text: "#be185d", border: "#f9a8d4" },
-  X: { bg: "#f1f5f9", text: "#64748b", border: "#cbd5e1" },
-};
+export type TyphoonDateInfo = { title: string; periodLabel: string };
 
 export type DrawScheduleOptions = {
   year: number;
@@ -23,8 +16,11 @@ export type DrawScheduleOptions = {
   getShiftForDate: (date: string, employeeId: string) => ShiftType;
   getHolidayInfo: (date: string) => { isHoliday: boolean; name?: string };
   layout: ExportLayout;
+  shiftDisplayConfig: ShiftDisplayConfig;
   leaveRequests?: Array<{ employeeId: string; startDate: string; endDate: string; status: string }>;
   overtimeRequests?: Array<{ employeeId: string; date: string; status: string }>;
+  /** 颱風／彈性出勤日：dateStr → 標題與時段 */
+  typhoonDates?: Record<string, TyphoonDateInfo>;
 };
 
 type SegmentOptions = DrawScheduleOptions & {
@@ -38,8 +34,19 @@ function drawScheduleSegment(
   ctx: CanvasRenderingContext2D,
   options: SegmentOptions
 ): number {
-  const { year, month, employees, getShiftForDate, getHolidayInfo, dayStart, dayEnd, tableY, sectionTitle } =
-    options;
+  const {
+    year,
+    month,
+    employees,
+    getShiftForDate,
+    getHolidayInfo,
+    shiftDisplayConfig,
+    dayStart,
+    dayEnd,
+    tableY,
+    sectionTitle,
+    typhoonDates,
+  } = options;
   const dayCount = dayEnd - dayStart + 1;
   const rowHeight = 42;
   const dayColWidth = 50;
@@ -69,18 +76,26 @@ function drawScheduleSegment(
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
     const dayOfWeek = new Date(dateStr).getDay();
     const holidayInfo = getHolidayInfo(dateStr);
+    const typhoon = typhoonDates?.[dateStr];
     const col = day - dayStart;
     const x = tableX + nameColWidth + col * dayColWidth;
-    const textColor = dayOfWeek === 0 ? "#dc2626" : dayOfWeek === 6 ? "#c2410c" : "#334155";
+    const textColor = typhoon
+      ? "#155e75"
+      : dayOfWeek === 0
+        ? "#dc2626"
+        : dayOfWeek === 6
+          ? "#c2410c"
+          : "#334155";
 
-    const headerBg =
-      dayOfWeek === 0
+    const headerBg = typhoon
+      ? "#cffafe"
+      : dayOfWeek === 0
         ? "#fee2e2"
         : dayOfWeek === 6
-        ? "#ffedd5"
-        : holidayInfo.isHoliday
-        ? "#fef3c7"
-        : "#ffffff";
+          ? "#ffedd5"
+          : holidayInfo.isHoliday
+            ? "#fef3c7"
+            : "#ffffff";
 
     ctx.fillStyle = headerBg;
     ctx.fillRect(x, tableY, dayColWidth, rowHeight);
@@ -89,19 +104,21 @@ function drawScheduleSegment(
     ctx.fillStyle = textColor;
     ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText(String(day), x + dayColWidth / 2, tableY + 16);
-    ctx.font = "10px 'Microsoft JhengHei', sans-serif";
-    ctx.fillStyle = "#475569";
-    ctx.fillText(dayLabels[dayOfWeek], x + dayColWidth / 2, tableY + 30);
+    ctx.fillText(String(day), x + dayColWidth / 2, tableY + 14);
+    ctx.font = "9px 'Microsoft JhengHei', sans-serif";
+    ctx.fillStyle = typhoon ? "#0e7490" : "#475569";
+    ctx.fillText(dayLabels[dayOfWeek], x + dayColWidth / 2, tableY + 26);
 
-    if (holidayInfo.isHoliday) {
+    if (typhoon) {
+      ctx.font = "bold 8px 'Microsoft JhengHei', sans-serif";
+      ctx.fillStyle = "#155e75";
+      ctx.fillText("颱", x + dayColWidth / 2, tableY + 37);
+    } else if (holidayInfo.isHoliday) {
       ctx.font = "bold 8px 'Microsoft JhengHei', sans-serif";
       ctx.fillStyle = "#92400e";
-      const holidayName = holidayInfo.name ?? "國定\n假日";
-      const lines = holidayName.split("\n");
-      for (let i = 0; i < lines.length; i++) {
-        ctx.fillText(lines[i], x + dayColWidth / 2, tableY + 38 + i * 9);
-      }
+      const holidayName = holidayInfo.name ?? "國定假";
+      const shortName = holidayName.replace(/\n/g, "").slice(0, 4);
+      ctx.fillText(shortName, x + dayColWidth / 2, tableY + 37);
     }
 
     ctx.textAlign = "left";
@@ -123,14 +140,16 @@ function drawScheduleSegment(
       const x = tableX + nameColWidth + col * dayColWidth;
       const dayOfWeek = new Date(dateStr).getDay();
       const holidayInfo = getHolidayInfo(dateStr);
-      const cellBg =
-        dayOfWeek === 0
+      const isTyphoon = Boolean(typhoonDates?.[dateStr]);
+      const cellBg = isTyphoon
+        ? "#ecfeff"
+        : dayOfWeek === 0
           ? "#fef2f2"
           : dayOfWeek === 6
-          ? "#fffbeb"
-          : holidayInfo.isHoliday
-          ? "#fffbeb"
-          : "#ffffff";
+            ? "#fffbeb"
+            : holidayInfo.isHoliday
+              ? "#fffbeb"
+              : "#ffffff";
 
       // 檢查是否有核准的請假申請
       const hasApprovedLeave = options.leaveRequests?.some(
@@ -140,23 +159,20 @@ function drawScheduleSegment(
           req.endDate >= dateStr &&
           req.status === "approved"
       );
-      
-      // 檢查是否有核准的加班申請
-      const hasApprovedOvertime = options.overtimeRequests?.some(
-        (req) =>
-          req.employeeId === emp.id &&
-          req.date === dateStr &&
-          req.status === "approved"
-      );
-      
-      // 請假和加班都顯示為暗橘色
-      const palette = hasApprovedLeave || hasApprovedOvertime
-        ? { bg: "#fed7aa", text: "#9a3412", border: "#fdba74" }
-        : exportShiftPalette[shift];
-      
+
+      // 請假顯示為紫色
+      const palette = hasApprovedLeave
+        ? { bg: "#ddd6fe", text: "#5b21b6", border: "#a78bfa", displayText: "假" }
+        : {
+            bg: shiftDisplayConfig[shift].bgColor,
+            text: shiftDisplayConfig[shift].textColor,
+            border: shiftDisplayConfig[shift].borderColor,
+            displayText: shiftDisplayConfig[shift].displayText,
+          };
+
       ctx.fillStyle = cellBg;
       ctx.fillRect(x, rowY, dayColWidth, rowHeight);
-      ctx.strokeStyle = "#e2e8f0";
+      ctx.strokeStyle = isTyphoon ? "#a5f3fc" : "#e2e8f0";
       ctx.strokeRect(x, rowY, dayColWidth, rowHeight);
       ctx.fillStyle = palette.bg;
       ctx.fillRect(x + 6, rowY + 6, dayColWidth - 12, rowHeight - 12);
@@ -164,8 +180,7 @@ function drawScheduleSegment(
       ctx.strokeRect(x + 6, rowY + 6, dayColWidth - 12, rowHeight - 12);
       ctx.fillStyle = palette.text;
       ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
-      const displayText = hasApprovedLeave ? "假" : hasApprovedOvertime ? "加" : shift;
-      // 設定文字對齊方式，確保水平與垢直居中
+      const displayText = palette.displayText;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(displayText, x + dayColWidth / 2, rowY + rowHeight / 2);
@@ -198,6 +213,8 @@ function drawHorizontalSchedule(
   ctx.font = "12px 'Microsoft JhengHei', sans-serif";
   ctx.fillStyle = "#94a3b8";
   ctx.fillText(`匯出日期：${year}/${month}`, 20, 58);
+  ctx.fillStyle = "#0e7490";
+  ctx.fillText("青色欄：颱風／彈性出勤日", 160, 58);
 
   drawScheduleSegment(ctx, {
     ...options,
@@ -239,7 +256,7 @@ function drawPortraitSchedule(
   ctx.fillText(`${year}年${month}月 班表（直式・A4列印）`, 20, 32);
   ctx.font = "11px 'Microsoft JhengHei', sans-serif";
   ctx.fillStyle = "#94a3b8";
-  ctx.fillText("上半月 1–15 日 / 下半月 16–月底", 20, 50);
+  ctx.fillText("上半月 1–15 日 / 下半月 16–月底　｜　青色欄：颱風／彈性出勤日", 20, 50);
 
   drawScheduleSegment(ctx, {
     ...options,

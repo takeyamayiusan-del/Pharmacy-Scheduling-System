@@ -10,11 +10,15 @@ export default function WednesdayShiftsPage() {
     currentUser,
     employees,
     getWednesdayOffDates,
+    getWednesdayOffLimit,
     toggleWednesdayOff,
     isWednesdayOff,
   } = useApp();
 
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 5, 1));
+  const [currentDate, setCurrentDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -41,6 +45,7 @@ export default function WednesdayShiftsPage() {
   };
 
   const wednesdays = getWednesdays();
+  const offLimit = getWednesdayOffLimit(year, month);
 
   const prevMonth = () => setCurrentDate(new Date(year, month - 2, 1));
   const nextMonth = () => setCurrentDate(new Date(year, month, 1));
@@ -126,8 +131,11 @@ export default function WednesdayShiftsPage() {
       <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
         <h3 className="font-medium text-sky-800 mb-1">🧭 操作說明</h3>
         <div className="text-sm text-slate-700 space-y-1">
-          <p>每月最多可選 2 個禮拜三「不輪晚班」。</p>
+          <p>每月可選「不輪晚班」上限：{offLimit} 天（依本月禮拜三數量自動調整）。</p>
           <p>若與另一位輪值員工衝突，系統會提示換班。</p>
+          <p className="text-emerald-800 font-medium">
+            建議：禮三晚班有衝突時，先完成換班，再去「排休選擇」勾休假日。
+          </p>
           <p>
             目前輪值員工：
             <strong> {rotationEmployees.map((e) => e.name).join("、")}</strong>
@@ -151,7 +159,7 @@ export default function WednesdayShiftsPage() {
                 <p className="text-sm font-medium text-gray-700">
                   {isSelf ? `🙋 你（${emp.name}）` : `👀 ${emp.name}`}
                 </p>
-                <p className="text-lg font-bold text-gray-900 mt-1">{offDates.length}/2 天</p>
+                <p className="text-lg font-bold text-gray-900 mt-1">{offDates.length}/{offLimit} 天</p>
               </div>
             );
           })}
@@ -233,7 +241,7 @@ export default function WednesdayShiftsPage() {
                             <button
                               onClick={() => handleToggleOff(emp.id, dateStr)}
                               disabled={
-                                !emp.isOff && emp.offDatesCount >= 2
+                                !emp.isOff && emp.offDatesCount >= offLimit
                               }
                               className={`px-3 py-1 rounded text-sm transition-colors ${
                                 emp.isOff

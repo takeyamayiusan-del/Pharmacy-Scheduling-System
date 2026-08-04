@@ -1,14 +1,48 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
+import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
+import { formatCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
+import {
+  calcOvertimeHours,
+  canChooseOvertimePay,
+  overtimeCompensationHint,
+  resolveAllowedCompensationType,
+  validateOvertimeCompensation,
+} from "@/lib/attendance/overtimeCompensation";
+
+function formatCompLeaveAmount(hours: number): string {
+  const rounded = Math.round(hours * 100) / 100;
+  const minutes = Math.round(Math.abs(hours) * 60);
+  const displayHours = formatCompLeaveHours(rounded);
+  return `${rounded > 0 ? "+" : ""}${displayHours} 小時（${minutes} 分鐘）`;
+}
 
 export default function OvertimePage() {
-  const { currentUser, employees, overtimeRequests, addOvertimeRequest, updateOvertimeRequestStatus, deleteOvertimeRequest, punchRecords } = useApp();
+  const {
+    currentUser,
+    employees,
+    overtimeRequests,
+    addOvertimeRequest,
+    updateOvertimeRequestStatus,
+    deleteOvertimeRequest,
+    punchRecords,
+    compLeaveLedger,
+    getCompLeaveBalance,
+    grantCompLeaveHours,
+  } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" as "pay" | "time_off" });
+  const [formData, setFormData] = useState({
+    date: "",
+    startTime: "",
+    endTime: "",
+    reason: "",
+    compensationType: "time_off" as "pay" | "time_off",
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     const date = searchParams.get("date");
@@ -23,33 +57,108 @@ export default function OvertimePage() {
     }
   }, [searchParams]);
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
+  const [grantForm, setGrantForm] = useState({
+    employeeId: "",
+    amount: "",
+    unit: "hours" as "hours" | "minutes",
+    note: "",
+  });
+  const [historyEmployeeId, setHistoryEmployeeId] = useState("");
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [isGranting, setIsGranting] = useState(false);
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const staffEmployees = useMemo(
+    () => employees.filter((e) => e.role !== "owner"),
+    [employees]
+  );
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const adjustmentHistory = useMemo(() => {
+    const items = compLeaveLedger.filter((entry) => entry.sourceType === "adjustment");
+    if (!historyEmployeeId) return items;
+    return items.filter((entry) => entry.employeeId === historyEmployeeId);
+  }, [compLeaveLedger, historyEmployeeId]);
+
+  const recentAdjustments = adjustmentHistory.slice(0, 2);
+
+  const renderAdjustmentRow = (entry: (typeof adjustmentHistory)[number], compact = false) => (
+    <div
+      key={entry.id}
+      className={`flex items-start justify-between gap-2 ${compact ? "py-1.5" : "py-2 border-t first:border-t-0"}`}
+    >
+      <div className="min-w-0">
+        <p className="text-xs text-gray-900">
+          {employees.find((e) => e.id === entry.employeeId)?.name ?? "—"}
+          <span className="text-gray-400 mx-1">·</span>
+          <span className="text-gray-500">
+            {new Date(entry.createdAt).toLocaleString("zh-TW", {
+              month: "numeric",
+              day: "numeric",
+              hour: "2-digit",
+              minute: "2-digit",
+            })}
+          </span>
+        </p>
+        {entry.note && (
+          <p className={`text-gray-400 truncate ${compact ? "text-[10px]" : "text-xs"}`}>
+            {entry.note}
+          </p>
+        )}
+      </div>
+      <span
+        className={`text-xs font-medium whitespace-nowrap ${entry.hours > 0 ? "text-emerald-700" : "text-red-600"}`}
+      >
+        {formatCompLeaveAmount(entry.hours)}
+      </span>
+    </div>
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser) return;
-    addOvertimeRequest({
-      employeeId: currentUser.id,
-      employeeName: currentUser.name,
-      date: formData.date,
-      startTime: formData.startTime,
-      endTime: formData.endTime,
-      reason: formData.reason,
-      compensationType: formData.compensationType,
-      status: "pending",
-    });
-    setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "pay" });
-    setShowForm(false);
+    if (!currentUser || isSubmitting) return;
+
+    const compensationError = validateOvertimeCompensation(
+      formData.startTime,
+      formData.endTime,
+      formData.compensationType
+    );
+    if (compensationError) {
+      alert(compensationError);
+      return;
+    }
+
+    const compensationType = resolveAllowedCompensationType(
+      formData.startTime,
+      formData.endTime,
+      formData.compensationType
+    );
+
+    setIsSubmitting(true);
+    try {
+      await addOvertimeRequest({
+        employeeId: currentUser.id,
+        employeeName: currentUser.name,
+        date: formData.date,
+        startTime: formData.startTime,
+        endTime: formData.endTime,
+        reason: formData.reason,
+        compensationType,
+        status: "pending",
+      });
+      setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "time_off" });
+      setShowForm(false);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "申請失敗");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  const calcHours = (s: string, e: string) => {
-    if (!s || !e) return 0;
-    const [sh, sm] = s.split(":").map(Number);
-    const [eh, em] = e.split(":").map(Number);
-    const h = ((eh * 60 + em) - (sh * 60 + sm)) / 60;
-    return Math.round(h * 100) / 100;
-  };
+  const overtimeMinutesPreview =
+    formData.startTime && formData.endTime
+      ? calcOvertimeHours(formData.startTime, formData.endTime)
+      : 0;
+  const payAllowed = canChooseOvertimePay(formData.startTime, formData.endTime);
 
   const statusLabels: Record<string, { label: string; color: string }> = {
     pending:  { label: "待審核", color: "bg-yellow-100 text-yellow-800" },
@@ -59,9 +168,53 @@ export default function OvertimePage() {
 
   const getEmpName = (id: string) => employees.find(e => e.id === id)?.name ?? id;
 
+  const handleReviewOvertime = async (
+    id: string,
+    status: "approved" | "rejected" | "pending",
+    rejectReason?: string
+  ) => {
+    try {
+      await updateOvertimeRequestStatus(id, status, rejectReason);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "審核失敗，請稍後再試。");
+    }
+  };
+
   const visibleRequests = isManager
     ? overtimeRequests
     : overtimeRequests.filter(r => r.employeeId === currentUser?.id);
+
+  const handleGrantCompLeave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!grantForm.employeeId || isGranting) return;
+    const raw = Number(grantForm.amount);
+    if (!Number.isFinite(raw) || raw === 0) {
+      alert("請輸入有效的時數或分鐘數（可為正數核發、負數扣回）");
+      return;
+    }
+
+    const hours =
+      grantForm.unit === "minutes"
+        ? Math.round((raw / 60) * 100) / 100
+        : Math.round(raw * 100) / 100;
+
+    if (hours === 0) {
+      alert("換算後時數為 0，請輸入較大的數值");
+      return;
+    }
+
+    setIsGranting(true);
+    try {
+      await grantCompLeaveHours(grantForm.employeeId, hours, grantForm.note);
+      setGrantForm({ employeeId: "", amount: "", unit: "hours", note: "" });
+      alert(hours > 0 ? "補休時數已核發" : "補休時數已扣回");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "操作失敗");
+    } finally {
+      setIsGranting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -78,23 +231,54 @@ export default function OvertimePage() {
           <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
-              <input type="date" value={formData.date} onChange={e => setFormData({ ...formData, date: e.target.value })}
+              <input type="date" value={formData.date} min={currentMonthMinDate()} onChange={e => setFormData({ ...formData, date: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg" required />
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">開始時間</label>
-                <input type="time" value={formData.startTime} onChange={e => setFormData({ ...formData, startTime: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg" required />
+                <input
+                  type="time"
+                  value={formData.startTime}
+                  onChange={(e) => {
+                    const startTime = e.target.value;
+                    const nextComp = resolveAllowedCompensationType(
+                      startTime,
+                      formData.endTime,
+                      formData.compensationType
+                    );
+                    setFormData({ ...formData, startTime, compensationType: nextComp });
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">結束時間</label>
-                <input type="time" value={formData.endTime} onChange={e => setFormData({ ...formData, endTime: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg" required />
+                <input
+                  type="time"
+                  value={formData.endTime}
+                  onChange={(e) => {
+                    const endTime = e.target.value;
+                    const nextComp = resolveAllowedCompensationType(
+                      formData.startTime,
+                      endTime,
+                      formData.compensationType
+                    );
+                    setFormData({ ...formData, endTime, compensationType: nextComp });
+                  }}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                />
               </div>
             </div>
             {formData.startTime && formData.endTime && (
-              <p className="text-xs text-gray-500">預估加班：{calcHours(formData.startTime, formData.endTime)} 小時</p>
+              <p className="text-xs text-gray-500">
+                預估加班：{overtimeMinutesPreview} 小時
+                <span className="ml-2 text-amber-700">
+                  {overtimeCompensationHint(formData.startTime, formData.endTime)}
+                </span>
+              </p>
             )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">加班原因</label>
@@ -103,22 +287,209 @@ export default function OvertimePage() {
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">補償方式</label>
-              <div className="flex gap-4">
-                {[{ v: "pay", l: "加班費" }, { v: "time_off", l: "補休" }].map(opt => (
-                  <label key={opt.v} className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="comp" value={opt.v}
-                      checked={formData.compensationType === opt.v}
-                      onChange={() => setFormData({ ...formData, compensationType: opt.v as "pay" | "time_off" })} />
-                    <span>{opt.l}</span>
-                  </label>
-                ))}
+              <div className="flex flex-wrap gap-4">
+                <label
+                  className={`flex items-center gap-2 ${payAllowed ? "cursor-pointer" : "cursor-not-allowed opacity-50"}`}
+                >
+                  <input
+                    type="radio"
+                    name="comp"
+                    value="pay"
+                    disabled={!payAllowed}
+                    checked={formData.compensationType === "pay"}
+                    onChange={() =>
+                      setFormData({ ...formData, compensationType: "pay" })
+                    }
+                  />
+                  <span>加班費（限半小時內）</span>
+                </label>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="comp"
+                    value="time_off"
+                    checked={formData.compensationType === "time_off"}
+                    onChange={() =>
+                      setFormData({ ...formData, compensationType: "time_off" })
+                    }
+                  />
+                  <span>補休</span>
+                </label>
               </div>
+              <p className="text-xs text-gray-500 mt-1">
+                {overtimeCompensationHint(formData.startTime, formData.endTime)}
+              </p>
             </div>
             <div className="flex gap-3">
-              <button type="submit" className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">送出</button>
+              <button
+                type="submit"
+                disabled={isSubmitting}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmitting ? "送出中..." : "送出"}
+              </button>
               <button type="button" onClick={() => setShowForm(false)} className="px-4 py-2 border rounded-lg hover:bg-gray-50">取消</button>
             </div>
           </form>
+        </div>
+      )}
+
+      {isManager && (
+        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="p-4 border-b bg-emerald-50">
+            <h3 className="font-medium text-gray-900">補休時數管理</h3>
+            <p className="text-xs text-gray-600 mt-1">
+              店長／老闆可手動核發或扣回員工補休時數（半年內有效，與加班轉補休相同）
+            </p>
+          </div>
+
+          <div className="p-4 grid gap-6 lg:grid-cols-2">
+            <form onSubmit={handleGrantCompLeave} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">員工</label>
+                <select
+                  value={grantForm.employeeId}
+                  onChange={(e) => setGrantForm((prev) => ({ ...prev, employeeId: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  required
+                >
+                  <option value="">— 選擇員工 —</option>
+                  {staffEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}（可用 {formatCompLeaveHours(getCompLeaveBalance(emp.id))} 小時）
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">調整數量</label>
+                <div className="flex gap-2 mb-2">
+                  {[
+                    { v: "hours" as const, l: "小時" },
+                    { v: "minutes" as const, l: "分鐘" },
+                  ].map((opt) => (
+                    <label key={opt.v} className="flex items-center gap-1.5 text-sm cursor-pointer">
+                      <input
+                        type="radio"
+                        name="comp-unit"
+                        checked={grantForm.unit === opt.v}
+                        onChange={() => setGrantForm((prev) => ({ ...prev, unit: opt.v }))}
+                      />
+                      {opt.l}
+                    </label>
+                  ))}
+                </div>
+                <input
+                  type="number"
+                  step={grantForm.unit === "minutes" ? "1" : "0.01"}
+                  value={grantForm.amount}
+                  onChange={(e) => setGrantForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  placeholder={
+                    grantForm.unit === "minutes"
+                      ? "例如：30 或 -15（扣回）"
+                      : "例如：2、0.5（30分）或 -1"
+                  }
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  支援小數點後兩位；{grantForm.unit === "hours" ? "0.5 = 30 分鐘" : "30 分鐘 = 0.5 小時"}
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">備註（選填）</label>
+                <input
+                  type="text"
+                  value={grantForm.note}
+                  onChange={(e) => setGrantForm((prev) => ({ ...prev, note: e.target.value }))}
+                  className="w-full px-3 py-2 border rounded-lg text-sm"
+                  placeholder="例如：週末支援核發"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={isGranting}
+                className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm hover:bg-emerald-700 disabled:opacity-50"
+              >
+                {isGranting ? "處理中..." : "確認調整補休"}
+              </button>
+            </form>
+
+            <div>
+              <h4 className="text-sm font-medium text-gray-700 mb-2">員工補休餘額</h4>
+              <div className="border rounded-lg divide-y max-h-56 overflow-y-auto">
+                {staffEmployees.map((emp) => (
+                  <div key={emp.id} className="flex items-center justify-between px-3 py-2 text-sm">
+                    <span className="text-gray-900">{emp.name}</span>
+                    <span className="font-semibold text-emerald-700">
+                      {formatCompLeaveHours(getCompLeaveBalance(emp.id))} 小時
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {adjustmentHistory.length > 0 && (
+            <div className="border-t px-4 py-3">
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <h4 className="text-xs font-medium text-gray-600">近期手動調整</h4>
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryModal(true)}
+                  className="text-xs text-blue-600 hover:text-blue-800"
+                >
+                  查看全部（{adjustmentHistory.length} 筆）
+                </button>
+              </div>
+              <div className="divide-y">
+                {recentAdjustments.map((entry) => renderAdjustmentRow(entry, true))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-xl">
+            <div className="p-4 border-b flex items-center justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-gray-900">手動調整紀錄</h3>
+                <p className="text-xs text-gray-500">共 {adjustmentHistory.length} 筆</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <select
+                  value={historyEmployeeId}
+                  onChange={(e) => setHistoryEmployeeId(e.target.value)}
+                  className="text-xs border rounded-lg px-2 py-1.5"
+                >
+                  <option value="">全部員工</option>
+                  {staffEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowHistoryModal(false)}
+                  className="text-sm px-3 py-1.5 border rounded-lg hover:bg-gray-50"
+                >
+                  關閉
+                </button>
+              </div>
+            </div>
+            <div className="overflow-y-auto p-4">
+              {adjustmentHistory.length === 0 ? (
+                <p className="text-sm text-gray-500 text-center py-8">沒有紀錄</p>
+              ) : (
+                <div className="border rounded-lg divide-y">
+                  {adjustmentHistory.map((entry) => renderAdjustmentRow(entry))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -148,7 +519,7 @@ export default function OvertimePage() {
               )}
               {visibleRequests.map(req => {
                 const st = statusLabels[req.status];
-                const h = calcHours(req.startTime, req.endTime);
+                const h = calcOvertimeHours(req.startTime, req.endTime);
                 const empName = req.employeeName || getEmpName(req.employeeId);
                 return (
                   <tr key={req.id} className="hover:bg-gray-50">
@@ -189,14 +560,14 @@ export default function OvertimePage() {
                         <div className="flex gap-1 flex-wrap">
                           {req.status === "pending" && (
                             <>
-                              <button onClick={() => updateOvertimeRequestStatus(req.id, "approved")}
+                              <button onClick={() => handleReviewOvertime(req.id, "approved")}
                                 className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">核准</button>
                               <button onClick={() => setRejectModal({ id: req.id, reason: "" })}
                                 className="px-2 py-1 bg-orange-500 text-white rounded text-xs hover:bg-orange-600">駁回</button>
                             </>
                           )}
                           {req.status !== "pending" && (
-                            <button onClick={() => updateOvertimeRequestStatus(req.id, "pending" as "approved")}
+                            <button onClick={() => handleReviewOvertime(req.id, "pending")}
                               className="px-2 py-1 border rounded text-xs hover:bg-gray-50">取消審核</button>
                           )}
                           <button onClick={async () => {
@@ -228,7 +599,10 @@ export default function OvertimePage() {
               onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}
               className="w-full border rounded-lg px-3 py-2 text-sm mb-3" rows={3} placeholder="請輸入駁回原因（選填）" />
             <div className="flex gap-2">
-              <button onClick={async () => { await updateOvertimeRequestStatus(rejectModal.id, "rejected", rejectModal.reason); setRejectModal(null); }}
+              <button onClick={async () => {
+                  await handleReviewOvertime(rejectModal.id, "rejected", rejectModal.reason);
+                  setRejectModal(null);
+                }}
                 className="flex-1 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">確認駁回</button>
               <button onClick={() => setRejectModal(null)} className="flex-1 py-2 border rounded-lg text-sm">取消</button>
             </div>

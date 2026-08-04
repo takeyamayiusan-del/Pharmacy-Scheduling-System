@@ -141,6 +141,74 @@ export function calculateLeaveWorkHours(params: CalculateLeaveHoursParams): numb
   return Math.round((totalMinutes / 60) * 100) / 100;
 }
 
+export type LeaveRequestHoursInput = {
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  startTime: string;
+  endTime: string;
+  period: LeavePeriod;
+  shiftMode: "schedule" | ShiftType;
+  status: string;
+  leaveHours?: number;
+};
+
+/** 計算某員工在指定日期的已核准請假時數（只計與當日班表重疊部分） */
+export function calculateApprovedLeaveHoursOnDate(
+  dateStr: string,
+  employeeId: string,
+  leaveRequests: LeaveRequestHoursInput[],
+  getShiftForDate: (date: string, employeeId: string) => ShiftType,
+  shiftTimeConfig: ShiftTimeConfig
+): number {
+  const hours = leaveRequests
+    .filter(
+      (req) =>
+        req.employeeId === employeeId &&
+        req.status === "approved" &&
+        req.startDate <= dateStr &&
+        req.endDate >= dateStr
+    )
+    .reduce(
+      (sum, req) =>
+        sum +
+        calculateLeaveWorkHours({
+          startDate: dateStr,
+          endDate: dateStr,
+          startTime: req.startTime,
+          endTime: req.endTime,
+          period: req.period,
+          shiftMode: req.shiftMode,
+          employeeId: req.employeeId,
+          getShiftForDate,
+          shiftTimeConfig,
+        }),
+      0
+    );
+
+  return Math.round(hours * 100) / 100;
+}
+
+/** 計算單筆請假在區間內的總時數 */
+export function calculateApprovedLeaveHoursTotal(
+  req: LeaveRequestHoursInput,
+  getShiftForDate: (date: string, employeeId: string) => ShiftType,
+  shiftTimeConfig: ShiftTimeConfig
+): number {
+  if (req.leaveHours && req.leaveHours > 0) return req.leaveHours;
+  return calculateLeaveWorkHours({
+    startDate: req.startDate,
+    endDate: req.endDate,
+    startTime: req.startTime,
+    endTime: req.endTime,
+    period: req.period,
+    shiftMode: req.shiftMode,
+    employeeId: req.employeeId,
+    getShiftForDate,
+    shiftTimeConfig,
+  });
+}
+
 export function periodToTimes(
   period: LeavePeriod,
   shift: ShiftType,

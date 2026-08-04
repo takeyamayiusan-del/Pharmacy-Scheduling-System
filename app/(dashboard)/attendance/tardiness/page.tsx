@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useApp, type TardinessRecord } from "@/lib/context/AppContext";
+import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 
 export default function TardinessPage() {
   const {
@@ -10,6 +11,7 @@ export default function TardinessPage() {
     tardinessRecords,
     punchRecords,
     overtimeRequests,
+    leaveRequests,
     addTardinessRecord,
     deleteTardinessRecord,
     updatePunchRecord,
@@ -21,6 +23,8 @@ export default function TardinessPage() {
     minutes: 0,
     notes: ""
   });
+
+  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
   
   // 提交遲到記錄
   const handleSubmit = async (e: React.FormEvent) => {
@@ -60,59 +64,20 @@ export default function TardinessPage() {
   type LinkedTardinessRecord = TardinessRecord & { sourcePunchId?: string };
 
   const linkedTardinessRecords = useMemo<LinkedTardinessRecord[]>(() => {
-    // 真實遲到記錄應該可見；只有自動打卡生成的遲到才會因為已核准加班而忽略。
-    const shouldCancelTardiness = (employeeId: string, date: string): boolean => {
-      return overtimeRequests.some(
-        (req) =>
-          req.employeeId === employeeId &&
-          req.date === date &&
-          req.status === "approved"
-      );
-    };
-    const records: LinkedTardinessRecord[] = tardinessRecords.map((record) => ({
+    // 已核准加班或請假覆蓋的時段，不計遲到（與出勤／薪資頁一致）
+    return buildEffectiveTardinessRecords(
+      tardinessRecords,
+      punchRecords,
+      overtimeRequests,
+      leaveRequests
+    ).map((record) => ({
       ...record,
       employeeName:
         record.employeeName ||
         employees.find((employee) => employee.id === record.employeeId)?.name ||
         "",
     }));
-
-    punchRecords
-      .filter(
-        (punch) =>
-          punch.action === "work_in" &&
-          punch.lateMinutes > 0 &&
-          !shouldCancelTardiness(punch.employeeId, punch.date)
-      )
-      .forEach((punch) => {
-        const alreadyExists = records.some(
-          (record) =>
-            record.employeeId === punch.employeeId &&
-            record.date === punch.date
-        );
-        if (!alreadyExists) {
-          records.push({
-            id: `punch:${punch.id}`,
-            sourcePunchId: punch.id,
-            employeeId: punch.employeeId,
-            employeeName:
-              punch.employeeName ||
-              employees.find((employee) => employee.id === punch.employeeId)?.name ||
-              "",
-            date: punch.date,
-            minutes: punch.lateMinutes,
-            notes: punch.reason || "由打卡管理自動同步",
-            createdAt: punch.createdAt,
-          });
-        }
-      });
-
-    return records.sort(
-      (a, b) =>
-        new Date(b.date).getTime() - new Date(a.date).getTime() ||
-        b.createdAt.localeCompare(a.createdAt)
-    );
-  }, [employees, punchRecords, tardinessRecords, overtimeRequests]);
+  }, [employees, punchRecords, tardinessRecords, overtimeRequests, leaveRequests]);
 
   // 計算統計數據
   const getStats = () => {
@@ -147,6 +112,17 @@ export default function TardinessPage() {
     }
   };
   
+  if (!isManager) {
+    return (
+      <div className="min-h-full flex items-center justify-center">
+        <div className="text-center">
+          <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
+          <p className="text-gray-600">僅店長與老闆可以管理遲到記錄</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       {/* 頁頭 */}

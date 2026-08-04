@@ -1,144 +1,133 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import type { Database } from '@/lib/supabase/types';
-import { CheckCircle2, Clock, Calendar } from 'lucide-react';
-
-type Notification = Database['public']['Tables']['notifications']['Row'];
+import { CheckCircle2, Clock, Calendar, Trash2 } from 'lucide-react';
+import { useApp } from '@/lib/context/AppContext';
 
 const typeIcons = {
-  leave_submitted: Calendar,
-  leave_reviewed: CheckCircle2,
-  shift_swap_requested: Clock,
-  shift_swap_confirmed: CheckCircle2,
-  shift_swap_reviewed: CheckCircle2,
-  overtime_submitted: Clock,
-  overtime_reviewed: CheckCircle2,
-  schedule_changed: Calendar,
+  leave: Calendar,
+  overtime: Clock,
+  swap: Clock,
+  schedule: Calendar,
+  default: CheckCircle2,
 };
 
-const typeColors = {
-  leave_submitted: 'text-blue-500 bg-blue-50',
-  leave_reviewed: 'text-green-500 bg-green-50',
-  shift_swap_requested: 'text-yellow-500 bg-yellow-50',
-  shift_swap_confirmed: 'text-green-500 bg-green-50',
-  shift_swap_reviewed: 'text-green-500 bg-green-50',
-  overtime_submitted: 'text-yellow-500 bg-yellow-50',
-  overtime_reviewed: 'text-green-500 bg-green-50',
-  schedule_changed: 'text-blue-500 bg-blue-50',
-};
+function iconForNotification(title: string, relatedType?: string) {
+  const key = relatedType ?? '';
+  if (key.includes('leave') || title.includes('請假')) return typeIcons.leave;
+  if (key.includes('overtime') || title.includes('加班')) return typeIcons.overtime;
+  if (key.includes('swap') || title.includes('換班')) return typeIcons.swap;
+  if (key.includes('schedule') || title.includes('班表')) return typeIcons.schedule;
+  return typeIcons.default;
+}
 
 export function NotificationList() {
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [loading, setLoading] = useState(true);
-  const supabase = createClient();
-
-  const loadNotifications = useCallback(async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('recipient_id', session.user.id)
-      .order('created_at', { ascending: false })
-      .limit(50);
-
-    if (!error && data) {
-      setNotifications(data);
-    }
-    setLoading(false);
-  }, [supabase]);
-
-  useEffect(() => {
-    loadNotifications();
-  }, [loadNotifications]);
-
-  const markAsRead = async (id: string) => {
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', id);
-
-    setNotifications(prev =>
-      prev.map(n => n.id === id ? { ...n, is_read: true } : n)
-    );
-  };
+  const {
+    notifications,
+    markNotificationRead,
+    deleteNotification,
+    deleteAllNotifications,
+    refreshNotifications,
+    isLoading,
+  } = useApp();
 
   const markAllAsRead = async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
-    await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('recipient_id', session.user.id)
-      .eq('is_read', false);
-
-    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    const unread = notifications.filter((n) => !n.read);
+    for (const n of unread) {
+      await markNotificationRead(n.id);
+    }
+    await refreshNotifications();
   };
 
-  if (loading) {
-    return (
-      <div className="p-8 text-center text-gray-500">
-        載入中...
-      </div>
-    );
+  const handleDeleteAll = async () => {
+    if (!window.confirm('確定刪除全部通知？此動作無法復原。')) return;
+    try {
+      await deleteAllNotifications();
+      await refreshNotifications();
+    } catch {
+      alert('刪除失敗，請稍後再試。');
+    }
+  };
+
+  const handleDeleteOne = async (id: string) => {
+    try {
+      await deleteNotification(id);
+    } catch {
+      alert('刪除失敗，請稍後再試。');
+      await refreshNotifications();
+    }
+  };
+
+  if (isLoading && notifications.length === 0) {
+    return <div className="p-8 text-center text-gray-500">載入中...</div>;
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
+    <div className="max-w-2xl mx-auto">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">通知</h1>
-        {notifications.some(n => !n.is_read) && (
-          <button
-            onClick={markAllAsRead}
-            className="text-sm text-blue-600 hover:text-blue-700"
-          >
-            全部標示為已讀
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {notifications.some((n) => !n.read) && (
+            <button
+              type="button"
+              onClick={() => void markAllAsRead()}
+              className="min-h-11 px-4 py-2 text-sm text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100"
+            >
+              全部標示為已讀
+            </button>
+          )}
+          {notifications.length > 0 && (
+            <button
+              type="button"
+              onClick={() => void handleDeleteAll()}
+              className="min-h-11 px-4 py-2 text-sm text-red-700 bg-red-50 rounded-lg hover:bg-red-100 inline-flex items-center gap-1.5"
+            >
+              <Trash2 className="h-4 w-4" />
+              一鍵刪除
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="space-y-3">
         {notifications.length === 0 ? (
-          <div className="text-center py-12 text-gray-500">
-            目前沒有通知
-          </div>
+          <div className="text-center py-12 text-gray-500">目前沒有通知</div>
         ) : (
           notifications.map((notification) => {
-            const Icon = typeIcons[notification.type as keyof typeof typeIcons] || Calendar;
-            const colorClass = typeColors[notification.type as keyof typeof typeColors] || 'text-gray-500 bg-gray-50';
-
+            const Icon = iconForNotification(notification.title, notification.relatedType);
             return (
               <div
                 key={notification.id}
-                onClick={() => !notification.is_read && markAsRead(notification.id)}
-                className={`p-4 rounded-lg border cursor-pointer transition-colors ${
-                  notification.is_read
+                className={`p-4 rounded-lg border ${
+                  notification.read
                     ? 'bg-white border-gray-200'
                     : 'bg-blue-50 border-blue-200'
                 }`}
               >
                 <div className="flex items-start gap-3">
-                  <div className={`p-2 rounded-lg ${colorClass}`}>
+                  <div className="p-2 rounded-lg bg-white/80 text-sky-600 shrink-0">
                     <Icon className="h-5 w-5" />
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-medium text-gray-900">
-                      {notification.title}
-                    </h3>
-                    <p className="text-sm text-gray-600 mt-1">
-                      {notification.body}
-                    </p>
+                  <button
+                    type="button"
+                    className="flex-1 min-w-0 text-left"
+                    onClick={() => {
+                      if (!notification.read) void markNotificationRead(notification.id);
+                    }}
+                  >
+                    <h3 className="font-medium text-gray-900">{notification.title}</h3>
+                    <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
                     <p className="text-xs text-gray-400 mt-2">
-                      {new Date(notification.created_at).toLocaleString('zh-TW')}
+                      {new Date(notification.createdAt).toLocaleString('zh-TW')}
                     </p>
-                  </div>
-                  {!notification.is_read && (
-                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2" />
-                  )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDeleteOne(notification.id)}
+                    className="min-h-11 min-w-11 shrink-0 px-3 py-2 text-sm text-red-600 bg-red-50 rounded-lg hover:bg-red-100"
+                    aria-label="刪除此通知"
+                  >
+                    刪除
+                  </button>
                 </div>
               </div>
             );

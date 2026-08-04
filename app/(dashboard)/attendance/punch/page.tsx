@@ -16,10 +16,15 @@ import {
   getPunchSlotsForShift,
   minutesDiff,
   nowMinutes,
+  OVERTIME_REDIRECT_MINUTES,
   timeToMinutes,
   todayDateStr,
   type PunchSlot,
 } from "@/lib/attendance/punchSchedule";
+import {
+  adjustPunchSlotsForApprovedLeave,
+  resolvePunchLateMinutes,
+} from "@/lib/attendance/punchLeaveAdjust";
 import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X } from "lucide-react";
 import { type BulletinItem } from "@/lib/context/AppContext";
 
@@ -38,7 +43,10 @@ export default function PunchPage() {
     addPunchRecord,
     addTardinessRecord,
     getTodayPunchRecords,
+    punchRecordsReady,
+    refreshTodayPunchRecords,
     bulletinItems,
+    leaveRequests,
   } = useApp();
 
   const [announcementModal, setAnnouncementModal] = useState<boolean>(false);
@@ -101,16 +109,18 @@ export default function PunchPage() {
     earlyMinutes: number;
     step: 1 | 2; // step1: 是否申請早退，step2: 確認是否強制打卡
   } | null>(null);
+  const [isPunching, setIsPunching] = useState(false);
 
   const today = todayDateStr();
   const shift: ShiftType = currentUser
     ? getShiftForDate(today, currentUser.id)
     : "X";
 
-  const slots = useMemo(
-    () => (shift === "X" ? [] : getPunchSlotsForShift(shift, shiftTimeConfig)),
-    [shift, shiftTimeConfig]
-  );
+  const slots = useMemo(() => {
+    if (shift === "X" || !currentUser) return [];
+    const raw = getPunchSlotsForShift(shift, shiftTimeConfig);
+    return adjustPunchSlotsForApprovedLeave(raw, currentUser.id, today, leaveRequests);
+  }, [shift, shiftTimeConfig, currentUser, today, leaveRequests]);
 
   const todayPunches = currentUser ? getTodayPunchRecords(currentUser.id, today) : [];
   const completedKeys = new Set(
@@ -118,6 +128,14 @@ export default function PunchPage() {
   );
 
   const nextSlot = slots.find((slot) => !completedKeys.has(punchKey(slot)));
+  const punchUiReady = punchRecordsReady && gpsState !== "loading";
+  const canPunch = punchUiReady && gpsState === "inside" && !isPunching;
+
+  useEffect(() => {
+    if (currentUser) {
+      void refreshTodayPunchRecords();
+    }
+  }, [currentUser, refreshTodayPunchRecords]);
 
   useEffect(() => {
     const timer = setInterval(() => setNowLabel(formatNowTime()), 30_000);
@@ -176,38 +194,53 @@ export default function PunchPage() {
 
   const finalizePunch = useCallback(
     async (slot: PunchSlot, reason?: string, lateMinutes = 0) => {
-      if (!currentUser || !coords) return;
+      if (!currentUser || !coords || isPunching || !punchRecordsReady) return;
 
-      await addPunchRecord({
-        employeeId: currentUser.id,
-        employeeName: currentUser.name,
-        date: today,
-        action: slot.action,
-        segmentIndex: slot.segmentIndex,
-        time: formatNowTime(),
-        shift,
-        lateMinutes,
-        reason,
-        latitude: coords.lat,
-        longitude: coords.lng,
-      });
+      // 遲到分鐘數僅適用上班；下班超時／早退不得寫入 lateMinutes
+      const effectiveLateMinutes = slot.action === "work_in" ? lateMinutes : 0;
 
-      if (lateMinutes > 0 && reason) {
-        await addTardinessRecord({
+      setIsPunching(true);
+      try {
+        await addPunchRecord({
           employeeId: currentUser.id,
           employeeName: currentUser.name,
           date: today,
-          minutes: lateMinutes,
-          notes: reason, // 直接存原因，不加前綴以保持簡潔
+          action: slot.action,
+          segmentIndex: slot.segmentIndex,
+          time: formatNowTime(),
+          shift,
+          lateMinutes: effectiveLateMinutes,
+          reason,
+          latitude: coords.lat,
+          longitude: coords.lng,
         });
+
+        if (slot.action === "work_in" && effectiveLateMinutes > 0 && reason) {
+          try {
+            await addTardinessRecord({
+              employeeId: currentUser.id,
+              employeeName: currentUser.name,
+              date: today,
+              minutes: effectiveLateMinutes,
+              notes: reason,
+            });
+          } catch {
+            // 遲到紀錄寫入失敗不應阻擋打卡成功與後續提示
+          }
+        }
+      } catch (err) {
+        alert(err instanceof Error ? err.message : "打卡失敗，請稍後再試");
+        throw err;
+      } finally {
+        setIsPunching(false);
       }
     },
-    [addPunchRecord, addTardinessRecord, coords, currentUser, shift, today]
+    [addPunchRecord, addTardinessRecord, coords, currentUser, isPunching, punchRecordsReady, shift, today]
   );
 
   // 處理無班表打卡
   const handleNoShiftPunch = (action: "work_in" | "work_out") => {
-    if (!currentUser || !coords) return;
+    if (!currentUser || !coords || !punchRecordsReady || isPunching) return;
     if (gpsState !== "inside") {
       alert("請在耀聖藥局 150 公尺範圍內才能打卡");
       return;
@@ -216,37 +249,43 @@ export default function PunchPage() {
   };
 
   // 確認無班表打卡為加班
-  const confirmNoShiftOvertime = () => {
-    if (!noShiftOvertimeModal || !currentUser || !coords) return;
+  const confirmNoShiftOvertime = async () => {
+    if (!noShiftOvertimeModal || !currentUser || !coords || isPunching || !punchRecordsReady) return;
 
     const now = formatNowTime();
     const action = noShiftOvertimeModal.action;
 
-    // 先打卡
-    addPunchRecord({
-      employeeId: currentUser.id,
-      employeeName: currentUser.name,
-      date: today,
-      action,
-      segmentIndex: 0,
-      time: now,
-      shift: "X",
-      lateMinutes: 0,
-      reason: "無班表打卡",
-      latitude: coords.lat,
-      longitude: coords.lng,
-    });
+    setIsPunching(true);
+    try {
+      await addPunchRecord({
+        employeeId: currentUser.id,
+        employeeName: currentUser.name,
+        date: today,
+        action,
+        segmentIndex: 0,
+        time: now,
+        shift: "X",
+        lateMinutes: 0,
+        reason: "無班表打卡",
+        latitude: coords.lat,
+        longitude: coords.lng,
+      });
 
-    setNoShiftOvertimeModal(null);
-    setSuccessModal({
-      message: `${action === "work_in" ? "上班" : "下班"}打卡成功！今日無排班，建議申請加班。`,
-      askLeave: false,
-      askOvertime: true,
-    });
+      setNoShiftOvertimeModal(null);
+      setSuccessModal({
+        message: `${action === "work_in" ? "上班" : "下班"}打卡成功！今日無排班，建議申請加班。`,
+        askLeave: false,
+        askOvertime: true,
+      });
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "打卡失敗，請稍後再試");
+    } finally {
+      setIsPunching(false);
+    }
   };
 
-  const validateAndPunch = (slot: PunchSlot) => {
-    if (!currentUser || !coords) return;
+  const validateAndPunch = async (slot: PunchSlot) => {
+    if (!currentUser || !coords || !punchRecordsReady || isPunching) return;
     if (gpsState !== "inside") {
       alert("請在耀聖藥局 150 公尺範圍內才能打卡");
       return;
@@ -263,64 +302,93 @@ export default function PunchPage() {
       }
 
       const minutesLate = minutesDiff(actual, scheduled);
-      const lateMinutes = calcLateMinutes(actual, scheduled);
+      const lateMinutes = currentUser
+        ? resolvePunchLateMinutes({
+            employeeId: currentUser.id,
+            date: today,
+            scheduledTime: slot.scheduledTime,
+            actualMinutes: actual,
+            leaveRequests,
+          })
+        : calcLateMinutes(actual, scheduled);
 
-      if (minutesLate >= 30) {
-        // 遲到30分鐘以上：先打卡，再提示是否請假
-        finalizePunch(slot, "遲到超過30分鐘", minutesLate);
-        setSuccessModal({
-          message: `打卡成功！您已遲到 ${minutesLate} 分鐘，建議申請請假。`,
-          askLeave: true,
-          askOvertime: false,
-        });
+      // 已核准請假覆蓋此時段：不計遲到（含超過 30 分鐘情境）
+      if (lateMinutes <= 0) {
+        try {
+          await finalizePunch(slot);
+          setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
+        } catch {
+          // finalizePunch 已顯示錯誤訊息
+        }
         return;
       }
 
-      if (lateMinutes > 0) {
-        setPendingSlot(slot);
-        setLateModal({ slot, lateMinutes });
+      if (minutesLate >= 30 && lateMinutes > 0) {
+        try {
+          await finalizePunch(slot, "遲到超過30分鐘", lateMinutes);
+          setSuccessModal({
+            message: `打卡成功！您已遲到 ${lateMinutes} 分鐘，建議申請請假。`,
+            askLeave: true,
+            askOvertime: false,
+          });
+        } catch {
+          // finalizePunch 已顯示錯誤訊息
+        }
         return;
       }
 
-      finalizePunch(slot);
-      setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
+      setPendingSlot(slot);
+      setLateModal({ slot, lateMinutes });
       return;
     }
 
     if (slot.action === "work_out") {
       const minutesPastEnd = minutesDiff(actual, scheduled);
-      if (minutesPastEnd >= 10) {
-        // 超過下班時間10分鐘以上：先打卡，再提示是否申請加班
-        finalizePunch(slot, "加班", minutesPastEnd);
-        setSuccessModal({
-          message: `打卡成功！已超過下班時間 ${minutesPastEnd} 分鐘，建議申請加班。`,
-          askLeave: false,
-          askOvertime: true,
-        });
+      if (minutesPastEnd >= OVERTIME_REDIRECT_MINUTES) {
+        try {
+          await finalizePunch(
+            slot,
+            `加班（超過下班 ${minutesPastEnd} 分鐘）`
+          );
+          setSuccessModal({
+            message: `打卡成功！已超過下班時間 ${minutesPastEnd} 分鐘，是否申請加班？`,
+            askLeave: false,
+            askOvertime: true,
+          });
+        } catch {
+          // finalizePunch 已顯示錯誤訊息
+        }
         return;
       }
-      // 提早下班（尚未到下班時間）
       if (minutesPastEnd < 0) {
         const earlyMinutes = Math.abs(minutesPastEnd);
         setEarlyLeaveModal({ slot, earlyMinutes, step: 1 });
         return;
       }
-      finalizePunch(slot);
-      setSuccessModal({ message: "下班打卡成功！", askLeave: false, askOvertime: false });
+      try {
+        await finalizePunch(slot);
+        setSuccessModal({ message: "下班打卡成功！", askLeave: false, askOvertime: false });
+      } catch {
+        // finalizePunch 已顯示錯誤訊息
+      }
     }
   };
 
-  const submitLateReason = () => {
-    if (!lateModal || !pendingSlot) return;
+  const submitLateReason = async () => {
+    if (!lateModal || !pendingSlot || isPunching) return;
     if (!lateReason.trim()) {
       alert("請填寫遲到原因，店長會在遲到管理中看到");
       return;
     }
-    finalizePunch(pendingSlot, lateReason.trim(), lateModal.lateMinutes);
-    setLateModal(null);
-    setLateReason("");
-    setPendingSlot(null);
-    setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
+    try {
+      await finalizePunch(pendingSlot, lateReason.trim(), lateModal.lateMinutes);
+      setLateModal(null);
+      setLateReason("");
+      setPendingSlot(null);
+      setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
+    } catch {
+      // finalizePunch 已顯示錯誤訊息
+    }
   };
 
   if (!currentUser) return null;
@@ -373,6 +441,18 @@ export default function PunchPage() {
       )}
 
       <h2 className="text-2xl font-bold text-gray-900">上下班打卡</h2>
+
+      {!punchRecordsReady && (
+        <div className="app-card p-4 text-sm text-amber-800 bg-amber-50 border border-amber-200">
+          正在載入今日打卡資料，請稍候再打卡，避免重複打卡。
+        </div>
+      )}
+
+      {isPunching && (
+        <div className="app-card p-4 text-sm text-blue-800 bg-blue-50 border border-blue-200">
+          打卡處理中，請勿重複點擊…
+        </div>
+      )}
 
       {/* GPS 狀態 */}
       <div
@@ -447,18 +527,18 @@ export default function PunchPage() {
               <button
                 type="button"
                 onClick={() => handleNoShiftPunch("work_in")}
-                disabled={gpsState !== "inside"}
+                disabled={!canPunch}
                 className="flex-1 py-3 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                上班打卡（加班）
+                {isPunching ? "打卡中..." : "上班打卡（加班）"}
               </button>
               <button
                 type="button"
                 onClick={() => handleNoShiftPunch("work_out")}
-                disabled={gpsState !== "inside"}
+                disabled={!canPunch}
                 className="flex-1 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                下班打卡（加班）
+                {isPunching ? "打卡中..." : "下班打卡（加班）"}
               </button>
             </div>
           </div>
@@ -472,13 +552,13 @@ export default function PunchPage() {
               {nextSlot ? (
                 <button
                   type="button"
-                  onClick={() => validateAndPunch(nextSlot)}
-                  disabled={gpsState !== "inside"}
+                  onClick={() => void validateAndPunch(nextSlot)}
+                  disabled={!canPunch}
                   className="w-full py-6 rounded-xl bg-blue-600 text-white text-lg font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {nextSlot.label}
+                  {isPunching ? "打卡中..." : nextSlot.label}
                   <span className="block text-sm font-normal opacity-90 mt-1">
-                    預定 {nextSlot.scheduledTime}
+                    {punchRecordsReady ? `預定 ${nextSlot.scheduledTime}` : "載入打卡資料中..."}
                   </span>
                 </button>
               ) : (
@@ -508,8 +588,11 @@ export default function PunchPage() {
                         <span>{slot.label}</span>
                         <span>{done && punch ? punch.time : slot.scheduledTime}</span>
                       </div>
-                      {done && punch && punch.lateMinutes > 0 && (
+                      {done && punch && punch.action === "work_in" && punch.lateMinutes > 0 && (
                         <div className="text-amber-600 mt-0.5">遲到 {punch.lateMinutes} 分</div>
+                      )}
+                      {done && punch && punch.action === "work_out" && punch.reason?.includes("加班") && (
+                        <div className="text-blue-600 mt-0.5">逾時（建議加班）</div>
                       )}
                     </li>
                   );
@@ -530,8 +613,11 @@ export default function PunchPage() {
                         {p.action === "work_in" ? "🟢 上班" : "🔵 下班"}
                       </span>
                       <span className="ml-2 text-gray-500">段 {p.segmentIndex + 1}</span>
-                      {p.lateMinutes > 0 && (
+                      {p.action === "work_in" && p.lateMinutes > 0 && (
                         <div className="text-amber-600 text-xs mt-0.5">遲到 {p.lateMinutes} 分鐘</div>
+                      )}
+                      {p.action === "work_out" && p.reason?.includes("加班") && (
+                        <div className="text-blue-600 text-xs mt-0.5">逾時（建議加班）</div>
                       )}
                     </div>
                     <span className="font-mono text-gray-900">{p.time}</span>
@@ -577,10 +663,11 @@ export default function PunchPage() {
               </button>
               <button
                 type="button"
-                onClick={submitLateReason}
-                className="flex-1 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+                onClick={() => void submitLateReason()}
+                disabled={isPunching}
+                className="flex-1 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
               >
-                確認打卡
+                {isPunching ? "打卡中..." : "確認打卡"}
               </button>
             </div>
           </div>
@@ -662,13 +749,20 @@ export default function PunchPage() {
               <button
                 type="button"
                 onClick={() => {
-                  finalizePunch(earlyLeaveModal.slot, "提早下班申請早退", earlyLeaveModal.earlyMinutes);
-                  setEarlyLeaveModal(null);
-                  router.push("/applications/leave");
+                  void (async () => {
+                    try {
+                      await finalizePunch(earlyLeaveModal.slot, "提早下班申請早退");
+                      setEarlyLeaveModal(null);
+                      router.push("/applications/leave");
+                    } catch {
+                      // finalizePunch 已顯示錯誤訊息
+                    }
+                  })();
                 }}
-                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={isPunching}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                是，申請早退
+                {isPunching ? "打卡中..." : "是，申請早退"}
               </button>
             </div>
           </div>
@@ -699,9 +793,10 @@ export default function PunchPage() {
               <button
                 type="button"
                 onClick={confirmNoShiftOvertime}
-                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                disabled={isPunching}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                是，確認加班
+                {isPunching ? "打卡中..." : "是，確認加班"}
               </button>
             </div>
           </div>
@@ -730,13 +825,20 @@ export default function PunchPage() {
               <button
                 type="button"
                 onClick={() => {
-                  finalizePunch(earlyLeaveModal.slot, "提早下班", earlyLeaveModal.earlyMinutes);
-                  setEarlyLeaveModal(null);
-                  setSuccessModal({ message: "下班打卡成功！", askLeave: false, askOvertime: false });
+                  void (async () => {
+                    try {
+                      await finalizePunch(earlyLeaveModal.slot, "提早下班");
+                      setEarlyLeaveModal(null);
+                      setSuccessModal({ message: "下班打卡成功！", askLeave: false, askOvertime: false });
+                    } catch {
+                      // finalizePunch 已顯示錯誤訊息
+                    }
+                  })();
                 }}
-                className="flex-1 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+                disabled={isPunching}
+                className="flex-1 py-2 bg-amber-600 text-white rounded-lg hover:bg-amber-700 disabled:opacity-50"
               >
-                是，打卡下班
+                {isPunching ? "打卡中..." : "是，打卡下班"}
               </button>
             </div>
           </div>

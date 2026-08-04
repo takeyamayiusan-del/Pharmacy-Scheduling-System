@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { calculateLeaveWorkHours } from "@/lib/attendance/leaveHours";
+import {
+  calculateApprovedLeaveHoursOnDate,
+  calculateLeaveWorkHours,
+} from "@/lib/attendance/leaveHours";
 import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
 
 const shiftTimeConfig: ShiftTimeConfig = {
@@ -26,5 +29,33 @@ describe("calculateLeaveWorkHours", () => {
       shiftTimeConfig,
     });
     expect(hours).toBe(16);
+  });
+
+  it("半天請假只應扣當日上午時數", () => {
+    const getShiftForDate = () => "B" as ShiftType;
+    const leaveRequests = [
+      {
+        employeeId: "e1",
+        startDate: "2026-06-01",
+        endDate: "2026-06-01",
+        startTime: "08:30",
+        endTime: "12:00",
+        period: "morning" as const,
+        shiftMode: "schedule" as const,
+        status: "approved",
+        leaveHours: 3.5,
+      },
+    ];
+
+    const leaveOnDay = calculateApprovedLeaveHoursOnDate(
+      "2026-06-01",
+      "e1",
+      leaveRequests,
+      getShiftForDate,
+      shiftTimeConfig
+    );
+
+    expect(leaveOnDay).toBe(3.5);
+    expect(8 - leaveOnDay).toBe(4.5);
   });
 });
