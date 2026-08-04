@@ -32,7 +32,7 @@ describe("getDefaultPayrollPeriod", () => {
 
 describe("computeMonthlyAttendanceHours", () => {
   it("imports schedule work hours, leave, OT pay and holiday OT", () => {
-    const getShiftForDate = (date: string, _employeeId: string): ShiftType => {
+    const getShiftForDate = (date: string): ShiftType => {
       if (date === "2026-07-04") return "X";
       if (date === "2026-07-01") return "A"; // holiday work
       return date.endsWith("-05") ? "A" : "X";
