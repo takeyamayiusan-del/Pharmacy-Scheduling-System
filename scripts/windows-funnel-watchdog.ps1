@@ -1,4 +1,5 @@
-# 每 1 分鐘檢查：本機網站 + Supabase Auth + Tailscale Funnel，異常自動修復
+# 每 1 分鐘檢查：排班 + 金流 + Supabase Auth + Tailscale Funnel（雙埠），異常自動修復
+# 目標：兩個網站盡量永遠在線；掛掉下一分鐘內自動拉起。
 param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
 )
@@ -32,13 +33,30 @@ function Test-FunnelHealthy([string]$BaseUrl) {
     return (Test-HttpOk -Uri "$BaseUrl/login" -TimeoutSec 8)
 }
 
+function Test-CashflowFunnelConfigured([string]$FunnelStatus) {
+    return ($FunnelStatus -match "Funnel on" -and $FunnelStatus -match "127\.0\.0\.1:8443")
+}
+
+function Test-PharmacyFunnelConfigured([string]$FunnelStatus) {
+    return ($FunnelStatus -match "Funnel on" -and $FunnelStatus -match "127\.0\.0\.1:3000")
+}
+
 function Warmup-SiteRoutes {
     param([string]$BaseUrl)
 
-    $targets = @("http://127.0.0.1:3000/", "http://127.0.0.1:3000/login")
+    $targets = @(
+        "http://127.0.0.1:3000/",
+        "http://127.0.0.1:3000/login"
+    )
+    if (Test-PortListening 8443) {
+        $targets += "http://127.0.0.1:8443/"
+    }
     if ($BaseUrl) {
         $targets += "$BaseUrl/"
         $targets += "$BaseUrl/login"
+        if (Test-PortListening 8443) {
+            $targets += "${BaseUrl}:8443/"
+        }
     }
 
     foreach ($uri in $targets) {
@@ -54,11 +72,11 @@ function Warmup-SiteRoutes {
 }
 
 function Repair-Funnel {
-    Write-Log "Repairing Tailscale Funnel..."
+    Write-Log "Repairing Tailscale Funnel (pharmacy :3000 + cashflow :8443 if up)..."
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ProjectRoot "scripts\windows-tailscale-funnel-setup.ps1") *>> $LogFile
 }
 
-Write-Log "Watchdog check start"
+Write-Log "Watchdog check start (pharmacy-web + cashflow)"
 
 $authOk = Repair-AuthIfNeeded -ProjectRoot $ProjectRoot -WriteLog {
     param($m)
@@ -73,12 +91,14 @@ $siteOk = Repair-SiteIfNeeded -ProjectRoot $ProjectRoot -WriteLog {
     Write-Log $m
 }
 if (-not $siteOk) {
-    Write-Log "Local site still unhealthy after repair"
+    Write-Log "Local pharmacy site still unhealthy after repair"
 }
 
+# 金流：PM2 有註冊就必須在線；掛掉一律重啟
 $cashflowOk = $true
+$hasCashflow = $false
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-    $hasCashflow = ((& pm2 jlist 2>$null) | Out-String) -match '"name"\s*:\s*"cashflow"'
+    $hasCashflow = Test-Pm2AppExists -Name "cashflow"
     if ($hasCashflow) {
         $cashflowOk = Repair-Pm2AppIfNeeded -Name "cashflow" -HealthyCheck { Test-CashflowHealthy } -WriteLog {
             param($m)
@@ -87,28 +107,45 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
         if (-not $cashflowOk) {
             Write-Log "cashflow still unhealthy after repair"
         }
+    } else {
+        # 沒在 PM2 但埠還在聽 → 當健康；完全沒有則只記錄（不擋排班）
+        if (Test-CashflowHealthy) {
+            Write-Log "cashflow port healthy but not in pm2 list (ok)"
+            $cashflowOk = $true
+        } else {
+            Write-Log "WARN: cashflow not in pm2 and port down — 請確認曾 pm2 start cashflow && pm2 save"
+            $cashflowOk = $true
+        }
     }
 }
 
 $funnelUrl = Get-FunnelUrl
 $funnelStatus = (tailscale funnel status 2>&1 | Out-String)
-$funnelConfigured = $funnelStatus -match "Funnel on" -and $funnelStatus -match "127\.0\.0\.1:3000"
-$healthy = $authOk -and $siteOk -and $cashflowOk -and $funnelConfigured -and (Test-FunnelHealthy $funnelUrl)
+$pharmacyFunnelOk = Test-PharmacyFunnelConfigured $funnelStatus
+$needCashflowFunnel = $hasCashflow -or (Test-PortListening 8443)
+$cashflowFunnelOk = if ($needCashflowFunnel) { Test-CashflowFunnelConfigured $funnelStatus } else { $true }
+$funnelHttpOk = Test-FunnelHealthy $funnelUrl
+
+$healthy = $authOk -and $siteOk -and $cashflowOk -and $pharmacyFunnelOk -and $cashflowFunnelOk -and $funnelHttpOk
 
 if ($healthy) {
     Warmup-SiteRoutes -BaseUrl $funnelUrl
-    Write-Log "OK: auth + pharmacy-web + cashflow + $funnelUrl"
+    Write-Log "OK: auth + pharmacy-web + cashflow + funnel3000 + funnel8443=$needCashflowFunnel + $funnelUrl"
     exit 0
 }
 
-Write-Log "UNHEALTHY authOk=$authOk siteOk=$siteOk cashflowOk=$cashflowOk funnelConfigured=$funnelConfigured url=$funnelUrl"
+Write-Log "UNHEALTHY authOk=$authOk siteOk=$siteOk cashflowOk=$cashflowOk pharmacyFunnelOk=$pharmacyFunnelOk cashflowFunnelOk=$cashflowFunnelOk url=$funnelUrl"
 Repair-Funnel
 
 Start-Sleep -Seconds 5
 $funnelUrl = Get-FunnelUrl
-if ($authOk -and $siteOk -and (Test-FunnelHealthy $funnelUrl)) {
+$funnelStatus = (tailscale funnel status 2>&1 | Out-String)
+$pharmacyFunnelOk = Test-PharmacyFunnelConfigured $funnelStatus
+$cashflowFunnelOk = if ($needCashflowFunnel) { Test-CashflowFunnelConfigured $funnelStatus } else { $true }
+
+if ($authOk -and $siteOk -and $cashflowOk -and $pharmacyFunnelOk -and $cashflowFunnelOk -and (Test-FunnelHealthy $funnelUrl)) {
     Warmup-SiteRoutes -BaseUrl $funnelUrl
-    Write-Log "Repaired OK: $funnelUrl"
+    Write-Log "Repaired OK: pharmacy + cashflow + $funnelUrl"
     exit 0
 }
 

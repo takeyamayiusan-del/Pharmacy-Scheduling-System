@@ -56,15 +56,14 @@ if ($authOk) {
 }
 
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-    Write-BootLog "pm2 resurrect / restart pharmacy-web + cashflow"
-    & pm2 resurrect *>> $LogFile 2>&1
-    & pm2 restart pharmacy-web --update-env *>> $LogFile 2>&1
-    & pm2 restart cashflow --update-env *>> $LogFile 2>&1
-    if (-not (Get-Pm2Online -Name "pharmacy-web")) {
-        Write-BootLog "pm2 pharmacy-web missing, trying pm2 start"
-        & pm2 start npm --name "pharmacy-web" -- start *>> $LogFile 2>&1
-        & pm2 save *>> $LogFile 2>&1
+    Write-BootLog "Clean PM2 bring-up: pharmacy-web + cashflow (no npm stacking)"
+    # 開機可能 dump 已空：允許 resurrect 一次；之後一律去重 + restart
+    if (-not (Test-Pm2AppExists -Name "pharmacy-web")) {
+        & pm2 resurrect *>> $LogFile 2>&1
+        [void](Repair-Pm2NameDuplicates -Name "pharmacy-web" -WriteLog { param($m) Write-BootLog $m })
+        [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog { param($m) Write-BootLog $m })
     }
+    [void](Restart-DualSitesClean -ProjectRoot $ProjectRoot -WriteLog { param($m) Write-BootLog $m })
 } else {
     Write-BootLog "pm2 not found, falling back to windows-run-site.ps1"
     Start-SiteRunner -ProjectRoot $ProjectRoot
@@ -76,18 +75,37 @@ for ($i = 1; $i -le 18; $i++) {
         $siteOk = $true
         break
     }
-    Write-BootLog "Waiting site :3000 ($i/18)..."
+    Write-BootLog "Waiting pharmacy :3000 ($i/18)..."
     Start-Sleep -Seconds 5
 }
 if ($siteOk) {
-    Write-BootLog "Site OK http://127.0.0.1:3000"
+    Write-BootLog "Pharmacy OK http://127.0.0.1:3000"
 } else {
-    Write-BootLog "WARNING: site not healthy on :3000"
+    Write-BootLog "WARNING: pharmacy not healthy on :3000"
+}
+
+$cashflowOk = $false
+if (Test-Pm2AppExists -Name "cashflow") {
+    for ($i = 1; $i -le 12; $i++) {
+        if (Test-CashflowHealthy) {
+            $cashflowOk = $true
+            break
+        }
+        Write-BootLog "Waiting cashflow :8443 ($i/12)..."
+        Start-Sleep -Seconds 5
+    }
+    if ($cashflowOk) {
+        Write-BootLog "Cashflow OK http://127.0.0.1:8443"
+    } else {
+        Write-BootLog "WARNING: cashflow not healthy on :8443"
+    }
+} else {
+    Write-BootLog "cashflow not in pm2 — skip wait (register with pm2 start + pm2 save once)"
 }
 
 if (-not $SkipFunnel) {
     if (Get-Command tailscale -ErrorAction SilentlyContinue) {
-        Write-BootLog "Tailscale Funnel setup"
+        Write-BootLog "Tailscale Funnel setup (3000 + 8443 if up)"
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") *>> $LogFile
     } else {
         Write-BootLog "tailscale not found, skip Funnel"
@@ -96,6 +114,8 @@ if (-not $SkipFunnel) {
 
 Write-BootLog "Boot done"
 Write-Host "=== Done ===" -ForegroundColor Green
-Write-Host "Local: http://127.0.0.1:3000/login"
-Write-Host "Auth:  http://127.0.0.1:54321/auth/v1/health"
-Write-Host "Log:   $LogFile"
+Write-Host "排班: http://127.0.0.1:3000/login"
+Write-Host "金流: http://127.0.0.1:8443/   (若已用 pm2 啟動)"
+Write-Host "Auth: http://127.0.0.1:54321/auth/v1/health"
+Write-Host "Log:  $LogFile"
+Write-Host "Keep-alive: 排程 YaoshengPharmacyWatchdog 每分鐘監測兩個網站"
