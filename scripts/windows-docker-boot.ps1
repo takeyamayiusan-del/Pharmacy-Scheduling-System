@@ -56,11 +56,12 @@ if ($authOk) {
 }
 
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-    Write-BootLog "pm2 resurrect / restart pharmacy-web"
+    Write-BootLog "pm2 resurrect / restart pharmacy-web + cashflow"
     & pm2 resurrect *>> $LogFile 2>&1
     & pm2 restart pharmacy-web --update-env *>> $LogFile 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        Write-BootLog "pm2 restart failed, trying pm2 start"
+    & pm2 restart cashflow --update-env *>> $LogFile 2>&1
+    if (-not (Get-Pm2Online -Name "pharmacy-web")) {
+        Write-BootLog "pm2 pharmacy-web missing, trying pm2 start"
         & pm2 start npm --name "pharmacy-web" -- start *>> $LogFile 2>&1
         & pm2 save *>> $LogFile 2>&1
     }

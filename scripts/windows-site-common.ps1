@@ -263,6 +263,69 @@ function Start-SiteRunner {
         -WindowStyle Hidden
 }
 
+function Test-CashflowHealthy {
+    # 金流本機常見埠：8443（外網 Funnel）或 3001
+    if (Test-PortListening 8443) {
+        if (Test-HttpOk -Uri "http://127.0.0.1:8443/" -TimeoutSec 5) { return $true }
+        # HTTPS only locally uncommon; port open still counts as process up
+        return $true
+    }
+    if (Test-PortListening 3001) {
+        return (Test-HttpOk -Uri "http://127.0.0.1:3001/" -TimeoutSec 5)
+    }
+    return $false
+}
+
+function Get-Pm2Online([string]$Name) {
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $false }
+    $j = & pm2 jlist 2>$null
+    if (-not $j) { return $false }
+    try {
+        $apps = $j | ConvertFrom-Json
+        $app = $apps | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+        if (-not $app) { return $false }
+        return ($app.pm2_env.status -eq "online")
+    } catch {
+        return $false
+    }
+}
+
+function Repair-Pm2AppIfNeeded {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m },
+        [scriptblock]$HealthyCheck = $null
+    )
+
+    $healthy = $false
+    if ($HealthyCheck) {
+        $healthy = & $HealthyCheck
+    } else {
+        $healthy = Get-Pm2Online -Name $Name
+    }
+
+    if ($healthy -and (Get-Pm2Online -Name $Name)) { return $true }
+
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+        & $WriteLog "pm2 not found, cannot repair $Name"
+        return $false
+    }
+
+    & $WriteLog "Repairing pm2 app: $Name"
+    & pm2 resurrect 2>$null | Out-Null
+    & pm2 restart $Name --update-env 2>$null | Out-Null
+    Start-Sleep -Seconds 4
+
+    if ($HealthyCheck) {
+        if (& $HealthyCheck) { return $true }
+    } elseif (Get-Pm2Online -Name $Name) {
+        return $true
+    }
+
+    & $WriteLog "pm2 app still unhealthy: $Name"
+    return $false
+}
+
 function Start-SiteViaPm2OrRunner {
     param(
         [string]$ProjectRoot,
@@ -270,9 +333,14 @@ function Start-SiteViaPm2OrRunner {
     )
 
     if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-        & $WriteLog "Restarting pharmacy-web via pm2..."
+        & $WriteLog "Restarting pharmacy-web (+ cashflow if present) via pm2..."
         & pm2 resurrect 2>$null | Out-Null
         & pm2 restart pharmacy-web --update-env 2>$null | Out-Null
+        if (Get-Pm2Online -Name "cashflow") {
+            & pm2 restart cashflow --update-env 2>$null | Out-Null
+        } elseif ((pm2 jlist 2>$null) -match '"name"\s*:\s*"cashflow"') {
+            & pm2 restart cashflow --update-env 2>$null | Out-Null
+        }
         if ($LASTEXITCODE -eq 0) { return }
 
         & $WriteLog "pm2 restart failed, starting pharmacy-web..."
