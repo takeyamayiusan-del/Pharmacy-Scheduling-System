@@ -4,6 +4,16 @@ function Test-PortListening([int]$Port) {
     return [bool](netstat -ano | Select-String ":$Port\s" | Select-String "LISTENING")
 }
 
+function Get-PortListenerPid([int]$Port) {
+    $line = netstat -ano | Select-String ":$Port\s" | Select-String "LISTENING" | Select-Object -First 1
+    if (-not $line) { return $null }
+    $parts = ($line.ToString().Trim() -split "\s+") | Where-Object { $_ -ne "" }
+    if ($parts.Length -lt 5) { return $null }
+    $pid = 0
+    if ([int]::TryParse($parts[-1], [ref]$pid)) { return $pid }
+    return $null
+}
+
 # 用 curl 硬超時：TCP 能連但 Next 不回時，Invoke-WebRequest 常會卡住不動
 function Test-HttpOk {
     param(
@@ -290,6 +300,48 @@ function Get-Pm2Online([string]$Name) {
     }
 }
 
+function Test-Pm2AppExists([string]$Name) {
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $false }
+    $j = & pm2 jlist 2>$null
+    if (-not $j) { return $false }
+    try {
+        $apps = $j | ConvertFrom-Json
+        return [bool]($apps | Where-Object { $_.name -eq $Name } | Select-Object -First 1)
+    } catch {
+        return $false
+    }
+}
+
+function Get-Pm2Pid([string]$Name) {
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $null }
+    $j = & pm2 jlist 2>$null
+    if (-not $j) { return $null }
+    try {
+        $apps = $j | ConvertFrom-Json
+        $app = $apps | Where-Object { $_.name -eq $Name } | Select-Object -First 1
+        if (-not $app) { return $null }
+        $pid = 0
+        if ([int]::TryParse("$($app.pid)", [ref]$pid) -and $pid -gt 0) { return $pid }
+        return $null
+    } catch {
+        return $null
+    }
+}
+
+function Stop-PortListenerForce {
+    param(
+        [int]$Port,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+    $pid = Get-PortListenerPid -Port $Port
+    if (-not $pid -or $pid -le 0) { return $false }
+    & $WriteLog ("Killing listener on :{0} pid={1}" -f $Port, $pid)
+    try { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue } catch {}
+    & cmd.exe /c ("taskkill /F /PID {0} /T" -f $pid) 2>$null | Out-Null
+    Start-Sleep -Seconds 1
+    return (-not (Test-PortListening $Port))
+}
+
 function Repair-Pm2AppIfNeeded {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -335,6 +387,9 @@ function Start-SiteViaPm2OrRunner {
     if (Get-Command pm2 -ErrorAction SilentlyContinue) {
         & $WriteLog "Restarting pharmacy-web (+ cashflow if present) via pm2..."
         & pm2 resurrect 2>$null | Out-Null
+        if ((Get-PortListenerPid 3000) -and (-not (Get-Pm2Online -Name "pharmacy-web"))) {
+            [void](Stop-PortListenerForce -Port 3000 -WriteLog $WriteLog)
+        }
         & pm2 restart pharmacy-web --update-env 2>$null | Out-Null
         if (Get-Pm2Online -Name "cashflow") {
             & pm2 restart cashflow --update-env 2>$null | Out-Null
@@ -343,10 +398,16 @@ function Start-SiteViaPm2OrRunner {
         }
         if ($LASTEXITCODE -eq 0) { return }
 
-        & $WriteLog "pm2 restart failed, starting pharmacy-web..."
+        & $WriteLog "pm2 restart failed, starting pharmacy-web via Next binary..."
         Push-Location $ProjectRoot
         try {
-            & pm2 start npm --name "pharmacy-web" -- start 2>$null | Out-Null
+            [void](Stop-PortListenerForce -Port 3000 -WriteLog $WriteLog)
+            $nextBin = Join-Path $ProjectRoot "node_modules\next\dist\bin\next"
+            if (Test-Path -LiteralPath $nextBin) {
+                & cmd.exe /c ("pm2 start `"{0}`" --name pharmacy-web --cwd `"{1}`" -- start" -f $nextBin, $ProjectRoot) 2>$null | Out-Null
+            } else {
+                & pm2 start npm --name "pharmacy-web" -- start 2>$null | Out-Null
+            }
             & pm2 save 2>$null | Out-Null
         } finally {
             Pop-Location
@@ -380,6 +441,13 @@ function Repair-SiteIfNeeded {
     }
 
     & $WriteLog "Site unhealthy, repairing..."
+    $listenerPid = Get-PortListenerPid -Port 3000
+    $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
+    if ($listenerPid -and ($pm2Pid -ne $listenerPid)) {
+        & $WriteLog ("Port 3000 occupied by non-pm2 pid={0}, force cleanup" -f $listenerPid)
+        [void](Stop-PortListenerForce -Port 3000 -WriteLog $WriteLog)
+    }
+
     # 若用 pm2：不要亂殺 node，交給 pm2 restart；否則清掉殘留 runner
     if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
         Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot

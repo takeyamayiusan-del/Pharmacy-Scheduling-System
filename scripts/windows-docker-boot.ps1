@@ -56,15 +56,22 @@ if ($authOk) {
 }
 
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-    Write-BootLog "pm2 resurrect / restart pharmacy-web + cashflow"
+    Write-BootLog "pm2 resurrect + health repair (auto clear occupied :3000)"
     & pm2 resurrect *>> $LogFile 2>&1
-    & pm2 restart pharmacy-web --update-env *>> $LogFile 2>&1
-    & pm2 restart cashflow --update-env *>> $LogFile 2>&1
-    if (-not (Get-Pm2Online -Name "pharmacy-web")) {
-        Write-BootLog "pm2 pharmacy-web missing, trying pm2 start"
-        & pm2 start npm --name "pharmacy-web" -- start *>> $LogFile 2>&1
-        & pm2 save *>> $LogFile 2>&1
+    $siteRepair = Repair-SiteIfNeeded -ProjectRoot $ProjectRoot -WriteLog {
+        param($m)
+        Write-BootLog $m
     }
+    if (-not $siteRepair) {
+        Write-BootLog "WARNING: pharmacy-web repair failed during boot"
+    }
+    if (Test-Pm2AppExists -Name "cashflow") {
+        [void](Repair-Pm2AppIfNeeded -Name "cashflow" -HealthyCheck { Test-CashflowHealthy } -WriteLog {
+            param($m)
+            Write-BootLog $m
+        })
+    }
+    & pm2 save *>> $LogFile 2>&1
 } else {
     Write-BootLog "pm2 not found, falling back to windows-run-site.ps1"
     Start-SiteRunner -ProjectRoot $ProjectRoot
