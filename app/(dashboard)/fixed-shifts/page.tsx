@@ -125,6 +125,11 @@ export default function FixedShiftsPage() {
         <h1 className="text-2xl font-bold text-gray-900">固定班表管理</h1>
       </div>
 
+      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
+        禮拜六可設固定班（含休假 X）。未設定時預設為 C 班；設為休假後班表會顯示 X。
+        若該月班表已鎖定，需店長解鎖或手動改格子才會看到變更。
+      </div>
+
       {/* ── 特殊規則設定 ── */}
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-semibold text-gray-900 mb-1">特殊排班規則</h3>

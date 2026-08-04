@@ -6,6 +6,7 @@ import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSched
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
+import { isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
 import { calculateLeaveDisplayOnSchedule, getOriginalShiftForLeaveDay } from "@/lib/schedule/leaveSchedule";
 import {
   HOLIDAY_WORK_SHIFT_OPTIONS,
@@ -166,8 +167,10 @@ export default function SchedulePage() {
     }
   };
 
-  // 過濾掉老闆（不顯示在班表）
-  const displayEmployees = employees.filter(e => e.role !== "owner");
+  // 過濾老闆，以及尚未到職／已過到期日的員工（依當月）
+  const displayEmployees = employees.filter(
+    (e) => e.role !== "owner" && isEmployeeActiveInMonth(e, year, month)
+  );
   const rotationEmployees = employees.filter((e) => e.isWednesdayRotation);
   const rotationLabel =
     rotationEmployees.length > 0

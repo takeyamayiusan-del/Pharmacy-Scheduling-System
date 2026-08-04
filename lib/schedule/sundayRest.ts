@@ -6,11 +6,28 @@ export function parseLocalDateParts(dateStr: string): { y: number; m: number; d:
   return { y: Number(m[1]), m: Number(m[2]), d: Number(m[3]) };
 }
 
+/** 本地日曆星期（0=日…6=六），避免 UTC 解析偏差 */
+export function getLocalDayOfWeek(dateStr: string): number {
+  const parts = parseLocalDateParts(dateStr);
+  if (!parts) return -1;
+  return new Date(parts.y, parts.m - 1, parts.d).getDay();
+}
+
 /** 以本地日曆判斷星期，避免 `new Date('YYYY-MM-DD')` UTC 解析偏差 */
 export function isFixedSundayRest(dateStr: string): boolean {
-  const parts = parseLocalDateParts(dateStr);
-  if (!parts) return false;
-  return new Date(parts.y, parts.m - 1, parts.d).getDay() === 0;
+  return getLocalDayOfWeek(dateStr) === 0;
+}
+
+export function isLocalSaturday(dateStr: string): boolean {
+  return getLocalDayOfWeek(dateStr) === 6;
+}
+
+export function isLocalTuesday(dateStr: string): boolean {
+  return getLocalDayOfWeek(dateStr) === 2;
+}
+
+export function isLocalWednesday(dateStr: string): boolean {
+  return getLocalDayOfWeek(dateStr) === 3;
 }
 
 export const SUNDAY_REST_MESSAGE = "禮拜日為固定公休，不可換班或改為上班";

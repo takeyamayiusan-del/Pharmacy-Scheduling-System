@@ -22,6 +22,7 @@ export async function POST(req: NextRequest) {
       isWednesdayRotation,
       isWeekdayOffRule,
       hire_date,
+      end_date,
     } = body as {
       userId: string;
       password?: string;
@@ -31,6 +32,7 @@ export async function POST(req: NextRequest) {
       isWednesdayRotation?: boolean;
       isWeekdayOffRule?: boolean;
       hire_date?: string;
+      end_date?: string | null;
     };
 
     if (!userId) {
@@ -62,6 +64,7 @@ export async function POST(req: NextRequest) {
     if (isWednesdayRotation !== undefined) updates.is_wednesday_rotation = isWednesdayRotation;
     if (isWeekdayOffRule !== undefined) updates.is_weekday_off_rule = isWeekdayOffRule;
     if (hire_date !== undefined) updates.hire_date = hire_date;
+    if (end_date !== undefined) updates.end_date = end_date || null;
     if (username !== undefined) updates.username = username.trim().toLowerCase();
 
     if (Object.keys(updates).length > 0) {
@@ -85,7 +88,7 @@ export async function POST(req: NextRequest) {
     const { data: updated, error: fetchError } = await admin
       .from("users")
       .select(
-        "id, username, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, hire_date, created_at, updated_at"
+        "id, username, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, hire_date, end_date, created_at, updated_at"
       )
       .eq("id", userId)
       .single();

@@ -13,12 +13,13 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { username, password, name, role, hire_date } = body as {
+    const { username, password, name, role, hire_date, end_date } = body as {
       username: string;
       password: string;
       name: string;
       role: string;
       hire_date?: string;
+      end_date?: string | null;
     };
 
     if (!username || !password || !name || !role) {
@@ -52,6 +53,7 @@ export async function POST(req: NextRequest) {
         role: dbRole,
         is_active: true,
         hire_date: hire_date || "2026-04-01",
+        end_date: end_date || null,
       })
       .select()
       .single();

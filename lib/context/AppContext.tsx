@@ -13,8 +13,13 @@ import {
 import {
   assertNoSundayInSwapDates,
   assertSundayShiftAllowed,
+  getLocalDayOfWeek,
   isFixedSundayRest,
+  isLocalSaturday,
+  isLocalTuesday,
+  isLocalWednesday,
 } from "@/lib/schedule/sundayRest";
+import { isEmployeeActiveOnDate, isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
 import { hasPastMonthInRange, isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import { resolveAnnualLeaveQuotaDays } from "@/lib/attendance/annualLeave";
 import {
@@ -56,6 +61,7 @@ export type Employee = {
   username?: string;
   password?: string;
   hireDate: string;               // 入職日期
+  endDate?: string | null;        // 到期日（含當日）；空=持續在職
   isWednesdayRotation?: boolean;  // 禮拜三晚班輪值
   isWeekdayOffRule?: boolean;     // 平日不排班規則
 };
@@ -298,9 +304,9 @@ type LeaveSelections = Record<string, string[]>;
 
 /** 禮拜日固定公休（本地日曆判斷） */
 export const isSunday = (dateStr: string): boolean => isFixedSundayRest(dateStr);
-export const isSaturday = (dateStr: string): boolean => new Date(dateStr).getDay() === 6;
-export const isTuesday = (dateStr: string): boolean => new Date(dateStr).getDay() === 2;
-export const isWednesday = (dateStr: string): boolean => new Date(dateStr).getDay() === 3;
+export const isSaturday = (dateStr: string): boolean => isLocalSaturday(dateStr);
+export const isTuesday = (dateStr: string): boolean => isLocalTuesday(dateStr);
+export const isWednesday = (dateStr: string): boolean => isLocalWednesday(dateStr);
 
 export const TAIWAN_HOLIDAYS_2026: { date: string; name: string }[] = [
   { date: "2026-01-01", name: "元旦" },
@@ -636,7 +642,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase
       .from("users")
-      .select("id, username, name, role, is_active, hire_date, is_wednesday_rotation, is_weekday_off_rule")
+      .select("id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule")
       .eq("is_active", true);
       if (data) {
         setEmployees(
@@ -646,6 +652,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             username: r.username ?? undefined,
             role: mapRole(r.role),
             hireDate: r.hire_date || '2026-04-01',
+            endDate: r.end_date ?? null,
             isWednesdayRotation: r.is_wednesday_rotation,
             isWeekdayOffRule: r.is_weekday_off_rule,
           }))
@@ -1141,7 +1148,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (mounted) {
             const { data: userRow } = await supabase
               .from("users")
-              .select("id, name, role, hire_date, is_wednesday_rotation, is_weekday_off_rule")
+              .select("id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule")
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[initAuth] userRow:", userRow);
@@ -1151,6 +1158,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 name: userRow.name,
                 role: mapRole(userRow.role),
                 hireDate: userRow.hire_date || "2026-04-01",
+                endDate: userRow.end_date ?? null,
                 isWednesdayRotation: userRow.is_wednesday_rotation ?? false,
                 isWeekdayOffRule: userRow.is_weekday_off_rule ?? false,
               };
@@ -1208,7 +1216,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const { data: userRow } = await supabase
               .from("users")
-              .select("id, name, role, hire_date, is_wednesday_rotation, is_weekday_off_rule")
+              .select("id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule")
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[SIGNED_IN] userRow:", userRow);
@@ -1218,6 +1226,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 name: userRow.name,
                 role: mapRole(userRow.role),
                 hireDate: userRow.hire_date || "2026-04-01",
+                endDate: userRow.end_date ?? null,
                 isWednesdayRotation: userRow.is_wednesday_rotation ?? false,
                 isWeekdayOffRule: userRow.is_weekday_off_rule ?? false,
               };
@@ -1281,7 +1290,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const { data: profile, error: profileError } = await supabase
         .from("users")
-        .select("id, name, role, hire_date, is_active, is_wednesday_rotation, is_weekday_off_rule")
+        .select("id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule")
         .eq("id", data.user.id)
         .single();
 
@@ -1295,6 +1304,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         name: profile.name,
         role: mapRole(profile.role),
         hireDate: profile.hire_date || "2026-04-01",
+        endDate: profile.end_date ?? null,
         isWednesdayRotation: profile.is_wednesday_rotation ?? false,
         isWeekdayOffRule: profile.is_weekday_off_rule ?? false,
       });
@@ -1335,6 +1345,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         name: employee.name,
         role: employee.role,
         hire_date: employee.hireDate,
+        end_date: employee.endDate || null,
       }),
     });
     if (!res.ok) {
@@ -1357,6 +1368,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isWednesdayRotation: updates.isWednesdayRotation,
         isWeekdayOffRule: updates.isWeekdayOffRule,
         hire_date: updates.hireDate,
+        end_date: updates.endDate === undefined ? undefined : updates.endDate || null,
       }),
     });
     if (!res.ok) {
@@ -1390,14 +1402,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isSunday(date)) return "X";
 
     const emp = employees.find((e) => e.id === employeeId);
+    if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
+
     const isWednesdayRotation = emp?.isWednesdayRotation ?? false;
+    const dayOfWeek = getLocalDayOfWeek(date);
+    const fixedShift = fixedShifts.find(
+      (s) => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek
+    );
 
-    if (isSaturday(date)) return "C";
-
-    const dayOfWeek = new Date(date).getDay();
+    // 禮拜六：優先套用固定班（含休假 X）；未設定才預設 C
+    if (isSaturday(date)) {
+      return fixedShift?.shift ?? "C";
+    }
 
     if (isWednesday(date) && isWednesdayRotation) {
-      const rotationEmployees = employees.filter((e) => e.isWednesdayRotation);
+      const rotationEmployees = employees.filter(
+        (e) => e.isWednesdayRotation && isEmployeeActiveOnDate(e, date)
+      );
       if (rotationEmployees.length === 0) return "B";
       if (rotationEmployees.length === 1) {
         return employeeId === rotationEmployees[0].id ? "A" : "B";
@@ -1415,19 +1436,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return isOnDuty ? "A" : "B";
     }
 
-    const fixedShift = fixedShifts.find(
-      (s) => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek
-    );
     return fixedShift?.shift ?? "B";
   };
 
   const getBaseShiftForDate = (date: string, employeeId: string): ShiftType => {
     if (isSunday(date)) return "X";
 
-    if (isSaturday(date)) {
-      return (leaveSelections[employeeId] ?? []).includes(date) ? "X" : "C";
-    }
+    const emp = employees.find((e) => e.id === employeeId);
+    if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
 
+    // 排休勾選（含週六）優先於預設／固定班
     if ((leaveSelections[employeeId] ?? []).includes(date)) return "X";
 
     return getWorkShiftIgnoringLeave(date, employeeId);
@@ -1545,7 +1563,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("僅能對國定假日使用一鍵設定");
     }
 
-    const targets = employees.filter((e) => e.role !== "owner");
+    const targets = employees.filter(
+      (e) => e.role !== "owner" && isEmployeeActiveOnDate(e, date)
+    );
     const hasApprovedFullDayLeave = (employeeId: string) =>
       leaveRequests.some(
         (r) =>
@@ -1807,7 +1827,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     leaveMonthLocks.some((l) => l.year === year && l.month === month);
 
   const snapshotMonthSchedule = async (year: number, month: number, actorId?: string) => {
-    const activeEmployees = employees.filter((e) => e.role !== "owner");
+    const activeEmployees = employees.filter(
+      (e) => e.role !== "owner" && isEmployeeActiveInMonth(e, year, month)
+    );
     if (activeEmployees.length === 0) return;
     const daysInMonth = new Date(year, month, 0).getDate();
     const rows: Array<{ user_id: string; date: string; shift_code: ShiftType; updated_by?: string }> = [];

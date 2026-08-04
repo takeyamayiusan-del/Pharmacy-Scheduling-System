@@ -4,6 +4,8 @@ import {
   assertSundayShiftAllowed,
   enforceSundayRestOnChanges,
   isFixedSundayRest,
+  isLocalSaturday,
+  getLocalDayOfWeek,
 } from "@/lib/schedule/sundayRest";
 
 describe("sundayRest", () => {
@@ -11,6 +13,12 @@ describe("sundayRest", () => {
     expect(isFixedSundayRest("2026-07-19")).toBe(true);
     expect(isFixedSundayRest("2026-07-18")).toBe(false);
     expect(isFixedSundayRest("2026-07-20")).toBe(false);
+  });
+
+  it("detects Saturday with local calendar", () => {
+    expect(isLocalSaturday("2026-07-18")).toBe(true);
+    expect(isLocalSaturday("2026-07-19")).toBe(false);
+    expect(getLocalDayOfWeek("2026-07-18")).toBe(6);
   });
 
   it("blocks swap dates that include Sunday", () => {

@@ -17,6 +17,7 @@ export default function EmployeesPage() {
     username: "",
     password: "",
     hireDate: new Date().toISOString().split('T')[0],
+    endDate: "",
   });
   
   const loadEmployee = (employee: Employee) => {
@@ -27,6 +28,7 @@ export default function EmployeesPage() {
       username: employee.username ?? "",
       password: "",
       hireDate: employee.hireDate || new Date().toISOString().split('T')[0],
+      endDate: employee.endDate || "",
     });
     setShowForm(true);
   };
@@ -38,6 +40,7 @@ export default function EmployeesPage() {
       username: "",
       password: "",
       hireDate: new Date().toISOString().split('T')[0],
+      endDate: "",
     });
     setEditingId(null);
     setShowForm(false);
@@ -54,6 +57,7 @@ export default function EmployeesPage() {
           role: formData.role,
           username: formData.username.trim() || undefined,
           hireDate: formData.hireDate,
+          endDate: formData.endDate.trim() || null,
         };
         if (formData.password) {
           updates.password = formData.password;
@@ -71,6 +75,7 @@ export default function EmployeesPage() {
           username: formData.username.trim(),
           password: formData.password,
           hireDate: formData.hireDate,
+          endDate: formData.endDate.trim() || null,
         });
         alert("員工已新增！");
       }
@@ -274,6 +279,18 @@ export default function EmployeesPage() {
                   required
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  到期日（選填）
+                </label>
+                <input
+                  type="date"
+                  value={formData.endDate}
+                  onChange={e => setFormData({ ...formData, endDate: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg"
+                />
+                <p className="text-xs text-gray-500 mt-1">到期日後不顯示於班表；空白=持續在職</p>
+              </div>
             </div>
             {formData.role === "staff" && (
               <div>
@@ -335,6 +352,7 @@ export default function EmployeesPage() {
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">員工姓名</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">入職日期</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">到期日</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">登入帳號</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">角色</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">動作</th>
@@ -348,6 +366,9 @@ export default function EmployeesPage() {
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {employee.hireDate}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
+                    {employee.endDate || "—"}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {employee.role === "staff" ? employee.username ?? "—" : "店長/老闆專用帳號"}
