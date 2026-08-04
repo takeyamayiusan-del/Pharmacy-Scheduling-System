@@ -184,7 +184,6 @@ export default function PayrollPage() {
   const [year, setYear] = useState(defaultPeriod.year);
   const [month, setMonth] = useState(defaultPeriod.month);
   const [showTrial, setShowTrial] = useState(true);
-  const [trialNonce, setTrialNonce] = useState(0);
 
   const [salaryConfigs, setSalaryConfigs] = useState<Record<string, SalaryConfig>>({});
   const [rateConfigs, setRateConfigs] = useState<RateConfig[]>([]);
@@ -406,13 +405,11 @@ export default function PayrollPage() {
     getShiftForDate,
     getHolidayInfo,
     shiftTimeConfig,
-    trialNonce,
   ]);
 
   const payrollData = computePayroll();
 
   const runTrial = () => {
-    setTrialNonce((n) => n + 1);
     setShowTrial(true);
     void loadData();
     void loadPayrollRecords(year, month);
