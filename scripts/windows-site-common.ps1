@@ -264,8 +264,8 @@ function Start-SiteRunner {
 }
 
 function Test-CashflowHealthy {
-    # 金流實際預設 :5000；若設 PORT=8443 也可能在 :8443
-    foreach ($port in @(5000, 8443, 3001)) {
+    # 金流正式埠 :8443（PORT=8443）；舊行程可能仍在 :5000
+    foreach ($port in @(8443, 5000, 3001)) {
         if (-not (Test-PortListening $port)) { continue }
         if (Test-HttpOk -Uri "http://127.0.0.1:$port/" -TimeoutSec 5) { return $true }
         # 埠有在聽就算起來（部分路徑可能非 /）
@@ -275,10 +275,10 @@ function Test-CashflowHealthy {
 }
 
 function Get-CashflowListenPort {
-    foreach ($port in @(5000, 8443, 3001)) {
+    foreach ($port in @(8443, 5000, 3001)) {
         if (Test-PortListening $port) { return $port }
     }
-    return 5000
+    return 8443
 }
 
 function Test-Pm2AppExists([string]$Name) {
@@ -453,11 +453,12 @@ function Start-CashflowPm2Fresh {
         & pm2 delete cashflow.ecosystem 2>$null | Out-Null
     }
 
-    # 預設跟程式一樣用 5000；可用環境變數 CASHFLOW_PORT 改（例如 8443）
-    $port = "5000"
+    # 正式外網／Funnel 用 8443；可用環境變數 CASHFLOW_PORT 覆寫
+    $port = "8443"
     if ($env:CASHFLOW_PORT) { $port = "$env:CASHFLOW_PORT" }
 
-    Clear-ListeningPorts -Ports @([int]$port) -WriteLog $WriteLog
+    # 清掉正式埠與舊 :5000，避免殘留行程搶埠或混淆健康檢查
+    Clear-ListeningPorts -Ports @([int]$port, 5000, 8443) -WriteLog $WriteLog
 
     $ecoDir = Join-Path $env:TEMP "yaosheng-pm2"
     if (-not (Test-Path -LiteralPath $ecoDir)) {

@@ -1,4 +1,4 @@
-# Start cashflow: node backend/index.js on port 5000 (NOT pm2 start npm)
+# Start cashflow: node backend/index.js on port 8443 (NOT pm2 start npm)
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-start-cashflow.ps1
 
 param(
@@ -12,7 +12,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 
 if ($CashflowRoot) { $env:CASHFLOW_ROOT = $CashflowRoot }
 
-Write-Host "=== Start cashflow (node backend/index.js :5000) ===" -ForegroundColor Cyan
+Write-Host "=== Start cashflow (node backend/index.js :8443) ===" -ForegroundColor Cyan
 
 if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
     throw "pm2 not found. Install: npm i -g pm2"

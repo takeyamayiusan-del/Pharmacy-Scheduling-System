@@ -36,8 +36,8 @@ function Test-FunnelHealthy([string]$BaseUrl) {
 function Test-CashflowFunnelConfigured([string]$FunnelStatus) {
     return (
         $FunnelStatus -match "Funnel on" -and (
-            $FunnelStatus -match "127\.0\.0\.1:5000" -or
-            $FunnelStatus -match "127\.0\.0\.1:8443"
+            $FunnelStatus -match "127\.0\.0\.1:8443" -or
+            $FunnelStatus -match "127\.0\.0\.1:5000"
         )
     )
 }
@@ -53,18 +53,18 @@ function Warmup-SiteRoutes {
         "http://127.0.0.1:3000/",
         "http://127.0.0.1:3000/login"
     )
-    if (Test-PortListening 5000) {
-        $targets += "http://127.0.0.1:5000/"
-    } elseif (Test-PortListening 8443) {
+    if (Test-PortListening 8443) {
         $targets += "http://127.0.0.1:8443/"
+    } elseif (Test-PortListening 5000) {
+        $targets += "http://127.0.0.1:5000/"
     }
     if ($BaseUrl) {
         $targets += "$BaseUrl/"
         $targets += "$BaseUrl/login"
-        if (Test-PortListening 5000) {
-            $targets += "${BaseUrl}:5000/"
-        } elseif (Test-PortListening 8443) {
+        if (Test-PortListening 8443) {
             $targets += "${BaseUrl}:8443/"
+        } elseif (Test-PortListening 5000) {
+            $targets += "${BaseUrl}:5000/"
         }
     }
 
@@ -81,7 +81,7 @@ function Warmup-SiteRoutes {
 }
 
 function Repair-Funnel {
-    Write-Log "Repairing Tailscale Funnel (pharmacy :3000 + cashflow :5000/:8443 if up)..."
+    Write-Log "Repairing Tailscale Funnel (pharmacy :3000 + cashflow :8443/:5000 if up)..."
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $ProjectRoot "scripts\windows-tailscale-funnel-setup.ps1") *>> $LogFile
 }
 
@@ -118,7 +118,7 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
             Write-Log $m
         }
         if (-not $cashflowOk) {
-            Write-Log "cashflow still unhealthy after repair - free :5000/:8443 and fresh start"
+            Write-Log "cashflow still unhealthy after repair - free :8443/:5000 and fresh start"
             Clear-ListeningPorts -Ports @(5000, 8443) -WriteLog { param($m) Write-Log $m }
             $cashflowOk = Start-CashflowPm2Fresh -WriteLog { param($m) Write-Log $m }
         }
@@ -140,7 +140,7 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
 $funnelUrl = Get-FunnelUrl
 $funnelStatus = (tailscale funnel status 2>&1 | Out-String)
 $pharmacyFunnelOk = Test-PharmacyFunnelConfigured $funnelStatus
-$needCashflowFunnel = $hasCashflow -or (Test-PortListening 5000) -or (Test-PortListening 8443)
+$needCashflowFunnel = $hasCashflow -or (Test-PortListening 8443) -or (Test-PortListening 5000)
 $cashflowFunnelOk = if ($needCashflowFunnel) { Test-CashflowFunnelConfigured $funnelStatus } else { $true }
 $funnelHttpOk = Test-FunnelHealthy $funnelUrl
 

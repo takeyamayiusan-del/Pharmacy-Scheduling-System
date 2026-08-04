@@ -56,5 +56,5 @@ curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://1
 Write-Host -NoNewline "Site  : "
 curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:3000/login
 Write-Host -NoNewline "Cash  : "
-curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:5000/
-Write-Host "Done. Watchdog will keep both online. Cashflow default port is 5000." -ForegroundColor Green
+curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:8443/
+Write-Host "Done. Watchdog will keep both online. Cashflow default port is 8443." -ForegroundColor Green

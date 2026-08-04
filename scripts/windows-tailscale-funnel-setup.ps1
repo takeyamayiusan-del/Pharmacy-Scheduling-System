@@ -1,4 +1,4 @@
-# Tailscale Funnel: pharmacy :3000 + cashflow (:5000 or :8443 if listening)
+# Tailscale Funnel: pharmacy :3000 + cashflow (:8443 預設，或 :5000 若仍在聽)
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1
 
 $ErrorActionPreference = "Stop"
@@ -27,7 +27,7 @@ if (-not (Test-PortListening 3000)) {
 }
 
 $cashflowPort = $null
-foreach ($p in @(5000, 8443)) {
+foreach ($p in @(8443, 5000)) {
     if (Test-PortListening $p) { $cashflowPort = $p; break }
 }
 if ($cashflowPort) {
