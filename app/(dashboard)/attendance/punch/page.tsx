@@ -21,6 +21,10 @@ import {
   todayDateStr,
   type PunchSlot,
 } from "@/lib/attendance/punchSchedule";
+import {
+  filterPunchSlotsForApprovedLeave,
+  resolvePunchLateMinutes,
+} from "@/lib/attendance/punchLeaveAdjust";
 import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X } from "lucide-react";
 import { type BulletinItem } from "@/lib/context/AppContext";
 
@@ -42,6 +46,7 @@ export default function PunchPage() {
     punchRecordsReady,
     refreshTodayPunchRecords,
     bulletinItems,
+    leaveRequests,
   } = useApp();
 
   const [announcementModal, setAnnouncementModal] = useState<boolean>(false);
@@ -111,10 +116,11 @@ export default function PunchPage() {
     ? getShiftForDate(today, currentUser.id)
     : "X";
 
-  const slots = useMemo(
-    () => (shift === "X" ? [] : getPunchSlotsForShift(shift, shiftTimeConfig)),
-    [shift, shiftTimeConfig]
-  );
+  const slots = useMemo(() => {
+    if (shift === "X" || !currentUser) return [];
+    const raw = getPunchSlotsForShift(shift, shiftTimeConfig);
+    return filterPunchSlotsForApprovedLeave(raw, currentUser.id, today, leaveRequests);
+  }, [shift, shiftTimeConfig, currentUser, today, leaveRequests]);
 
   const todayPunches = currentUser ? getTodayPunchRecords(currentUser.id, today) : [];
   const completedKeys = new Set(
@@ -296,13 +302,32 @@ export default function PunchPage() {
       }
 
       const minutesLate = minutesDiff(actual, scheduled);
-      const lateMinutes = calcLateMinutes(actual, scheduled);
+      const lateMinutes = currentUser
+        ? resolvePunchLateMinutes({
+            employeeId: currentUser.id,
+            date: today,
+            scheduledTime: slot.scheduledTime,
+            actualMinutes: actual,
+            leaveRequests,
+          })
+        : calcLateMinutes(actual, scheduled);
 
-      if (minutesLate >= 30) {
+      // 已核准請假覆蓋此時段：不計遲到（含超過 30 分鐘情境）
+      if (lateMinutes <= 0) {
         try {
-          await finalizePunch(slot, "遲到超過30分鐘", minutesLate);
+          await finalizePunch(slot);
+          setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
+        } catch {
+          // finalizePunch 已顯示錯誤訊息
+        }
+        return;
+      }
+
+      if (minutesLate >= 30 && lateMinutes > 0) {
+        try {
+          await finalizePunch(slot, "遲到超過30分鐘", lateMinutes);
           setSuccessModal({
-            message: `打卡成功！您已遲到 ${minutesLate} 分鐘，建議申請請假。`,
+            message: `打卡成功！您已遲到 ${lateMinutes} 分鐘，建議申請請假。`,
             askLeave: true,
             askOvertime: false,
           });
@@ -312,18 +337,8 @@ export default function PunchPage() {
         return;
       }
 
-      if (lateMinutes > 0) {
-        setPendingSlot(slot);
-        setLateModal({ slot, lateMinutes });
-        return;
-      }
-
-      try {
-        await finalizePunch(slot);
-        setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
-      } catch {
-        // finalizePunch 已顯示錯誤訊息
-      }
+      setPendingSlot(slot);
+      setLateModal({ slot, lateMinutes });
       return;
     }
 

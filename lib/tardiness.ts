@@ -50,8 +50,8 @@ export function isCoveredByApprovedLeave(
     const punch = timeToMinutes(scheduledTime);
     const leaveStart = timeToMinutes(startTime);
     const leaveEnd = timeToMinutes(endTime);
-    // 上班預定時刻落在請假時段內 → 不應記遲到
-    if (punch >= leaveStart && punch < leaveEnd) return true;
+    // 上班／下班預定時刻落在請假時段內（含結束點）→ 不應記遲到／不需打該格
+    if (punch >= leaveStart && punch <= leaveEnd) return true;
   }
 
   return false;
