@@ -380,21 +380,28 @@ function Start-PharmacyWebPm2Fresh {
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
 
+    if (Test-Pm2AppExists -Name "pharmacy-web") {
+        & pm2 delete pharmacy-web 2>$null | Out-Null
+    }
+
     $nextBin = Join-Path $ProjectRoot "node_modules\next\dist\bin\next"
     Push-Location $ProjectRoot
     try {
         if (Test-Path -LiteralPath $nextBin) {
             & $WriteLog "pm2 start next bin (pharmacy-web)"
             $quoted = '"' + $nextBin + '"'
-            [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name pharmacy-web -- start")
+            $cwdQ = '"' + $ProjectRoot + '"'
+            [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name pharmacy-web --cwd $cwdQ -- start")
         } else {
             & $WriteLog "pm2 start npm (pharmacy-web) via cmd"
-            [void](Invoke-Pm2ViaCmd -Pm2Args "start npm --name pharmacy-web -- start")
+            $cwdQ = '"' + $ProjectRoot + '"'
+            [void](Invoke-Pm2ViaCmd -Pm2Args "start npm --name pharmacy-web --cwd $cwdQ -- start")
         }
     } finally {
         Pop-Location
     }
-    Start-Sleep -Seconds 4
+    Start-Sleep -Seconds 5
+    & pm2 save 2>$null | Out-Null
     return (Get-Pm2Online -Name "pharmacy-web")
 }
 
@@ -416,7 +423,7 @@ function Get-CashflowAppRoot {
     return $null
 }
 
-# 自動拉起金流 PM2（缺行程時也能新建，不再只靠 resurrect）
+# 寫入暫存 ecosystem，固定 PORT=8443，避免 npm start 沒帶埠而秒退
 function Start-CashflowPm2Fresh {
     param([scriptblock]$WriteLog = { param($m) Write-Host $m })
 
@@ -427,48 +434,88 @@ function Start-CashflowPm2Fresh {
     }
 
     & $WriteLog ("Starting cashflow from {0}" -f $root)
-    Push-Location $root
-    try {
-        # 若已有同名，先刪再建，避免疊加
-        if (Test-Pm2AppExists -Name "cashflow") {
-            & pm2 delete cashflow 2>$null | Out-Null
-        }
 
-        $nextBin = Join-Path $root "node_modules\next\dist\bin\next"
-        $pkg = Join-Path $root "package.json"
-        $startScript = $null
-        if (Test-Path -LiteralPath $pkg) {
-            try {
-                $pkgJson = Get-Content -LiteralPath $pkg -Raw | ConvertFrom-Json
-                if ($pkgJson.scripts.start) { $startScript = "start" }
-            } catch { }
-        }
-
-        if (Test-Path -LiteralPath $nextBin) {
-            $quoted = '"' + $nextBin + '"'
-            [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name cashflow --cwd `"$root`" -- start")
-        } elseif ($startScript) {
-            [void](Invoke-Pm2ViaCmd -Pm2Args "start npm --name cashflow --cwd `"$root`" -- start")
-        } else {
-            # 常見：node server / index
-            $serverJs = @(
-                (Join-Path $root "server.js"),
-                (Join-Path $root "index.js"),
-                (Join-Path $root "dist\server.js")
-            ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
-            if ($serverJs) {
-                $quoted = '"' + $serverJs + '"'
-                [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name cashflow --cwd `"$root`"")
-            } else {
-                & $WriteLog "cashflow: no start script / next / server.js found"
-                return $false
-            }
-        }
-    } finally {
-        Pop-Location
+    if (Test-Pm2AppExists -Name "cashflow") {
+        & pm2 delete cashflow 2>$null | Out-Null
     }
 
-    Start-Sleep -Seconds 5
+    $nextBin = Join-Path $root "node_modules\next\dist\bin\next"
+    $pkg = Join-Path $root "package.json"
+    $hasNpmStart = $false
+    if (Test-Path -LiteralPath $pkg) {
+        try {
+            $pkgJson = Get-Content -LiteralPath $pkg -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($pkgJson.scripts -and $pkgJson.scripts.start) { $hasNpmStart = $true }
+        } catch { }
+    }
+
+    $ecoDir = Join-Path $env:TEMP "yaosheng-pm2"
+    if (-not (Test-Path -LiteralPath $ecoDir)) {
+        New-Item -ItemType Directory -Path $ecoDir -Force | Out-Null
+    }
+    $ecoPath = Join-Path $ecoDir "cashflow.ecosystem.cjs"
+    $rootEsc = $root.Replace("\", "\\")
+
+    if (Test-Path -LiteralPath $nextBin) {
+        $scriptEsc = $nextBin.Replace("\", "\\")
+        $eco = @"
+module.exports = {
+  apps: [{
+    name: 'cashflow',
+    cwd: '$rootEsc',
+    script: '$scriptEsc',
+    args: 'start -p 8443',
+    env: { PORT: '8443', NODE_ENV: 'production' },
+    max_restarts: 20,
+    min_uptime: 5000
+  }]
+};
+"@
+    } elseif ($hasNpmStart) {
+        $eco = @"
+module.exports = {
+  apps: [{
+    name: 'cashflow',
+    cwd: '$rootEsc',
+    script: 'npm',
+    args: 'start',
+    interpreter: 'none',
+    env: { PORT: '8443', NODE_ENV: 'production' },
+    max_restarts: 20,
+    min_uptime: 5000
+  }]
+};
+"@
+    } else {
+        $serverJs = @(
+            (Join-Path $root "server.js"),
+            (Join-Path $root "index.js"),
+            (Join-Path $root "dist\server.js")
+        ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+        if (-not $serverJs) {
+            & $WriteLog "cashflow: no start script / next / server.js found"
+            return $false
+        }
+        $scriptEsc = $serverJs.Replace("\", "\\")
+        $eco = @"
+module.exports = {
+  apps: [{
+    name: 'cashflow',
+    cwd: '$rootEsc',
+    script: '$scriptEsc',
+    env: { PORT: '8443', NODE_ENV: 'production' },
+    max_restarts: 20,
+    min_uptime: 5000
+  }]
+};
+"@
+    }
+
+    Set-Content -LiteralPath $ecoPath -Value $eco -Encoding ASCII
+    & $WriteLog ("pm2 start ecosystem: {0}" -f $ecoPath)
+    [void](Invoke-Pm2ViaCmd -Pm2Args ("start `"" + $ecoPath + "`""))
+
+    Start-Sleep -Seconds 6
     [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog $WriteLog)
     & pm2 save 2>$null | Out-Null
 
@@ -476,7 +523,7 @@ function Start-CashflowPm2Fresh {
         & $WriteLog "cashflow started OK"
         return $true
     }
-    & $WriteLog "cashflow start attempted but port/status not healthy yet"
+    & $WriteLog "cashflow start attempted but not healthy - run: pm2 logs cashflow --lines 50"
     return (Get-Pm2Online -Name "cashflow")
 }
 
