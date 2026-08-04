@@ -449,6 +449,11 @@ interface AppContextType {
     status: "approved" | "rejected" | "pending",
     rejectReason?: string
   ) => Promise<void>;
+  /** 店長／老闆調整補償方式（加班費 ↔ 補休）；已核准會同步補休帳本 */
+  updateOvertimeCompensation: (
+    id: string,
+    compensationType: "pay" | "time_off"
+  ) => Promise<void>;
   deleteOvertimeRequest: (id: string) => Promise<void>;
   tardinessRecords: TardinessRecord[];
   addTardinessRecord: (record: Omit<TardinessRecord, "id" | "createdAt">) => Promise<void>;
@@ -1457,6 +1462,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 入職日前／到期日後一律休假（X），舊覆寫不可蓋過
     const emp = employees.find((e) => e.id === employeeId);
     if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
+    // 固定班表設「禮拜六休假」優先於舊覆寫（否則會一直顯示預設 C）
+    if (isSaturday(date)) {
+      const dayOfWeek = getLocalDayOfWeek(date);
+      const fixedSat = fixedShifts.find(
+        (s) => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek
+      );
+      if (fixedSat?.shift === "X") return "X";
+    }
     const override = schedule[date]?.[employeeId];
     if (override) return override;
     return getBaseShiftForDate(date, employeeId);
@@ -1620,11 +1633,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Fixed shifts ────────────────────────────────────────────────────────────
 
+  /** 固定禮拜六休假時，清掉未來週六班表覆寫，否則畫面仍顯示舊的 C */
+  const clearFutureSaturdayOverrides = async (employeeId: string) => {
+    const today = new Date();
+    const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    const { data, error } = await supabase
+      .from("schedule_entries")
+      .select("date")
+      .eq("user_id", employeeId)
+      .gte("date", todayStr);
+    if (error || !data) return;
+    const saturdayDates = data
+      .map((r) => String(r.date).slice(0, 10))
+      .filter((d) => isSaturday(d));
+    for (const date of saturdayDates) {
+      await supabase
+        .from("schedule_entries")
+        .delete()
+        .eq("user_id", employeeId)
+        .eq("date", date);
+    }
+    if (saturdayDates.length > 0) {
+      await loadScheduleOverrides();
+    }
+  };
+
   const addFixedShift = async (shift: FixedShift) => {
-    await supabase.from("fixed_shifts").upsert(
+    const { error } = await supabase.from("fixed_shifts").upsert(
       { user_id: shift.employeeId, day_of_week: shift.dayOfWeek, shift_code: shift.shift },
       { onConflict: "user_id,day_of_week" }
     );
+    if (error) throw new Error(error.message || "新增固定班失敗");
+    if (shift.dayOfWeek === 6 && shift.shift === "X") {
+      await clearFutureSaturdayOverrides(shift.employeeId);
+    }
     await loadFixedShifts();
   };
 
@@ -1637,10 +1679,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .delete()
       .eq("user_id", old.employeeId)
       .eq("day_of_week", old.dayOfWeek);
-    await supabase.from("fixed_shifts").upsert(
+    const { error } = await supabase.from("fixed_shifts").upsert(
       { user_id: shift.employeeId, day_of_week: shift.dayOfWeek, shift_code: shift.shift },
       { onConflict: "user_id,day_of_week" }
     );
+    if (error) throw new Error(error.message || "更新固定班失敗");
+    if (shift.dayOfWeek === 6 && shift.shift === "X") {
+      await clearFutureSaturdayOverrides(shift.employeeId);
+    }
     await loadFixedShifts();
   };
 
@@ -2829,6 +2875,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (currentUser?.id) await loadNotifications(currentUser.id);
   };
 
+  const updateOvertimeCompensation = async (
+    id: string,
+    compensationType: "pay" | "time_off"
+  ) => {
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
+    if (!isManagerActor) {
+      throw new Error("僅店長或老闆可調整加班補償方式");
+    }
+
+    const res = await fetch("/api/applications/overtime/compensation", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, compensationType }),
+    });
+    const payload = (await res.json()) as { error?: string };
+    if (!res.ok) {
+      throw new Error(payload.error || "調整補償方式失敗");
+    }
+
+    await loadOvertimeRequests();
+    await loadCompLeaveLedger();
+  };
+
   const deleteOvertimeRequest = async (id: string) => {
     const { data, error } = await supabase
       .from("overtime_applications")
@@ -3501,6 +3571,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         overtimeRequests,
         addOvertimeRequest,
         updateOvertimeRequestStatus,
+        updateOvertimeCompensation,
         deleteOvertimeRequest,
         tardinessRecords,
         addTardinessRecord,

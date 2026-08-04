@@ -60,17 +60,24 @@ export default function FixedShiftsPage() {
 
   const canManage = currentUser?.role === "owner" || currentUser?.role === "manager";
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!newEmployeeId) return;
-    addFixedShift({
-      employeeId: newEmployeeId,
-      dayOfWeek: newDayOfWeek,
-      shift: newShift,
-    });
-    setNewEmployeeId("");
+    try {
+      await addFixedShift({
+        employeeId: newEmployeeId,
+        dayOfWeek: newDayOfWeek,
+        shift: newShift,
+      });
+      setNewEmployeeId("");
+      if (newDayOfWeek === 6 && newShift === "X") {
+        alert("已設定禮拜六固定休假。未來週六班表會顯示休假（若當月已鎖定，請先解鎖或清掉舊覆寫）。");
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "新增固定班失敗");
+    }
   };
 
-  const handleUpdate = (
+  const handleUpdate = async (
     index: number,
     field: "employeeId" | "dayOfWeek" | "shift",
     value: string | number
@@ -79,7 +86,14 @@ export default function FixedShiftsPage() {
     if (field === "employeeId" && typeof value === "string") updated.employeeId = value;
     if (field === "dayOfWeek" && typeof value === "number") updated.dayOfWeek = value;
     if (field === "shift" && typeof value === "string") updated.shift = value as ShiftType;
-    updateFixedShift(index, updated);
+    try {
+      await updateFixedShift(index, updated);
+      if (updated.dayOfWeek === 6 && updated.shift === "X") {
+        alert("已更新為禮拜六固定休假。未來週六會顯示休假。");
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "更新固定班失敗");
+    }
   };
 
   const handleSaveShiftTimes = (shift: ShiftType) => {
@@ -126,8 +140,8 @@ export default function FixedShiftsPage() {
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
-        禮拜六可設固定班（含休假 X）。未設定時預設為 C 班；設為休假後班表會顯示 X。
-        若該月班表已鎖定，需店長解鎖或手動改格子才會看到變更。
+        可為個別員工設定「禮拜六 → 休假（X）」。儲存後未來週六班表會顯示休假；未設定時禮拜六預設仍為 C 班。
+        若該月班表已鎖定且格子仍是舊資料，請店長解鎖後再確認。
       </div>
 
       {/* ── 特殊規則設定 ── */}

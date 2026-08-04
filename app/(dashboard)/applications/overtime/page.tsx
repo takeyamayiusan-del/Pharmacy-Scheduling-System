@@ -27,6 +27,7 @@ export default function OvertimePage() {
     overtimeRequests,
     addOvertimeRequest,
     updateOvertimeRequestStatus,
+    updateOvertimeCompensation,
     deleteOvertimeRequest,
     punchRecords,
     compLeaveLedger,
@@ -178,6 +179,27 @@ export default function OvertimePage() {
     } catch (error) {
       console.error(error);
       alert(error instanceof Error ? error.message : "審核失敗，請稍後再試。");
+    }
+  };
+
+  const handleChangeCompensation = async (
+    id: string,
+    compensationType: "pay" | "time_off",
+    employeeName: string
+  ) => {
+    const label = compensationType === "pay" ? "加班費" : "補休";
+    if (
+      !confirm(
+        `確定將「${employeeName}」這筆加班改為「${label}」？\n已核准者會同步調整補休時數。`
+      )
+    ) {
+      return;
+    }
+    try {
+      await updateOvertimeCompensation(id, compensationType);
+    } catch (error) {
+      console.error(error);
+      alert(error instanceof Error ? error.message : "調整失敗，請稍後再試。");
     }
   };
 
@@ -528,7 +550,26 @@ export default function OvertimePage() {
                     <td className="px-4 py-3 text-gray-600">{req.startTime} - {req.endTime}</td>
                     <td className="px-4 py-3 text-gray-600">{h} 小時</td>
                     <td className="px-4 py-3 text-gray-600">{req.reason}</td>
-                    <td className="px-4 py-3 text-gray-600">{req.compensationType === "pay" ? "加班費" : "補休"}</td>
+                    <td className="px-4 py-3 text-gray-600">
+                      <div className="flex flex-col gap-1">
+                        <span>{req.compensationType === "pay" ? "加班費" : "補休"}</span>
+                        {isManager && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              handleChangeCompensation(
+                                req.id,
+                                req.compensationType === "pay" ? "time_off" : "pay",
+                                empName
+                              )
+                            }
+                            className="text-left text-xs text-blue-600 hover:text-blue-800 underline"
+                          >
+                            改為{req.compensationType === "pay" ? "補休" : "加班費"}
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td className="px-4 py-3 text-xs">
                       {(() => {
                         const dayPunches = punchRecords.filter(p => p.employeeId === req.employeeId && p.date === req.date);
