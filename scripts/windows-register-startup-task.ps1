@@ -1,13 +1,22 @@
-# Register auto-start + funnel watchdog (Task Scheduler)
-# Run as Administrator:
+# 註冊 Docker+PM2 開機啟動 + 每分鐘監測重啟（Task Scheduler）
+# 系統管理員執行：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-register-startup-task.ps1
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
-$StartScript = Join-Path $ProjectRoot "scripts\windows-start-all.ps1"
+$StartScript = Join-Path $ProjectRoot "scripts\windows-docker-boot.ps1"
 $WatchdogScript = Join-Path $ProjectRoot "scripts\windows-funnel-watchdog.ps1"
 $StartTaskName = "YaoshengPharmacyStart"
 $WatchdogTaskName = "YaoshengPharmacyWatchdog"
+
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+)
+if (-not $isAdmin) {
+    Write-Host "Requesting Administrator privileges..." -ForegroundColor Yellow
+    Start-Process powershell.exe -Verb RunAs -ArgumentList "-NoProfile -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+    exit 0
+}
 
 $settings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
@@ -17,7 +26,7 @@ $settings = New-ScheduledTaskSettingsSet `
     -RestartCount 2 `
     -RestartInterval (New-TimeSpan -Minutes 5)
 
-# 開機後 3 分鐘 + 登入時 各跑一次完整啟動
+# 開機後 3 分鐘 + 登入時：Docker Supabase + PM2 + Funnel
 $triggerStartup = New-ScheduledTaskTrigger -AtStartup
 $triggerStartup.Delay = "PT3M"
 $triggerLogon = New-ScheduledTaskTrigger -AtLogOn
@@ -25,7 +34,6 @@ $triggerLogon = New-ScheduledTaskTrigger -AtLogOn
 $startAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$StartScript`""
 
-# SYSTEM 帳號：重開機無需有人登入也會執行
 $startPrincipal = New-ScheduledTaskPrincipal `
     -UserId "SYSTEM" `
     -LogonType ServiceAccount `
@@ -38,9 +46,9 @@ Register-ScheduledTask `
     -Trigger @($triggerStartup, $triggerLogon) `
     -Principal $startPrincipal `
     -Settings $settings `
-    -Description "Yaosheng pharmacy: VM + Supabase proxy + Next.js + Tailscale Funnel"
+    -Description "Yaosheng pharmacy: Docker Supabase + PM2 + Tailscale Funnel"
 
-# 每 1 分鐘檢查本機網站與外網 Funnel，掛掉自動修復並持續保溫
+# 每 1 分鐘：本機網站 + Auth + Funnel，掛掉自動修
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$WatchdogScript`""
 
@@ -61,22 +69,19 @@ Register-ScheduledTask `
     -Trigger $triggerWatchdog `
     -Principal $startPrincipal `
     -Settings $watchdogSettings `
-    -Description "Yaosheng pharmacy: auto-repair local site + Tailscale Funnel every 1 minute"
-
-$vm = Get-VM -Name "yaosheng-supabase" -ErrorAction SilentlyContinue
-if ($vm) {
-    Set-VM -Name "yaosheng-supabase" -AutomaticStartAction Start -AutomaticStartDelay 10
-    Write-Host "Hyper-V VM auto-start: enabled" -ForegroundColor Green
-}
+    -Description "Yaosheng pharmacy: auto-repair site + Supabase Auth + Funnel every 1 minute"
 
 Write-Host ""
 Write-Host "Registered tasks:" -ForegroundColor Green
-Write-Host "  $StartTaskName  — AtStartup (+3min) + AtLogon"
-Write-Host "  $WatchdogTaskName — every 1 minute (site + funnel + warmup)"
+Write-Host "  $StartTaskName  — AtStartup (+3min) + AtLogon  → windows-docker-boot.ps1"
+Write-Host "  $WatchdogTaskName — every 1 minute → windows-funnel-watchdog.ps1"
 Write-Host ""
 Write-Host "Logs:"
+Write-Host "  $ProjectRoot\data\logs\docker-boot.log"
 Write-Host "  $ProjectRoot\data\logs\funnel-watchdog.log"
-Write-Host "  $ProjectRoot\data\logs\site-runner.log"
+Write-Host ""
+Write-Host "One-time fix if login fails (old Hyper-V portproxy):" -ForegroundColor Yellow
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-clear-portproxy.ps1"
 Write-Host ""
 Write-Host "Test watchdog now:" -ForegroundColor Yellow
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-funnel-watchdog.ps1"

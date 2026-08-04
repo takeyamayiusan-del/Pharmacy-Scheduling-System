@@ -1,5 +1,6 @@
-# Start Next.js web app on Windows (Supabase runs in Hyper-V Ubuntu VM)
+# Start Next.js web app on Windows (本機 Docker Supabase + 可改用 pm2)
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\windows-start-web.ps1
+# 正式環境請優先：pm2 restart pharmacy-web
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -15,7 +16,7 @@ if (-not (Test-Path $node)) {
 if (-not (Test-Path ".env.local")) {
     Write-Host "Missing .env.local" -ForegroundColor Red
     Write-Host "Run: copy .env.local.example .env.local"
-    Write-Host "Fill keys from: supabase status (inside Ubuntu VM)"
+    Write-Host "Fill keys from: supabase status"
     exit 1
 }
 
