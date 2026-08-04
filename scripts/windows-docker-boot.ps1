@@ -56,19 +56,14 @@ if ($authOk) {
 }
 
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-    Write-BootLog "pm2 resurrect / restart pharmacy-web + cashflow"
-    & pm2 resurrect *>> $LogFile 2>&1
-    & pm2 restart pharmacy-web --update-env *>> $LogFile 2>&1
-    & pm2 restart cashflow --update-env *>> $LogFile 2>&1
-    if (-not (Get-Pm2Online -Name "pharmacy-web")) {
-        Write-BootLog "pm2 pharmacy-web missing, trying pm2 start"
-        & pm2 start npm --name "pharmacy-web" -- start *>> $LogFile 2>&1
+    Write-BootLog "Clean PM2 bring-up: pharmacy-web + cashflow (no npm stacking)"
+    # 開機可能 dump 已空：允許 resurrect 一次；之後一律去重 + restart
+    if (-not (Test-Pm2AppExists -Name "pharmacy-web")) {
+        & pm2 resurrect *>> $LogFile 2>&1
+        [void](Repair-Pm2NameDuplicates -Name "pharmacy-web" -WriteLog { param($m) Write-BootLog $m })
+        [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog { param($m) Write-BootLog $m })
     }
-    if ((Test-Pm2AppExists -Name "cashflow") -and -not (Get-Pm2Online -Name "cashflow")) {
-        Write-BootLog "pm2 cashflow not online after restart, trying pm2 start cashflow"
-        & pm2 start cashflow *>> $LogFile 2>&1
-    }
-    & pm2 save *>> $LogFile 2>&1
+    [void](Restart-DualSitesClean -ProjectRoot $ProjectRoot -WriteLog { param($m) Write-BootLog $m })
 } else {
     Write-BootLog "pm2 not found, falling back to windows-run-site.ps1"
     Start-SiteRunner -ProjectRoot $ProjectRoot
