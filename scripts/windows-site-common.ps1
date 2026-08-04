@@ -264,16 +264,21 @@ function Start-SiteRunner {
 }
 
 function Test-CashflowHealthy {
-    # 金流本機常見埠：8443（外網 Funnel）或 3001
-    if (Test-PortListening 8443) {
-        if (Test-HttpOk -Uri "http://127.0.0.1:8443/" -TimeoutSec 5) { return $true }
-        # 埠有在聽但 HTTP 失敗仍視為「進程可能活著」，交由 pm2 restart 再判
+    # 金流正式埠 :8443（PORT=8443）；舊行程可能仍在 :5000
+    foreach ($port in @(8443, 5000, 3001)) {
+        if (-not (Test-PortListening $port)) { continue }
+        if (Test-HttpOk -Uri "http://127.0.0.1:$port/" -TimeoutSec 5) { return $true }
+        # 埠有在聽就算起來（部分路徑可能非 /）
         return $true
     }
-    if (Test-PortListening 3001) {
-        return (Test-HttpOk -Uri "http://127.0.0.1:3001/" -TimeoutSec 5)
-    }
     return $false
+}
+
+function Get-CashflowListenPort {
+    foreach ($port in @(8443, 5000, 3001)) {
+        if (Test-PortListening $port) { return $port }
+    }
+    return 8443
 }
 
 function Test-Pm2AppExists([string]$Name) {
@@ -380,26 +385,142 @@ function Start-PharmacyWebPm2Fresh {
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
 
+    if (Test-Pm2AppExists -Name "pharmacy-web") {
+        & pm2 delete pharmacy-web 2>$null | Out-Null
+    }
+
     $nextBin = Join-Path $ProjectRoot "node_modules\next\dist\bin\next"
     Push-Location $ProjectRoot
     try {
         if (Test-Path -LiteralPath $nextBin) {
             & $WriteLog "pm2 start next bin (pharmacy-web)"
-            # 路徑含空白時需引號；整段交給 cmd
             $quoted = '"' + $nextBin + '"'
-            [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name pharmacy-web -- start")
+            $cwdQ = '"' + $ProjectRoot + '"'
+            [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name pharmacy-web --cwd $cwdQ -- start")
         } else {
             & $WriteLog "pm2 start npm (pharmacy-web) via cmd"
-            [void](Invoke-Pm2ViaCmd -Pm2Args "start npm --name pharmacy-web -- start")
+            $cwdQ = '"' + $ProjectRoot + '"'
+            [void](Invoke-Pm2ViaCmd -Pm2Args "start npm --name pharmacy-web --cwd $cwdQ -- start")
         }
     } finally {
         Pop-Location
     }
-    Start-Sleep -Seconds 4
+    Start-Sleep -Seconds 5
+    & pm2 save 2>$null | Out-Null
     return (Get-Pm2Online -Name "pharmacy-web")
 }
 
-# 清掉非 PM2 的殘留：舊 runner；僅在「該埠沒有對應 PM2 app」時才殺佔埠行程
+# 金流專案路徑：環境變數 CASHFLOW_ROOT 或常見本機目錄
+function Get-CashflowAppRoot {
+    $candidates = @()
+    if ($env:CASHFLOW_ROOT) { $candidates += $env:CASHFLOW_ROOT }
+    $candidates += @(
+        "C:\cash-flow-app",
+        "C:\Cash-Flow-App",
+        "C:\cashflow",
+        "C:\Cashflow"
+    )
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path -LiteralPath $p)) {
+            if (Test-Path -LiteralPath (Join-Path $p "package.json")) { return $p }
+        }
+    }
+    return $null
+}
+
+# 金流：用 node backend/index.js（不要 pm2 start npm，Windows 會把 npm.cmd 當 JS 執行而炸）
+function Start-CashflowPm2Fresh {
+    param([scriptblock]$WriteLog = { param($m) Write-Host $m })
+
+    $root = Get-CashflowAppRoot
+    if (-not $root) {
+        & $WriteLog "cashflow app root not found (set CASHFLOW_ROOT or install at C:\cash-flow-app)"
+        return $false
+    }
+
+    $entry = Join-Path $root "backend\index.js"
+    if (-not (Test-Path -LiteralPath $entry)) {
+        & $WriteLog ("cashflow entry missing: {0}" -f $entry)
+        return $false
+    }
+
+    & $WriteLog ("Starting cashflow: node backend/index.js from {0}" -f $root)
+
+    if (Test-Pm2AppExists -Name "cashflow") {
+        & pm2 delete cashflow 2>$null | Out-Null
+    }
+    if (Test-Pm2AppExists -Name "cashflow.ecosystem") {
+        & pm2 delete cashflow.ecosystem 2>$null | Out-Null
+    }
+
+    # 正式外網／Funnel 用 8443；可用環境變數 CASHFLOW_PORT 覆寫
+    $port = "8443"
+    if ($env:CASHFLOW_PORT) { $port = "$env:CASHFLOW_PORT" }
+
+    # 清掉正式埠與舊 :5000，避免殘留行程搶埠或混淆健康檢查
+    Clear-ListeningPorts -Ports @([int]$port, 5000, 8443) -WriteLog $WriteLog
+
+    $ecoDir = Join-Path $env:TEMP "yaosheng-pm2"
+    if (-not (Test-Path -LiteralPath $ecoDir)) {
+        New-Item -ItemType Directory -Path $ecoDir -Force | Out-Null
+    }
+    $ecoPath = Join-Path $ecoDir "cashflow-eco.cjs"
+    $rootEsc = $root.Replace("\", "\\")
+    $entryEsc = $entry.Replace("\", "\\")
+    $eco = @"
+module.exports = {
+  apps: [{
+    name: 'cashflow',
+    cwd: '$rootEsc',
+    script: '$entryEsc',
+    env: { PORT: '$port', NODE_ENV: 'production' },
+    max_restarts: 20,
+    min_uptime: 3000
+  }]
+};
+"@
+    Set-Content -LiteralPath $ecoPath -Value $eco -Encoding ASCII
+    & $WriteLog ("pm2 start ecosystem PORT=$port")
+    [void](Invoke-Pm2ViaCmd -Pm2Args ("start `"" + $ecoPath + "`""))
+
+    Start-Sleep -Seconds 5
+    [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog $WriteLog)
+    & pm2 save 2>$null | Out-Null
+
+    if (Test-CashflowHealthy -or (Get-Pm2Online -Name "cashflow")) {
+        & $WriteLog ("cashflow started OK on :{0}" -f (Get-CashflowListenPort))
+        return $true
+    }
+    & $WriteLog "cashflow start attempted but not healthy - run: pm2 logs cashflow --lines 50"
+    return (Get-Pm2Online -Name "cashflow")
+}
+
+# 強制釋放埠（EADDRINUSE 救援）：刪掉佔用 PID，不因「PM2 有同名」就跳過
+function Clear-ListeningPorts {
+    param(
+        [int[]]$Ports = @(3000, 8443),
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    foreach ($port in $Ports) {
+        if (-not (Test-PortListening $port)) { continue }
+        $listenPids = netstat -ano | Select-String ":$port\s" | Select-String "LISTENING" | ForEach-Object {
+            ($_ -split '\s+')[-1]
+        } | Select-Object -Unique
+        foreach ($procIdText in $listenPids) {
+            $procId = 0
+            if (-not [int]::TryParse("$procIdText", [ref]$procId)) { continue }
+            if ($procId -le 0) { continue }
+            & $WriteLog ("Free port :{0} kill PID {1}" -f $port, $procId)
+            try { & taskkill.exe /PID $procId /T /F 2>$null | Out-Null } catch {
+                Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+            }
+        }
+    }
+    Start-Sleep -Seconds 2
+}
+
+# 清掉非 PM2 的殘留 runner；佔埠殭屍在「PM2 非 online」時也清掉
 function Stop-OrphanWebStacks {
     param(
         [string]$ProjectRoot,
@@ -421,13 +542,18 @@ function Stop-OrphanWebStacks {
     }
 
     $protected = Get-Pm2ProtectedPids
+    # 只有「真的 online」才保護埠；errored/stopped 時必須清掉佔埠殭屍（EADDRINUSE）
     $skipPorts = @{}
-    if (Test-Pm2AppExists -Name "pharmacy-web") { $skipPorts[3000] = $true }
-    if (Test-Pm2AppExists -Name "cashflow") { $skipPorts[8443] = $true; $skipPorts[3001] = $true }
+    if ((Get-Pm2Online -Name "pharmacy-web") -and (Test-SiteHealthy)) { $skipPorts[3000] = $true }
+    if ((Get-Pm2Online -Name "cashflow") -and (Test-CashflowHealthy)) {
+        $skipPorts[5000] = $true
+        $skipPorts[8443] = $true
+        $skipPorts[3001] = $true
+    }
 
     foreach ($port in $Ports) {
         if ($skipPorts.ContainsKey($port)) {
-            & $WriteLog ("Skip killing :{0} (managed by PM2)" -f $port)
+            & $WriteLog ("Skip killing :{0} (PM2 healthy)" -f $port)
             continue
         }
         if (-not (Test-PortListening $port)) { continue }
@@ -438,13 +564,16 @@ function Stop-OrphanWebStacks {
             $procId = 0
             if (-not [int]::TryParse("$procIdText", [ref]$procId)) { continue }
             if ($procId -le 0) { continue }
-            if ($protected.ContainsKey($procId)) { continue }
-            & $WriteLog ("Killing orphan listener on :{0} PID {1}" -f $port, $procId)
+            if ($protected.ContainsKey($procId) -and (Get-Pm2Online -Name "pharmacy-web" -or Get-Pm2Online -Name "cashflow")) {
+                # protected but app not healthy: still kill to break EADDRINUSE loop
+            }
+            & $WriteLog ("Killing listener on :{0} PID {1}" -f $port, $procId)
             try { & taskkill.exe /PID $procId /T /F 2>$null | Out-Null } catch {
                 Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
             }
         }
     }
+    Start-Sleep -Seconds 1
 }
 
 # 乾淨重啟：去重 -> restart；僅在完全沒有時才 resurrect / 新建（避免 npm 疊加）
@@ -489,8 +618,7 @@ function Restart-Pm2AppClean {
     }
 
     if ($Name -eq "cashflow") {
-        & $WriteLog "cashflow needs existing PM2 entry; cannot auto-create without app path"
-        return $false
+        return (Start-CashflowPm2Fresh -WriteLog $WriteLog)
     }
 
     & pm2 start $Name 2>$null | Out-Null
@@ -505,17 +633,22 @@ function Restart-DualSitesClean {
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
 
-    Stop-OrphanWebStacks -ProjectRoot $ProjectRoot -Ports @(3000, 8443) -WriteLog $WriteLog
-    [void](Repair-Pm2NameDuplicates -Name "pharmacy-web" -WriteLog $WriteLog)
-    [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog $WriteLog)
+    # 先停 PM2 再強制清埠，避免 EADDRINUSE 重啟死循環
+    & $WriteLog "pm2 delete pharmacy-web / cashflow then free :3000 :5000 :8443"
+    if (Test-Pm2AppExists -Name "pharmacy-web") { & pm2 delete pharmacy-web 2>$null | Out-Null }
+    if (Test-Pm2AppExists -Name "cashflow") { & pm2 delete cashflow 2>$null | Out-Null }
+    if (Test-Pm2AppExists -Name "cashflow.ecosystem") { & pm2 delete cashflow.ecosystem 2>$null | Out-Null }
+    Clear-ListeningPorts -Ports @(3000, 5000, 8443) -WriteLog $WriteLog
 
-    $okPharmacy = Restart-Pm2AppClean -Name "pharmacy-web" -WriteLog $WriteLog -StartCwd $ProjectRoot
+    Stop-OrphanWebStacks -ProjectRoot $ProjectRoot -Ports @(3000, 5000, 8443) -WriteLog $WriteLog
+
+    $okPharmacy = Start-PharmacyWebPm2Fresh -ProjectRoot $ProjectRoot -WriteLog $WriteLog
 
     $okCashflow = $true
-    if (Test-Pm2AppExists -Name "cashflow") {
-        $okCashflow = Restart-Pm2AppClean -Name "cashflow" -WriteLog $WriteLog
+    if (Get-CashflowAppRoot) {
+        $okCashflow = Start-CashflowPm2Fresh -WriteLog $WriteLog
     } else {
-        & $WriteLog "cashflow not in pm2 - skip (register once: pm2 start --name cashflow && pm2 save)"
+        & $WriteLog "cashflow folder not found - skip (start manually later)"
     }
 
     & pm2 save 2>$null | Out-Null
@@ -600,9 +733,16 @@ function Repair-SiteIfNeeded {
     }
 
     & $WriteLog "Site unhealthy, repairing..."
-    # 若用 pm2：不要亂殺 node，交給 pm2 restart；否則清掉殘留 runner
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+    if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+        & $WriteLog "Free :3000 then restart pharmacy-web"
+        if (Test-Pm2AppExists -Name "pharmacy-web") {
+            & pm2 delete pharmacy-web 2>$null | Out-Null
+        }
+        Clear-ListeningPorts -Ports @(3000) -WriteLog $WriteLog
+        [void](Start-PharmacyWebPm2Fresh -ProjectRoot $ProjectRoot -WriteLog $WriteLog)
+    } else {
         Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+        Start-SiteRunner -ProjectRoot $ProjectRoot
     }
 
     $buildIdPath = Join-Path $ProjectRoot ".next\BUILD_ID"
@@ -610,13 +750,14 @@ function Repair-SiteIfNeeded {
         & $WriteLog "BUILD_ID missing, running npm run build..."
         try {
             Invoke-NpmBuild -ProjectRoot $ProjectRoot
+            if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+                [void](Start-PharmacyWebPm2Fresh -ProjectRoot $ProjectRoot -WriteLog $WriteLog)
+            }
         } catch {
             & $WriteLog "npm run build failed"
             return $false
         }
     }
-
-    Start-SiteViaPm2OrRunner -ProjectRoot $ProjectRoot -WriteLog $WriteLog
 
     # 最多等約 45 秒成為健康（每 5 秒用 curl 探一次）
     for ($i = 1; $i -le 9; $i++) {
@@ -627,6 +768,6 @@ function Repair-SiteIfNeeded {
         }
     }
 
-    & $WriteLog "Site repair failed (port may be held by zombie; will retry next minute)"
+    & $WriteLog "Site repair failed (will retry next minute)"
     return $false
 }

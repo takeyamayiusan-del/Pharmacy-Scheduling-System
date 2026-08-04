@@ -91,7 +91,7 @@ Write-Host "  $ProjectRoot\data\logs\funnel-watchdog.log"
 Write-Host ""
 Write-Host "One-time: ensure cashflow is in PM2 and saved:" -ForegroundColor Yellow
 Write-Host "  cd C:\cash-flow-app"
-Write-Host "  pm2 start ... --name cashflow"
+Write-Host "  `$env:PORT='8443'; pm2 start backend\index.js --name cashflow --cwd C:\cash-flow-app"
 Write-Host "  pm2 save"
 Write-Host "  pm2 startup   # 開機自動 resurrect"
 Write-Host ""

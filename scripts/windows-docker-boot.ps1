@@ -95,7 +95,8 @@ if (Test-Pm2AppExists -Name "cashflow") {
         Start-Sleep -Seconds 5
     }
     if ($cashflowOk) {
-        Write-BootLog "Cashflow OK http://127.0.0.1:8443"
+        $cfPort = Get-CashflowListenPort
+        Write-BootLog "Cashflow OK http://127.0.0.1:$cfPort"
     } else {
         Write-BootLog "WARNING: cashflow not healthy on :8443"
     }
@@ -105,7 +106,7 @@ if (Test-Pm2AppExists -Name "cashflow") {
 
 if (-not $SkipFunnel) {
     if (Get-Command tailscale -ErrorAction SilentlyContinue) {
-        Write-BootLog "Tailscale Funnel setup (3000 + 8443 if up)"
+        Write-BootLog "Tailscale Funnel setup (3000 + cashflow :8443 if up)"
         & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") *>> $LogFile
     } else {
         Write-BootLog "tailscale not found, skip Funnel"
@@ -115,7 +116,8 @@ if (-not $SkipFunnel) {
 Write-BootLog "Boot done"
 Write-Host "=== Done ===" -ForegroundColor Green
 Write-Host "排班: http://127.0.0.1:3000/login"
-Write-Host "金流: http://127.0.0.1:8443/   (若已用 pm2 啟動)"
+$cfShow = if (Get-Command Get-CashflowListenPort -ErrorAction SilentlyContinue) { Get-CashflowListenPort } else { 8443 }
+Write-Host "金流: http://127.0.0.1:$cfShow/   (預設 PORT=8443)"
 Write-Host "Auth: http://127.0.0.1:54321/auth/v1/health"
 Write-Host "Log:  $LogFile"
 Write-Host "Keep-alive: 排程 YaoshengPharmacyWatchdog 每分鐘監測兩個網站"
