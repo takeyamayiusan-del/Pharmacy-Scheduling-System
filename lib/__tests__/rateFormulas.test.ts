@@ -3,6 +3,7 @@ import {
   calculateRateAmount,
   convertUnitsForFormula,
   deriveHourlyRateFromBase,
+  deriveHourlyRateByLaborStandard,
   resolveUnitAmount,
 } from "@/lib/payroll/rateFormulas";
 
@@ -95,5 +96,11 @@ describe("rateFormulas", () => {
   it("由底薪與月工時推算時薪", () => {
     expect(deriveHourlyRateFromBase(30000, 240)).toBe(125);
     expect(deriveHourlyRateFromBase(30000, 0)).toBe(0);
+  });
+
+  it("勞基法口徑：月薪÷30÷8 推算時薪", () => {
+    expect(deriveHourlyRateByLaborStandard(30000)).toBe(125);
+    expect(deriveHourlyRateByLaborStandard(30000, 7.5)).toBe(133.33);
+    expect(deriveHourlyRateByLaborStandard(0)).toBe(0);
   });
 });

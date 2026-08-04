@@ -12,7 +12,7 @@ import {
 import {
   FORMULA_TYPE_OPTIONS,
   calculateRateAmount,
-  deriveHourlyRateFromBase,
+  deriveHourlyRateByLaborStandard,
   describeRateFormula,
   isHourlyMultiplierFormula,
   isPercentageFormula,
@@ -1024,19 +1024,18 @@ export default function PayrollPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              const derived = deriveHourlyRateFromBase(
-                                Number(salaryForm.baseSalary),
-                                Number(salaryForm.normalHours)
+                              const derived = deriveHourlyRateByLaborStandard(
+                                Number(salaryForm.baseSalary)
                               );
                               if (derived <= 0) {
-                                alert("請先填寫底薪與本月正常時數，才能推算時薪。");
+                                alert("請先填寫底薪，才能依勞基法（月薪÷30÷8）推算時薪。");
                                 return;
                               }
                               setSalaryForm({ ...salaryForm, hourlyRate: derived });
                             }}
                             className="px-3 py-2 border text-sm rounded text-sky-700 border-sky-200 bg-sky-50"
                           >
-                            用底薪÷正常時數推算時薪
+                            依勞基法（月薪÷30÷8）推算時薪
                           </button>
                           <button onClick={() => saveSalaryConfig(emp.id)} className="px-4 py-2 bg-blue-600 text-white text-sm rounded">儲存</button>
                           <button onClick={() => setEditingSalary(null)} className="px-4 py-2 border text-sm rounded">取消</button>

@@ -188,6 +188,15 @@ export function deriveHourlyRateFromBase(
   return roundMoney(baseSalary / normalHours);
 }
 
+/** 勞基法口徑：月薪先換日薪（月薪÷30），再換時薪（日薪÷每日工時） */
+export function deriveHourlyRateByLaborStandard(
+  baseSalary: number,
+  dailyHours = 8
+): number {
+  if (baseSalary <= 0 || dailyHours <= 0) return 0;
+  return roundMoney(baseSalary / 30 / dailyHours);
+}
+
 export function isPercentageFormula(formulaType: PayrollFormulaType): boolean {
   return (
     formulaType === "base_salary_percent" ||
