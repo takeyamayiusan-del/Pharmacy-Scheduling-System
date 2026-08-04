@@ -351,7 +351,7 @@ export default function PayrollPage() {
         ? calculateRateAmount(tardinessMinutes, tardinessRateCfg, salaryBasis, "minute")
         : 0;
 
-      const finalPay =
+      const finalPayRaw =
         cfg.baseSalary -
         cfg.laborInsurance -
         cfg.healthInsurance -
@@ -360,6 +360,7 @@ export default function PayrollPage() {
         overtimePay -
         tardinessDeduction +
         bonusTotal;
+      const finalPay = Math.round(finalPayRaw);
 
       return {
         userId: emp.id,
@@ -388,7 +389,7 @@ export default function PayrollPage() {
         tardinessDeduction,
         adjustments: empAdj,
         bonusTotal,
-        finalPay: Math.round(finalPay * 100) / 100,
+        finalPay,
       };
     });
   }, [
