@@ -385,7 +385,6 @@ function Start-PharmacyWebPm2Fresh {
     try {
         if (Test-Path -LiteralPath $nextBin) {
             & $WriteLog "pm2 start next bin (pharmacy-web)"
-            # 路徑含空白時需引號；整段交給 cmd
             $quoted = '"' + $nextBin + '"'
             [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name pharmacy-web -- start")
         } else {
@@ -397,6 +396,88 @@ function Start-PharmacyWebPm2Fresh {
     }
     Start-Sleep -Seconds 4
     return (Get-Pm2Online -Name "pharmacy-web")
+}
+
+# 金流專案路徑：環境變數 CASHFLOW_ROOT 或常見本機目錄
+function Get-CashflowAppRoot {
+    $candidates = @()
+    if ($env:CASHFLOW_ROOT) { $candidates += $env:CASHFLOW_ROOT }
+    $candidates += @(
+        "C:\cash-flow-app",
+        "C:\Cash-Flow-App",
+        "C:\cashflow",
+        "C:\Cashflow"
+    )
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path -LiteralPath $p)) {
+            if (Test-Path -LiteralPath (Join-Path $p "package.json")) { return $p }
+        }
+    }
+    return $null
+}
+
+# 自動拉起金流 PM2（缺行程時也能新建，不再只靠 resurrect）
+function Start-CashflowPm2Fresh {
+    param([scriptblock]$WriteLog = { param($m) Write-Host $m })
+
+    $root = Get-CashflowAppRoot
+    if (-not $root) {
+        & $WriteLog "cashflow app root not found (set CASHFLOW_ROOT or install at C:\cash-flow-app)"
+        return $false
+    }
+
+    & $WriteLog ("Starting cashflow from {0}" -f $root)
+    Push-Location $root
+    try {
+        # 若已有同名，先刪再建，避免疊加
+        if (Test-Pm2AppExists -Name "cashflow") {
+            & pm2 delete cashflow 2>$null | Out-Null
+        }
+
+        $nextBin = Join-Path $root "node_modules\next\dist\bin\next"
+        $pkg = Join-Path $root "package.json"
+        $startScript = $null
+        if (Test-Path -LiteralPath $pkg) {
+            try {
+                $pkgJson = Get-Content -LiteralPath $pkg -Raw | ConvertFrom-Json
+                if ($pkgJson.scripts.start) { $startScript = "start" }
+            } catch { }
+        }
+
+        if (Test-Path -LiteralPath $nextBin) {
+            $quoted = '"' + $nextBin + '"'
+            [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name cashflow --cwd `"$root`" -- start")
+        } elseif ($startScript) {
+            [void](Invoke-Pm2ViaCmd -Pm2Args "start npm --name cashflow --cwd `"$root`" -- start")
+        } else {
+            # 常見：node server / index
+            $serverJs = @(
+                (Join-Path $root "server.js"),
+                (Join-Path $root "index.js"),
+                (Join-Path $root "dist\server.js")
+            ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+            if ($serverJs) {
+                $quoted = '"' + $serverJs + '"'
+                [void](Invoke-Pm2ViaCmd -Pm2Args "start $quoted --name cashflow --cwd `"$root`"")
+            } else {
+                & $WriteLog "cashflow: no start script / next / server.js found"
+                return $false
+            }
+        }
+    } finally {
+        Pop-Location
+    }
+
+    Start-Sleep -Seconds 5
+    [void](Repair-Pm2NameDuplicates -Name "cashflow" -WriteLog $WriteLog)
+    & pm2 save 2>$null | Out-Null
+
+    if (Test-CashflowHealthy -or (Get-Pm2Online -Name "cashflow")) {
+        & $WriteLog "cashflow started OK"
+        return $true
+    }
+    & $WriteLog "cashflow start attempted but port/status not healthy yet"
+    return (Get-Pm2Online -Name "cashflow")
 }
 
 # 清掉非 PM2 的殘留：舊 runner；僅在「該埠沒有對應 PM2 app」時才殺佔埠行程
@@ -489,8 +570,7 @@ function Restart-Pm2AppClean {
     }
 
     if ($Name -eq "cashflow") {
-        & $WriteLog "cashflow needs existing PM2 entry; cannot auto-create without app path"
-        return $false
+        return (Start-CashflowPm2Fresh -WriteLog $WriteLog)
     }
 
     & pm2 start $Name 2>$null | Out-Null
@@ -511,11 +591,12 @@ function Restart-DualSitesClean {
 
     $okPharmacy = Restart-Pm2AppClean -Name "pharmacy-web" -WriteLog $WriteLog -StartCwd $ProjectRoot
 
+    # 金流：有 PM2 就重啟；沒有但本機有 C:\cash-flow-app 就自動新建
     $okCashflow = $true
-    if (Test-Pm2AppExists -Name "cashflow") {
+    if ((Test-Pm2AppExists -Name "cashflow") -or (Get-CashflowAppRoot)) {
         $okCashflow = Restart-Pm2AppClean -Name "cashflow" -WriteLog $WriteLog
     } else {
-        & $WriteLog "cashflow not in pm2 - skip (register once: pm2 start --name cashflow && pm2 save)"
+        & $WriteLog "cashflow not found (no pm2 entry / no CASHFLOW_ROOT) - skip"
     }
 
     & pm2 save 2>$null | Out-Null

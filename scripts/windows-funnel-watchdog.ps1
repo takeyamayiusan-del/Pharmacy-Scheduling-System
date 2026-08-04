@@ -94,26 +94,34 @@ if (-not $siteOk) {
     Write-Log "Local pharmacy site still unhealthy after repair"
 }
 
-# 金流：PM2 有註冊就必須在線；掛掉一律重啟
+# 金流：有 PM2 就修；沒有但本機有金流目錄就自動新建並拉起
 $cashflowOk = $true
 $hasCashflow = $false
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
     $hasCashflow = Test-Pm2AppExists -Name "cashflow"
-    if ($hasCashflow) {
+    $cashflowRoot = Get-CashflowAppRoot
+    if ($hasCashflow -or $cashflowRoot) {
+        if (-not $hasCashflow) {
+            Write-Log "cashflow missing from pm2 - auto start from $cashflowRoot"
+        }
         $cashflowOk = Repair-Pm2AppIfNeeded -Name "cashflow" -HealthyCheck { Test-CashflowHealthy } -WriteLog {
             param($m)
             Write-Log $m
         }
         if (-not $cashflowOk) {
+            Write-Log "cashflow still unhealthy after repair - trying fresh start"
+            $cashflowOk = Start-CashflowPm2Fresh -WriteLog { param($m) Write-Log $m }
+        }
+        $hasCashflow = Test-Pm2AppExists -Name "cashflow"
+        if (-not $cashflowOk) {
             Write-Log "cashflow still unhealthy after repair"
         }
     } else {
-        # 沒在 PM2 但埠還在聽 → 當健康；完全沒有則只記錄（不擋排班）
         if (Test-CashflowHealthy) {
             Write-Log "cashflow port healthy but not in pm2 list (ok)"
             $cashflowOk = $true
         } else {
-            Write-Log "WARN: cashflow not in pm2 and port down — 請確認曾 pm2 start cashflow && pm2 save"
+            Write-Log "WARN: cashflow not configured (no pm2 / no C:\cash-flow-app)"
             $cashflowOk = $true
         }
     }
