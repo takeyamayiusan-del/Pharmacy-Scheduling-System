@@ -541,13 +541,36 @@ export default function PayrollPage() {
     const wb = XLSX.utils.book_new();
     const rows: (string | number)[][] = [
       [`耀聖藥局 ${rocYear} 年 ${month} 月 薪資結算總表`],
-      ["姓名", "職位", "底薪", "勞保費", "健保費", "退休金", "請假扣款", "加班費", "遲到扣款", "異動加減", "實領金額", "入帳帳號"]
+      [
+        "姓名",
+        "職位",
+        "應出勤時數",
+        "請假時數(含補休)",
+        "加班費時數",
+        "國定假加班時數",
+        "遲到分鐘",
+        "底薪",
+        "勞保費",
+        "健保費",
+        "退休金",
+        "請假扣款",
+        "加班費",
+        "遲到扣款",
+        "異動加減",
+        "實領金額",
+        "入帳帳號",
+      ]
     ];
 
     payrollData.forEach(p => {
       rows.push([
         p.name,
         p.position || "—",
+        p.workHours,
+        p.leaveHours,
+        p.overtimeHours,
+        p.holidayOvertimeHours,
+        p.tardinessMinutes,
         p.baseSalary,
         -p.laborInsurance,
         -p.healthInsurance,
