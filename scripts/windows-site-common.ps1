@@ -281,15 +281,46 @@ function Start-SiteRunner {
         -WindowStyle Hidden
 }
 
-function Test-CashflowHealthy {
-    # 金流本機常見埠：8443（外網 Funnel）或 3001
-    if (Test-PortListening 8443) {
-        if (Test-HttpOk -Uri "http://127.0.0.1:8443/" -TimeoutSec 5) { return $true }
-        # HTTPS only locally uncommon; port open still counts as process up
-        return $true
+function Get-CashflowHealthPort {
+    param([string]$ProjectRoot)
+
+    $defaultPort = 5000
+    if (-not $ProjectRoot) { return $defaultPort }
+
+    $configPath = Get-CashflowBootstrapConfigPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $configPath)) { return $defaultPort }
+
+    try {
+        $cfg = (Get-Content -LiteralPath $configPath -Raw -ErrorAction Stop) | ConvertFrom-Json
+        $port = 0
+        if ($cfg.port -and [int]::TryParse([string]$cfg.port, [ref]$port) -and $port -gt 0) {
+            return $port
+        }
+    } catch {
+        # ignore invalid bootstrap
     }
-    if (Test-PortListening 3001) {
-        return (Test-HttpOk -Uri "http://127.0.0.1:3001/" -TimeoutSec 5)
+    return $defaultPort
+}
+
+function Test-CashflowHealthy {
+    param([string]$ProjectRoot = "")
+
+    $ports = @()
+    if ($ProjectRoot) {
+        $ports += Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+    } else {
+        $ports += 5000
+    }
+    # 舊版部署可能仍直接聽 8443 或 3001
+    foreach ($legacy in @(8443, 3001)) {
+        if ($ports -notcontains $legacy) { $ports += $legacy }
+    }
+
+    foreach ($port in $ports) {
+        if (-not (Test-PortListening $port)) { continue }
+        if (Test-HttpOk -Uri "http://127.0.0.1:$port/" -TimeoutSec 5) { return $true }
+        # 埠已開但 HTTP 探測失敗時仍視為程序存活（避免誤判重啟）
+        return $true
     }
     return $false
 }
@@ -442,14 +473,21 @@ function Ensure-CashflowPm2Registered {
         foreach ($a in $cfg.args) { $args += [string]$a }
     }
 
+    $port = 5000
+    if ($cfg.port) {
+        $parsed = 0
+        if ([int]::TryParse([string]$cfg.port, [ref]$parsed) -and $parsed -gt 0) { $port = $parsed }
+    }
+    $env:PORT = [string]$port
+
     $argLine = ""
     if ($args.Count -gt 0) {
         $argLine = ($args | ForEach-Object { '"{0}"' -f $_.Replace('"', '\"') }) -join " "
     }
     $cmd = if ($argLine) {
-        'pm2 start "{0}" --name cashflow --cwd "{1}" -- {2}' -f $scriptPath, $cwd, $argLine
+        'pm2 start "{0}" --name cashflow --cwd "{1}" --update-env -- {2}' -f $scriptPath, $cwd, $argLine
     } else {
-        'pm2 start "{0}" --name cashflow --cwd "{1}"' -f $scriptPath, $cwd
+        'pm2 start "{0}" --name cashflow --cwd "{1}" --update-env' -f $scriptPath, $cwd
     }
 
     & $WriteLog "Registering cashflow via bootstrap config"

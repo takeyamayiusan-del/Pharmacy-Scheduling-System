@@ -89,7 +89,7 @@ $cashflowOk = $true
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
     $hasCashflow = ((& pm2 jlist 2>$null) | Out-String) -match '"name"\s*:\s*"cashflow"'
     if ($hasCashflow) {
-        $cashflowOk = Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck { Test-CashflowHealthy } -WriteLog {
+        $cashflowOk = Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck { Test-CashflowHealthy -ProjectRoot $ProjectRoot } -WriteLog {
             param($m)
             Write-Log $m
         }
@@ -101,7 +101,14 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
 
 $funnelUrl = Get-FunnelUrl
 $funnelStatus = (tailscale funnel status 2>&1 | Out-String)
-$funnelConfigured = $funnelStatus -match "Funnel on" -and $funnelStatus -match "127\.0\.0\.1:3000"
+$cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+$hasCashflowInPm2 = $false
+if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+    $hasCashflowInPm2 = ((& pm2 jlist 2>$null) | Out-String) -match '"name"\s*:\s*"cashflow"'
+}
+$funnelPharmacyOk = $funnelStatus -match "Funnel on" -and $funnelStatus -match "127\.0\.0\.1:3000"
+$funnelCashflowOk = (-not $hasCashflowInPm2) -or ($funnelStatus -match "127\.0\.0\.1:$cashflowPort")
+$funnelConfigured = $funnelPharmacyOk -and $funnelCashflowOk
 $healthy = $authOk -and $siteOk -and $cashflowOk -and $funnelConfigured -and (Test-FunnelHealthy $funnelUrl)
 
 if ($healthy) {
