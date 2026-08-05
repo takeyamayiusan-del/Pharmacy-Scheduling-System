@@ -500,6 +500,7 @@ function Restart-PharmacyWebPm2 {
         Pop-Location
     }
 
+    $didDeepRepair = $false
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
         & $WriteLog ("Restart pharmacy-web attempt {0}/{1}" -f $attempt, $MaxAttempts)
 
@@ -529,10 +530,44 @@ function Restart-PharmacyWebPm2 {
         }
 
         & $WriteLog "pharmacy-web not healthy after start"
-        & pm2 logs pharmacy-web --lines 15 --nostream 2>$null | ForEach-Object { & $WriteLog $_ }
+        $pm2LogTail = (& pm2 logs pharmacy-web --lines 20 --nostream 2>$null | Out-String)
+        if ($pm2LogTail) {
+            $pm2LogTail -split "`r?`n" | ForEach-Object {
+                if ($_ -and $_.Trim().Length -gt 0) { & $WriteLog $_ }
+            }
+        }
         $errLog = Join-Path $env:USERPROFILE ".pm2\logs\pharmacy-web-error.log"
+        $errTail = ""
         if (Test-Path -LiteralPath $errLog) {
-            Get-Content -LiteralPath $errLog -Tail 10 -ErrorAction SilentlyContinue | ForEach-Object { & $WriteLog $_ }
+            $errTail = (Get-Content -LiteralPath $errLog -Tail 80 -ErrorAction SilentlyContinue | Out-String)
+            if ($errTail) {
+                $errTail -split "`r?`n" | ForEach-Object {
+                    if ($_ -and $_.Trim().Length -gt 0) { & $WriteLog $_ }
+                }
+            }
+        }
+
+        # 自動自癒：Next 在 Windows 偶發 MODULE_NOT_FOUND（.next 或 node_modules 局部損壞）
+        if (-not $didDeepRepair -and (($pm2LogTail -match "MODULE_NOT_FOUND") -or ($errTail -match "MODULE_NOT_FOUND") -or ($errTail -match "Cannot find module"))) {
+            $didDeepRepair = $true
+            & $WriteLog "Detected MODULE_NOT_FOUND. Running deep repair: stop -> clear .next -> npm install -> build"
+            try {
+                & pm2 stop pharmacy-web 2>$null | Out-Null
+                Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
+                Clear-NextBuild -ProjectRoot $ProjectRoot
+                Push-Location $ProjectRoot
+                try {
+                    $npm = "C:\Program Files\nodejs\npm.cmd"
+                    & $npm install
+                    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
+                } finally {
+                    Pop-Location
+                }
+                Invoke-NpmBuild -ProjectRoot $ProjectRoot
+                & $WriteLog "Deep repair completed; retrying startup"
+            } catch {
+                & $WriteLog ("Deep repair failed: {0}" -f $_.Exception.Message)
+            }
         }
         Start-Sleep -Seconds 2
     }
