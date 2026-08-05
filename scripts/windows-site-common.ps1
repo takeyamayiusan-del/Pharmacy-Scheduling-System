@@ -325,6 +325,60 @@ function Test-CashflowHealthy {
     return $false
 }
 
+function Get-FunnelStatusJson {
+    if (-not (Get-Command tailscale -ErrorAction SilentlyContinue)) { return $null }
+    $raw = (tailscale funnel status --json 2>$null | Out-String)
+    if (-not $raw) { return $null }
+    try {
+        return ($raw | ConvertFrom-Json)
+    } catch {
+        return $null
+    }
+}
+
+function Test-FunnelProxyConfigured {
+    param(
+        [int]$LocalPort,
+        [int]$PublicHttpsPort = 0
+    )
+
+    $status = Get-FunnelStatusJson
+    if (-not $status) {
+        # 後備：純文字 status（新版 CLI 常只印 443，故僅作最後手段）
+        $text = (tailscale funnel status 2>$null | Out-String)
+        if (-not $text) { return $false }
+        if ($text -notmatch "Funnel on") { return $false }
+        return ($text -match ("127\.0\.0\.1:{0}" -f $LocalPort))
+    }
+
+    $localNeedle = "127.0.0.1:$LocalPort"
+    $allow = $status.AllowFunnel
+    $web = $status.Web
+    if (-not $web) { return $false }
+
+    foreach ($hostPort in @($web.PSObject.Properties.Name)) {
+        if ($PublicHttpsPort -gt 0 -and $hostPort -notmatch (":{0}$" -f $PublicHttpsPort)) {
+            continue
+        }
+        $handlers = $web.$hostPort.Handlers
+        if (-not $handlers) { continue }
+        foreach ($path in @($handlers.PSObject.Properties.Name)) {
+            $proxy = [string]$handlers.$path.Proxy
+            if ($proxy -and $proxy.Contains($localNeedle)) {
+                if ($allow) {
+                    $allowed = $false
+                    foreach ($af in @($allow.PSObject.Properties.Name)) {
+                        if ($af -eq $hostPort -and $allow.$af) { $allowed = $true; break }
+                    }
+                    if (-not $allowed) { continue }
+                }
+                return $true
+            }
+        }
+    }
+    return $false
+}
+
 function Get-Pm2Online([string]$Name) {
     if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $false }
     $j = & pm2 jlist 2>$null

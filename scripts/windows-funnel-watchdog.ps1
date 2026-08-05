@@ -106,9 +106,13 @@ $hasCashflowInPm2 = $false
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
     $hasCashflowInPm2 = ((& pm2 jlist 2>$null) | Out-String) -match '"name"\s*:\s*"cashflow"'
 }
-$funnelPharmacyOk = $funnelStatus -match "Funnel on" -and $funnelStatus -match "127\.0\.0\.1:3000"
-$funnelCashflowOk = (-not $hasCashflowInPm2) -or ($funnelStatus -match "127\.0\.0\.1:$cashflowPort")
+# 純文字 status 常只印 443；用 JSON 判斷雙入口，避免誤判後 reset 清掉 8443
+$funnelPharmacyOk = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
+$funnelCashflowOk = (-not $hasCashflowInPm2) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort)
 $funnelConfigured = $funnelPharmacyOk -and $funnelCashflowOk
+if (-not $funnelConfigured) {
+    Write-Log "Funnel routes incomplete pharmacyOk=$funnelPharmacyOk cashflowOk=$funnelCashflowOk (text status may hide :8443)"
+}
 $healthy = $authOk -and $siteOk -and $cashflowOk -and $funnelConfigured -and (Test-FunnelHealthy $funnelUrl)
 
 if ($healthy) {

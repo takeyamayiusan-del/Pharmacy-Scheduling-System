@@ -3,6 +3,9 @@
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1
 # 僅排班單入口：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1 -PharmacyOnly
+#
+# 注意：純文字 `tailscale funnel status` 常只顯示 443；請用
+#   `tailscale funnel status --json` 或瀏覽器驗證 :8443。
 
 param(
     [switch]$PharmacyOnly
@@ -13,6 +16,7 @@ $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $LogDir = Join-Path $ProjectRoot "data\logs"
 $LogFile = Join-Path $LogDir "funnel-setup.log"
 $CashflowLocalPort = 5000
+$CashflowPublicPort = 8443
 
 . (Join-Path $PSScriptRoot "windows-site-common.ps1")
 $CashflowLocalPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
@@ -45,6 +49,7 @@ if (-not $PharmacyOnly) {
     }
 }
 
+# 先設排班，再設現金帳；不要中途 reset（會清掉剛設好的規則）
 tailscale funnel reset 2>$null
 tailscale serve reset 2>$null
 
@@ -52,22 +57,32 @@ $setupOut = (tailscale funnel --bg --yes 3000 2>&1 | Out-String)
 Write-Log ("pharmacy funnel: " + $setupOut.Trim())
 
 if (-not $PharmacyOnly) {
-    $cashflowOut = (tailscale funnel --bg --yes --https=8443 $CashflowLocalPort 2>&1 | Out-String)
+    Start-Sleep -Seconds 1
+    $cashflowOut = (tailscale funnel --bg --yes --https=$CashflowPublicPort $CashflowLocalPort 2>&1 | Out-String)
     Write-Log ("cashflow funnel: " + $cashflowOut.Trim())
 }
 
 Start-Sleep -Seconds 3
 $statusOut = (tailscale funnel status 2>&1 | Out-String)
+$statusJson = (tailscale funnel status --json 2>&1 | Out-String)
 Write-Host $statusOut
 Write-Log $statusOut.Trim()
+Write-Log ("funnel status json: " + $statusJson.Trim())
 
-if ($statusOut -notmatch "Funnel on") {
+if ($statusOut -notmatch "Funnel on" -and $statusJson -notmatch '"AllowFunnel"') {
     Write-Log "ERROR: Funnel not active"
     throw "Tailscale Funnel failed to start"
 }
 
-$pharmacyOk = $statusOut -match "127\.0\.0\.1:3000"
-$cashflowOk = $PharmacyOnly -or ($statusOut -match "127\.0\.0\.1:$CashflowLocalPort")
+$pharmacyOk = Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443
+if (-not $pharmacyOk) {
+    # 部分 CLI 把預設 443 省略，改用不限公開埠檢查
+    $pharmacyOk = Test-FunnelProxyConfigured -LocalPort 3000
+}
+$cashflowOk = $PharmacyOnly -or (Test-FunnelProxyConfigured -LocalPort $CashflowLocalPort -PublicHttpsPort $CashflowPublicPort)
+if (-not $PharmacyOnly -and -not $cashflowOk) {
+    $cashflowOk = Test-FunnelProxyConfigured -LocalPort $CashflowLocalPort
+}
 
 if (-not $pharmacyOk) {
     Write-Host "  Warning: pharmacy funnel (→3000) may not be configured" -ForegroundColor Yellow
@@ -75,11 +90,13 @@ if (-not $pharmacyOk) {
 }
 if (-not $PharmacyOnly -and -not $cashflowOk) {
     Write-Host "  Warning: cashflow funnel (8443→$CashflowLocalPort) may not be configured" -ForegroundColor Yellow
+    Write-Host "  Tip: plain 'funnel status' often hides :8443 — check JSON or browser." -ForegroundColor DarkGray
     Write-Log "Warning: missing proxy to 127.0.0.1:$CashflowLocalPort"
 }
 
 $url = $null
 if ($statusOut -match '(https://[a-z0-9-]+\.tail[a-z0-9]+\.ts\.net)') { $url = $Matches[1] }
+if (-not $url -and $statusJson -match '(https://[a-z0-9-]+\.tail[a-z0-9]+\.ts\.net)') { $url = $Matches[1] }
 if ($url) {
     try {
         $r = Invoke-WebRequest -Uri "$url/login" -UseBasicParsing -TimeoutSec 25
@@ -97,5 +114,9 @@ Write-Host ""
 Write-Host "Pharmacy URL:  $url/login" -ForegroundColor Yellow
 if (-not $PharmacyOnly) {
     Write-Host "Cashflow URL:  ${url}:8443/" -ForegroundColor Yellow
+    Write-Host "  Verify with: tailscale funnel status --json" -ForegroundColor DarkGray
     Write-Host "  (Use a browser for :8443; curl on Windows may show TLS errors.)" -ForegroundColor DarkGray
+    if ($cashflowOk) {
+        Write-Host "  Cashflow funnel JSON check: OK" -ForegroundColor Green
+    }
 }
