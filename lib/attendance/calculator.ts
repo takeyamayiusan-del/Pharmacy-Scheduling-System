@@ -16,7 +16,11 @@ export const SHIFT_HOURS: Record<string, number> = {
   X: 0,
 };
 
-const TAIWAN_HOLIDAYS_2026 = new Set([
+/**
+ * 後備國定假清單（僅在未傳入 holidayDates 時使用）。
+ * 正式環境應以 holidays 資料表／getHolidayInfo 為準。
+ */
+export const FALLBACK_TAIWAN_HOLIDAYS_2026 = [
   '2026-01-01',
   '2026-01-28',
   '2026-01-29',
@@ -30,13 +34,20 @@ const TAIWAN_HOLIDAYS_2026 = new Set([
   '2026-06-19',
   '2026-09-28',
   '2026-10-10',
-  '2026-10-31',
-  '2026-11-12',
-  '2026-12-25',
-]);
+] as const;
 
-function isNationalHoliday(date?: string): boolean {
-  return Boolean(date && TAIWAN_HOLIDAYS_2026.has(date));
+export function toHolidayDateSet(
+  dates?: Iterable<string> | null
+): Set<string> {
+  if (dates) return new Set(dates);
+  return new Set(FALLBACK_TAIWAN_HOLIDAYS_2026);
+}
+
+export function isNationalHolidayDate(
+  date: string | undefined,
+  holidayDates: Set<string>
+): boolean {
+  return Boolean(date && holidayDates.has(date));
 }
 
 /**
@@ -71,6 +82,8 @@ export interface MonthlyStatsParams {
   scheduleEntries: Array<Pick<ScheduleEntry, 'shift_code'> & { date?: string }>;
   approvedOvertimes: Pick<OvertimeApplication, 'start_time' | 'end_time' | 'compensation'>[];
   approvedLeaves: Pick<LeaveApplication, 'period'>[];
+  /** 國定假日期（YYYY-MM-DD）。建議傳入 holidays 表資料；未傳則用後備清單 */
+  holidayDates?: Iterable<string>;
 }
 
 /**
@@ -87,7 +100,17 @@ export interface MonthlyStatsParams {
  * @returns MonthlyStats（所有時數精確至小數點後兩位）
  */
 export function calculateMonthlyStats(params: MonthlyStatsParams): MonthlyStats {
-  const { userId, year, month, scheduleEntries, approvedOvertimes, approvedLeaves } = params;
+  const {
+    userId,
+    year,
+    month,
+    scheduleEntries,
+    approvedOvertimes,
+    approvedLeaves,
+    holidayDates,
+  } = params;
+
+  const holidaySet = toHolidayDateSet(holidayDates ?? null);
 
   // 上班天數（排除排休）
   const workDays = scheduleEntries.filter(e => e.shift_code !== 'X').length;
@@ -103,9 +126,9 @@ export function calculateMonthlyStats(params: MonthlyStatsParams): MonthlyStats 
     .filter(o => o.compensation === 'pay')
     .reduce((sum, o) => sum + calculateDuration(o.start_time, o.end_time), 0);
 
-  // 國定假日排班直接視為加班費時數
+  // 國定假日排班直接視為加班費時數（來源：holidayDates／holidays 表）
   const holidayOvertimeHoursRaw = scheduleEntries
-    .filter((e) => e.shift_code !== 'X' && isNationalHoliday(e.date))
+    .filter((e) => e.shift_code !== 'X' && isNationalHolidayDate(e.date, holidaySet))
     .reduce((sum, e) => sum + (SHIFT_HOURS[e.shift_code] ?? 0), 0);
 
   // 補休時數（compensation === 'comp_leave'）
@@ -124,9 +147,9 @@ export function calculateMonthlyStats(params: MonthlyStatsParams): MonthlyStats 
     year,
     month,
     workDays,
-    workHours: parseFloat(workHoursRaw.toFixed(2)),
-    overtimeHours: parseFloat((overtimeHoursRaw + holidayOvertimeHoursRaw).toFixed(2)),
-    compLeaveHours: parseFloat(compLeaveHoursRaw.toFixed(2)),
-    leaveHours: parseFloat(leaveHoursRaw.toFixed(2)),
+    workHours: Number(workHoursRaw.toFixed(2)),
+    overtimeHours: Number((overtimeHoursRaw + holidayOvertimeHoursRaw).toFixed(2)),
+    compLeaveHours: Number(compLeaveHoursRaw.toFixed(2)),
+    leaveHours: Number(leaveHoursRaw.toFixed(2)),
   };
 }

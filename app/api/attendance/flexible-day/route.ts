@@ -503,19 +503,18 @@ export async function POST(req: NextRequest) {
           return sum + hours;
         }, 0);
 
-        if (balance < Number(pending.hours)) {
-          return NextResponse.json(
-            { error: `補休餘額不足（可用 ${Math.round(balance * 100) / 100} 小時）` },
-            { status: 400 }
-          );
-        }
+        const hours = Number(pending.hours);
+        const isAdvance = balance < hours;
 
+        // 允許先請後補：餘額不足仍可扣成負數，之後加班轉補休加回
         const { error: debitError } = await admin.from("comp_leave_ledger").insert({
           user_id: pending.user_id,
-          hours: -Number(pending.hours),
+          hours: -hours,
           source_type: "typhoon_debit",
           source_id: pending.source_day_id,
-          note: `颱風日待補時數改扣補休（${pending.source_date}）`,
+          note: isAdvance
+            ? `颱風日待補時數改扣補休（借支）（${pending.source_date}）`
+            : `颱風日待補時數改扣補休（${pending.source_date}）`,
         });
         if (debitError) {
           return NextResponse.json({ error: debitError.message }, { status: 500 });

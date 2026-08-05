@@ -200,10 +200,27 @@ describe('工時計算模組測試', () => {
         ],
         approvedOvertimes: [],
         approvedLeaves: [],
+        holidayDates: ['2026-06-19'],
       });
 
       expect(result.workHours).toBe(16);
       expect(result.overtimeHours).toBe(8);
+    });
+
+    it('未列入 holidayDates 的日期不計國定假加班', () => {
+      const result = calculateMonthlyStats({
+        userId: 'test-id',
+        year: 2026,
+        month: 10,
+        scheduleEntries: [
+          { shift_code: 'A' as ShiftCode, date: '2026-10-31' },
+        ],
+        approvedOvertimes: [],
+        approvedLeaves: [],
+        holidayDates: ['2026-10-10'],
+      });
+
+      expect(result.overtimeHours).toBe(0);
     });
   });
 });

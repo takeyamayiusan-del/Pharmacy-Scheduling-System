@@ -35,7 +35,7 @@ const SHIFT_HOURS: Record<string, number> = {
   X: 0,
 };
 
-const TAIWAN_HOLIDAYS_2026 = new Set([
+const FALLBACK_TAIWAN_HOLIDAYS_2026 = new Set([
   "2026-01-01",
   "2026-01-28",
   "2026-01-29",
@@ -49,9 +49,6 @@ const TAIWAN_HOLIDAYS_2026 = new Set([
   "2026-06-19",
   "2026-09-28",
   "2026-10-10",
-  "2026-10-31",
-  "2026-11-12",
-  "2026-12-25",
 ]);
 
 // 計算兩個時間字串之間的時數差
@@ -134,6 +131,18 @@ serve(async (req) => {
 
     const results: CalculationResult[] = [];
 
+    // 國定假以 holidays 資料表為準（與前端 getHolidayInfo 一致）
+    const { data: holidayRows } = await supabaseAdmin
+      .from("holidays")
+      .select("holiday_date")
+      .eq("year", year);
+    const holidaySet = new Set<string>(
+      (holidayRows ?? []).map((row) => row.holiday_date as string)
+    );
+    if (holidaySet.size === 0) {
+      for (const d of FALLBACK_TAIWAN_HOLIDAYS_2026) holidaySet.add(d);
+    }
+
     // 逐個員工計算
     for (const user of users) {
       try {
@@ -184,7 +193,7 @@ serve(async (req) => {
           .reduce((sum, o) => sum + calculateDuration(o.start_time, o.end_time), 0) || 0;
 
         const holidayOvertimeHours = scheduleEntries
-          ?.filter((entry) => entry.shift_code !== "X" && TAIWAN_HOLIDAYS_2026.has(entry.date))
+          ?.filter((entry) => entry.shift_code !== "X" && holidaySet.has(entry.date))
           .reduce((sum, entry) => sum + (SHIFT_HOURS[entry.shift_code] || 0), 0) || 0;
         
         const compLeaveHours = overtimeApps?.filter(o => o.compensation === 'comp_leave')

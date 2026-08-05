@@ -470,11 +470,23 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
                       <div className="flex flex-wrap gap-2 items-center">
                         <button
                           type="button"
-                          disabled={busy || balance < item.hours}
-                          onClick={() => void resolvePending(item, "comp_leave_deducted")}
+                          disabled={busy}
+                          onClick={() => {
+                            const after =
+                              Math.round((balance - item.hours) * 100) / 100;
+                            if (balance < item.hours) {
+                              const ok = confirm(
+                                `補休餘額不足（目前 ${formatCompLeaveHours(balance)} 小時，待扣 ${formatCompLeaveHours(item.hours)} 小時）。\n` +
+                                  `結清後餘額約 ${formatCompLeaveHours(after)} 小時（可先請後補）。\n\n確定扣補休結清？`
+                              );
+                              if (!ok) return;
+                            }
+                            void resolvePending(item, "comp_leave_deducted");
+                          }}
                           className="px-2 py-1 bg-amber-600 text-white rounded text-xs hover:bg-amber-700 disabled:opacity-50"
                         >
                           扣補休結清
+                          {balance < item.hours ? "（借支）" : ""}
                         </button>
                         <input
                           type="date"

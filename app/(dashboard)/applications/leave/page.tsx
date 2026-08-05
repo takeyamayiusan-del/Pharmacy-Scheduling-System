@@ -43,6 +43,7 @@ export default function LeaveApplicationPage() {
     employees,
     leaveRequests,
     addLeaveRequest,
+    openLeaveAttachment,
     updateLeaveRequestStatus,
     deleteLeaveRequest,
     shiftTimeConfig,
@@ -62,6 +63,7 @@ export default function LeaveApplicationPage() {
     type: '事假' as LeaveType,
     reason: '',
   });
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([]);
   const [targetEmployeeId, setTargetEmployeeId] = useState('');
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
   const [submitError, setSubmitError] = useState('');
@@ -166,23 +168,27 @@ export default function LeaveApplicationPage() {
     }
 
     try {
-      await addLeaveRequest({
-        employeeId: formEmployee.id,
-        employeeName: formEmployee.name,
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        startTime,
-        endTime,
-        period: formData.period,
-        shiftMode: formData.shiftMode,
-        leaveHours: estimatedHours,
-        type: formData.type,
-        reason: formData.reason,
-        status: 'pending',
-      });
+      await addLeaveRequest(
+        {
+          employeeId: formEmployee.id,
+          employeeName: formEmployee.name,
+          startDate: formData.startDate,
+          endDate: formData.endDate,
+          startTime,
+          endTime,
+          period: formData.period,
+          shiftMode: formData.shiftMode,
+          leaveHours: estimatedHours,
+          type: formData.type,
+          reason: formData.reason,
+          status: 'pending',
+        },
+        attachmentFiles
+      );
 
       setShowForm(false);
       setTargetEmployeeId('');
+      setAttachmentFiles([]);
       setFormData({
         startDate: '',
         endDate: '',
@@ -478,6 +484,32 @@ export default function LeaveApplicationPage() {
               />
             </div>
 
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                附件（選填）
+              </label>
+              <input
+                type="file"
+                accept="image/jpeg,image/png,application/pdf"
+                multiple
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  setAttachmentFiles(picked.slice(0, 5));
+                }}
+                className="w-full text-sm"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                可上傳診斷書／證明（JPEG、PNG、PDF，單檔 ≤10MB，最多 5 個）
+              </p>
+              {attachmentFiles.length > 0 && (
+                <ul className="mt-2 text-xs text-gray-700 space-y-1">
+                  {attachmentFiles.map((f) => (
+                    <li key={`${f.name}-${f.size}`}>{f.name}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
             {submitError && (
               <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
                 {submitError}
@@ -524,6 +556,7 @@ export default function LeaveApplicationPage() {
                 <th className="p-4 text-left font-medium text-gray-700">時數</th>
                 <th className="p-4 text-left font-medium text-gray-700">假別</th>
                 <th className="p-4 text-left font-medium text-gray-700">事由</th>
+                <th className="p-4 text-left font-medium text-gray-700">附件</th>
                 <th className="p-4 text-left font-medium text-gray-700">狀態</th>
                 <th className="p-4 text-left font-medium text-gray-700">審核說明</th>
                 <th className="p-4 text-left font-medium text-gray-700">簽名表</th>
@@ -533,7 +566,7 @@ export default function LeaveApplicationPage() {
             <tbody className="divide-y">
               {visibleRequests.length === 0 && (
                 <tr>
-                  <td colSpan={isManager ? 10 : 9} className="p-8 text-center text-gray-500">
+                  <td colSpan={isManager ? 11 : 10} className="p-8 text-center text-gray-500">
                     本月沒有請假申請
                   </td>
                 </tr>
@@ -558,6 +591,31 @@ export default function LeaveApplicationPage() {
                     <td className="p-4 text-gray-600">{displayHours} 小時</td>
                     <td className="p-4 text-gray-600">{req.type}</td>
                     <td className="p-4 text-gray-600 max-w-xs truncate">{req.reason}</td>
+                    <td className="p-4 text-sm text-gray-600">
+                      {(req.attachments?.length ?? 0) === 0 ? (
+                        <span className="text-gray-400">—</span>
+                      ) : (
+                        <div className="flex flex-col gap-1">
+                          {req.attachments!.map((att) => (
+                            <button
+                              key={att.id}
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  await openLeaveAttachment(att.id);
+                                } catch (err) {
+                                  alert(err instanceof Error ? err.message : '無法開啟附件');
+                                }
+                              }}
+                              className="text-left text-blue-600 hover:underline text-xs truncate max-w-[10rem]"
+                              title={att.fileName}
+                            >
+                              {att.fileName}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </td>
                     <td className="p-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
                         {status.label}

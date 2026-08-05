@@ -3,11 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, type PunchRecord, type ShiftType } from "@/lib/context/AppContext";
-import {
-  PHARMACY_LOCATION,
-  distanceMeters,
-  isWithinPharmacyGeofence,
-} from "@/lib/attendance/geofence";
+import { distanceMeters, isWithinGeofence } from "@/lib/attendance/geofence";
 import {
   calcLateMinutes,
   EARLY_PUNCH_MINUTES,
@@ -47,6 +43,7 @@ export default function PunchPage() {
     refreshTodayPunchRecords,
     bulletinItems,
     leaveRequests,
+    geofenceConfig,
   } = useApp();
 
   const [announcementModal, setAnnouncementModal] = useState<boolean>(false);
@@ -155,11 +152,11 @@ export default function PunchPage() {
       const dist = distanceMeters(
         lat,
         lng,
-        PHARMACY_LOCATION.latitude,
-        PHARMACY_LOCATION.longitude
+        geofenceConfig.latitude,
+        geofenceConfig.longitude
       );
       setDistance(Math.round(dist));
-      setGpsState(isWithinPharmacyGeofence(lat, lng) ? "inside" : "outside");
+      setGpsState(isWithinGeofence(lat, lng, geofenceConfig) ? "inside" : "outside");
     };
 
     const handleError = (error: GeolocationPositionError, highAccuracy: boolean) => {
@@ -190,7 +187,7 @@ export default function PunchPage() {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
     };
-  }, []);
+  }, [geofenceConfig]);
 
   const finalizePunch = useCallback(
     async (slot: PunchSlot, reason?: string, lateMinutes = 0) => {
@@ -242,7 +239,7 @@ export default function PunchPage() {
   const handleNoShiftPunch = (action: "work_in" | "work_out") => {
     if (!currentUser || !coords || !punchRecordsReady || isPunching) return;
     if (gpsState !== "inside") {
-      alert("請在耀聖藥局 150 公尺範圍內才能打卡");
+      alert(`請在${geofenceConfig.name} ${geofenceConfig.radiusMeters} 公尺範圍內才能打卡`);
       return;
     }
     setNoShiftOvertimeModal({ action });
@@ -287,7 +284,7 @@ export default function PunchPage() {
   const validateAndPunch = async (slot: PunchSlot) => {
     if (!currentUser || !coords || !punchRecordsReady || isPunching) return;
     if (gpsState !== "inside") {
-      alert("請在耀聖藥局 150 公尺範圍內才能打卡");
+      alert(`請在${geofenceConfig.name} ${geofenceConfig.radiusMeters} 公尺範圍內才能打卡`);
       return;
     }
 
@@ -471,9 +468,9 @@ export default function PunchPage() {
             }`}
           />
           <div className="text-sm">
-            <p className="font-medium text-gray-900">GPS 定位：{PHARMACY_LOCATION.name}</p>
-            <p className="text-gray-600">{PHARMACY_LOCATION.address}</p>
-            <p className="text-gray-600">允許範圍：半徑 {PHARMACY_LOCATION.radiusMeters} 公尺</p>
+            <p className="font-medium text-gray-900">GPS 定位：{geofenceConfig.name}</p>
+            <p className="text-gray-600">{geofenceConfig.address}</p>
+            <p className="text-gray-600">允許範圍：半徑 {geofenceConfig.radiusMeters} 公尺</p>
             {gpsState === "loading" && <p className="text-gray-500 mt-1">定位中…</p>}
             {gpsState === "denied" && (
               <p className="text-red-700 mt-1">無法取得定位，請允許瀏覽器使用 GPS</p>

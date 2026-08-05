@@ -29,6 +29,11 @@ import {
 } from "@/lib/applications/duplicateGuard";
 import { resolveAnnualLeaveQuotaDays } from "@/lib/attendance/annualLeave";
 import {
+  geofenceFromEnv,
+  normalizeGeofence,
+  type GeofenceConfig,
+} from "@/lib/attendance/geofence";
+import {
   calculateEffectiveShift,
   enumerateDatesInRange,
 } from "@/lib/schedule/effectiveShift";
@@ -130,6 +135,15 @@ export type LeaveRequest = {
   reviewedByName?: string;
   reviewedAt?: string;
   scheduleSnapshot?: ScheduleSnapshotEntry[];
+  attachments?: LeaveAttachmentItem[];
+};
+
+export type LeaveAttachmentItem = {
+  id: string;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  uploadedAt: string;
 };
 
 export type CompLeaveLedgerEntry = {
@@ -421,7 +435,11 @@ interface AppContextType {
   unlockLeaveMonth: (year: number, month: number) => Promise<void>;
   leaveMonthLocks: LeaveMonthLock[];
   leaveRequests: LeaveRequest[];
-  addLeaveRequest: (request: Omit<LeaveRequest, "id" | "createdAt">) => Promise<void>;
+  addLeaveRequest: (
+    request: Omit<LeaveRequest, "id" | "createdAt" | "attachments">,
+    files?: File[]
+  ) => Promise<void>;
+  openLeaveAttachment: (attachmentId: string) => Promise<void>;
   updateLeaveRequestStatus: (
     id: string,
     status: "approved" | "rejected" | "pending",
@@ -499,6 +517,9 @@ interface AppContextType {
   holidays: Holiday[];
   loadHolidays: () => Promise<void>;
   refreshHolidayCalendar: (year: number) => Promise<void>;
+  geofenceConfig: GeofenceConfig;
+  loadGeofenceConfig: () => Promise<void>;
+  updateGeofenceConfig: (next: Partial<GeofenceConfig>) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -530,6 +551,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [annualLeaveConfigs, setAnnualLeaveConfigs] = useState<AnnualLeaveConfig[]>([]);
   const [annualLeaveAdjustments, setAnnualLeaveAdjustments] = useState<AnnualLeaveAdjustment[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
+  const [geofenceConfig, setGeofenceConfig] = useState<GeofenceConfig>(() => geofenceFromEnv());
 
   // Supabase-backed state (previously in localStorage)
   const [schedule, setSchedule] = useState<ScheduleData>({});
@@ -842,54 +864,77 @@ export function AppProvider({ children }: { children: ReactNode }) {
         "*, users!leave_applications_user_id_fkey(name), reviewer:users!leave_applications_reviewed_by_fkey(name)"
       )
       .order("created_at", { ascending: false });
-    if (data) {
-      setLeaveRequests(
-        data.map((r) => {
-          const startTime = formatDbTime(
-            r.start_time,
-            r.period === "morning" ? "08:30" : r.period === "afternoon" ? "13:30" : "08:30"
-          );
-          const endTime = formatDbTime(
-            r.end_time,
-            r.period === "full_day" ? "18:00" : r.period === "morning" ? "12:00" : "18:00"
-          );
-          let period: LeavePeriodMode = "full_day";
-          if (r.period === "morning") period = "morning";
-          else if (r.period === "afternoon") period = "afternoon";
-          else if (startTime && endTime) {
-            if (startTime === "08:30" && endTime === "12:00") period = "morning";
-            else if (startTime === "13:30" && endTime === "18:00") period = "afternoon";
-            else if (startTime === "08:30" && (endTime === "18:00" || endTime === "21:00")) period = "full_day";
-            else period = "custom";
-          }
-          const shiftRaw = r.shift_mode as string | null;
-          const shiftMode: LeaveRequest["shiftMode"] =
-            shiftRaw && shiftRaw !== "schedule" ? (shiftRaw as ShiftType) : "schedule";
+    if (!data) return;
 
-          return {
-            id: r.id,
-            employeeId: r.user_id,
-            employeeName: (r.users as { name?: string } | null)?.name ?? "",
-            startDate: r.leave_date,
-            endDate: r.end_date ?? r.leave_date,
-            startTime,
-            endTime,
-            period,
-            shiftMode,
-            leaveHours: Number(r.leave_hours ?? 0),
-            type: r.leave_type as LeaveType,
-            reason: r.reason,
-            rejectReason: r.reject_reason ?? undefined,
-            status: r.status as LeaveRequest["status"],
-            reviewedBy: r.reviewed_by ?? undefined,
-            reviewedByName: (r.reviewer as { name?: string } | null)?.name ?? undefined,
-            reviewedAt: r.reviewed_at ?? undefined,
-            scheduleSnapshot: (r.schedule_snapshot as ScheduleSnapshotEntry[] | null) ?? undefined,
-            createdAt: r.created_at,
-          };
-        })
-      );
+    const ids = data.map((r) => r.id);
+    const attachmentsByLeave = new Map<string, LeaveAttachmentItem[]>();
+    if (ids.length > 0) {
+      const { data: attachmentRows } = await supabase
+        .from("leave_attachments")
+        .select("id, application_id, file_name, file_size, mime_type, uploaded_at, status")
+        .in("application_id", ids)
+        .eq("status", "active")
+        .order("uploaded_at", { ascending: true });
+      for (const row of attachmentRows ?? []) {
+        const list = attachmentsByLeave.get(row.application_id) ?? [];
+        list.push({
+          id: row.id,
+          fileName: row.file_name,
+          fileSize: Number(row.file_size ?? 0),
+          mimeType: row.mime_type,
+          uploadedAt: row.uploaded_at,
+        });
+        attachmentsByLeave.set(row.application_id, list);
+      }
     }
+
+    setLeaveRequests(
+      data.map((r) => {
+        const startTime = formatDbTime(
+          r.start_time,
+          r.period === "morning" ? "08:30" : r.period === "afternoon" ? "13:30" : "08:30"
+        );
+        const endTime = formatDbTime(
+          r.end_time,
+          r.period === "full_day" ? "18:00" : r.period === "morning" ? "12:00" : "18:00"
+        );
+        let period: LeavePeriodMode = "full_day";
+        if (r.period === "morning") period = "morning";
+        else if (r.period === "afternoon") period = "afternoon";
+        else if (startTime && endTime) {
+          if (startTime === "08:30" && endTime === "12:00") period = "morning";
+          else if (startTime === "13:30" && endTime === "18:00") period = "afternoon";
+          else if (startTime === "08:30" && (endTime === "18:00" || endTime === "21:00")) period = "full_day";
+          else period = "custom";
+        }
+        const shiftRaw = r.shift_mode as string | null;
+        const shiftMode: LeaveRequest["shiftMode"] =
+          shiftRaw && shiftRaw !== "schedule" ? (shiftRaw as ShiftType) : "schedule";
+
+        return {
+          id: r.id,
+          employeeId: r.user_id,
+          employeeName: (r.users as { name?: string } | null)?.name ?? "",
+          startDate: r.leave_date,
+          endDate: r.end_date ?? r.leave_date,
+          startTime,
+          endTime,
+          period,
+          shiftMode,
+          leaveHours: Number(r.leave_hours ?? 0),
+          type: r.leave_type as LeaveType,
+          reason: r.reason,
+          rejectReason: r.reject_reason ?? undefined,
+          status: r.status as LeaveRequest["status"],
+          reviewedBy: r.reviewed_by ?? undefined,
+          reviewedByName: (r.reviewer as { name?: string } | null)?.name ?? undefined,
+          reviewedAt: r.reviewed_at ?? undefined,
+          scheduleSnapshot: (r.schedule_snapshot as ScheduleSnapshotEntry[] | null) ?? undefined,
+          createdAt: r.created_at,
+          attachments: attachmentsByLeave.get(r.id) ?? [],
+        };
+      })
+    );
   }, [supabase]);
 
   const loadHolidays = useCallback(async () => {
@@ -923,7 +968,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadHolidays();
   }, [loadHolidays]);
 
+  const loadGeofenceConfig = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("id", "geofence")
+      .maybeSingle();
+    if (error) {
+      console.error("loadGeofenceConfig:", error);
+      setGeofenceConfig(geofenceFromEnv());
+      return;
+    }
+    if (data?.value) {
+      setGeofenceConfig(normalizeGeofence(data.value as Partial<GeofenceConfig>));
+    } else {
+      setGeofenceConfig(geofenceFromEnv());
+    }
+  }, [supabase]);
+
+  const updateGeofenceConfig = async (next: Partial<GeofenceConfig>) => {
+    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
+      throw new Error("僅店長或老闆可調整打卡圍籬");
+    }
+    const merged = normalizeGeofence({ ...geofenceConfig, ...next });
+    const { error } = await supabase.from("app_settings").upsert({
+      id: "geofence",
+      value: merged,
+      updated_by: currentUser.id,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message || "儲存圍籬設定失敗");
+    setGeofenceConfig(merged);
+  };
+
   const getHolidayInfo = useCallback((dateStr: string) => {
+    // 優先 holidays 資料表（班表頁可同步）；後備硬編碼清單僅供空庫啟動
     const holiday = holidays.find((item) => item.date === dateStr) ||
       TAIWAN_HOLIDAYS_2026.find((item) => item.date === dateStr);
     const name = holiday?.name ?? "國定\n假日";
@@ -1193,6 +1272,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               loadLeaveMonthLocks(),
               loadBulletinItems(),
               loadHolidays(),
+              loadGeofenceConfig(),
               loadAnnualLeaveConfigs(new Date().getFullYear()),
               loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
             ]).catch((e) => console.error("[initAuth] background load error:", e));
@@ -1260,6 +1340,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 loadLeaveMonthLocks(),
                 loadBulletinItems(),
                 loadHolidays(),
+                loadGeofenceConfig(),
                 loadAnnualLeaveConfigs(new Date().getFullYear()),
                 loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
               ]).catch((e) => console.error("[SIGNED_IN] background load error:", e));
@@ -1278,7 +1359,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadTodayPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks, loadHolidays]);
+  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadTodayPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks, loadHolidays, loadGeofenceConfig]);
 
   // ─── Auth functions ──────────────────────────────────────────────────────────
 
@@ -2208,7 +2289,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (insertError) throw insertError;
   };
 
-  const addLeaveRequest = async (request: Omit<LeaveRequest, "id" | "createdAt">) => {
+  const addLeaveRequest = async (
+    request: Omit<LeaveRequest, "id" | "createdAt" | "attachments">,
+    files: File[] = []
+  ) => {
     const isManagerActor =
       currentUser?.role === "owner" || currentUser?.role === "manager";
     // 員工不可申請過去月份；店長／老闆可手動補登（月底結薪）
@@ -2247,27 +2331,61 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ? "afternoon"
           : "full_day";
 
-    await supabase.from("leave_applications").insert({
-      user_id: request.employeeId,
-      leave_date: request.startDate,
-      end_date: request.endDate,
-      start_time: request.startTime,
-      end_time: request.endTime,
-      leave_hours: request.leaveHours,
-      shift_mode: request.shiftMode,
-      period: dbPeriod,
-      leave_type: request.type,
-      reason: request.reason,
-      status: "pending",
-    });
+    const { data: inserted, error: insertError } = await supabase
+      .from("leave_applications")
+      .insert({
+        user_id: request.employeeId,
+        leave_date: request.startDate,
+        end_date: request.endDate,
+        start_time: request.startTime,
+        end_time: request.endTime,
+        leave_hours: request.leaveHours,
+        shift_mode: request.shiftMode,
+        period: dbPeriod,
+        leave_type: request.type,
+        reason: request.reason,
+        status: "pending",
+      })
+      .select("id")
+      .single();
+
+    if (insertError || !inserted?.id) {
+      throw new Error(insertError?.message || "請假申請寫入失敗");
+    }
+
+    for (const file of files) {
+      const form = new FormData();
+      form.append("applicationId", inserted.id);
+      form.append("file", file);
+      const res = await fetch("/api/applications/leave/attachments", {
+        method: "POST",
+        body: form,
+      });
+      const result = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(result?.error || `附件「${file.name}」上傳失敗`);
+      }
+    }
+
     await notifyManagers({
       type: "leave_submitted",
       title: isManagerActor && request.employeeId !== currentUser?.id ? "店長代登請假" : "新請假申請",
-      body: `${request.employeeName} 提交請假（${request.startDate}～${request.endDate}），請審核。`,
+      body: `${request.employeeName} 提交請假（${request.startDate}～${request.endDate}）${
+        files.length > 0 ? `，含 ${files.length} 個附件` : ""
+      }，請審核。`,
       relatedType: "leave",
     });
 
     await loadLeaveRequests();
+  };
+
+  const openLeaveAttachment = async (attachmentId: string) => {
+    const res = await fetch(`/api/applications/leave/attachments?id=${encodeURIComponent(attachmentId)}`);
+    const result = await res.json().catch(() => null);
+    if (!res.ok || !result?.url) {
+      throw new Error(result?.error || "無法開啟附件");
+    }
+    window.open(result.url, "_blank", "noopener,noreferrer");
   };
 
   const updateLeaveRequestStatus = async (
@@ -3589,6 +3707,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         leaveMonthLocks,
         leaveRequests,
         addLeaveRequest,
+        openLeaveAttachment,
         updateLeaveRequestStatus,
         deleteLeaveRequest,
         compLeaveLedger,
@@ -3653,6 +3772,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         holidays,
         loadHolidays,
         refreshHolidayCalendar,
+        geofenceConfig,
+        loadGeofenceConfig,
+        updateGeofenceConfig,
         countSaturdaysInMonth,
       }}
     >
