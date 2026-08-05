@@ -69,5 +69,12 @@ if (-not (Test-PharmacyWebPm2OwningPort)) { throw "Port 3000 is not owned by PM2
 
 Write-Host ""
 Write-Host "Done. Site will auto-repair every minute if it goes down." -ForegroundColor Green
-Write-Host "Daily update command:"
+Write-Host "Daily update (pharmacy only, cashflow untouched):"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1"
+Write-Host "Update cashflow only:"
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-update-cashflow.ps1"
+Write-Host ""
+Write-Host "If cashflow is not registered yet, run once:" -ForegroundColor Yellow
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-register-cashflow.ps1 ``"
+Write-Host "    -ScriptPath `"C:\cash-flow-app\backend\index.js`" ``"
+Write-Host "    -Cwd `"C:\cash-flow-app`" -Port 5000"
