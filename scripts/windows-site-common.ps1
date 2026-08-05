@@ -543,6 +543,7 @@ function Restart-PharmacyWebPm2 {
 function Repair-Pm2AppIfNeeded {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
+        [string]$ProjectRoot = "",
         [scriptblock]$WriteLog = { param($m) Write-Host $m },
         [scriptblock]$HealthyCheck = $null
     )
@@ -559,6 +560,11 @@ function Repair-Pm2AppIfNeeded {
     if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
         & $WriteLog "pm2 not found, cannot repair $Name"
         return $false
+    }
+
+    if ($Name -eq "pharmacy-web" -and $ProjectRoot) {
+        & $WriteLog "Repairing pharmacy-web via Restart-PharmacyWebPm2"
+        return (Restart-PharmacyWebPm2 -ProjectRoot $ProjectRoot -WriteLog $WriteLog)
     }
 
     & $WriteLog "Repairing pm2 app: $Name"
@@ -606,7 +612,7 @@ function Repair-SiteIfNeeded {
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
 
-    if (Test-SiteHealthy) { return $true }
+    if ((Test-SiteHealthy) -and (Test-PharmacyWebPm2OwningPort)) { return $true }
 
     [void](Clear-StaleBuildLock -ProjectRoot $ProjectRoot -MaxAgeMinutes 45 -WriteLog $WriteLog)
 

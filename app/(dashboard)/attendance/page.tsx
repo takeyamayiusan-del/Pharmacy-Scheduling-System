@@ -11,7 +11,7 @@ import {
 } from '@/lib/attendance/monthlyStatsView';
 import { computeMonthlyAttendanceHours, getDefaultPayrollPeriod } from '@/lib/payroll/monthlyHours';
 import { buildEffectiveTardinessRecords } from '@/lib/tardiness';
-import { Download, FileText, Calendar, Clock } from 'lucide-react';
+import { Download, FileText, Calendar, Clock, ChevronDown, ChevronUp } from 'lucide-react';
 import { exportMonthlyPunchPdf as exportPunchPdfDocument } from '@/lib/attendance/exportPunchPdf';
 
 export default function AttendancePage() {
@@ -34,6 +34,8 @@ export default function AttendancePage() {
     return new Date(year, month - 1, 1);
   });
   const [showMonthlyDetail, setShowMonthlyDetail] = useState(false);
+  const [employeeFilterId, setEmployeeFilterId] = useState('');
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -240,6 +242,13 @@ export default function AttendancePage() {
 
   const negativeCount = stats.filter((s) => s.compBalance < 0).length;
   const positiveCount = stats.filter((s) => s.compBalance > 0).length;
+  const visibleStats = employeeFilterId
+    ? stats.filter((stat) => stat.id === employeeFilterId)
+    : stats;
+
+  const toggleEmployeeDetails = (employeeId: string) => {
+    setExpandedEmployeeId((current) => (current === employeeId ? null : employeeId));
+  };
 
   return (
     <div className="space-y-6">
@@ -284,6 +293,31 @@ export default function AttendancePage() {
           </div>
         )}
       </div>
+
+      {canExport && (
+        <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-4">
+          <label htmlFor="attendance-employee-filter" className="text-sm font-medium text-gray-700">
+            篩選員工
+          </label>
+          <select
+            id="attendance-employee-filter"
+            value={employeeFilterId}
+            onChange={(e) => {
+              setEmployeeFilterId(e.target.value);
+              setExpandedEmployeeId(null);
+            }}
+            className="rounded-lg border border-gray-300 px-3 py-2 text-sm min-w-[180px]"
+          >
+            <option value="">全部員工</option>
+            {stats.map((stat) => (
+              <option key={stat.id} value={stat.id}>
+                {stat.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-500">點選員工列可展開請假／補休明細</p>
+        </div>
+      )}
 
       {canExport && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -379,25 +413,42 @@ export default function AttendancePage() {
       )}
 
       <div className="space-y-3">
-        {stats.map((stat) => (
+        {visibleStats.map((stat) => {
+          const isExpanded = expandedEmployeeId === stat.id;
+
+          return (
           <div key={stat.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-            <div className="p-4 border-b bg-white">
+            <button
+              type="button"
+              onClick={() => toggleEmployeeDetails(stat.id)}
+              className="w-full p-4 border-b bg-white text-left hover:bg-gray-50 transition-colors"
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-lg font-semibold text-gray-900">{stat.name}</p>
-                  <p className="text-sm text-gray-600 mt-1">
-                    上班 {stat.workDays} 天／{formatCompLeaveHours(stat.workHours)} 小時
-                    <span className="mx-2 text-gray-300">|</span>
-                    加班費 {formatCompLeaveHours(stat.overtimeHours)} h
-                    <span className="mx-2 text-gray-300">|</span>
-                    國定假 {formatCompLeaveHours(stat.holidayOvertimeHours)} h
-                  </p>
-                  <p className="text-sm text-gray-700 mt-1">
-                    <span className="font-medium text-red-700">請假</span>：{stat.leaveText}
-                    {stat.leaveHours > 0
-                      ? `（共 ${formatCompLeaveHours(stat.leaveHours)} h）`
-                      : ''}
-                  </p>
+                <div className="flex items-start gap-2">
+                  {isExpanded ? (
+                    <ChevronUp className="h-5 w-5 text-gray-400 mt-0.5 shrink-0" />
+                  ) : (
+                    <ChevronDown className="h-5 w-5 text-gray-400 mt-0.5 shrink-0" />
+                  )}
+                  <div>
+                    <p className="text-lg font-semibold text-gray-900">{stat.name}</p>
+                    <p className="text-sm text-gray-600 mt-1">
+                      上班 {stat.workDays} 天／{formatCompLeaveHours(stat.workHours)} 小時
+                      <span className="mx-2 text-gray-300">|</span>
+                      加班費 {formatCompLeaveHours(stat.overtimeHours)} h
+                      <span className="mx-2 text-gray-300">|</span>
+                      國定假 {formatCompLeaveHours(stat.holidayOvertimeHours)} h
+                    </p>
+                    <p className="text-sm text-gray-700 mt-1">
+                      <span className="font-medium text-red-700">請假</span>：{stat.leaveText}
+                      {stat.leaveHours > 0
+                        ? `（共 ${formatCompLeaveHours(stat.leaveHours)} h）`
+                        : ''}
+                    </p>
+                    {!isExpanded && (
+                      <p className="text-xs text-gray-500 mt-2">點此展開請假／補休明細</p>
+                    )}
+                  </div>
                 </div>
                 <div className="text-right">
                   <p
@@ -425,8 +476,9 @@ export default function AttendancePage() {
                   </p>
                 </div>
               </div>
-            </div>
+            </button>
 
+            {isExpanded && (
             <div className="bg-gray-50 p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
               <div>
                 <p className="font-medium text-gray-900 mb-2">請假明細（本月核准）</p>
@@ -519,8 +571,10 @@ export default function AttendancePage() {
                 </p>
               </div>
             </div>
+            )}
           </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );

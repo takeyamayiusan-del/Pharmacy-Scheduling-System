@@ -74,6 +74,15 @@ $siteOk = Repair-SiteIfNeeded -ProjectRoot $ProjectRoot -WriteLog {
 }
 if (-not $siteOk) {
     Write-Log "Local site still unhealthy after repair"
+} elseif (-not (Test-PharmacyWebPm2OwningPort)) {
+    Write-Log "Site HTTP OK but PM2 does not own :3000 — forcing repair"
+    $siteOk = Restart-PharmacyWebPm2 -ProjectRoot $ProjectRoot -WriteLog {
+        param($m)
+        Write-Log $m
+    }
+    if (-not $siteOk) {
+        Write-Log "Forced pharmacy-web repair failed"
+    }
 }
 
 $cashflowOk = $true
