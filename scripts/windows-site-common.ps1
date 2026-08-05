@@ -417,15 +417,16 @@ function Start-SiteViaPm2OrRunner {
         }
         if ($LASTEXITCODE -eq 0) { return }
 
-        & $WriteLog "pm2 restart failed, starting pharmacy-web via Next binary..."
+        & $WriteLog "pm2 restart failed, starting pharmacy-web via ecosystem.config.cjs..."
         Push-Location $ProjectRoot
         try {
             [void](Stop-PortListenerForce -Port 3000 -WriteLog $WriteLog)
-            $nextBin = Join-Path $ProjectRoot "node_modules\next\dist\bin\next"
-            if (Test-Path -LiteralPath $nextBin) {
-                & cmd.exe /c ("pm2 start `"{0}`" --name pharmacy-web --cwd `"{1}`" -- start" -f $nextBin, $ProjectRoot) 2>$null | Out-Null
+            $ecosystem = Join-Path $ProjectRoot "ecosystem.config.cjs"
+            if (Test-Path -LiteralPath $ecosystem) {
+                & pm2 delete pharmacy-web 2>$null | Out-Null
+                & pm2 start $ecosystem --only pharmacy-web 2>$null | Out-Null
             } else {
-                & pm2 start npm --name "pharmacy-web" -- start 2>$null | Out-Null
+                & $WriteLog "ecosystem.config.cjs missing; cannot register pharmacy-web on Windows"
             }
             & pm2 save 2>$null | Out-Null
         } finally {

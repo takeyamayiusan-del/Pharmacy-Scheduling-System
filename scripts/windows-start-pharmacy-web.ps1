@@ -1,4 +1,4 @@
-# 正確啟動 pharmacy-web（Windows PM2 不能用 npm -- start 語法）
+# 正確啟動 pharmacy-web（Windows PM2 不能用 CLI 的 `-- start` 或 `npm -- start`）
 # Usage: powershell -ExecutionPolicy Bypass -File scripts\windows-start-pharmacy-web.ps1
 
 param(
@@ -44,8 +44,13 @@ if (-not (Test-Path -LiteralPath $nextBin)) {
     throw "Next binary not found. Run: npm install"
 }
 
+$ecosystem = Join-Path $ProjectRoot "ecosystem.config.cjs"
+if (-not (Test-Path -LiteralPath $ecosystem)) {
+    throw "Missing ecosystem.config.cjs in project root."
+}
+
 pm2 delete pharmacy-web 2>$null | Out-Null
-pm2 start $nextBin --name pharmacy-web --cwd $ProjectRoot -- start
+pm2 start $ecosystem --only pharmacy-web
 pm2 save
 
 Start-Sleep -Seconds 4
