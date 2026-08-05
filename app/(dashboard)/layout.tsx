@@ -325,32 +325,44 @@ export default function DashboardLayout({
             </button>
           </div>
           <nav className="p-3 space-y-1 h-[calc(100vh-64px)] overflow-y-auto scrollbar-hide">
-            {navItems.filter(item => item.allowed).map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={closeMobileSidebar}
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
-                    isActive
-                      ? 'bg-gradient-to-r from-pink-50 to-sky-50 text-sky-700 shadow-sm'
-                      : 'text-gray-700 hover:bg-pink-50'
-                  }`}
-                  title={isSidebarCollapsed ? item.label : undefined}
-                >
-                  <Icon className="h-5 w-5 shrink-0" />
-                  <span
-                    className={`transition-opacity duration-200 ${
-                      isSidebarCollapsed ? 'lg:hidden' : ''
+            {(() => {
+              const visibleNav = navItems.filter((item) => item.allowed);
+              // 只亮「路徑最長／最精確」的那一項，避免 /attendance/punch-admin 連工時統計一起亮
+              const activeHref =
+                visibleNav
+                  .filter(
+                    (item) =>
+                      pathname === item.href || pathname.startsWith(`${item.href}/`)
+                  )
+                  .sort((a, b) => b.href.length - a.href.length)[0]?.href ?? null;
+
+              return visibleNav.map((item) => {
+                const Icon = item.icon;
+                const isActive = item.href === activeHref;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    onClick={closeMobileSidebar}
+                    className={`flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+                      isActive
+                        ? 'bg-gradient-to-r from-pink-50 to-sky-50 text-sky-700 shadow-sm'
+                        : 'text-gray-700 hover:bg-pink-50'
                     }`}
+                    title={isSidebarCollapsed ? item.label : undefined}
                   >
-                    {item.label}
-                  </span>
-                </Link>
-              );
-            })}
+                    <Icon className="h-5 w-5 shrink-0" />
+                    <span
+                      className={`transition-opacity duration-200 ${
+                        isSidebarCollapsed ? 'lg:hidden' : ''
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                  </Link>
+                );
+              });
+            })()}
           </nav>
         </aside>
 
