@@ -49,17 +49,28 @@ if (-not $PharmacyOnly) {
     }
 }
 
-# 先設排班，再設現金帳；不要中途 reset（會清掉剛設好的規則）
+# 先設排班，再設現金帳。
+# 注意：舊版 watchdog 可能每分鐘 reset 後只留 3000；設定前請先：
+#   Stop-ScheduledTask -TaskName "YaoshengPharmacyWatchdog"
 tailscale funnel reset 2>$null
 tailscale serve reset 2>$null
 
-$setupOut = (tailscale funnel --bg --yes 3000 2>&1 | Out-String)
+$setupOut = (tailscale funnel --bg --yes --https=443 3000 2>&1 | Out-String)
 Write-Log ("pharmacy funnel: " + $setupOut.Trim())
 
 if (-not $PharmacyOnly) {
     Start-Sleep -Seconds 1
-    $cashflowOut = (tailscale funnel --bg --yes --https=$CashflowPublicPort $CashflowLocalPort 2>&1 | Out-String)
+    # 明確寫成本機 URL，避免部分 Windows CLI 把「5000」解讀失敗
+    $cashflowTarget = "http://127.0.0.1:$CashflowLocalPort"
+    $cashflowOut = (tailscale funnel --bg --yes --https=$CashflowPublicPort $cashflowTarget 2>&1 | Out-String)
     Write-Log ("cashflow funnel: " + $cashflowOut.Trim())
+
+    Start-Sleep -Seconds 2
+    if (-not (Test-FunnelProxyConfigured -LocalPort $CashflowLocalPort -PublicHttpsPort $CashflowPublicPort)) {
+        Write-Log "cashflow funnel missing after first try; retry once"
+        $cashflowOut2 = (tailscale funnel --bg --yes --https=$CashflowPublicPort $cashflowTarget 2>&1 | Out-String)
+        Write-Log ("cashflow funnel retry: " + $cashflowOut2.Trim())
+    }
 }
 
 Start-Sleep -Seconds 3

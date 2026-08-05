@@ -100,7 +100,6 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
 }
 
 $funnelUrl = Get-FunnelUrl
-$funnelStatus = (tailscale funnel status 2>&1 | Out-String)
 $cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
 $hasCashflowInPm2 = $false
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
