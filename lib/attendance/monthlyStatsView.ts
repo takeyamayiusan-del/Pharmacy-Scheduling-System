@@ -1,22 +1,11 @@
 import {
-  calculateLeaveWorkHours,
-  type LeavePeriod,
-} from "@/lib/attendance/leaveHours";
+  getApprovedLeaveHoursInMonth,
+  type CanonicalLeaveRequest,
+} from "@/lib/attendance/canonicalMonthHours";
 import { formatCompLeaveHours, roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
 
-export type LeaveLikeForStats = {
-  employeeId: string;
-  startDate: string;
-  endDate: string;
-  startTime: string;
-  endTime: string;
-  period: LeavePeriod;
-  shiftMode: "schedule" | ShiftType;
-  status: string;
-  type: string;
-  leaveHours?: number;
-};
+export type LeaveLikeForStats = CanonicalLeaveRequest & { type: string };
 
 export type CompLedgerLike = {
   employeeId: string;
@@ -26,27 +15,13 @@ export type CompLedgerLike = {
   expiresAt?: string;
 };
 
-function enumerateDatesInRange(startDate: string, endDate: string): string[] {
-  const dates: string[] = [];
-  const cursor = new Date(`${startDate}T12:00:00`);
-  const end = new Date(`${endDate}T12:00:00`);
-  while (cursor <= end) {
-    const y = cursor.getFullYear();
-    const m = String(cursor.getMonth() + 1).padStart(2, "0");
-    const d = String(cursor.getDate()).padStart(2, "0");
-    dates.push(`${y}-${m}-${d}`);
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return dates;
-}
-
 function isCreatedInMonth(iso: string, year: number, month: number): boolean {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return false;
   return d.getFullYear() === year && d.getMonth() + 1 === month;
 }
 
-/** 本月請假：依假別彙總時數（只計落在該月的天） */
+/** 本月請假：依假別彙總時數（權威：優先存檔 leaveHours） */
 export function buildLeaveBreakdownInMonth(params: {
   employeeId: string;
   year: number;
@@ -60,40 +35,21 @@ export function buildLeaveBreakdownInMonth(params: {
   items: { type: string; hours: number; startDate: string; endDate: string }[];
 } {
   const { employeeId, year, month } = params;
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
-  const monthStart = `${monthStr}-01`;
-  const monthEnd = `${monthStr}-${String(daysInMonth).padStart(2, "0")}`;
-
   const typeMap = new Map<string, number>();
   const items: { type: string; hours: number; startDate: string; endDate: string }[] = [];
 
   const approved = params.leaveRequests.filter(
-    (r) =>
-      r.employeeId === employeeId &&
-      r.status === "approved" &&
-      r.endDate >= monthStart &&
-      r.startDate <= monthEnd
+    (r) => r.employeeId === employeeId && r.status === "approved"
   );
 
   for (const req of approved) {
-    const rangeStart = req.startDate < monthStart ? monthStart : req.startDate;
-    const rangeEnd = req.endDate > monthEnd ? monthEnd : req.endDate;
-    let hours = 0;
-    for (const dateStr of enumerateDatesInRange(rangeStart, rangeEnd)) {
-      hours += calculateLeaveWorkHours({
-        startDate: dateStr,
-        endDate: dateStr,
-        startTime: req.startTime,
-        endTime: req.endTime,
-        period: req.period,
-        shiftMode: req.shiftMode,
-        employeeId: req.employeeId,
-        getShiftForDate: params.getShiftForDate,
-        shiftTimeConfig: params.shiftTimeConfig,
-      });
-    }
-    hours = roundCompLeaveHours(hours);
+    const hours = getApprovedLeaveHoursInMonth({
+      request: req,
+      year,
+      month,
+      getShiftForDate: params.getShiftForDate,
+      shiftTimeConfig: params.shiftTimeConfig,
+    });
     if (hours <= 0) continue;
     typeMap.set(req.type, roundCompLeaveHours((typeMap.get(req.type) ?? 0) + hours));
     items.push({
@@ -118,7 +74,6 @@ export function buildCompLeaveMonthSummary(params: {
   year: number;
   month: number;
   ledger: CompLedgerLike[];
-  /** 目前可用餘額（已排除過期正數） */
   currentBalance: number;
 }): {
   earnedHours: number;

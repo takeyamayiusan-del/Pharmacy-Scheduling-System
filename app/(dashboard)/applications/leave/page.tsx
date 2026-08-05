@@ -9,6 +9,7 @@ import {
   periodToTimes,
   type LeavePeriod,
 } from '@/lib/attendance/leaveHours';
+import { getOriginalShiftForLeaveDay } from '@/lib/schedule/leaveSchedule';
 import { currentMonthMinDate } from '@/lib/schedule/monthAccess';
 import {
   buildLeaveFormPrintData,
@@ -70,6 +71,7 @@ export default function LeaveApplicationPage() {
   const initialPeriod = getCurrentYearMonth();
   const [filterYear, setFilterYear] = useState(initialPeriod.year);
   const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
+  const [filterEmployeeId, setFilterEmployeeId] = useState('');
 
   const isManager = currentUser?.role === 'owner' || currentUser?.role === 'manager';
   const staffEmployees = useMemo(
@@ -234,20 +236,28 @@ export default function LeaveApplicationPage() {
     }
   };
 
-  const calcDisplayHours = (req: (typeof leaveRequests)[number]) =>
-    req.leaveHours > 0
-      ? req.leaveHours
-      : calculateLeaveWorkHours({
-          startDate: req.startDate,
-          endDate: req.endDate,
-          startTime: req.startTime,
-          endTime: req.endTime,
-          period: req.period,
+  const calcDisplayHours = (req: (typeof leaveRequests)[number]) => {
+    if (req.leaveHours > 0) return req.leaveHours;
+    // 核准後班表可能已改寫：用 snapshot／原班別重算，避免顯示 0
+    return calculateLeaveWorkHours({
+      startDate: req.startDate,
+      endDate: req.endDate,
+      startTime: req.startTime,
+      endTime: req.endTime,
+      period: req.period,
+      shiftMode: 'schedule',
+      employeeId: req.employeeId,
+      getShiftForDate: (date, employeeId) =>
+        getOriginalShiftForLeaveDay({
+          employeeId,
+          date,
           shiftMode: req.shiftMode,
-          employeeId: req.employeeId,
-          getShiftForDate,
-          shiftTimeConfig,
-        });
+          scheduleSnapshot: req.scheduleSnapshot,
+          getBaseShiftForDate: getShiftForDate,
+        }),
+      shiftTimeConfig,
+    });
+  };
 
   const handlePrintLeaveForm = (req: (typeof leaveRequests)[number]) => {
     try {
@@ -278,10 +288,38 @@ export default function LeaveApplicationPage() {
     const scoped = isManager
       ? leaveRequests
       : leaveRequests.filter((r) => r.employeeId === currentUser?.id);
-    return scoped.filter((r) =>
-      doesRangeOverlapYearMonth(r.startDate, r.endDate, filterYear, filterMonth)
-    );
-  }, [isManager, leaveRequests, currentUser?.id, filterYear, filterMonth]);
+    return scoped.filter((r) => {
+      if (!doesRangeOverlapYearMonth(r.startDate, r.endDate, filterYear, filterMonth)) {
+        return false;
+      }
+      if (isManager && filterEmployeeId && r.employeeId !== filterEmployeeId) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    isManager,
+    leaveRequests,
+    currentUser?.id,
+    filterYear,
+    filterMonth,
+    filterEmployeeId,
+  ]);
+
+  const filterHoursSummary = useMemo(() => {
+    const approved = visibleRequests.filter((r) => r.status === 'approved');
+    if (approved.length === 0) return '';
+    const total = Math.round(
+      approved.reduce((sum, r) => sum + calcDisplayHours(r), 0) * 100
+    ) / 100;
+    const nameHint =
+      isManager && filterEmployeeId
+        ? `${getEmpName(filterEmployeeId)} `
+        : '';
+    return `${nameHint}核准請假合計 ${total} 小時`;
+    // calcDisplayHours / getEmpName 依閉包資料，與 visibleRequests 同步即可
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleRequests, isManager, filterEmployeeId, employees, shiftTimeConfig, getShiftForDate]);
 
   return (
     <div className="space-y-6">
@@ -544,6 +582,16 @@ export default function LeaveApplicationPage() {
             onYearChange={setFilterYear}
             onMonthChange={setFilterMonth}
             count={visibleRequests.length}
+            employeeFilter={
+              isManager
+                ? {
+                    value: filterEmployeeId,
+                    onChange: setFilterEmployeeId,
+                    options: staffEmployees.map((e) => ({ id: e.id, name: e.name })),
+                  }
+                : undefined
+            }
+            summaryText={filterHoursSummary || undefined}
           />
         </div>
         <div className="overflow-x-auto">

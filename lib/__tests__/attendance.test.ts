@@ -22,12 +22,12 @@ describe('工時計算模組測試', () => {
   });
 
   describe('SHIFT_HOURS 常數', () => {
-    it('各班別時數應正確', () => {
-      expect(SHIFT_HOURS.A).toBe(8);
+    it('各班別時數應正確（與預設時段加總對齊）', () => {
+      expect(SHIFT_HOURS.A).toBe(9);
       expect(SHIFT_HOURS.B).toBe(8);
       expect(SHIFT_HOURS.C).toBe(3.5);
       expect(SHIFT_HOURS.D).toBe(4.5);
-      expect(SHIFT_HOURS.E).toBe(8);
+      expect(SHIFT_HOURS.E).toBe(5.5);
       expect(SHIFT_HOURS.X).toBe(0);
     });
   });
@@ -73,7 +73,7 @@ describe('工時計算模組測試', () => {
       });
 
       expect(result.workDays).toBe(5); // X 不算
-      expect(result.workHours).toBe(8 + 8 + 3.5 + 4.5 + 8);
+      expect(result.workHours).toBe(9 + 8 + 3.5 + 4.5 + 5.5);
     });
 
     it('應正確計算加班工時（轉換為加班費）', () => {
@@ -168,7 +168,7 @@ describe('工時計算模組測試', () => {
       });
 
       expect(result.workDays).toBe(4);
-      expect(result.workHours).toBe(8 + 8 + 8 + 8);
+      expect(result.workHours).toBe(9 + 9 + 8 + 5.5);
       expect(result.overtimeHours).toBe(2);
       expect(result.compLeaveHours).toBe(2);
       expect(result.leaveHours).toBe(8 + 4);
@@ -203,8 +203,8 @@ describe('工時計算模組測試', () => {
         holidayDates: ['2026-06-19'],
       });
 
-      expect(result.workHours).toBe(16);
-      expect(result.overtimeHours).toBe(8);
+      expect(result.workHours).toBe(9 + 8);
+      expect(result.overtimeHours).toBe(9);
     });
 
     it('未列入 holidayDates 的日期不計國定假加班', () => {

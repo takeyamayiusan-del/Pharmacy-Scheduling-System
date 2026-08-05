@@ -35,6 +35,8 @@ export function doesRangeOverlapYearMonth(
   return end >= monthStart && start <= monthEnd;
 }
 
+export type EmployeeFilterOption = { id: string; name: string };
+
 type MonthFilterBarProps = {
   year: number;
   month: number;
@@ -43,6 +45,15 @@ type MonthFilterBarProps = {
   label?: string;
   count?: number;
   className?: string;
+  /** 店長／老闆核對時數用：篩選單一員工（空字串＝全部） */
+  employeeFilter?: {
+    value: string;
+    onChange: (employeeId: string) => void;
+    options: EmployeeFilterOption[];
+    label?: string;
+  };
+  /** 篩選後核准時數合計等提示 */
+  summaryText?: string;
 };
 
 /** 年／月下拉列，供各申請與遲到列表共用 */
@@ -54,6 +65,8 @@ export function MonthFilterBar({
   label = "顯示月份",
   count,
   className = "",
+  employeeFilter,
+  summaryText,
 }: MonthFilterBarProps) {
   const currentYear = new Date().getFullYear();
   const years = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
@@ -85,8 +98,33 @@ export function MonthFilterBar({
           </option>
         ))}
       </select>
+      {employeeFilter && (
+        <>
+          <span className="text-sm text-gray-600">
+            {employeeFilter.label ?? "篩選員工"}
+          </span>
+          <select
+            value={employeeFilter.value}
+            onChange={(e) => employeeFilter.onChange(e.target.value)}
+            className="border rounded-lg px-3 py-1.5 text-sm min-w-[8rem]"
+            aria-label="篩選員工"
+          >
+            <option value="">全部員工</option>
+            {employeeFilter.options.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name}
+              </option>
+            ))}
+          </select>
+        </>
+      )}
       {typeof count === "number" && (
         <span className="text-xs text-gray-500">共 {count} 筆</span>
+      )}
+      {summaryText && (
+        <span className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">
+          {summaryText}
+        </span>
       )}
     </div>
   );

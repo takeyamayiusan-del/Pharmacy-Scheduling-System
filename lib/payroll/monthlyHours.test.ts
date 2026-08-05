@@ -31,11 +31,13 @@ describe("getDefaultPayrollPeriod", () => {
 });
 
 describe("computeMonthlyAttendanceHours", () => {
-  it("imports schedule work hours, leave, OT pay and holiday OT", () => {
+  it("uses post-leave schedule for work hours; leave from stored/snapshot (no double deduct)", () => {
+    // 核准後：7/5 班表已改為剩餘下午 D；請假時數用存檔 leaveHours
     const getShiftForDate = (date: string): ShiftType => {
       if (date === "2026-07-04") return "X";
       if (date === "2026-07-01") return "A"; // holiday work
-      return date.endsWith("-05") ? "A" : "X";
+      if (date === "2026-07-05") return "D"; // remaining after morning leave
+      return "X";
     };
     const getHolidayInfo = (date: string) => ({
       isHoliday: date === "2026-07-01",
@@ -59,6 +61,10 @@ describe("computeMonthlyAttendanceHours", () => {
           shiftMode: "schedule",
           status: "approved",
           type: "事假",
+          leaveHours: 3.5,
+          scheduleSnapshot: [
+            { userId: "e1", date: "2026-07-05", shift: "A", hadDbEntry: true },
+          ],
         },
       ],
       overtimeRequests: [
@@ -73,10 +79,9 @@ describe("computeMonthlyAttendanceHours", () => {
       ],
     });
 
-    // 7/1 A on holiday: SHIFT_HOURS A=8 → holiday OT 8、work 8
-    // 7/5 A morning leave 3.5h → credited 4.5
-    expect(result.holidayOvertimeHours).toBe(8);
-    expect(result.workHours).toBe(12.5);
+    // 7/1 A=9（國定假加班）；7/5 剩餘 D=4.5 → work 13.5（不再扣請假）
+    expect(result.holidayOvertimeHours).toBe(9);
+    expect(result.workHours).toBe(13.5);
     expect(result.overtimePayHours).toBe(2);
     expect(result.leaveDeductionHours).toBe(3.5);
   });

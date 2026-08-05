@@ -5,10 +5,10 @@ import { useApp, type LeaveRequest } from "@/lib/context/AppContext";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import { createClient } from "@/lib/supabase/client";
 import {
-  calculateLeaveWorkHours,
   PAYROLL_LEAVE_RATE_KEYS,
   type LeaveType,
 } from "@/lib/attendance/leaveHours";
+import { getApprovedLeaveHoursInMonth } from "@/lib/attendance/canonicalMonthHours";
 import {
   FORMULA_TYPE_OPTIONS,
   calculateRateAmount,
@@ -127,33 +127,6 @@ function getMonthBounds(year: number, month: number) {
     monthStart: `${monthStr}-01`,
     monthEnd: `${monthStr}-${String(lastDay).padStart(2, "0")}`,
   };
-}
-
-function getApprovedLeaveHoursInMonth(
-  request: LeaveRequest,
-  year: number,
-  month: number,
-  getShiftForDate: (date: string, employeeId: string) => import("@/lib/context/AppContext").ShiftType,
-  shiftTimeConfig: import("@/lib/context/AppContext").ShiftTimeConfig
-): number {
-  const { monthStart, monthEnd } = getMonthBounds(year, month);
-  if (request.endDate < monthStart || request.startDate > monthEnd) return 0;
-  if (request.startDate >= monthStart && request.endDate <= monthEnd && request.leaveHours > 0) {
-    return request.leaveHours;
-  }
-  const startDate = request.startDate < monthStart ? monthStart : request.startDate;
-  const endDate = request.endDate > monthEnd ? monthEnd : request.endDate;
-  return calculateLeaveWorkHours({
-    startDate,
-    endDate,
-    startTime: request.startTime,
-    endTime: request.endTime,
-    period: request.period,
-    shiftMode: request.shiftMode,
-    employeeId: request.employeeId,
-    getShiftForDate,
-    shiftTimeConfig,
-  });
 }
 
 function isDateInMonth(dateValue: string, year: number, month: number) {
@@ -314,13 +287,13 @@ export default function PayrollPage() {
       let leaveHours = 0;
       let leaveDeduction = 0;
       for (const r of empLeaves) {
-        const hours = getApprovedLeaveHoursInMonth(
-          r,
+        const hours = getApprovedLeaveHoursInMonth({
+          request: r,
           year,
           month,
           getShiftForDate,
-          shiftTimeConfig
-        );
+          shiftTimeConfig,
+        });
         leaveHours += hours;
         const leaveRate = leaveRateCfgByType(r.type);
         if (leaveRate) {

@@ -1,22 +1,12 @@
-import { SHIFT_HOURS } from "@/lib/attendance/calculator";
+import { roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 import {
-  calculateApprovedLeaveHoursOnDate,
-  calculateApprovedLeaveHoursTotal,
-} from "@/lib/attendance/leaveHours";
+  computeMonthWorkHoursFromSchedule,
+  sumApprovedLeaveHoursInMonth,
+  type CanonicalLeaveRequest,
+} from "@/lib/attendance/canonicalMonthHours";
 import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
 
-export type PayrollLeaveLike = {
-  employeeId: string;
-  startDate: string;
-  endDate: string;
-  startTime: string;
-  endTime: string;
-  period: "full_day" | "morning" | "afternoon" | "custom";
-  shiftMode: "schedule" | ShiftType;
-  status: string;
-  type?: string;
-  leaveHours?: number;
-};
+export type PayrollLeaveLike = CanonicalLeaveRequest;
 
 export type PayrollOvertimeLike = {
   employeeId: string;
@@ -42,7 +32,7 @@ function overtimeHoursBetween(startTime: string, endTime: string): number {
 
 export type MonthlyAttendanceHours = {
   workDays: number;
-  /** 班表應出勤工時（已扣當日核准請假） */
+  /** 班表應出勤工時（核准請假後班表已是剩餘，不再重扣請假） */
   workHours: number;
   /** 核准加班且選加班費 */
   overtimePayHours: number;
@@ -57,7 +47,7 @@ export type MonthlyAttendanceHours = {
 };
 
 /**
- * 與出勤統計一致：依班表＋請假＋加班申請彙總月工時，供薪資試算匯入。
+ * 與出勤統計／薪資試算共用的月工時彙總（權威入口）。
  */
 export function computeMonthlyAttendanceHours(params: {
   employeeId: string;
@@ -75,31 +65,14 @@ export function computeMonthlyAttendanceHours(params: {
   const startDate = `${monthStr}-01`;
   const endDate = `${monthStr}-${String(daysInMonth).padStart(2, "0")}`;
 
-  let workDays = 0;
-  let workHours = 0;
-  let holidayOvertimeHours = 0;
-
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    const dateStr = `${monthStr}-${String(day).padStart(2, "0")}`;
-    const shift = params.getShiftForDate(dateStr, employeeId);
-    const shiftHours = SHIFT_HOURS[shift] ?? 0;
-    const leaveHoursOnDay = calculateApprovedLeaveHoursOnDate(
-      dateStr,
-      employeeId,
-      params.leaveRequests as Parameters<typeof calculateApprovedLeaveHoursOnDate>[2],
-      params.getShiftForDate,
-      params.shiftTimeConfig
-    );
-    const credited = Math.max(0, shiftHours - leaveHoursOnDay);
-
-    if (shift !== "X" && leaveHoursOnDay < shiftHours) {
-      workDays += 1;
-      if (params.getHolidayInfo(dateStr).isHoliday) {
-        holidayOvertimeHours += credited;
-      }
-    }
-    workHours += credited;
-  }
+  const schedule = computeMonthWorkHoursFromSchedule({
+    employeeId,
+    year,
+    month,
+    getShiftForDate: params.getShiftForDate,
+    getHolidayInfo: params.getHolidayInfo,
+    shiftTimeConfig: params.shiftTimeConfig,
+  });
 
   const empOt = params.overtimeRequests.filter(
     (r) =>
@@ -117,47 +90,32 @@ export function computeMonthlyAttendanceHours(params: {
     .filter((r) => r.compensationType === "time_off")
     .reduce((sum, r) => sum + overtimeHoursBetween(r.startTime, r.endTime), 0);
 
-  const approvedLeaves = params.leaveRequests.filter(
-    (r) =>
-      r.employeeId === employeeId &&
-      r.status === "approved" &&
-      r.endDate >= startDate &&
-      r.startDate <= endDate
-  );
+  const leaveHoursTotal = sumApprovedLeaveHoursInMonth({
+    employeeId,
+    year,
+    month,
+    leaveRequests: params.leaveRequests,
+    getShiftForDate: params.getShiftForDate,
+    shiftTimeConfig: params.shiftTimeConfig,
+  });
 
-  const leaveHoursTotal = approvedLeaves.reduce(
-    (sum, r) =>
-      sum +
-      calculateApprovedLeaveHoursTotal(
-        r as Parameters<typeof calculateApprovedLeaveHoursTotal>[0],
-        params.getShiftForDate,
-        params.shiftTimeConfig
-      ),
-    0
-  );
-
-  const leaveDeductionHours = approvedLeaves
-    .filter((r) => r.type !== "補休假")
-    .reduce(
-      (sum, r) =>
-        sum +
-        calculateApprovedLeaveHoursTotal(
-          r as Parameters<typeof calculateApprovedLeaveHoursTotal>[0],
-          params.getShiftForDate,
-          params.shiftTimeConfig
-        ),
-      0
-    );
-
-  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const leaveDeductionHours = sumApprovedLeaveHoursInMonth({
+    employeeId,
+    year,
+    month,
+    leaveRequests: params.leaveRequests,
+    getShiftForDate: params.getShiftForDate,
+    shiftTimeConfig: params.shiftTimeConfig,
+    excludeTypes: ["補休假"],
+  });
 
   return {
-    workDays,
-    workHours: round2(workHours),
-    overtimePayHours: round2(overtimePayHours),
-    holidayOvertimeHours: round2(holidayOvertimeHours),
-    compensatoryHours: round2(compensatoryHours),
-    leaveDeductionHours: round2(leaveDeductionHours),
-    leaveHoursTotal: round2(leaveHoursTotal),
+    workDays: schedule.workDays,
+    workHours: schedule.workHours,
+    overtimePayHours: roundCompLeaveHours(overtimePayHours),
+    holidayOvertimeHours: schedule.holidayOvertimeHours,
+    compensatoryHours: roundCompLeaveHours(compensatoryHours),
+    leaveDeductionHours,
+    leaveHoursTotal,
   };
 }

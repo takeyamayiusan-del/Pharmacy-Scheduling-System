@@ -8,11 +8,11 @@ import type { ScheduleEntry, OvertimeApplication, LeaveApplication, MonthlyStats
  * 各班別對應的工時（小時）
  */
 export const SHIFT_HOURS: Record<string, number> = {
-  A: 8,
+  A: 9,
   B: 8,
   C: 3.5,
   D: 4.5,
-  E: 8,
+  E: 5.5,
   X: 0,
 };
 

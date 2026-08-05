@@ -76,6 +76,7 @@ export default function OvertimePage() {
   const initialPeriod = getCurrentYearMonth();
   const [filterYear, setFilterYear] = useState(initialPeriod.year);
   const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
+  const [filterEmployeeId, setFilterEmployeeId] = useState("");
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
   const staffEmployees = useMemo(
@@ -227,8 +228,48 @@ export default function OvertimePage() {
     const scoped = isManager
       ? overtimeRequests
       : overtimeRequests.filter((r) => r.employeeId === currentUser?.id);
-    return scoped.filter((r) => isDateInYearMonth(r.date, filterYear, filterMonth));
-  }, [isManager, overtimeRequests, currentUser?.id, filterYear, filterMonth]);
+    return scoped.filter((r) => {
+      if (!isDateInYearMonth(r.date, filterYear, filterMonth)) return false;
+      if (isManager && filterEmployeeId && r.employeeId !== filterEmployeeId) {
+        return false;
+      }
+      return true;
+    });
+  }, [
+    isManager,
+    overtimeRequests,
+    currentUser?.id,
+    filterYear,
+    filterMonth,
+    filterEmployeeId,
+  ]);
+
+  const filterHoursSummary = useMemo(() => {
+    const approved = visibleRequests.filter((r) => r.status === "approved");
+    if (approved.length === 0) return "";
+    const payHours = Math.round(
+      approved
+        .filter((r) => r.compensationType === "pay")
+        .reduce((sum, r) => sum + calcOvertimeHours(r.startTime, r.endTime), 0) * 100
+    ) / 100;
+    const timeOffHours = Math.round(
+      approved
+        .filter((r) => r.compensationType === "time_off")
+        .reduce((sum, r) => sum + calcOvertimeHours(r.startTime, r.endTime), 0) * 100
+    ) / 100;
+    const nameHint =
+      isManager && filterEmployeeId
+        ? `${employees.find((e) => e.id === filterEmployeeId)?.name ?? ""} `
+        : "";
+    const parts = [
+      payHours > 0 ? `加班費 ${payHours}h` : null,
+      timeOffHours > 0 ? `補休 ${timeOffHours}h` : null,
+    ].filter(Boolean);
+    if (parts.length === 0) {
+      return `${nameHint}核准加班合計 0 小時`;
+    }
+    return `${nameHint}核准：${parts.join("、")}`;
+  }, [visibleRequests, isManager, filterEmployeeId, employees]);
 
   const handleGrantCompLeave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -590,6 +631,16 @@ export default function OvertimePage() {
             onYearChange={setFilterYear}
             onMonthChange={setFilterMonth}
             count={visibleRequests.length}
+            employeeFilter={
+              isManager
+                ? {
+                    value: filterEmployeeId,
+                    onChange: setFilterEmployeeId,
+                    options: staffEmployees.map((e) => ({ id: e.id, name: e.name })),
+                  }
+                : undefined
+            }
+            summaryText={filterHoursSummary || undefined}
           />
         </div>
         <div className="overflow-x-auto">

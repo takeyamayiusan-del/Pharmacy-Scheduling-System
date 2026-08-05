@@ -51,8 +51,36 @@ describe("monthlyStatsView", () => {
     });
 
     expect(result.byType.map((x) => x.type).sort()).toEqual(["事假", "補休假"].sort());
-    expect(result.totalHours).toBeGreaterThan(0);
+    expect(result.totalHours).toBe(8 + 3.5);
+    expect(result.byType.find((x) => x.type === "事假")?.hours).toBe(8);
+    expect(result.byType.find((x) => x.type === "補休假")?.hours).toBe(3.5);
     expect(formatLeaveBreakdownText(result.byType)).toContain("事假");
+  });
+
+  it("uses stored leaveHours even when current schedule is already X", () => {
+    const getShiftForDate = (): ShiftType => "X";
+    const result = buildLeaveBreakdownInMonth({
+      employeeId: "e1",
+      year: 2026,
+      month: 7,
+      getShiftForDate,
+      shiftTimeConfig,
+      leaveRequests: [
+        {
+          employeeId: "e1",
+          startDate: "2026-07-10",
+          endDate: "2026-07-10",
+          startTime: "08:30",
+          endTime: "18:00",
+          period: "full_day",
+          shiftMode: "schedule",
+          status: "approved",
+          type: "事假",
+          leaveHours: 8,
+        },
+      ],
+    });
+    expect(result.totalHours).toBe(8);
   });
 
   it("summarizes comp leave earn/use and negative balance hint", () => {
