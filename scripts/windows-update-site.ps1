@@ -28,6 +28,28 @@ Write-Host ""
 $Log = { param($m) Write-Host $m }
 [void](Clear-StaleSupabasePortProxy -WriteLog $Log)
 
+function Restart-UpdateScriptIfChanged {
+    param(
+        [string]$ScriptPath,
+        [string]$BeforeHash
+    )
+
+    if (-not (Test-Path -LiteralPath $ScriptPath)) { return $false }
+    $afterHash = (Get-FileHash -LiteralPath $ScriptPath -Algorithm SHA256).Hash
+    if ($beforeHash -eq $afterHash) { return $false }
+
+    Write-Host ""
+    Write-Host "Update scripts changed on disk — re-running with latest version ..." -ForegroundColor Yellow
+
+    $args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath, "-Branch", $Branch, "-NoPull")
+    if ($SkipBuild) { $args += "-SkipBuild" }
+    & powershell @args
+    exit $LASTEXITCODE
+}
+
+$selfScript = Join-Path $PSScriptRoot "windows-update-site.ps1"
+$selfHashBefore = (Get-FileHash -LiteralPath $selfScript -Algorithm SHA256).Hash
+
 if (-not $NoPull) {
     Write-Host "Fetching / checking out: $Branch"
     $prevEap = $ErrorActionPreference
@@ -50,7 +72,12 @@ if (-not $NoPull) {
     finally {
         $ErrorActionPreference = $prevEap
     }
+
+    Restart-UpdateScriptIfChanged -ScriptPath $selfScript -BeforeHash $selfHashBefore
 }
+
+# git pull 後重新載入共用函式（避免仍用舊版 Restart-PharmacyWebPm2）
+. (Join-Path $PSScriptRoot "windows-site-common.ps1")
 
 if (-not $SkipBuild) {
     Write-Host ""

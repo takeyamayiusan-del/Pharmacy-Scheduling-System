@@ -430,8 +430,15 @@ function Ensure-PharmacyWebPm2Registered {
     }
 
     & $WriteLog "Registering pharmacy-web via ecosystem.config.cjs"
-    & pm2 start $ecosystem --only pharmacy-web 2>&1 | ForEach-Object { & $WriteLog $_ }
-    if ($LASTEXITCODE -ne 0) { return $false }
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $output = & pm2 start $ecosystem --only pharmacy-web 2>&1
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($exitCode -ne 0) {
+        $output | ForEach-Object { & $WriteLog $_ }
+        return $false
+    }
     & pm2 save 2>$null | Out-Null
     return $true
 }
