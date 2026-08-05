@@ -2203,7 +2203,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addLeaveRequest = async (request: Omit<LeaveRequest, "id" | "createdAt">) => {
-    if (hasPastMonthInRange(request.startDate, request.endDate)) {
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
+    // 員工不可申請過去月份；店長／老闆可手動補登（月底結薪）
+    if (hasPastMonthInRange(request.startDate, request.endDate) && !isManagerActor) {
       throw new Error("已過去的月份無法再提出請假申請");
     }
 
@@ -2229,7 +2232,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     await notifyManagers({
       type: "leave_submitted",
-      title: "新請假申請",
+      title: isManagerActor && request.employeeId !== currentUser?.id ? "店長代登請假" : "新請假申請",
       body: `${request.employeeName} 提交請假（${request.startDate}～${request.endDate}），請審核。`,
       relatedType: "leave",
     });
@@ -2675,7 +2678,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Overtime requests (Supabase) ────────────────────────────────────────────
 
   const addOvertimeRequest = async (request: Omit<OvertimeRequest, "id" | "createdAt">) => {
-    if (isPastDate(request.date)) {
+    const isManagerActor =
+      currentUser?.role === "owner" || currentUser?.role === "manager";
+    // 員工不可申請過去月份；店長／老闆可手動補登（月底結薪）
+    if (isPastDate(request.date) && !isManagerActor) {
       throw new Error("已過去的月份無法再提出加班申請");
     }
 
@@ -2721,7 +2727,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     await notifyManagers({
       type: "overtime_submitted",
-      title: "新加班申請",
+      title: isManagerActor && request.employeeId !== currentUser?.id ? "店長代登加班" : "新加班申請",
       body: `${request.employeeName} 提交加班（${request.date}），請審核。`,
       relatedType: "overtime",
     });

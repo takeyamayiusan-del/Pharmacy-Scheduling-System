@@ -48,6 +48,7 @@ export default function OvertimePage() {
     reason: "",
     compensationType: "time_off" as "pay" | "time_off",
   });
+  const [targetEmployeeId, setTargetEmployeeId] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
@@ -81,6 +82,12 @@ export default function OvertimePage() {
     () => employees.filter((e) => e.role !== "owner"),
     [employees]
   );
+  const formEmployeeId = isManager
+    ? targetEmployeeId || currentUser?.id || ""
+    : currentUser?.id || "";
+  const formEmployee = employees.find((e) => e.id === formEmployeeId) ?? currentUser;
+  // 店長／老闆可補登過去月份；員工僅能申請當月起
+  const dateMin = isManager ? undefined : currentMonthMinDate();
 
   const adjustmentHistory = useMemo(() => {
     const items = compLeaveLedger.filter((entry) => entry.sourceType === "adjustment");
@@ -124,7 +131,11 @@ export default function OvertimePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!currentUser || isSubmitting) return;
+    if (!currentUser || !formEmployee || isSubmitting) return;
+    if (isManager && !targetEmployeeId) {
+      alert("請選擇加班員工");
+      return;
+    }
 
     const compensationError = validateOvertimeCompensation(
       formData.startTime,
@@ -145,8 +156,8 @@ export default function OvertimePage() {
     setIsSubmitting(true);
     try {
       await addOvertimeRequest({
-        employeeId: currentUser.id,
-        employeeName: currentUser.name,
+        employeeId: formEmployee.id,
+        employeeName: formEmployee.name,
         date: formData.date,
         startTime: formData.startTime,
         endTime: formData.endTime,
@@ -155,6 +166,7 @@ export default function OvertimePage() {
         status: "pending",
       });
       setFormData({ date: "", startTime: "", endTime: "", reason: "", compensationType: "time_off" });
+      setTargetEmployeeId("");
       setShowForm(false);
     } catch (err) {
       alert(err instanceof Error ? err.message : "申請失敗");
@@ -253,19 +265,57 @@ export default function OvertimePage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">加班申請</h2>
-        {currentUser?.role !== "owner" && (
-          <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">新申請</button>
-        )}
+        <button
+          onClick={() => setShowForm(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+        >
+          {isManager ? "新增／補登" : "新申請"}
+        </button>
       </div>
+
+      {isManager && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+          跨月後員工無法自行申請過去月份；店長／老闆可在此手動補登加班（可代選員工）。
+        </p>
+      )}
 
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border p-6">
-          <h3 className="font-medium text-gray-900 mb-4">新加班申請</h3>
+          <h3 className="font-medium text-gray-900 mb-4">
+            {isManager ? "新加班申請／補登" : "新加班申請"}
+          </h3>
           <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
+            {isManager && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">加班員工</label>
+                <select
+                  value={targetEmployeeId}
+                  onChange={(e) => setTargetEmployeeId(e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  required
+                >
+                  <option value="">請選擇員工</option>
+                  {staffEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">日期</label>
-              <input type="date" value={formData.date} min={currentMonthMinDate()} onChange={e => setFormData({ ...formData, date: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg" required />
+              <input
+                type="date"
+                value={formData.date}
+                min={dateMin}
+                onChange={(e) => setFormData({ ...formData, date: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                required
+              />
+              {isManager && (
+                <p className="text-xs text-gray-500 mt-1">可選過去月份日期（手動補登）</p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

@@ -62,6 +62,7 @@ export default function LeaveApplicationPage() {
     type: '事假' as LeaveType,
     reason: '',
   });
+  const [targetEmployeeId, setTargetEmployeeId] = useState('');
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
   const [submitError, setSubmitError] = useState('');
   const initialPeriod = getCurrentYearMonth();
@@ -69,15 +70,25 @@ export default function LeaveApplicationPage() {
   const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
 
   const isManager = currentUser?.role === 'owner' || currentUser?.role === 'manager';
+  const staffEmployees = useMemo(
+    () => employees.filter((e) => e.role !== 'owner'),
+    [employees]
+  );
+  const formEmployeeId = isManager
+    ? targetEmployeeId || currentUser?.id || ''
+    : currentUser?.id || '';
+  const formEmployee = employees.find((e) => e.id === formEmployeeId) ?? currentUser;
+  // 店長／老闆可補登過去月份；員工僅能申請當月起
+  const dateMin = isManager ? undefined : currentMonthMinDate();
 
   const previewShiftForCalc = useMemo(() => {
     if (formData.shiftMode !== 'schedule') return formData.shiftMode;
-    if (!currentUser || !formData.startDate) return 'B' as ShiftType;
-    return getShiftForDate(formData.startDate, currentUser.id);
-  }, [formData.shiftMode, formData.startDate, currentUser, getShiftForDate]);
+    if (!formEmployeeId || !formData.startDate) return 'B' as ShiftType;
+    return getShiftForDate(formData.startDate, formEmployeeId);
+  }, [formData.shiftMode, formData.startDate, formEmployeeId, getShiftForDate]);
 
   const estimatedHours = useMemo(() => {
-    if (!currentUser || !formData.startDate || !formData.endDate) return 0;
+    if (!formEmployeeId || !formData.startDate || !formData.endDate) return 0;
     let startTime = formData.startTime;
     let endTime = formData.endTime;
     if (formData.period !== 'custom') {
@@ -92,14 +103,16 @@ export default function LeaveApplicationPage() {
       endTime,
       period: formData.period,
       shiftMode: formData.shiftMode,
-      employeeId: currentUser.id,
+      employeeId: formEmployeeId,
       getShiftForDate,
       shiftTimeConfig,
     });
-  }, [currentUser, formData, previewShiftForCalc, getShiftForDate, shiftTimeConfig]);
+  }, [formEmployeeId, formData, previewShiftForCalc, getShiftForDate, shiftTimeConfig]);
 
-  const compBalance = currentUser ? getCompLeaveBalance(currentUser.id) : 0;
-  const annualBalance = currentUser ? getAnnualLeaveBalance(currentUser.id, new Date().getFullYear()) : 0;
+  const compBalance = formEmployeeId ? getCompLeaveBalance(formEmployeeId) : 0;
+  const annualBalance = formEmployeeId
+    ? getAnnualLeaveBalance(formEmployeeId, new Date().getFullYear())
+    : 0;
 
   const applyPeriodPreset = (period: LeavePeriod) => {
     const times = periodToTimes(period, previewShiftForCalc, shiftTimeConfig);
@@ -114,7 +127,11 @@ export default function LeaveApplicationPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError('');
-    if (!currentUser) return;
+    if (!currentUser || !formEmployee) return;
+    if (isManager && !formEmployeeId) {
+      setSubmitError('請選擇請假員工');
+      return;
+    }
     if (formData.endDate < formData.startDate) {
       setSubmitError('結束日期不可早於開始日期');
       return;
@@ -129,7 +146,7 @@ export default function LeaveApplicationPage() {
     }
     if (formData.type === '特休') {
       const year = new Date(formData.startDate).getFullYear();
-      const balance = getAnnualLeaveBalance(currentUser.id, year);
+      const balance = getAnnualLeaveBalance(formEmployeeId, year);
       if (balance < estimatedHours / 8) {
         setSubmitError(`特休餘額不足（剩餘 ${balance.toFixed(1)} 天，本次需要 ${(estimatedHours / 8).toFixed(1)} 天）`);
         return;
@@ -146,8 +163,8 @@ export default function LeaveApplicationPage() {
 
     try {
       await addLeaveRequest({
-        employeeId: currentUser.id,
-        employeeName: currentUser.name,
+        employeeId: formEmployee.id,
+        employeeName: formEmployee.name,
         startDate: formData.startDate,
         endDate: formData.endDate,
         startTime,
@@ -161,6 +178,7 @@ export default function LeaveApplicationPage() {
       });
 
       setShowForm(false);
+      setTargetEmployeeId('');
       setFormData({
         startDate: '',
         endDate: '',
@@ -266,18 +284,22 @@ export default function LeaveApplicationPage() {
           >
             📅 年度特休總表
           </button>
-          {currentUser?.role !== 'owner' && (
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-            >
-              + 新增申請
-            </button>
-          )}
+          <button
+            onClick={() => setShowForm(!showForm)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            {isManager ? '+ 新增／補登' : '+ 新增申請'}
+          </button>
         </div>
       </div>
 
-      {currentUser && currentUser.role !== 'owner' && (
+      {isManager && (
+        <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">
+          跨月後員工無法自行申請過去月份；店長／老闆可在此手動補登請假（可代選員工）。
+        </p>
+      )}
+
+      {currentUser && !isManager && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
             <div className="font-semibold mb-2">年度特休時數</div>
@@ -295,13 +317,31 @@ export default function LeaveApplicationPage() {
       {showForm && (
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <form onSubmit={handleSubmit} className="space-y-4 max-w-2xl">
+            {isManager && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">請假員工</label>
+                <select
+                  value={targetEmployeeId}
+                  onChange={(e) => setTargetEmployeeId(e.target.value)}
+                  className="w-full px-4 py-2 border rounded-lg"
+                  required
+                >
+                  <option value="">請選擇員工</option>
+                  {staffEmployees.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">開始日期</label>
                 <input
                   type="date"
                   value={formData.startDate}
-                  min={currentMonthMinDate()}
+                  min={dateMin}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
@@ -312,13 +352,16 @@ export default function LeaveApplicationPage() {
                   className="w-full px-4 py-2 border rounded-lg"
                   required
                 />
+                {isManager && (
+                  <p className="text-xs text-gray-500 mt-1">可選過去月份日期（手動補登）</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">結束日期</label>
                 <input
                   type="date"
                   value={formData.endDate}
-                  min={formData.startDate}
+                  min={formData.startDate || dateMin}
                   onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
                   className="w-full px-4 py-2 border rounded-lg"
                   required
