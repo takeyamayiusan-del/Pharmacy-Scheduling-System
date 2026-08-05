@@ -40,13 +40,22 @@ $cfg = [ordered]@{
 }
 $cfg | ConvertTo-Json | Set-Content -LiteralPath $cfgPath -Encoding UTF8
 
-pm2 delete cashflow 2>$null | Out-Null
-if ($Args.Count -gt 0) {
-    pm2 start $ScriptPath --name cashflow --cwd $Cwd -- $Args
-} else {
-    pm2 start $ScriptPath --name cashflow --cwd $Cwd
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    pm2 delete cashflow 2>$null | Out-Null
+} finally {
+    $ErrorActionPreference = $prevEap
 }
-if ($LASTEXITCODE -ne 0) { throw "pm2 start cashflow failed" }
+
+if ($Args.Count -gt 0) {
+    & pm2 start $ScriptPath --name cashflow --cwd $Cwd -- $Args
+} else {
+    & pm2 start $ScriptPath --name cashflow --cwd $Cwd
+}
+if ($LASTEXITCODE -ne 0) {
+    throw "pm2 start cashflow failed"
+}
 
 pm2 save | Out-Null
 Write-Host "cashflow registered and saved."
