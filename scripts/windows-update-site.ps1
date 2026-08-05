@@ -66,20 +66,34 @@ if (-not $SkipBuild) {
 # 正確順序 = 先停 PM2 → 強制清埠 → 再啟動，並確認 PID 一致。
 Write-Host ""
 Write-Host "Restarting pharmacy-web safely (stop → clear :3000 → start) ..." -ForegroundColor Cyan
-pm2 stop pharmacy-web 2>$null | Out-Null
-Start-Sleep -Seconds 1
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+try {
+    pm2 stop pharmacy-web 2>$null | Out-Null
+    pm2 stop cashflow 2>$null | Out-Null
+    Start-Sleep -Seconds 2
 
-# 反覆清到 :3000 沒有 LISTENING（最多 5 輪，避免 watchdog 又拉起舊 process）
-for ($i = 1; $i -le 5; $i++) {
-    $listenerPid = Get-PortListenerPid -Port 3000
-    if (-not $listenerPid) { break }
-    Write-Host ("[{0}/5] Port 3000 still held by pid={1}, killing..." -f $i, $listenerPid)
-    [void](Stop-PortListenerForce -Port 3000 -WriteLog $Log)
-    Start-Sleep -Seconds 1
+    # 反覆清到 :3000 沒有 LISTENING（最多 5 輪，避免 watchdog 又拉起舊 process）
+    for ($i = 1; $i -le 5; $i++) {
+        $listenerPid = Get-PortListenerPid -Port 3000
+        if (-not $listenerPid) { break }
+        Write-Host ("[{0}/5] Port 3000 still held by pid={1}, killing..." -f $i, $listenerPid)
+        [void](Stop-PortListenerForce -Port 3000 -WriteLog $Log)
+        Start-Sleep -Seconds 2
+    }
+} finally {
+    $ErrorActionPreference = $prevEap
 }
 
 if (Test-PortListening 3000) {
-    throw "Port 3000 still occupied after cleanup. Run as Admin and kill the LISTENING pid, then retry."
+    $stuckPid = Get-PortListenerPid -Port 3000
+    Write-Host ""
+    Write-Host "Port 3000 still occupied (pid=$stuckPid)." -ForegroundColor Red
+    Write-Host "Please run PowerShell as Administrator, then:" -ForegroundColor Yellow
+    Write-Host "  pm2 stop pharmacy-web"
+    Write-Host "  taskkill /F /PID $stuckPid /T"
+    Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1 -SkipBuild -NoPull"
+    throw "Port 3000 still occupied after cleanup."
 }
 
 pm2 start pharmacy-web --update-env

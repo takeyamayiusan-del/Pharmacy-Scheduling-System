@@ -336,8 +336,27 @@ function Stop-PortListenerForce {
     $listenerPid = Get-PortListenerPid -Port $Port
     if (-not $listenerPid -or $listenerPid -le 0) { return $false }
     & $WriteLog ("Killing listener on :{0} pid={1}" -f $Port, $listenerPid)
-    try { Stop-Process -Id $listenerPid -Force -ErrorAction SilentlyContinue } catch {}
-    & cmd.exe /c ("taskkill /F /PID {0} /T" -f $listenerPid) 2>$null | Out-Null
+
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        try { Stop-Process -Id $listenerPid -Force -ErrorAction SilentlyContinue } catch {}
+
+        # taskkill 失敗訊息會寫 stderr；不可讓 $ErrorActionPreference=Stop 中斷整個更新腳本
+        $null = cmd.exe /c "taskkill /F /PID $listenerPid /T" 2>&1
+
+        if (Test-PortListening $Port) {
+            $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$listenerPid" -ErrorAction SilentlyContinue
+            if ($proc -and $proc.ParentProcessId -and $proc.ParentProcessId -ne 0) {
+                & $WriteLog ("Port still held; also killing parent pid={0}" -f $proc.ParentProcessId)
+                try { Stop-Process -Id $proc.ParentProcessId -Force -ErrorAction SilentlyContinue } catch {}
+                $null = cmd.exe /c "taskkill /F /PID $($proc.ParentProcessId) /T" 2>&1
+            }
+        }
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+
     Start-Sleep -Seconds 1
     return (-not (Test-PortListening $Port))
 }
