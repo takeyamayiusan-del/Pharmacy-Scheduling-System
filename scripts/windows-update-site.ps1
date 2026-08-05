@@ -1,16 +1,17 @@
 # 安全更新網站內容（不會動到 portproxy / Hyper-V）
 # 平時放著不管沒問題；只有「更新程式」時才需要跑這個。
 #
-# 預設固定走單一主線分支（不必再記一堆 cursor/*）：
+# 預設固定走單一主線 main：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1
 #
 # 進階（很少用）：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1 -Branch main
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1 -SkipBuild
+#   powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1 -NoPull
 
 param(
-    # 正式站只維護這一條主線；不要再切一堆功能分支
-    [string]$Branch = "cursor/stable-774b",
+    # 正式站只維護 main
+    [string]$Branch = "main",
     [switch]$SkipBuild,
     # 若只要 build／重啟、不要拉 git，加 -NoPull
     [switch]$NoPull

@@ -55,6 +55,7 @@ describe("monthlyStatsView", () => {
     expect(result.totalHours).toBe(8 + 3.5);
     expect(result.byType.find((x) => x.type === "事假")?.hours).toBe(8);
     expect(result.byType.find((x) => x.type === "補休假")?.hours).toBe(3.5);
+    expect(result.items[0].periodLabel).toBeTruthy();
     expect(formatLeaveBreakdownText(result.byType)).toContain("事假");
   });
 

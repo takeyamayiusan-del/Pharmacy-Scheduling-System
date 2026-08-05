@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 import { formatCompLeaveHours } from '@/lib/attendance/compLeaveDisplay';
 import {
+  buildApprovedCompOvertimeInMonth,
   buildCompLeaveMonthSummary,
   buildLeaveBreakdownInMonth,
   formatLeaveBreakdownText,
@@ -80,6 +81,13 @@ export default function AttendancePage() {
         shiftTimeConfig,
       });
 
+      const otComp = buildApprovedCompOvertimeInMonth({
+        employeeId: emp.id,
+        year,
+        month,
+        overtimeRequests,
+      });
+
       const balance = getCompLeaveBalance(emp.id);
       const comp = buildCompLeaveMonthSummary({
         employeeId: emp.id,
@@ -91,9 +99,10 @@ export default function AttendancePage() {
         leaveRequests,
       });
 
-      // 名目：依本月核准申請（不含取消退回等帳本雜項）
+      // 名目：依本月仍核准的申請（不含取消退回）
       const compLeaveTaken =
         leaveBreakdown.byType.find((x) => x.type === "補休假")?.hours ?? 0;
+      const compLeaveItems = leaveBreakdown.items.filter((x) => x.type === "補休假");
 
       const tardy = effectiveTardinessRecords
         .filter((item) => item.employeeId === emp.id)
@@ -106,12 +115,11 @@ export default function AttendancePage() {
         workHours: hours.workHours,
         overtimeHours: hours.overtimePayHours,
         holidayOvertimeHours: hours.holidayOvertimeHours,
-        /** 本月核准加班轉補休（申請） */
-        compensatoryEarnedFromOt: hours.compensatoryHours,
-        /** 本月核准補休假時數（申請） */
+        compensatoryEarnedFromOt: otComp.totalHours,
+        overtimeCompItems: otComp.items,
         compLeaveTaken,
+        compLeaveItems,
         leaveHours: leaveBreakdown.totalHours,
-        leaveByType: leaveBreakdown.byType,
         leaveItems: leaveBreakdown.items,
         leaveText: formatLeaveBreakdownText(leaveBreakdown.byType),
         compBalance: comp.balance,
@@ -424,7 +432,7 @@ export default function AttendancePage() {
               {open && (
                 <div className="border-t bg-gray-50 p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
                   <div>
-                    <p className="font-medium text-gray-900 mb-2">請假明細（本月）</p>
+                    <p className="font-medium text-gray-900 mb-2">請假明細（本月核准）</p>
                     {stat.leaveItems.length === 0 ? (
                       <p className="text-gray-500">本月無核准請假</p>
                     ) : (
@@ -436,6 +444,12 @@ export default function AttendancePage() {
                             {item.startDate}
                             {item.endDate !== item.startDate ? `～${item.endDate}` : ''}
                             {' · '}
+                            {item.periodLabel}
+                            <span className="text-xs text-gray-400">
+                              {' '}
+                              ({item.startTime}–{item.endTime})
+                            </span>
+                            {' · '}
                             {formatCompLeaveHours(item.hours)} 小時
                           </li>
                         ))}
@@ -444,18 +458,46 @@ export default function AttendancePage() {
                   </div>
                   <div>
                     <p className="font-medium text-gray-900 mb-2">補休（本月名目）</p>
-                    <ul className="space-y-1 text-gray-700">
+                    <ul className="space-y-2 text-gray-700">
                       <li>
-                        加班轉補休：
-                        <span className="font-medium text-emerald-700">
-                          +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)} 小時
-                        </span>
+                        <div>
+                          加班轉補休：
+                          <span className="font-medium text-emerald-700">
+                            +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)} 小時
+                          </span>
+                        </div>
+                        {stat.overtimeCompItems.length > 0 && (
+                          <ul className="mt-1 ml-3 space-y-0.5 text-xs text-gray-600">
+                            {stat.overtimeCompItems.map((ot, idx) => (
+                              <li key={`${ot.date}-${ot.startTime}-${idx}`}>
+                                {ot.date} · {ot.startTime}–{ot.endTime} ·{' '}
+                                {formatCompLeaveHours(ot.hours)} 小時
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </li>
                       <li>
-                        請補休假：
-                        <span className="font-medium text-red-700">
-                          −{formatCompLeaveHours(stat.compLeaveTaken)} 小時
-                        </span>
+                        <div>
+                          請補休假：
+                          <span className="font-medium text-red-700">
+                            −{formatCompLeaveHours(stat.compLeaveTaken)} 小時
+                          </span>
+                        </div>
+                        {stat.compLeaveItems.length > 0 && (
+                          <ul className="mt-1 ml-3 space-y-0.5 text-xs text-gray-600">
+                            {stat.compLeaveItems.map((item, idx) => (
+                              <li key={`comp-${item.startDate}-${idx}`}>
+                                {item.startDate}
+                                {item.endDate !== item.startDate ? `～${item.endDate}` : ''}
+                                {' · '}
+                                {item.periodLabel}
+                                {' · '}
+                                {formatCompLeaveHours(item.hours)} 小時
+                              </li>
+                            ))}
+                          </ul>
+                        )}
                       </li>
                       <li>
                         目前餘額：
@@ -469,7 +511,7 @@ export default function AttendancePage() {
                           {formatCompLeaveHours(stat.compBalance)} 小時
                         </span>
                       </li>
-                      <li className="text-xs text-gray-500 pt-1">{stat.compHint}</li>
+                      <li className="text-xs text-gray-500">{stat.compHint}</li>
                     </ul>
                     <p className="mt-3 text-gray-600">
                       遲到：{stat.tardyCount} 次／{stat.tardyMinutes} 分鐘

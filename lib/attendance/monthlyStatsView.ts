@@ -89,7 +89,24 @@ function sourceLabel(sourceType: string, hours: number): string {
   }
 }
 
-/** 本月請假：依假別彙總時數（權威：優先存檔 leaveHours） */
+const PERIOD_LABEL: Record<string, string> = {
+  full_day: "全天",
+  morning: "上午",
+  afternoon: "下午",
+  custom: "自訂",
+};
+
+export type LeaveBreakdownItem = {
+  type: string;
+  hours: number;
+  startDate: string;
+  endDate: string;
+  periodLabel: string;
+  startTime: string;
+  endTime: string;
+};
+
+/** 本月請假名目明細：只含目前仍核准的申請（取消／駁回不列） */
 export function buildLeaveBreakdownInMonth(params: {
   employeeId: string;
   year: number;
@@ -100,11 +117,11 @@ export function buildLeaveBreakdownInMonth(params: {
 }): {
   byType: { type: string; hours: number }[];
   totalHours: number;
-  items: { type: string; hours: number; startDate: string; endDate: string }[];
+  items: LeaveBreakdownItem[];
 } {
   const { employeeId, year, month } = params;
   const typeMap = new Map<string, number>();
-  const items: { type: string; hours: number; startDate: string; endDate: string }[] = [];
+  const items: LeaveBreakdownItem[] = [];
 
   const approved = params.leaveRequests.filter(
     (r) => r.employeeId === employeeId && r.status === "approved"
@@ -125,8 +142,15 @@ export function buildLeaveBreakdownInMonth(params: {
       hours,
       startDate: req.startDate,
       endDate: req.endDate,
+      periodLabel: PERIOD_LABEL[req.period] ?? String(req.period),
+      startTime: req.startTime,
+      endTime: req.endTime,
     });
   }
+
+  items.sort(
+    (a, b) => a.startDate.localeCompare(b.startDate) || a.type.localeCompare(b.type)
+  );
 
   const byType = Array.from(typeMap.entries())
     .map(([type, h]) => ({ type, hours: h }))
@@ -134,6 +158,56 @@ export function buildLeaveBreakdownInMonth(params: {
 
   const totalHours = roundCompLeaveHours(byType.reduce((s, x) => s + x.hours, 0));
   return { byType, totalHours, items };
+}
+
+export type CompOvertimeItem = {
+  date: string;
+  startTime: string;
+  endTime: string;
+  hours: number;
+};
+
+/** 本月加班轉補休名目：只含目前仍核准、補償為補休的申請 */
+export function buildApprovedCompOvertimeInMonth(params: {
+  employeeId: string;
+  year: number;
+  month: number;
+  overtimeRequests: {
+    employeeId: string;
+    date: string;
+    startTime: string;
+    endTime: string;
+    status: string;
+    compensationType: "pay" | "time_off";
+  }[];
+}): { totalHours: number; items: CompOvertimeItem[] } {
+  const monthStr = `${params.year}-${String(params.month).padStart(2, "0")}`;
+  const items = params.overtimeRequests
+    .filter(
+      (r) =>
+        r.employeeId === params.employeeId &&
+        r.status === "approved" &&
+        r.compensationType === "time_off" &&
+        r.date.startsWith(monthStr)
+    )
+    .map((r) => {
+      const [sh, sm] = r.startTime.split(":").map(Number);
+      const [eh, em] = r.endTime.split(":").map(Number);
+      const hours = roundCompLeaveHours(
+        Math.max(0, eh * 60 + (em || 0) - (sh * 60 + (sm || 0))) / 60
+      );
+      return {
+        date: r.date,
+        startTime: r.startTime,
+        endTime: r.endTime,
+        hours,
+      };
+    })
+    .filter((x) => x.hours > 0)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.startTime.localeCompare(b.startTime));
+
+  const totalHours = roundCompLeaveHours(items.reduce((s, x) => s + x.hours, 0));
+  return { totalHours, items };
 }
 
 export type CompLeaveMonthSummary = {
