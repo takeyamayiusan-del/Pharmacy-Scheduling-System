@@ -26,6 +26,13 @@ if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
     throw "pm2 not found. Install: npm install -g pm2"
 }
 
+$StartTaskName = "YaoshengPharmacyStart"
+$WatchdogTaskName = "YaoshengPharmacyWatchdog"
+
+# 避免 setup 過程被每分鐘 watchdog 插入，造成 .next 還在重建時又被拉起
+Stop-ScheduledTask -TaskName $StartTaskName -ErrorAction SilentlyContinue
+Stop-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+
 if (-not (Test-PharmacyWebBuildReady -ProjectRoot $ProjectRoot)) {
     Write-Host "Building site first ..." -ForegroundColor Yellow
     Invoke-NpmBuild -ProjectRoot $ProjectRoot
@@ -36,16 +43,21 @@ if (-not (Restart-PharmacyWebPm2 -ProjectRoot $ProjectRoot -WriteLog $Log)) {
     throw "Failed to start pharmacy-web"
 }
 
-Write-Host "[2/4] PM2 startup (survive reboot) ..." -ForegroundColor Cyan
-$startupCmd = & pm2 startup 2>&1 | Out-String
-if ($startupCmd -match "sudo|pm2\.ps1") {
-    $startupLine = ($startupCmd -split "`n" | Where-Object { $_ -match "pm2" } | Select-Object -Last 1).Trim()
-    if ($startupLine) {
-        Write-Host "Run this if PM2 does not auto-start after reboot:" -ForegroundColor Yellow
-        Write-Host "  $startupLine"
+Write-Host "[2/4] PM2 startup hook ..." -ForegroundColor Cyan
+if ($env:OS -like "*Windows*") {
+    Write-Host "Windows detected: skip 'pm2 startup' (not supported on this host)." -ForegroundColor Yellow
+    Write-Host "Startup is handled by Windows Task Scheduler." -ForegroundColor Yellow
+} else {
+    $startupCmd = & pm2 startup 2>&1 | Out-String
+    if ($startupCmd -match "sudo|pm2\.ps1") {
+        $startupLine = ($startupCmd -split "`n" | Where-Object { $_ -match "pm2" } | Select-Object -Last 1).Trim()
+        if ($startupLine) {
+            Write-Host "Run this if PM2 does not auto-start after reboot:" -ForegroundColor Yellow
+            Write-Host "  $startupLine"
+        }
     }
 }
-& pm2 save
+& pm2 save 2>$null | Out-Null
 
 Write-Host "[3/4] Register Windows scheduled tasks (boot + watchdog) ..." -ForegroundColor Cyan
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-register-startup-task.ps1")
