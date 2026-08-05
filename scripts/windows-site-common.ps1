@@ -388,6 +388,82 @@ function Get-PharmacyWebEcosystemPath {
     return Join-Path $ProjectRoot "ecosystem.config.cjs"
 }
 
+function Get-CashflowBootstrapConfigPath {
+    param([string]$ProjectRoot)
+    return Join-Path $ProjectRoot "data\ops\cashflow-bootstrap.json"
+}
+
+function Ensure-CashflowPm2Registered {
+    param(
+        [string]$ProjectRoot,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+        & $WriteLog "pm2 not found, cannot register cashflow"
+        return $false
+    }
+
+    if (Get-Pm2Online -Name "cashflow") { return $true }
+
+    $configPath = Get-CashflowBootstrapConfigPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $configPath)) {
+        & $WriteLog "cashflow bootstrap config missing; skip auto-register"
+        return $false
+    }
+
+    try {
+        $raw = Get-Content -LiteralPath $configPath -Raw -ErrorAction Stop
+        $cfg = $raw | ConvertFrom-Json
+    } catch {
+        & $WriteLog ("cashflow bootstrap config invalid: {0}" -f $_.Exception.Message)
+        return $false
+    }
+
+    if (-not $cfg.script) {
+        & $WriteLog "cashflow bootstrap config has no script path"
+        return $false
+    }
+
+    $scriptPath = [string]$cfg.script
+    if (-not (Test-Path -LiteralPath $scriptPath)) {
+        & $WriteLog ("cashflow script not found: {0}" -f $scriptPath)
+        return $false
+    }
+
+    $cwd = if ($cfg.cwd) { [string]$cfg.cwd } else { Split-Path -Parent $scriptPath }
+    if (-not (Test-Path -LiteralPath $cwd)) {
+        & $WriteLog ("cashflow cwd not found: {0}" -f $cwd)
+        return $false
+    }
+
+    $args = @()
+    if ($cfg.args) {
+        foreach ($a in $cfg.args) { $args += [string]$a }
+    }
+
+    $argLine = ""
+    if ($args.Count -gt 0) {
+        $argLine = ($args | ForEach-Object { '"{0}"' -f $_.Replace('"', '\"') }) -join " "
+    }
+    $cmd = if ($argLine) {
+        'pm2 start "{0}" --name cashflow --cwd "{1}" -- {2}' -f $scriptPath, $cwd, $argLine
+    } else {
+        'pm2 start "{0}" --name cashflow --cwd "{1}"' -f $scriptPath, $cwd
+    }
+
+    & $WriteLog "Registering cashflow via bootstrap config"
+    cmd.exe /c $cmd 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        & $WriteLog "cashflow pm2 start failed"
+        return $false
+    }
+
+    pm2 save 2>$null | Out-Null
+    Start-Sleep -Seconds 2
+    return (Get-Pm2Online -Name "cashflow")
+}
+
 function Clear-PharmacyWebPort {
     param(
         [scriptblock]$WriteLog = { param($m) Write-Host $m },
@@ -600,6 +676,12 @@ function Repair-Pm2AppIfNeeded {
     if ($Name -eq "pharmacy-web" -and $ProjectRoot) {
         & $WriteLog "Repairing pharmacy-web via Restart-PharmacyWebPm2"
         return (Restart-PharmacyWebPm2 -ProjectRoot $ProjectRoot -WriteLog $WriteLog)
+    }
+
+    if ($Name -eq "cashflow" -and $ProjectRoot) {
+        if (-not (Test-Pm2AppExists -Name "cashflow")) {
+            [void](Ensure-CashflowPm2Registered -ProjectRoot $ProjectRoot -WriteLog $WriteLog)
+        }
     }
 
     & $WriteLog "Repairing pm2 app: $Name"

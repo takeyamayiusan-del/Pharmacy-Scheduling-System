@@ -89,7 +89,7 @@ $cashflowOk = $true
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
     $hasCashflow = ((& pm2 jlist 2>$null) | Out-String) -match '"name"\s*:\s*"cashflow"'
     if ($hasCashflow) {
-        $cashflowOk = Repair-Pm2AppIfNeeded -Name "cashflow" -HealthyCheck { Test-CashflowHealthy } -WriteLog {
+        $cashflowOk = Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck { Test-CashflowHealthy } -WriteLog {
             param($m)
             Write-Log $m
         }
