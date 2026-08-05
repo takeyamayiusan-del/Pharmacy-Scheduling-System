@@ -141,8 +141,12 @@ export default function LeaveApplicationPage() {
       return;
     }
     if (formData.type === '補休假' && compBalance < estimatedHours) {
-      setSubmitError(`補休餘額不足（可用 ${compBalance} 小時，本次需要 ${estimatedHours} 小時）`);
-      return;
+      const after = Math.round((compBalance - estimatedHours) * 100) / 100;
+      const ok = window.confirm(
+        `補休餘額不足（目前 ${compBalance} 小時，本次 ${estimatedHours} 小時）。\n` +
+          `核准後餘額將為 ${after} 小時（可先請後補，之後加班選「補休」會加回）。\n\n確定送出？`
+      );
+      if (!ok) return;
     }
     if (formData.type === '特休') {
       const year = new Date(formData.startDate).getFullYear();
@@ -308,8 +312,14 @@ export default function LeaveApplicationPage() {
           </div>
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-900">
             <div className="font-semibold mb-2">可用補休時數</div>
-            <div className="text-3xl font-bold text-emerald-600">{compBalance}</div>
-            <div className="text-xs text-emerald-700 mt-1">小時（加班選擇「補休」累積，半年內有效）</div>
+            <div
+              className={`text-3xl font-bold ${compBalance < 0 ? "text-amber-700" : "text-emerald-600"}`}
+            >
+              {compBalance}
+            </div>
+            <div className="text-xs text-emerald-700 mt-1">
+              小時（可先請後補；負數＝已借支，之後加班選「補休」會加回）
+            </div>
           </div>
         </div>
       )}
@@ -447,6 +457,14 @@ export default function LeaveApplicationPage() {
                   </option>
                 ))}
               </select>
+              {formData.type === '補休假' && (
+                <p className="text-xs text-amber-700 mt-1">
+                  目前補休 {compBalance} 小時
+                  {estimatedHours > 0 && compBalance < estimatedHours
+                    ? `；核准後約為 ${Math.round((compBalance - estimatedHours) * 100) / 100} 小時（可先請後補）`
+                    : '。可先請後補，餘額可為負，之後加班選「補休」加回。'}
+                </p>
+              )}
             </div>
 
             <div>

@@ -2290,12 +2290,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("已過去的月份無法變更請假申請");
     }
 
-    if (status === "approved" && request?.type === "補休假") {
-      const balance = getCompLeaveBalance(request.employeeId);
-      if (balance < request.leaveHours) {
-        throw new Error(`補休餘額不足（可用 ${balance} 小時，需要 ${request.leaveHours} 小時）`);
-      }
-    }
+    // 補休假允許先請後補：餘額可為負，之後加班轉補休再加回
+    // （核准時寫入負數帳本，不在此阻擋）
 
     if (status === "approved" && request?.type === "特休") {
       const emp = employees.find((e) => e.id === request.employeeId);
@@ -2355,12 +2351,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await restoreTardinessAfterLeaveCancelled(request);
       }
       if (status === "approved" && prevStatus !== "approved" && request.type === "補休假") {
+        const balanceBefore = getCompLeaveBalance(request.employeeId);
+        const isAdvance = balanceBefore < request.leaveHours;
         await supabase.from("comp_leave_ledger").insert({
           user_id: request.employeeId,
           hours: -request.leaveHours,
           source_type: "leave_debit",
           source_id: id,
-          note: `請假使用補休 ${request.startDate}～${request.endDate}`,
+          note: isAdvance
+            ? `先請補休（借支） ${request.startDate}～${request.endDate}`
+            : `請假使用補休 ${request.startDate}～${request.endDate}`,
         });
       }
       if (

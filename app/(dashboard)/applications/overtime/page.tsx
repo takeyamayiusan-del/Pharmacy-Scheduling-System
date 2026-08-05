@@ -422,7 +422,7 @@ export default function OvertimePage() {
           <div className="p-4 border-b bg-emerald-50">
             <h3 className="font-medium text-gray-900">補休時數管理</h3>
             <p className="text-xs text-gray-600 mt-1">
-              店長／老闆可手動核發或扣回員工補休時數（半年內有效，與加班轉補休相同）
+              店長／老闆可手動核發或扣回員工補休時數（半年內有效）。請假可先請補休（餘額可為負），之後加班轉補休會加回。
             </p>
           </div>
 
@@ -504,8 +504,13 @@ export default function OvertimePage() {
                 {staffEmployees.map((emp) => (
                   <div key={emp.id} className="flex items-center justify-between px-3 py-2 text-sm">
                     <span className="text-gray-900">{emp.name}</span>
-                    <span className="font-semibold text-emerald-700">
+                    <span
+                      className={`font-semibold ${
+                        getCompLeaveBalance(emp.id) < 0 ? "text-amber-700" : "text-emerald-700"
+                      }`}
+                    >
                       {formatCompLeaveHours(getCompLeaveBalance(emp.id))} 小時
+                      {getCompLeaveBalance(emp.id) < 0 ? "（借支）" : ""}
                     </span>
                   </div>
                 ))}
