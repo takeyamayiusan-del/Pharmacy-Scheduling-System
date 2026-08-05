@@ -80,15 +80,20 @@ export default function AttendancePage() {
         shiftTimeConfig,
       });
 
+      const balance = getCompLeaveBalance(emp.id);
       const comp = buildCompLeaveMonthSummary({
         employeeId: emp.id,
         year,
         month,
         ledger: compLeaveLedger,
-        currentBalance: getCompLeaveBalance(emp.id),
+        currentBalance: balance,
         overtimeRequests,
         leaveRequests,
       });
+
+      // 名目：依本月核准申請（不含取消退回等帳本雜項）
+      const compLeaveTaken =
+        leaveBreakdown.byType.find((x) => x.type === "補休假")?.hours ?? 0;
 
       const tardy = effectiveTardinessRecords
         .filter((item) => item.employeeId === emp.id)
@@ -101,25 +106,16 @@ export default function AttendancePage() {
         workHours: hours.workHours,
         overtimeHours: hours.overtimePayHours,
         holidayOvertimeHours: hours.holidayOvertimeHours,
+        /** 本月核准加班轉補休（申請） */
         compensatoryEarnedFromOt: hours.compensatoryHours,
+        /** 本月核准補休假時數（申請） */
+        compLeaveTaken,
         leaveHours: leaveBreakdown.totalHours,
         leaveByType: leaveBreakdown.byType,
         leaveItems: leaveBreakdown.items,
         leaveText: formatLeaveBreakdownText(leaveBreakdown.byType),
-        compEarned: comp.earnedHours,
-        compUsed: comp.usedHours,
-        compNet: comp.netHours,
         compBalance: comp.balance,
         compHint: comp.hint,
-        compOvertimeCredit: comp.overtimeCreditHours,
-        compTyphoonCredit: comp.typhoonCreditHours,
-        compAdjustmentCredit: comp.adjustmentCreditHours,
-        compLeaveDebit: comp.leaveDebitHours,
-        compTyphoonDebit: comp.typhoonDebitHours,
-        compAdjustmentDebit: comp.adjustmentDebitHours,
-        compLeaveRefund: comp.leaveRefundHours,
-        compOvertimeReversal: comp.overtimeReversalHours,
-        compLines: comp.lines,
         tardyCount: tardy.length,
         tardyMinutes: tardy.reduce((sum, item) => sum + item.minutes, 0),
       };
@@ -170,8 +166,7 @@ export default function AttendancePage() {
       '加班費時數',
       '國定假日加班',
       '本月加班轉補休',
-      '本月補休賺得',
-      '本月補休使用',
+      '本月請補休',
       '補休餘額',
       '請假總時數',
       '請假明細',
@@ -186,8 +181,7 @@ export default function AttendancePage() {
       item.overtimeHours,
       item.holidayOvertimeHours,
       item.compensatoryEarnedFromOt,
-      item.compEarned,
-      item.compUsed,
+      item.compLeaveTaken,
       item.compBalance,
       item.leaveHours,
       item.leaveText,
@@ -413,8 +407,8 @@ export default function AttendancePage() {
                       {stat.compBalance < 0 ? '（借支）' : ''}
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      本月賺 +{formatCompLeaveHours(stat.compEarned)}／請 −
-                      {formatCompLeaveHours(stat.compUsed)}
+                      本月加班 +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)}／請補休 −
+                      {formatCompLeaveHours(stat.compLeaveTaken)}
                     </p>
                     <p
                       className={`text-xs mt-1 ${
@@ -449,51 +443,20 @@ export default function AttendancePage() {
                     )}
                   </div>
                   <div>
-                    <p className="font-medium text-gray-900 mb-2">補休進出（本月）</p>
+                    <p className="font-medium text-gray-900 mb-2">補休（本月名目）</p>
                     <ul className="space-y-1 text-gray-700">
                       <li>
-                        加班轉補休（申請核准）：
-                        {formatCompLeaveHours(stat.compensatoryEarnedFromOt)} 小時
-                        {Math.abs(stat.compensatoryEarnedFromOt - stat.compOvertimeCredit) > 0.01 && (
-                          <span className="text-xs text-amber-700 ml-1">
-                            （帳本 {formatCompLeaveHours(stat.compOvertimeCredit)}h）
-                          </span>
-                        )}
-                      </li>
-                      {stat.compTyphoonCredit > 0 && (
-                        <li>颱風／彈性出勤補休：+{formatCompLeaveHours(stat.compTyphoonCredit)} 小時</li>
-                      )}
-                      {stat.compAdjustmentCredit > 0 && (
-                        <li>手動核發：+{formatCompLeaveHours(stat.compAdjustmentCredit)} 小時</li>
-                      )}
-                      <li className="font-medium text-emerald-800">
-                        本月賺得合計：+{formatCompLeaveHours(stat.compEarned)} 小時
-                        <span className="font-normal text-xs text-gray-500 ml-1">
-                          （加班＋颱風＋手動，不含退回）
+                        加班轉補休：
+                        <span className="font-medium text-emerald-700">
+                          +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)} 小時
                         </span>
                       </li>
                       <li>
-                        補休假使用：−{formatCompLeaveHours(stat.compLeaveDebit)} 小時
+                        請補休假：
+                        <span className="font-medium text-red-700">
+                          −{formatCompLeaveHours(stat.compLeaveTaken)} 小時
+                        </span>
                       </li>
-                      {stat.compTyphoonDebit > 0 && (
-                        <li>颱風扣補休：−{formatCompLeaveHours(stat.compTyphoonDebit)} 小時</li>
-                      )}
-                      {stat.compAdjustmentDebit > 0 && (
-                        <li>手動扣回：−{formatCompLeaveHours(stat.compAdjustmentDebit)} 小時</li>
-                      )}
-                      <li className="font-medium text-red-800">
-                        本月使用合計：−{formatCompLeaveHours(stat.compUsed)} 小時
-                      </li>
-                      {stat.compLeaveRefund > 0 && (
-                        <li className="text-gray-600">
-                          取消請假退回：+{formatCompLeaveHours(stat.compLeaveRefund)} 小時
-                        </li>
-                      )}
-                      {stat.compOvertimeReversal > 0 && (
-                        <li className="text-gray-600">
-                          取消加班沖銷：−{formatCompLeaveHours(stat.compOvertimeReversal)} 小時
-                        </li>
-                      )}
                       <li>
                         目前餘額：
                         <span
@@ -508,25 +471,6 @@ export default function AttendancePage() {
                       </li>
                       <li className="text-xs text-gray-500 pt-1">{stat.compHint}</li>
                     </ul>
-                    {stat.compLines.length > 0 && (
-                      <div className="mt-3">
-                        <p className="text-xs font-medium text-gray-600 mb-1">帳本明細</p>
-                        <ul className="space-y-0.5 text-xs text-gray-600 max-h-40 overflow-y-auto">
-                          {stat.compLines.map((line, idx) => (
-                            <li key={`${line.eventDate}-${line.label}-${idx}`}>
-                              {line.eventDate} · {line.label}{' '}
-                              <span className={line.hours >= 0 ? 'text-emerald-700' : 'text-red-700'}>
-                                {line.hours >= 0 ? '+' : ''}
-                                {formatCompLeaveHours(line.hours)}h
-                              </span>
-                              {line.note ? (
-                                <span className="text-gray-400">（{line.note}）</span>
-                              ) : null}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
                     <p className="mt-3 text-gray-600">
                       遲到：{stat.tardyCount} 次／{stat.tardyMinutes} 分鐘
                     </p>
