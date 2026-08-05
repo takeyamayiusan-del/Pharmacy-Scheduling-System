@@ -9,8 +9,8 @@ function Get-PortListenerPid([int]$Port) {
     if (-not $line) { return $null }
     $parts = ($line.ToString().Trim() -split "\s+") | Where-Object { $_ -ne "" }
     if ($parts.Length -lt 5) { return $null }
-    $pid = 0
-    if ([int]::TryParse($parts[-1], [ref]$pid)) { return $pid }
+    $processId = 0
+    if ([int]::TryParse($parts[-1], [ref]$processId)) { return $processId }
     return $null
 }
 
@@ -320,8 +320,8 @@ function Get-Pm2Pid([string]$Name) {
         $apps = $j | ConvertFrom-Json
         $app = $apps | Where-Object { $_.name -eq $Name } | Select-Object -First 1
         if (-not $app) { return $null }
-        $pid = 0
-        if ([int]::TryParse("$($app.pid)", [ref]$pid) -and $pid -gt 0) { return $pid }
+        $processId = 0
+        if ([int]::TryParse("$($app.pid)", [ref]$processId) -and $processId -gt 0) { return $processId }
         return $null
     } catch {
         return $null
@@ -333,11 +333,11 @@ function Stop-PortListenerForce {
         [int]$Port,
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
-    $pid = Get-PortListenerPid -Port $Port
-    if (-not $pid -or $pid -le 0) { return $false }
-    & $WriteLog ("Killing listener on :{0} pid={1}" -f $Port, $pid)
-    try { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue } catch {}
-    & cmd.exe /c ("taskkill /F /PID {0} /T" -f $pid) 2>$null | Out-Null
+    $listenerPid = Get-PortListenerPid -Port $Port
+    if (-not $listenerPid -or $listenerPid -le 0) { return $false }
+    & $WriteLog ("Killing listener on :{0} pid={1}" -f $Port, $listenerPid)
+    try { Stop-Process -Id $listenerPid -Force -ErrorAction SilentlyContinue } catch {}
+    & cmd.exe /c ("taskkill /F /PID {0} /T" -f $listenerPid) 2>$null | Out-Null
     Start-Sleep -Seconds 1
     return (-not (Test-PortListening $Port))
 }
