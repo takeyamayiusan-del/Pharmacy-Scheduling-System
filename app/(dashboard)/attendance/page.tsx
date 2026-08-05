@@ -52,14 +52,15 @@ export default function AttendancePage() {
   };
 
   const stats = useMemo(() => {
-    const effectiveTardinessRecords = buildEffectiveTardinessRecords(
-      tardinessRecords,
-      punchRecords,
-      overtimeRequests,
-      leaveRequests
-    );
+    try {
+      const effectiveTardinessRecords = buildEffectiveTardinessRecords(
+        tardinessRecords,
+        punchRecords,
+        overtimeRequests,
+        leaveRequests
+      );
 
-    return displayEmployees.map((emp) => {
+      return displayEmployees.map((emp) => {
       const hours = computeMonthlyAttendanceHours({
         employeeId: emp.id,
         year,
@@ -127,6 +128,10 @@ export default function AttendancePage() {
         tardyMinutes: tardy.reduce((sum, item) => sum + item.minutes, 0),
       };
     });
+    } catch (err) {
+      console.error("[attendance] stats calculation failed", err);
+      return [];
+    }
   }, [
     displayEmployees,
     year,

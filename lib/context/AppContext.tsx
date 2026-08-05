@@ -1047,8 +1047,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           employeeId: r.user_id,
           employeeName: (r.users as { name?: string } | null)?.name ?? "",
           date: r.overtime_date,
-          startTime: r.start_time,
-          endTime: r.end_time,
+          startTime: formatDbTime(r.start_time, "18:00"),
+          endTime: formatDbTime(r.end_time, "20:00"),
           reason: r.reason,
           compensationType:
             r.compensation === "comp_leave" || r.compensation === "time_off" ? "time_off" : "pay",

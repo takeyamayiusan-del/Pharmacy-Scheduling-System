@@ -142,9 +142,9 @@ export function buildLeaveBreakdownInMonth(params: {
       hours,
       startDate: req.startDate,
       endDate: req.endDate,
-      periodLabel: PERIOD_LABEL[req.period] ?? String(req.period),
-      startTime: req.startTime,
-      endTime: req.endTime,
+      periodLabel: PERIOD_LABEL[req.period] ?? String(req.period ?? "自訂"),
+      startTime: req.startTime ?? "—",
+      endTime: req.endTime ?? "—",
     });
   }
 
@@ -175,8 +175,8 @@ export function buildApprovedCompOvertimeInMonth(params: {
   overtimeRequests: {
     employeeId: string;
     date: string;
-    startTime: string;
-    endTime: string;
+    startTime?: string | null;
+    endTime?: string | null;
     status: string;
     compensationType: "pay" | "time_off";
   }[];
@@ -188,18 +188,20 @@ export function buildApprovedCompOvertimeInMonth(params: {
         r.employeeId === params.employeeId &&
         r.status === "approved" &&
         r.compensationType === "time_off" &&
-        r.date.startsWith(monthStr)
+        r.date?.startsWith(monthStr) &&
+        r.startTime &&
+        r.endTime
     )
     .map((r) => {
-      const [sh, sm] = r.startTime.split(":").map(Number);
-      const [eh, em] = r.endTime.split(":").map(Number);
+      const [sh, sm] = String(r.startTime).split(":").map(Number);
+      const [eh, em] = String(r.endTime).split(":").map(Number);
       const hours = roundCompLeaveHours(
         Math.max(0, eh * 60 + (em || 0) - (sh * 60 + (sm || 0))) / 60
       );
       return {
         date: r.date,
-        startTime: r.startTime,
-        endTime: r.endTime,
+        startTime: String(r.startTime),
+        endTime: String(r.endTime),
         hours,
       };
     })
