@@ -34,7 +34,6 @@ export default function AttendancePage() {
     return new Date(year, month - 1, 1);
   });
   const [showMonthlyDetail, setShowMonthlyDetail] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -375,153 +374,148 @@ export default function AttendancePage() {
       )}
 
       <div className="space-y-3">
-        {stats.map((stat) => {
-          const open = expandedId === stat.id;
-          return (
-            <div key={stat.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
-              <button
-                type="button"
-                onClick={() => setExpandedId(open ? null : stat.id)}
-                className="w-full text-left p-4 hover:bg-gray-50 transition-colors"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <p className="text-lg font-semibold text-gray-900">{stat.name}</p>
-                    <p className="text-sm text-gray-600 mt-1">
-                      上班 {stat.workDays} 天／{formatCompLeaveHours(stat.workHours)} 小時
-                      <span className="mx-2 text-gray-300">|</span>
-                      加班費 {formatCompLeaveHours(stat.overtimeHours)} h
-                      <span className="mx-2 text-gray-300">|</span>
-                      國定假 {formatCompLeaveHours(stat.holidayOvertimeHours)} h
-                    </p>
-                    <p className="text-sm text-gray-700 mt-1">
-                      <span className="font-medium text-red-700">請假</span>：{stat.leaveText}
-                      {stat.leaveHours > 0
-                        ? `（共 ${formatCompLeaveHours(stat.leaveHours)} h）`
-                        : ''}
-                    </p>
-                  </div>
-                  <div className="text-right">
-                    <p
-                      className={`text-lg font-bold ${
-                        stat.compBalance < 0
-                          ? 'text-amber-700'
-                          : stat.compBalance > 0
-                            ? 'text-emerald-700'
-                            : 'text-gray-700'
-                      }`}
-                    >
-                      補休餘額 {formatCompLeaveHours(stat.compBalance)} h
-                      {stat.compBalance < 0 ? '（借支）' : ''}
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      本月加班 +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)}／請補休 −
-                      {formatCompLeaveHours(stat.compLeaveTaken)}
-                    </p>
-                    <p
-                      className={`text-xs mt-1 ${
-                        stat.compBalance < 0 ? 'text-amber-700' : 'text-emerald-700'
-                      }`}
-                    >
-                      {stat.compHint}
-                    </p>
-                  </div>
+        {stats.map((stat) => (
+          <div key={stat.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+            <div className="p-4 border-b bg-white">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold text-gray-900">{stat.name}</p>
+                  <p className="text-sm text-gray-600 mt-1">
+                    上班 {stat.workDays} 天／{formatCompLeaveHours(stat.workHours)} 小時
+                    <span className="mx-2 text-gray-300">|</span>
+                    加班費 {formatCompLeaveHours(stat.overtimeHours)} h
+                    <span className="mx-2 text-gray-300">|</span>
+                    國定假 {formatCompLeaveHours(stat.holidayOvertimeHours)} h
+                  </p>
+                  <p className="text-sm text-gray-700 mt-1">
+                    <span className="font-medium text-red-700">請假</span>：{stat.leaveText}
+                    {stat.leaveHours > 0
+                      ? `（共 ${formatCompLeaveHours(stat.leaveHours)} h）`
+                      : ''}
+                  </p>
                 </div>
-              </button>
+                <div className="text-right">
+                  <p
+                    className={`text-lg font-bold ${
+                      stat.compBalance < 0
+                        ? 'text-amber-700'
+                        : stat.compBalance > 0
+                          ? 'text-emerald-700'
+                          : 'text-gray-700'
+                    }`}
+                  >
+                    補休餘額 {formatCompLeaveHours(stat.compBalance)} h
+                    {stat.compBalance < 0 ? '（借支）' : ''}
+                  </p>
+                  <p className="text-xs text-gray-500 mt-1">
+                    本月加班 +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)}／請補休 −
+                    {formatCompLeaveHours(stat.compLeaveTaken)}
+                  </p>
+                  <p
+                    className={`text-xs mt-1 ${
+                      stat.compBalance < 0 ? 'text-amber-700' : 'text-emerald-700'
+                    }`}
+                  >
+                    {stat.compHint}
+                  </p>
+                </div>
+              </div>
+            </div>
 
-              {open && (
-                <div className="border-t bg-gray-50 p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <p className="font-medium text-gray-900 mb-2">請假明細（本月核准）</p>
-                    {stat.leaveItems.length === 0 ? (
-                      <p className="text-gray-500">本月無核准請假</p>
+            <div className="bg-gray-50 p-4 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+              <div>
+                <p className="font-medium text-gray-900 mb-2">請假明細（本月核准）</p>
+                {stat.leaveItems.length === 0 ? (
+                  <p className="text-gray-500">本月無核准請假</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {stat.leaveItems.map((item, idx) => (
+                      <li key={`${item.type}-${item.startDate}-${idx}`} className="text-gray-700">
+                        <span className="font-medium text-red-700">{item.type}</span>
+                        {' · '}
+                        {item.startDate}
+                        {item.endDate !== item.startDate ? `～${item.endDate}` : ''}
+                        {' · '}
+                        {item.periodLabel}
+                        <span className="text-xs text-gray-400">
+                          {' '}
+                          ({item.startTime}–{item.endTime})
+                        </span>
+                        {' · '}
+                        {formatCompLeaveHours(item.hours)} 小時
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <p className="font-medium text-gray-900 mb-2">補休（本月名目）</p>
+                <ul className="space-y-2 text-gray-700">
+                  <li>
+                    <div>
+                      加班轉補休：
+                      <span className="font-medium text-emerald-700">
+                        +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)} 小時
+                      </span>
+                    </div>
+                    {stat.overtimeCompItems.length > 0 ? (
+                      <ul className="mt-1 ml-3 space-y-0.5 text-xs text-gray-600">
+                        {stat.overtimeCompItems.map((ot, idx) => (
+                          <li key={`${ot.date}-${ot.startTime}-${idx}`}>
+                            {ot.date} · {ot.startTime}–{ot.endTime} ·{' '}
+                            {formatCompLeaveHours(ot.hours)} 小時
+                          </li>
+                        ))}
+                      </ul>
                     ) : (
-                      <ul className="space-y-1">
-                        {stat.leaveItems.map((item, idx) => (
-                          <li key={`${item.type}-${item.startDate}-${idx}`} className="text-gray-700">
-                            <span className="font-medium text-red-700">{item.type}</span>
-                            {' · '}
+                      <p className="mt-1 ml-3 text-xs text-gray-400">本月無核准加班轉補休</p>
+                    )}
+                  </li>
+                  <li>
+                    <div>
+                      請補休假：
+                      <span className="font-medium text-red-700">
+                        −{formatCompLeaveHours(stat.compLeaveTaken)} 小時
+                      </span>
+                    </div>
+                    {stat.compLeaveItems.length > 0 ? (
+                      <ul className="mt-1 ml-3 space-y-0.5 text-xs text-gray-600">
+                        {stat.compLeaveItems.map((item, idx) => (
+                          <li key={`comp-${item.startDate}-${idx}`}>
                             {item.startDate}
                             {item.endDate !== item.startDate ? `～${item.endDate}` : ''}
                             {' · '}
                             {item.periodLabel}
-                            <span className="text-xs text-gray-400">
-                              {' '}
-                              ({item.startTime}–{item.endTime})
-                            </span>
                             {' · '}
                             {formatCompLeaveHours(item.hours)} 小時
                           </li>
                         ))}
                       </ul>
+                    ) : (
+                      <p className="mt-1 ml-3 text-xs text-gray-400">本月無核准補休假</p>
                     )}
-                  </div>
-                  <div>
-                    <p className="font-medium text-gray-900 mb-2">補休（本月名目）</p>
-                    <ul className="space-y-2 text-gray-700">
-                      <li>
-                        <div>
-                          加班轉補休：
-                          <span className="font-medium text-emerald-700">
-                            +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)} 小時
-                          </span>
-                        </div>
-                        {stat.overtimeCompItems.length > 0 && (
-                          <ul className="mt-1 ml-3 space-y-0.5 text-xs text-gray-600">
-                            {stat.overtimeCompItems.map((ot, idx) => (
-                              <li key={`${ot.date}-${ot.startTime}-${idx}`}>
-                                {ot.date} · {ot.startTime}–{ot.endTime} ·{' '}
-                                {formatCompLeaveHours(ot.hours)} 小時
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </li>
-                      <li>
-                        <div>
-                          請補休假：
-                          <span className="font-medium text-red-700">
-                            −{formatCompLeaveHours(stat.compLeaveTaken)} 小時
-                          </span>
-                        </div>
-                        {stat.compLeaveItems.length > 0 && (
-                          <ul className="mt-1 ml-3 space-y-0.5 text-xs text-gray-600">
-                            {stat.compLeaveItems.map((item, idx) => (
-                              <li key={`comp-${item.startDate}-${idx}`}>
-                                {item.startDate}
-                                {item.endDate !== item.startDate ? `～${item.endDate}` : ''}
-                                {' · '}
-                                {item.periodLabel}
-                                {' · '}
-                                {formatCompLeaveHours(item.hours)} 小時
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                      </li>
-                      <li>
-                        目前餘額：
-                        <span
-                          className={
-                            stat.compBalance < 0
-                              ? 'text-amber-700 font-semibold'
-                              : 'text-emerald-700 font-semibold'
-                          }
-                        >
-                          {formatCompLeaveHours(stat.compBalance)} 小時
-                        </span>
-                      </li>
-                      <li className="text-xs text-gray-500">{stat.compHint}</li>
-                    </ul>
-                    <p className="mt-3 text-gray-600">
-                      遲到：{stat.tardyCount} 次／{stat.tardyMinutes} 分鐘
-                    </p>
-                  </div>
-                </div>
-              )}
+                  </li>
+                  <li>
+                    目前餘額：
+                    <span
+                      className={
+                        stat.compBalance < 0
+                          ? 'text-amber-700 font-semibold'
+                          : 'text-emerald-700 font-semibold'
+                      }
+                    >
+                      {formatCompLeaveHours(stat.compBalance)} 小時
+                    </span>
+                  </li>
+                  <li className="text-xs text-gray-500">{stat.compHint}</li>
+                </ul>
+                <p className="mt-3 text-gray-600">
+                  遲到：{stat.tardyCount} 次／{stat.tardyMinutes} 分鐘
+                </p>
+              </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
