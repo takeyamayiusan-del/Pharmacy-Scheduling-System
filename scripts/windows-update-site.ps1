@@ -98,13 +98,18 @@ if (-not $siteOk) {
     throw "pharmacy-web failed to start after update"
 }
 
-pm2 restart cashflow --update-env 2>$null
+# 更新排班站不重啟 cashflow（兩站各自更新、互不影響）
 
 Write-Host ""
 Write-Host -NoNewline "Auth: "
 curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:54321/auth/v1/health
 Write-Host -NoNewline "Site: "
 curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 http://127.0.0.1:3000/login
+if (Test-Pm2AppExists -Name "cashflow") {
+    Write-Host -NoNewline "Cashflow (untouched): "
+    $cfPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+    curl.exe -s -o NUL -w "%{http_code}`n" --connect-timeout 3 --max-time 8 "http://127.0.0.1:$cfPort/"
+}
 
 $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
 $listenPid = Get-PortListenerPid -Port 3000
@@ -113,7 +118,11 @@ Write-Host ("pm2 pharmacy-web pid : {0}" -f $(if ($pm2Pid) { $pm2Pid } else { "(
 Write-Host ("port 3000 listener   : {0}" -f $(if ($listenPid) { $listenPid } else { "(none)" }))
 
 Write-Host ""
-Write-Host "Done. pharmacy-web owns :3000." -ForegroundColor Green
+Write-Host "Done. pharmacy-web owns :3000. cashflow was not restarted." -ForegroundColor Green
 Write-Host "Browser: Ctrl+F5 hard refresh on /attendance"
 Write-Host "If Auth is not 200, run as Admin:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-clear-portproxy.ps1"
+Write-Host "Update cashflow separately (if needed):"
+Write-Host "  cd C:\cash-flow-app"
+Write-Host "  git pull"
+Write-Host "  pm2 restart cashflow --update-env"

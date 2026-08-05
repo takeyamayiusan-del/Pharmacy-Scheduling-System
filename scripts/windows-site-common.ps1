@@ -823,12 +823,12 @@ function Start-SiteViaPm2OrRunner {
     )
 
     if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-        & $WriteLog "Restarting pharmacy-web (+ cashflow if present) via pm2..."
+        & $WriteLog "Restarting pharmacy-web via pm2 (cashflow left alone if healthy)..."
         if (Restart-PharmacyWebPm2 -ProjectRoot $ProjectRoot -WriteLog $WriteLog) {
-            if (Get-Pm2Online -Name "cashflow") {
-                & pm2 restart cashflow --update-env 2>$null | Out-Null
-            } elseif ((pm2 jlist 2>$null) -match '"name"\s*:\s*"cashflow"') {
-                & pm2 restart cashflow --update-env 2>$null | Out-Null
+            if (Test-Pm2AppExists -Name "cashflow") {
+                [void](Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck {
+                    Test-CashflowHealthy -ProjectRoot $ProjectRoot
+                } -WriteLog $WriteLog)
             }
             return
         }
