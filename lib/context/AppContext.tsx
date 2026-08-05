@@ -21,6 +21,12 @@ import {
 } from "@/lib/schedule/sundayRest";
 import { isEmployeeActiveOnDate, isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
 import { hasPastMonthInRange, isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
+import {
+  DUPLICATE_LEAVE_MESSAGE,
+  DUPLICATE_OVERTIME_MESSAGE,
+  hasDuplicateLeave,
+  hasDuplicateOvertime,
+} from "@/lib/applications/duplicateGuard";
 import { resolveAnnualLeaveQuotaDays } from "@/lib/attendance/annualLeave";
 import {
   calculateEffectiveShift,
@@ -2210,6 +2216,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("已過去的月份無法再提出請假申請");
     }
 
+    const { data: existingLeaves, error: existingLeaveError } = await supabase
+      .from("leave_applications")
+      .select("id, leave_date, end_date, start_time, end_time, period, status")
+      .eq("user_id", request.employeeId)
+      .in("status", ["pending", "approved"]);
+
+    if (existingLeaveError) {
+      throw existingLeaveError;
+    }
+
+    if (
+      hasDuplicateLeave(
+        {
+          startDate: request.startDate,
+          endDate: request.endDate,
+          startTime: request.startTime,
+          endTime: request.endTime,
+        },
+        existingLeaves ?? []
+      )
+    ) {
+      throw new Error(DUPLICATE_LEAVE_MESSAGE);
+    }
+
     const dbPeriod =
       request.period === "morning"
         ? "morning"
@@ -2701,19 +2731,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const { data: existingRequests, error: existingError } = await supabase
       .from("overtime_applications")
-      .select("id, status")
+      .select("id, overtime_date, start_time, end_time, status")
       .eq("user_id", request.employeeId)
       .eq("overtime_date", request.date)
-      .eq("start_time", request.startTime)
-      .eq("end_time", request.endTime)
       .in("status", ["pending", "approved"]);
 
     if (existingError) {
       throw existingError;
     }
 
-    if ((existingRequests?.length ?? 0) > 0) {
-      throw new Error("同一天同時段的加班申請已存在，請勿重複送出");
+    if (
+      hasDuplicateOvertime(
+        {
+          date: request.date,
+          startTime: request.startTime,
+          endTime: request.endTime,
+        },
+        existingRequests ?? []
+      )
+    ) {
+      throw new Error(DUPLICATE_OVERTIME_MESSAGE);
     }
 
     await supabase.from("overtime_applications").insert({
