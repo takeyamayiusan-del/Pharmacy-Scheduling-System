@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { useApp, type LeaveRequest } from "@/lib/context/AppContext";
+import { useApp } from "@/lib/context/AppContext";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -119,15 +119,6 @@ const emptySalaryForm: Omit<SalaryConfig, "userId"> = {
 const toROC = (westernYear: number) => westernYear - 1911;
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-
-function getMonthBounds(year: number, month: number) {
-  const monthStr = `${year}-${String(month).padStart(2, "0")}`;
-  const lastDay = new Date(year, month, 0).getDate();
-  return {
-    monthStart: `${monthStr}-01`,
-    monthEnd: `${monthStr}-${String(lastDay).padStart(2, "0")}`,
-  };
-}
 
 function isDateInMonth(dateValue: string, year: number, month: number) {
   const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
