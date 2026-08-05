@@ -7,11 +7,32 @@ const nextBin = path.join(projectRoot, "node_modules", "next", "dist", "bin", "n
 const child = spawn(process.execPath, [nextBin, "start"], {
   cwd: projectRoot,
   stdio: "inherit",
+  windowsHide: true,
   env: {
     ...process.env,
     NODE_ENV: process.env.NODE_ENV || "production",
   },
 });
+
+let shuttingDown = false;
+
+function killChildTree() {
+  if (!child.pid || shuttingDown) return;
+  shuttingDown = true;
+  if (process.platform === "win32") {
+    // Windows: PM2 殺 wrapper 時 SIGTERM 常傳不到子進程，需 taskkill /T
+    spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
+      stdio: "ignore",
+      windowsHide: true,
+    });
+    return;
+  }
+  try {
+    child.kill("SIGTERM");
+  } catch {
+    /* ignore */
+  }
+}
 
 child.on("exit", (code, signal) => {
   if (signal) {
@@ -23,10 +44,12 @@ child.on("exit", (code, signal) => {
 
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => {
-    try {
-      child.kill(sig);
-    } catch {
-      /* ignore */
-    }
+    killChildTree();
+    // 給子進程一點時間後再結束 wrapper
+    setTimeout(() => process.exit(1), process.platform === "win32" ? 1500 : 200);
   });
 }
+
+process.on("exit", () => {
+  killChildTree();
+});
