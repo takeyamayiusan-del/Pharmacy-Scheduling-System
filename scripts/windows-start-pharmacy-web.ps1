@@ -15,6 +15,19 @@ $Log = { param($m) Write-Host $m }
 if (-not (Test-Path (Join-Path $ProjectRoot ".next\BUILD_ID"))) {
     throw "Missing .next build. Run: npm run build"
 }
+$requiredBuildFiles = @(
+    (Join-Path $ProjectRoot ".next\prerender-manifest.json"),
+    (Join-Path $ProjectRoot ".next\server")
+)
+foreach ($artifact in $requiredBuildFiles) {
+    if (-not (Test-Path -LiteralPath $artifact)) {
+        throw "Incomplete .next build (missing $artifact). Run: npm run build"
+    }
+}
+
+if (-not (Test-Path (Join-Path $ProjectRoot ".env.local")) {
+    throw "Missing .env.local. Copy from .env.local.example and fill Supabase keys."
+}
 
 if (-not $SkipPortCleanup) {
     $prevEap = $ErrorActionPreference
@@ -39,14 +52,15 @@ if (-not $SkipPortCleanup) {
     }
 }
 
-$nextBin = Join-Path $ProjectRoot "node_modules\next\dist\bin\next"
-if (-not (Test-Path -LiteralPath $nextBin)) {
-    throw "Next binary not found. Run: npm install"
-}
-
 $ecosystem = Join-Path $ProjectRoot "ecosystem.config.cjs"
 if (-not (Test-Path -LiteralPath $ecosystem)) {
     throw "Missing ecosystem.config.cjs in project root."
+}
+
+Write-Host "Preflight: verify build artifacts ..." -ForegroundColor Cyan
+node -e "const fs=require('fs'); fs.accessSync('.next/BUILD_ID'); fs.accessSync('.next/prerender-manifest.json'); console.log('build OK');"
+if ($LASTEXITCODE -ne 0) {
+    throw "Build verification failed. Run: npm run build"
 }
 
 pm2 delete pharmacy-web 2>$null | Out-Null
@@ -63,7 +77,17 @@ Write-Host ("port 3000 listener   : {0}" -f $(if ($listenPid) { $listenPid } els
 
 if (-not (Get-Pm2Online -Name "pharmacy-web")) {
     Write-Host "pharmacy-web failed. Last logs:" -ForegroundColor Red
-    pm2 logs pharmacy-web --lines 20 --nostream
+    pm2 logs pharmacy-web --lines 30 --nostream
+    $errLog = Join-Path $env:USERPROFILE ".pm2\logs\pharmacy-web-error.log"
+    if (Test-Path -LiteralPath $errLog) {
+        Write-Host ""
+        Write-Host "=== $errLog (last 20 lines) ===" -ForegroundColor Yellow
+        Get-Content -LiteralPath $errLog -Tail 20 -ErrorAction SilentlyContinue
+    }
+    Write-Host ""
+    Write-Host "Try foreground start to see full error:" -ForegroundColor Yellow
+    Write-Host "  cd $ProjectRoot"
+    Write-Host "  node scripts\pm2-pharmacy-web.cjs"
     throw "pharmacy-web is not online"
 }
 if (-not $listenPid -or ($pm2Pid -and $listenPid -ne $pm2Pid)) {

@@ -1,14 +1,16 @@
 const path = require("path");
 
-/** PM2 on Windows ignores CLI args after `--`; use this file instead of `pm2 start ... -- start`. */
+/** PM2 on Windows: use wrapper script instead of CLI `-- start` or direct next binary. */
 module.exports = {
   apps: [
     {
       name: "pharmacy-web",
-      script: path.join(__dirname, "node_modules/next/dist/bin/next"),
-      args: "start",
+      script: path.join(__dirname, "scripts/pm2-pharmacy-web.cjs"),
       cwd: __dirname,
       interpreter: "node",
+      autorestart: true,
+      max_restarts: 15,
+      min_uptime: "5s",
       env: {
         NODE_ENV: "production",
       },
