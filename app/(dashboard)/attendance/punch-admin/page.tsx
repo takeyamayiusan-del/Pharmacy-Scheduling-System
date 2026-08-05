@@ -85,11 +85,38 @@ export default function PunchAdminPage() {
   const [geoDrafts, setGeoDrafts] = useState<GeoDraft[]>(() =>
     geofenceLocations.map(toDraft)
   );
+  const [geoDirty, setGeoDirty] = useState(false);
   const [geoSaving, setGeoSaving] = useState(false);
 
+  // 僅在「非編輯中」時同步伺服器設定；避免按新增店點後被蓋掉
   useEffect(() => {
+    if (geoDirty) return;
     setGeoDrafts(geofenceLocations.map(toDraft));
-  }, [geofenceLocations]);
+  }, [geofenceLocations, geoDirty]);
+
+  const updateGeoDraft = (id: string, patch: Partial<GeoDraft>) => {
+    setGeoDirty(true);
+    setGeoDrafts((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    );
+  };
+
+  const addGeoDraft = () => {
+    setGeoDirty(true);
+    const next = createEmptyGeofenceDraft({
+      name: `店點 ${geoDrafts.length + 1}`,
+      latitude: geofenceLocations[0]?.latitude,
+      longitude: geofenceLocations[0]?.longitude,
+      radiusMeters: 150,
+    });
+    setGeoDrafts((prev) => [...prev, toDraft(next)]);
+  };
+
+  const removeGeoDraft = (id: string) => {
+    if (geoDrafts.length <= 1) return;
+    setGeoDirty(true);
+    setGeoDrafts((prev) => prev.filter((item) => item.id !== id));
+  };
 
   if (!isManager) {
     return (
@@ -295,12 +322,10 @@ export default function PunchAdminPage() {
           </div>
           <button
             type="button"
-            onClick={() => {
-              const next = createEmptyGeofenceDraft({
-                name: `店點 ${geoDrafts.length + 1}`,
-                radiusMeters: 150,
-              });
-              setGeoDrafts((prev) => [...prev, toDraft(next)]);
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              addGeoDraft();
             }}
             className="px-3 py-2 border text-sm rounded-lg hover:bg-gray-50 whitespace-nowrap"
           >
@@ -316,9 +341,10 @@ export default function PunchAdminPage() {
                 <button
                   type="button"
                   disabled={geoDrafts.length <= 1}
-                  onClick={() =>
-                    setGeoDrafts((prev) => prev.filter((item) => item.id !== draft.id))
-                  }
+                  onClick={(e) => {
+                    e.preventDefault();
+                    removeGeoDraft(draft.id);
+                  }}
                   className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:no-underline"
                 >
                   刪除
@@ -329,13 +355,7 @@ export default function PunchAdminPage() {
                   <label className="block text-xs text-gray-600 mb-1">店名</label>
                   <input
                     value={draft.name}
-                    onChange={(e) =>
-                      setGeoDrafts((prev) =>
-                        prev.map((item) =>
-                          item.id === draft.id ? { ...item, name: e.target.value } : item
-                        )
-                      )
-                    }
+                    onChange={(e) => updateGeoDraft(draft.id, { name: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
                     placeholder="例如：竹山店／總點"
                   />
@@ -348,13 +368,7 @@ export default function PunchAdminPage() {
                     max={2000}
                     value={draft.radiusMeters}
                     onChange={(e) =>
-                      setGeoDrafts((prev) =>
-                        prev.map((item) =>
-                          item.id === draft.id
-                            ? { ...item, radiusMeters: e.target.value }
-                            : item
-                        )
-                      )
+                      updateGeoDraft(draft.id, { radiusMeters: e.target.value })
                     }
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
                   />
@@ -363,13 +377,7 @@ export default function PunchAdminPage() {
                   <label className="block text-xs text-gray-600 mb-1">地址說明</label>
                   <input
                     value={draft.address}
-                    onChange={(e) =>
-                      setGeoDrafts((prev) =>
-                        prev.map((item) =>
-                          item.id === draft.id ? { ...item, address: e.target.value } : item
-                        )
-                      )
-                    }
+                    onChange={(e) => updateGeoDraft(draft.id, { address: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
                   />
                 </div>
@@ -377,13 +385,7 @@ export default function PunchAdminPage() {
                   <label className="block text-xs text-gray-600 mb-1">緯度</label>
                   <input
                     value={draft.latitude}
-                    onChange={(e) =>
-                      setGeoDrafts((prev) =>
-                        prev.map((item) =>
-                          item.id === draft.id ? { ...item, latitude: e.target.value } : item
-                        )
-                      )
-                    }
+                    onChange={(e) => updateGeoDraft(draft.id, { latitude: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
                   />
                 </div>
@@ -391,37 +393,25 @@ export default function PunchAdminPage() {
                   <label className="block text-xs text-gray-600 mb-1">經度</label>
                   <input
                     value={draft.longitude}
-                    onChange={(e) =>
-                      setGeoDrafts((prev) =>
-                        prev.map((item) =>
-                          item.id === draft.id ? { ...item, longitude: e.target.value } : item
-                        )
-                      )
-                    }
+                    onChange={(e) => updateGeoDraft(draft.id, { longitude: e.target.value })}
                     className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
                   />
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => {
+                onClick={(e) => {
+                  e.preventDefault();
                   if (!navigator.geolocation) {
                     alert("此裝置不支援定位");
                     return;
                   }
                   navigator.geolocation.getCurrentPosition(
                     (pos) => {
-                      setGeoDrafts((prev) =>
-                        prev.map((item) =>
-                          item.id === draft.id
-                            ? {
-                                ...item,
-                                latitude: String(pos.coords.latitude),
-                                longitude: String(pos.coords.longitude),
-                              }
-                            : item
-                        )
-                      );
+                      updateGeoDraft(draft.id, {
+                        latitude: String(pos.coords.latitude),
+                        longitude: String(pos.coords.longitude),
+                      });
                     },
                     () => alert("無法取得目前位置"),
                     { enableHighAccuracy: true, timeout: 15000 }
@@ -438,7 +428,8 @@ export default function PunchAdminPage() {
         <button
           type="button"
           disabled={geoSaving || geoDrafts.length === 0}
-          onClick={async () => {
+          onClick={async (e) => {
+            e.preventDefault();
             setGeoSaving(true);
             try {
               const locations = geoDrafts.map(fromDraft);
@@ -451,6 +442,8 @@ export default function PunchAdminPage() {
                 }
               }
               await saveGeofenceLocations(locations);
+              setGeoDirty(false);
+              setGeoDrafts(locations.map(toDraft));
               alert(`已儲存 ${locations.length} 個打卡店點`);
             } catch (err) {
               alert(err instanceof Error ? err.message : "儲存失敗");

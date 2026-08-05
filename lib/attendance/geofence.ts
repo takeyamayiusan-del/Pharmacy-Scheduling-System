@@ -36,8 +36,12 @@ function readEnvNumber(key: string, fallback: number): number {
 }
 
 function newLocationId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
-    return crypto.randomUUID();
+  try {
+    if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+      return crypto.randomUUID();
+    }
+  } catch {
+    // 非 HTTPS／舊瀏覽器可能不可用
   }
   return `loc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
@@ -100,9 +104,16 @@ export function parseGeofenceSettings(value: unknown): GeofenceLocation[] {
     return list.length > 0 ? list : fallback;
   }
 
-  // 舊格式：單一物件
+  // 舊格式：單一物件（給穩定 id，避免每次載入重產 id 蓋掉編輯中草稿）
   if ("latitude" in obj || "longitude" in obj || "name" in obj) {
-    return [normalizeGeofenceLocation(obj as Partial<GeofenceConfig>, fallback[0])];
+    const legacy = obj as Partial<GeofenceConfig>;
+    const stableId = `legacy-${String(legacy.latitude ?? "")}-${String(legacy.longitude ?? "")}`;
+    return [
+      normalizeGeofenceLocation(
+        { ...legacy, id: typeof legacy.name === "string" ? stableId : stableId },
+        fallback[0]
+      ),
+    ];
   }
 
   return fallback;
