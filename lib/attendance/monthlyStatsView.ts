@@ -5,20 +5,88 @@ import {
 import { formatCompLeaveHours, roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
 
-export type LeaveLikeForStats = CanonicalLeaveRequest & { type: string };
+export type LeaveLikeForStats = CanonicalLeaveRequest & { type: string; id?: string };
 
 export type CompLedgerLike = {
   employeeId: string;
   hours: number;
   sourceType: string;
+  sourceId?: string;
+  note?: string;
   createdAt: string;
   expiresAt?: string;
 };
 
-function isCreatedInMonth(iso: string, year: number, month: number): boolean {
+export type OvertimeLikeForComp = {
+  id: string;
+  employeeId: string;
+  date: string;
+};
+
+/** 台北時區 YYYY-MM-DD（帳本 createdAt 後備歸屬） */
+export function toTaiwanDateString(iso: string): string {
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return false;
-  return d.getFullYear() === year && d.getMonth() + 1 === month;
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Taipei",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function isDateInYearMonth(dateStr: string, year: number, month: number): boolean {
+  if (!dateStr || dateStr.length < 7) return false;
+  const y = Number(dateStr.slice(0, 4));
+  const m = Number(dateStr.slice(5, 7));
+  return y === year && m === month;
+}
+
+function extractDateFromNote(note?: string): string | null {
+  if (!note) return null;
+  const match = note.match(/(\d{4}-\d{2}-\d{2})/);
+  return match?.[1] ?? null;
+}
+
+/**
+ * 帳本歸屬「業務日」：加班日／請假日起／備註日期／台北建立日。
+ * 避免審核日在下個月卻把時數算進審核月。
+ */
+export function resolveCompLedgerEventDate(
+  entry: CompLedgerLike,
+  overtimeById?: Map<string, OvertimeLikeForComp>,
+  leaveById?: Map<string, { startDate: string; endDate: string }>
+): string {
+  if (entry.sourceId) {
+    const ot = overtimeById?.get(entry.sourceId);
+    if (ot?.date) return ot.date;
+    const leave = leaveById?.get(entry.sourceId);
+    if (leave?.startDate) return leave.startDate;
+  }
+  const fromNote = extractDateFromNote(entry.note);
+  if (fromNote) return fromNote;
+  return toTaiwanDateString(entry.createdAt);
+}
+
+function sourceLabel(sourceType: string, hours: number): string {
+  switch (sourceType) {
+    case "overtime_credit":
+      return "加班轉補休";
+    case "typhoon_credit":
+      return "颱風／彈性出勤補休";
+    case "adjustment":
+      return hours >= 0 ? "手動核發" : "手動扣回";
+    case "leave_debit":
+      return "補休假使用";
+    case "typhoon_debit":
+      return "颱風待補扣補休";
+    case "reversal":
+      return hours >= 0 ? "取消請假退回" : "取消加班沖銷";
+    case "expiry":
+      return "補休到期";
+    default:
+      return sourceType;
+  }
 }
 
 /** 本月請假：依假別彙總時數（權威：優先存檔 leaveHours） */
@@ -68,33 +136,105 @@ export function buildLeaveBreakdownInMonth(params: {
   return { byType, totalHours, items };
 }
 
-/** 本月補休進出＋目前餘額（含負數借支） */
+export type CompLeaveMonthSummary = {
+  /** 真正「賺得」：加班／颱風／手動核發（不含取消請假退回） */
+  earnedHours: number;
+  /** 真正「使用」：補休假／颱風扣／手動扣（不含取消加班沖銷） */
+  usedHours: number;
+  overtimeCreditHours: number;
+  typhoonCreditHours: number;
+  adjustmentCreditHours: number;
+  leaveDebitHours: number;
+  typhoonDebitHours: number;
+  adjustmentDebitHours: number;
+  leaveRefundHours: number;
+  overtimeReversalHours: number;
+  netHours: number;
+  balance: number;
+  hint: string;
+  lines: { label: string; hours: number; note?: string; eventDate: string }[];
+};
+
+/**
+ * 本月補休進出＋目前餘額。
+ * 「賺得／使用」只計實質進出，並依業務日歸月，避免與「加班轉補休申請」對不起來。
+ */
 export function buildCompLeaveMonthSummary(params: {
   employeeId: string;
   year: number;
   month: number;
   ledger: CompLedgerLike[];
   currentBalance: number;
-}): {
-  earnedHours: number;
-  usedHours: number;
-  netHours: number;
-  balance: number;
-  hint: string;
-} {
-  const entries = params.ledger.filter(
-    (e) =>
-      e.employeeId === params.employeeId &&
-      isCreatedInMonth(e.createdAt, params.year, params.month)
+  overtimeRequests?: OvertimeLikeForComp[];
+  leaveRequests?: { id?: string; employeeId: string; startDate: string; endDate: string }[];
+}): CompLeaveMonthSummary {
+  const overtimeById = new Map(
+    (params.overtimeRequests ?? [])
+      .filter((r) => r.id)
+      .map((r) => [r.id, r] as const)
+  );
+  const leaveById = new Map(
+    (params.leaveRequests ?? [])
+      .filter((r) => r.id)
+      .map((r) => [r.id!, { startDate: r.startDate, endDate: r.endDate }] as const)
   );
 
+  const monthEntries = params.ledger
+    .filter((e) => e.employeeId === params.employeeId)
+    .map((e) => ({
+      entry: e,
+      eventDate: resolveCompLedgerEventDate(e, overtimeById, leaveById),
+    }))
+    .filter(({ eventDate }) =>
+      isDateInYearMonth(eventDate, params.year, params.month)
+    );
+
+  let overtimeCreditHours = 0;
+  let typhoonCreditHours = 0;
+  let adjustmentCreditHours = 0;
+  let leaveDebitHours = 0;
+  let typhoonDebitHours = 0;
+  let adjustmentDebitHours = 0;
+  let leaveRefundHours = 0;
+  let overtimeReversalHours = 0;
+
+  const lines: CompLeaveMonthSummary["lines"] = [];
+
+  for (const { entry, eventDate } of monthEntries) {
+    const h = entry.hours;
+    const type = entry.sourceType;
+    lines.push({
+      label: sourceLabel(type, h),
+      hours: roundCompLeaveHours(h),
+      note: entry.note,
+      eventDate,
+    });
+
+    if (type === "overtime_credit" && h > 0) overtimeCreditHours += h;
+    else if (type === "typhoon_credit" && h > 0) typhoonCreditHours += h;
+    else if (type === "adjustment" && h > 0) adjustmentCreditHours += h;
+    else if (type === "leave_debit" && h < 0) leaveDebitHours += Math.abs(h);
+    else if (type === "typhoon_debit" && h < 0) typhoonDebitHours += Math.abs(h);
+    else if (type === "adjustment" && h < 0) adjustmentDebitHours += Math.abs(h);
+    else if (type === "expiry" && h < 0) adjustmentDebitHours += Math.abs(h);
+    else if (type === "reversal" && h > 0) leaveRefundHours += h;
+    else if (type === "reversal" && h < 0) overtimeReversalHours += Math.abs(h);
+    else if (h > 0) adjustmentCreditHours += h;
+    else if (h < 0) adjustmentDebitHours += Math.abs(h);
+  }
+
   const earnedHours = roundCompLeaveHours(
-    entries.filter((e) => e.hours > 0).reduce((s, e) => s + e.hours, 0)
+    overtimeCreditHours + typhoonCreditHours + adjustmentCreditHours
   );
   const usedHours = roundCompLeaveHours(
-    Math.abs(entries.filter((e) => e.hours < 0).reduce((s, e) => s + e.hours, 0))
+    leaveDebitHours + typhoonDebitHours + adjustmentDebitHours
   );
-  const netHours = roundCompLeaveHours(earnedHours - usedHours);
+  const netHours = roundCompLeaveHours(
+    earnedHours +
+      leaveRefundHours -
+      usedHours -
+      overtimeReversalHours
+  );
   const balance = roundCompLeaveHours(params.currentBalance);
 
   let hint = "無補休餘額";
@@ -104,7 +244,22 @@ export function buildCompLeaveMonthSummary(params: {
     hint = `尚有 ${formatCompLeaveHours(balance)} 小時，可安排補休假`;
   }
 
-  return { earnedHours, usedHours, netHours, balance, hint };
+  return {
+    earnedHours,
+    usedHours,
+    overtimeCreditHours: roundCompLeaveHours(overtimeCreditHours),
+    typhoonCreditHours: roundCompLeaveHours(typhoonCreditHours),
+    adjustmentCreditHours: roundCompLeaveHours(adjustmentCreditHours),
+    leaveDebitHours: roundCompLeaveHours(leaveDebitHours),
+    typhoonDebitHours: roundCompLeaveHours(typhoonDebitHours),
+    adjustmentDebitHours: roundCompLeaveHours(adjustmentDebitHours),
+    leaveRefundHours: roundCompLeaveHours(leaveRefundHours),
+    overtimeReversalHours: roundCompLeaveHours(overtimeReversalHours),
+    netHours,
+    balance,
+    hint,
+    lines: lines.sort((a, b) => a.eventDate.localeCompare(b.eventDate)),
+  };
 }
 
 export function formatLeaveBreakdownText(
