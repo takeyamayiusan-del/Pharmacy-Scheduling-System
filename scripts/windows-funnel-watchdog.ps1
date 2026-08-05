@@ -127,9 +127,13 @@ Repair-Funnel
 
 Start-Sleep -Seconds 5
 $funnelUrl = Get-FunnelUrl
-if ($authOk -and $siteOk -and (Test-FunnelHealthy $funnelUrl)) {
+$cashflowPort2 = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+$funnelPharmacyOk2 = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
+$funnelCashflowOk2 = (-not $expectCashflowFunnel) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort2 -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort2)
+$funnelOk2 = $funnelPharmacyOk2 -and $funnelCashflowOk2
+if ($authOk -and $siteOk -and $cashflowOk -and $funnelOk2 -and (Test-FunnelHealthy $funnelUrl)) {
     Warmup-SiteRoutes -BaseUrl $funnelUrl
-    Write-Log "Repaired OK: $funnelUrl"
+    Write-Log "Repaired OK: $funnelUrl (pharmacy+cashflow funnel)"
     exit 0
 }
 

@@ -36,6 +36,17 @@ Write-Host "Cwd:  $cwd"
 Write-Host "Port: $port"
 Write-Host ""
 
+$WatchdogTaskName = "YaoshengPharmacyWatchdog"
+$resumeWatchdog = $false
+$tWatch = Get-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+if ($tWatch -and $tWatch.State -ne "Disabled") {
+    $resumeWatchdog = $true
+    Write-Host "Pausing watchdog during cashflow update ..." -ForegroundColor Yellow
+    Stop-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+    Disable-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue | Out-Null
+}
+
+try {
 if (-not $SkipPull) {
     if (Test-Path -LiteralPath (Join-Path $cwd ".git")) {
         Write-Host "git pull in cashflow repo ..." -ForegroundColor Cyan
@@ -80,3 +91,11 @@ if (-not (Test-CashflowHealthy -ProjectRoot $ProjectRoot)) {
 
 Write-Host ""
 Write-Host "Done. cashflow updated; pharmacy-web was not restarted." -ForegroundColor Green
+}
+finally {
+    if ($resumeWatchdog) {
+        Enable-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue | Out-Null
+        Start-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+        Write-Host "Watchdog re-enabled." -ForegroundColor Green
+    }
+}

@@ -28,6 +28,35 @@ Write-Host ""
 $Log = { param($m) Write-Host $m }
 [void](Clear-StaleSupabasePortProxy -WriteLog $Log)
 
+$StartTaskName = "YaoshengPharmacyStart"
+$WatchdogTaskName = "YaoshengPharmacyWatchdog"
+$watchdogWasRunning = $false
+if ($env:PHARMACY_UPDATE_RESUME_WATCHDOG -eq "1") {
+    $watchdogWasRunning = $true
+} else {
+    $tWatch = Get-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+    if ($tWatch -and $tWatch.State -ne "Disabled") {
+        $watchdogWasRunning = $true
+    }
+}
+if ($watchdogWasRunning -or (Get-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue)) {
+    if ($watchdogWasRunning) {
+        Write-Host "Pausing watchdog during update (prevents EADDRINUSE / funnel wipe) ..." -ForegroundColor Yellow
+        Stop-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+        Disable-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue | Out-Null
+        $env:PHARMACY_UPDATE_RESUME_WATCHDOG = "1"
+    }
+}
+
+function Restore-WatchdogAfterUpdate {
+    if ($env:PHARMACY_UPDATE_RESUME_WATCHDOG -ne "1" -and -not $script:watchdogWasRunning) { return }
+    Enable-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue | Out-Null
+    Start-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
+    Remove-Item Env:\PHARMACY_UPDATE_RESUME_WATCHDOG -ErrorAction SilentlyContinue
+    Write-Host "Watchdog re-enabled." -ForegroundColor Green
+}
+
+try {
 function Restart-UpdateScriptIfChanged {
     param(
         [string]$ScriptPath,
@@ -40,6 +69,7 @@ function Restart-UpdateScriptIfChanged {
 
     Write-Host ""
     Write-Host "Update scripts changed on disk — re-running with latest version ..." -ForegroundColor Yellow
+    # 子行程靠 env 恢復 watchdog；此處勿清掉標記
 
     $args = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $ScriptPath, "-Branch", $Branch, "-NoPull")
     if ($SkipBuild) { $args += "-SkipBuild" }
@@ -122,7 +152,9 @@ Write-Host "Done. pharmacy-web owns :3000. cashflow was not restarted." -Foregro
 Write-Host "Browser: Ctrl+F5 hard refresh on /attendance"
 Write-Host "If Auth is not 200, run as Admin:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-clear-portproxy.ps1"
-Write-Host "Update cashflow separately (if needed):"
-Write-Host "  cd C:\cash-flow-app"
-Write-Host "  git pull"
-Write-Host "  pm2 restart cashflow --update-env"
+Write-Host "Update cashflow separately:"
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-update-cashflow.ps1"
+}
+finally {
+    Restore-WatchdogAfterUpdate
+}
