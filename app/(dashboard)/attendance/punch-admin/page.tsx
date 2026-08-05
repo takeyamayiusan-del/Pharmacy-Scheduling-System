@@ -7,6 +7,10 @@ import {
   adjustPunchSlotsForApprovedLeave,
   resolvePunchLateMinutes,
 } from "@/lib/attendance/punchLeaveAdjust";
+import {
+  createEmptyGeofenceDraft,
+  type GeofenceLocation,
+} from "@/lib/attendance/geofence";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
 
 type EditablePunchFields = {
@@ -14,6 +18,37 @@ type EditablePunchFields = {
   segmentIndex: number;
   time: string;
 };
+
+type GeoDraft = {
+  id: string;
+  name: string;
+  address: string;
+  latitude: string;
+  longitude: string;
+  radiusMeters: string;
+};
+
+function toDraft(loc: GeofenceLocation): GeoDraft {
+  return {
+    id: loc.id,
+    name: loc.name,
+    address: loc.address,
+    latitude: String(loc.latitude),
+    longitude: String(loc.longitude),
+    radiusMeters: String(loc.radiusMeters),
+  };
+}
+
+function fromDraft(draft: GeoDraft): GeofenceLocation {
+  return {
+    id: draft.id,
+    name: draft.name.trim() || "未命名店點",
+    address: draft.address.trim(),
+    latitude: Number(draft.latitude),
+    longitude: Number(draft.longitude),
+    radiusMeters: Number(draft.radiusMeters),
+  };
+}
 
 export default function PunchAdminPage() {
   const {
@@ -29,8 +64,8 @@ export default function PunchAdminPage() {
     deleteTardinessRecord,
     getShiftForDate,
     shiftTimeConfig,
-    geofenceConfig,
-    updateGeofenceConfig,
+    geofenceLocations,
+    saveGeofenceLocations,
   } = useApp();
 
   const isManager =
@@ -47,24 +82,14 @@ export default function PunchAdminPage() {
     segmentIndex: 0,
     time: "",
   });
-  const [geoDraft, setGeoDraft] = useState({
-    name: geofenceConfig.name,
-    address: geofenceConfig.address,
-    latitude: String(geofenceConfig.latitude),
-    longitude: String(geofenceConfig.longitude),
-    radiusMeters: String(geofenceConfig.radiusMeters),
-  });
+  const [geoDrafts, setGeoDrafts] = useState<GeoDraft[]>(() =>
+    geofenceLocations.map(toDraft)
+  );
   const [geoSaving, setGeoSaving] = useState(false);
 
   useEffect(() => {
-    setGeoDraft({
-      name: geofenceConfig.name,
-      address: geofenceConfig.address,
-      latitude: String(geofenceConfig.latitude),
-      longitude: String(geofenceConfig.longitude),
-      radiusMeters: String(geofenceConfig.radiusMeters),
-    });
-  }, [geofenceConfig]);
+    setGeoDrafts(geofenceLocations.map(toDraft));
+  }, [geofenceLocations]);
 
   if (!isManager) {
     return (
@@ -260,107 +285,183 @@ export default function PunchAdminPage() {
     <div className="space-y-6 max-w-2xl mx-auto">
       <h2 className="text-2xl font-bold text-gray-900">打卡紀錄管理</h2>
 
-      <div className="bg-white rounded-xl shadow-sm border p-4 space-y-3">
-        <div>
-          <h3 className="font-medium text-gray-900">打卡圍籬設定</h3>
-          <p className="text-xs text-gray-500 mt-1">
-            調整本店 GPS 座標與半徑（多店店別之後再做）。儲存後員工打卡頁會立刻套用。
-          </p>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <div className="bg-white rounded-xl shadow-sm border p-4 space-y-4">
+        <div className="flex items-start justify-between gap-3">
           <div>
-            <label className="block text-xs text-gray-600 mb-1">店名</label>
-            <input
-              value={geoDraft.name}
-              onChange={(e) => setGeoDraft({ ...geoDraft, name: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
+            <h3 className="font-medium text-gray-900">打卡圍籬（多家店）</h3>
+            <p className="text-xs text-gray-500 mt-1">
+              可新增多個座標（本店、總點等）。員工在任一店點半徑內都能打卡，方便支援調度。
+            </p>
           </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">半徑（公尺）</label>
-            <input
-              type="number"
-              min={20}
-              max={2000}
-              value={geoDraft.radiusMeters}
-              onChange={(e) => setGeoDraft({ ...geoDraft, radiusMeters: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className="block text-xs text-gray-600 mb-1">地址說明</label>
-            <input
-              value={geoDraft.address}
-              onChange={(e) => setGeoDraft({ ...geoDraft, address: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">緯度</label>
-            <input
-              value={geoDraft.latitude}
-              onChange={(e) => setGeoDraft({ ...geoDraft, latitude: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-600 mb-1">經度</label>
-            <input
-              value={geoDraft.longitude}
-              onChange={(e) => setGeoDraft({ ...geoDraft, longitude: e.target.value })}
-              className="w-full border rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={geoSaving}
-            onClick={async () => {
-              setGeoSaving(true);
-              try {
-                await updateGeofenceConfig({
-                  name: geoDraft.name,
-                  address: geoDraft.address,
-                  latitude: Number(geoDraft.latitude),
-                  longitude: Number(geoDraft.longitude),
-                  radiusMeters: Number(geoDraft.radiusMeters),
-                });
-                alert("圍籬設定已儲存");
-              } catch (err) {
-                alert(err instanceof Error ? err.message : "儲存失敗");
-              } finally {
-                setGeoSaving(false);
-              }
-            }}
-            className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
-          >
-            {geoSaving ? "儲存中…" : "儲存圍籬"}
-          </button>
           <button
             type="button"
             onClick={() => {
-              if (!navigator.geolocation) {
-                alert("此裝置不支援定位");
-                return;
-              }
-              navigator.geolocation.getCurrentPosition(
-                (pos) => {
-                  setGeoDraft((prev) => ({
-                    ...prev,
-                    latitude: String(pos.coords.latitude),
-                    longitude: String(pos.coords.longitude),
-                  }));
-                },
-                () => alert("無法取得目前位置"),
-                { enableHighAccuracy: true, timeout: 15000 }
-              );
+              const next = createEmptyGeofenceDraft({
+                name: `店點 ${geoDrafts.length + 1}`,
+                radiusMeters: 150,
+              });
+              setGeoDrafts((prev) => [...prev, toDraft(next)]);
             }}
-            className="px-3 py-2 border text-sm rounded-lg hover:bg-gray-50"
+            className="px-3 py-2 border text-sm rounded-lg hover:bg-gray-50 whitespace-nowrap"
           >
-            用目前位置填入
+            + 新增店點
           </button>
         </div>
+
+        <div className="space-y-4">
+          {geoDrafts.map((draft, index) => (
+            <div key={draft.id} className="border rounded-lg p-3 space-y-3 bg-gray-50">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-medium text-gray-800">店點 {index + 1}</p>
+                <button
+                  type="button"
+                  disabled={geoDrafts.length <= 1}
+                  onClick={() =>
+                    setGeoDrafts((prev) => prev.filter((item) => item.id !== draft.id))
+                  }
+                  className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:no-underline"
+                >
+                  刪除
+                </button>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">店名</label>
+                  <input
+                    value={draft.name}
+                    onChange={(e) =>
+                      setGeoDrafts((prev) =>
+                        prev.map((item) =>
+                          item.id === draft.id ? { ...item, name: e.target.value } : item
+                        )
+                      )
+                    }
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                    placeholder="例如：竹山店／總點"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">半徑（公尺）</label>
+                  <input
+                    type="number"
+                    min={20}
+                    max={2000}
+                    value={draft.radiusMeters}
+                    onChange={(e) =>
+                      setGeoDrafts((prev) =>
+                        prev.map((item) =>
+                          item.id === draft.id
+                            ? { ...item, radiusMeters: e.target.value }
+                            : item
+                        )
+                      )
+                    }
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                  />
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-xs text-gray-600 mb-1">地址說明</label>
+                  <input
+                    value={draft.address}
+                    onChange={(e) =>
+                      setGeoDrafts((prev) =>
+                        prev.map((item) =>
+                          item.id === draft.id ? { ...item, address: e.target.value } : item
+                        )
+                      )
+                    }
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">緯度</label>
+                  <input
+                    value={draft.latitude}
+                    onChange={(e) =>
+                      setGeoDrafts((prev) =>
+                        prev.map((item) =>
+                          item.id === draft.id ? { ...item, latitude: e.target.value } : item
+                        )
+                      )
+                    }
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-600 mb-1">經度</label>
+                  <input
+                    value={draft.longitude}
+                    onChange={(e) =>
+                      setGeoDrafts((prev) =>
+                        prev.map((item) =>
+                          item.id === draft.id ? { ...item, longitude: e.target.value } : item
+                        )
+                      )
+                    }
+                    className="w-full border rounded-lg px-3 py-2 text-sm bg-white"
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!navigator.geolocation) {
+                    alert("此裝置不支援定位");
+                    return;
+                  }
+                  navigator.geolocation.getCurrentPosition(
+                    (pos) => {
+                      setGeoDrafts((prev) =>
+                        prev.map((item) =>
+                          item.id === draft.id
+                            ? {
+                                ...item,
+                                latitude: String(pos.coords.latitude),
+                                longitude: String(pos.coords.longitude),
+                              }
+                            : item
+                        )
+                      );
+                    },
+                    () => alert("無法取得目前位置"),
+                    { enableHighAccuracy: true, timeout: 15000 }
+                  );
+                }}
+                className="px-3 py-1.5 border text-xs rounded-lg hover:bg-white bg-white"
+              >
+                用目前位置填入此店點
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          disabled={geoSaving || geoDrafts.length === 0}
+          onClick={async () => {
+            setGeoSaving(true);
+            try {
+              const locations = geoDrafts.map(fromDraft);
+              for (const loc of locations) {
+                if (!Number.isFinite(loc.latitude) || !Number.isFinite(loc.longitude)) {
+                  throw new Error(`「${loc.name}」緯度／經度格式不正確`);
+                }
+                if (!Number.isFinite(loc.radiusMeters) || loc.radiusMeters < 20) {
+                  throw new Error(`「${loc.name}」半徑至少 20 公尺`);
+                }
+              }
+              await saveGeofenceLocations(locations);
+              alert(`已儲存 ${locations.length} 個打卡店點`);
+            } catch (err) {
+              alert(err instanceof Error ? err.message : "儲存失敗");
+            } finally {
+              setGeoSaving(false);
+            }
+          }}
+          className="px-3 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          {geoSaving ? "儲存中…" : "儲存全部店點"}
+        </button>
       </div>
 
       {/* 篩選條件 */}

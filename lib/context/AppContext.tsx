@@ -29,9 +29,9 @@ import {
 } from "@/lib/applications/duplicateGuard";
 import { resolveAnnualLeaveQuotaDays } from "@/lib/attendance/annualLeave";
 import {
-  geofenceFromEnv,
-  normalizeGeofence,
-  type GeofenceConfig,
+  defaultGeofenceLocations,
+  parseGeofenceSettings,
+  type GeofenceLocation,
 } from "@/lib/attendance/geofence";
 import {
   calculateEffectiveShift,
@@ -517,9 +517,9 @@ interface AppContextType {
   holidays: Holiday[];
   loadHolidays: () => Promise<void>;
   refreshHolidayCalendar: (year: number) => Promise<void>;
-  geofenceConfig: GeofenceConfig;
+  geofenceLocations: GeofenceLocation[];
   loadGeofenceConfig: () => Promise<void>;
-  updateGeofenceConfig: (next: Partial<GeofenceConfig>) => Promise<void>;
+  saveGeofenceLocations: (locations: GeofenceLocation[]) => Promise<void>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -551,7 +551,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [annualLeaveConfigs, setAnnualLeaveConfigs] = useState<AnnualLeaveConfig[]>([]);
   const [annualLeaveAdjustments, setAnnualLeaveAdjustments] = useState<AnnualLeaveAdjustment[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
-  const [geofenceConfig, setGeofenceConfig] = useState<GeofenceConfig>(() => geofenceFromEnv());
+  const [geofenceLocations, setGeofenceLocations] = useState<GeofenceLocation[]>(() =>
+    defaultGeofenceLocations()
+  );
 
   // Supabase-backed state (previously in localStorage)
   const [schedule, setSchedule] = useState<ScheduleData>({});
@@ -976,29 +978,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .maybeSingle();
     if (error) {
       console.error("loadGeofenceConfig:", error);
-      setGeofenceConfig(geofenceFromEnv());
+      setGeofenceLocations(defaultGeofenceLocations());
       return;
     }
-    if (data?.value) {
-      setGeofenceConfig(normalizeGeofence(data.value as Partial<GeofenceConfig>));
-    } else {
-      setGeofenceConfig(geofenceFromEnv());
-    }
+    setGeofenceLocations(parseGeofenceSettings(data?.value ?? null));
   }, [supabase]);
 
-  const updateGeofenceConfig = async (next: Partial<GeofenceConfig>) => {
+  const saveGeofenceLocations = async (locations: GeofenceLocation[]) => {
     if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
       throw new Error("僅店長或老闆可調整打卡圍籬");
     }
-    const merged = normalizeGeofence({ ...geofenceConfig, ...next });
+    const normalized = parseGeofenceSettings({ locations });
+    if (normalized.length === 0) {
+      throw new Error("至少需要保留一個打卡店點");
+    }
+    const payload = { locations: normalized };
     const { error } = await supabase.from("app_settings").upsert({
       id: "geofence",
-      value: merged,
+      value: payload,
       updated_by: currentUser.id,
       updated_at: new Date().toISOString(),
     });
     if (error) throw new Error(error.message || "儲存圍籬設定失敗");
-    setGeofenceConfig(merged);
+    setGeofenceLocations(normalized);
   };
 
   const getHolidayInfo = useCallback((dateStr: string) => {
@@ -3772,9 +3774,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         holidays,
         loadHolidays,
         refreshHolidayCalendar,
-        geofenceConfig,
+        geofenceLocations,
         loadGeofenceConfig,
-        updateGeofenceConfig,
+        saveGeofenceLocations,
         countSaturdaysInMonth,
       }}
     >

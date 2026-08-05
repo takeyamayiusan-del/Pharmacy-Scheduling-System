@@ -3,7 +3,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, type PunchRecord, type ShiftType } from "@/lib/context/AppContext";
-import { distanceMeters, isWithinGeofence } from "@/lib/attendance/geofence";
+import {
+  findMatchingGeofence,
+  nearestGeofence,
+} from "@/lib/attendance/geofence";
 import {
   calcLateMinutes,
   EARLY_PUNCH_MINUTES,
@@ -43,8 +46,10 @@ export default function PunchPage() {
     refreshTodayPunchRecords,
     bulletinItems,
     leaveRequests,
-    geofenceConfig,
+    geofenceLocations,
   } = useApp();
+
+  const [matchedLocationName, setMatchedLocationName] = useState<string | null>(null);
 
   const [announcementModal, setAnnouncementModal] = useState<boolean>(false);
   const [latestAnnouncement, setLatestAnnouncement] = useState<BulletinItem | null>(null);
@@ -149,14 +154,17 @@ export default function PunchPage() {
       const lat = position.coords.latitude;
       const lng = position.coords.longitude;
       setCoords({ lat, lng });
-      const dist = distanceMeters(
-        lat,
-        lng,
-        geofenceConfig.latitude,
-        geofenceConfig.longitude
-      );
-      setDistance(Math.round(dist));
-      setGpsState(isWithinGeofence(lat, lng, geofenceConfig) ? "inside" : "outside");
+      const match = findMatchingGeofence(lat, lng, geofenceLocations);
+      if (match) {
+        setDistance(Math.round(match.distanceMeters));
+        setMatchedLocationName(match.location.name);
+        setGpsState("inside");
+        return;
+      }
+      const nearest = nearestGeofence(lat, lng, geofenceLocations);
+      setDistance(nearest ? Math.round(nearest.distanceMeters) : null);
+      setMatchedLocationName(nearest?.location.name ?? null);
+      setGpsState("outside");
     };
 
     const handleError = (error: GeolocationPositionError, highAccuracy: boolean) => {
@@ -187,7 +195,7 @@ export default function PunchPage() {
         navigator.geolocation.clearWatch(watchIdRef.current);
       }
     };
-  }, [geofenceConfig]);
+  }, [geofenceLocations]);
 
   const finalizePunch = useCallback(
     async (slot: PunchSlot, reason?: string, lateMinutes = 0) => {
@@ -239,7 +247,11 @@ export default function PunchPage() {
   const handleNoShiftPunch = (action: "work_in" | "work_out") => {
     if (!currentUser || !coords || !punchRecordsReady || isPunching) return;
     if (gpsState !== "inside") {
-      alert(`請在${geofenceConfig.name} ${geofenceConfig.radiusMeters} 公尺範圍內才能打卡`);
+      alert(
+        `請在已設定的店點圍籬內才能打卡（目前可打：${geofenceLocations
+          .map((l) => l.name)
+          .join("、")}）`
+      );
       return;
     }
     setNoShiftOvertimeModal({ action });
@@ -284,7 +296,11 @@ export default function PunchPage() {
   const validateAndPunch = async (slot: PunchSlot) => {
     if (!currentUser || !coords || !punchRecordsReady || isPunching) return;
     if (gpsState !== "inside") {
-      alert(`請在${geofenceConfig.name} ${geofenceConfig.radiusMeters} 公尺範圍內才能打卡`);
+      alert(
+        `請在已設定的店點圍籬內才能打卡（目前可打：${geofenceLocations
+          .map((l) => l.name)
+          .join("、")}）`
+      );
       return;
     }
 
@@ -468,22 +484,37 @@ export default function PunchPage() {
             }`}
           />
           <div className="text-sm">
-            <p className="font-medium text-gray-900">GPS 定位：{geofenceConfig.name}</p>
-            <p className="text-gray-600">{geofenceConfig.address}</p>
-            <p className="text-gray-600">允許範圍：半徑 {geofenceConfig.radiusMeters} 公尺</p>
+            <p className="font-medium text-gray-900">
+              GPS 打卡範圍（{geofenceLocations.length} 個店點）
+            </p>
+            <ul className="mt-1 space-y-0.5 text-gray-600">
+              {geofenceLocations.map((loc) => (
+                <li key={loc.id}>
+                  {loc.name}
+                  {loc.address ? ` · ${loc.address}` : ""}
+                  <span className="text-gray-400">（{loc.radiusMeters} 公尺）</span>
+                </li>
+              ))}
+            </ul>
             {gpsState === "loading" && <p className="text-gray-500 mt-1">定位中…</p>}
             {gpsState === "denied" && (
               <p className="text-red-700 mt-1">無法取得定位，請允許瀏覽器使用 GPS</p>
             )}
             {gpsState === "outside" && (
               <p className="text-red-700 mt-1">
-                目前不在打卡範圍內
-                {distance !== null ? `（距離約 ${distance} 公尺）` : ""}
+                目前不在任何打卡範圍內
+                {matchedLocationName && distance !== null
+                  ? `（距「${matchedLocationName}」約 ${distance} 公尺）`
+                  : distance !== null
+                    ? `（最近約 ${distance} 公尺）`
+                    : ""}
               </p>
             )}
             {gpsState === "inside" && (
               <p className="text-emerald-700 mt-1 flex items-center gap-1">
-                <CheckCircle2 className="h-4 w-4" /> 已在打卡範圍內
+                <CheckCircle2 className="h-4 w-4" />
+                已在打卡範圍內
+                {matchedLocationName ? `：${matchedLocationName}` : ""}
                 {distance !== null ? `（約 ${distance} 公尺）` : ""}
               </p>
             )}
