@@ -25,13 +25,26 @@ $Log = { param($m) Write-Host $m }
 
 if ($Branch) {
     Write-Host "Fetching / checking out: $Branch"
-    git fetch origin $Branch
-    if ($LASTEXITCODE -ne 0) {
-        git fetch old-origin $Branch
+    # git 常把正常訊息寫到 stderr；在 $ErrorActionPreference=Stop 下會被當成例外中斷
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        git fetch origin $Branch 2>&1 | ForEach-Object { Write-Host $_ }
+        if ($LASTEXITCODE -ne 0) {
+            git fetch old-origin $Branch 2>&1 | ForEach-Object { Write-Host $_ }
+            if ($LASTEXITCODE -ne 0) { throw "git fetch failed for $Branch" }
+        }
+
+        $null = git checkout -B $Branch "origin/$Branch" 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            $null = git checkout -B $Branch "old-origin/$Branch" 2>&1
+        }
+        if ($LASTEXITCODE -ne 0) { throw "git checkout failed for $Branch" }
+
+        Write-Host ("Checked out {0} @ {1}" -f $Branch, (git rev-parse --short HEAD))
     }
-    git checkout -B $Branch "origin/$Branch" 2>$null
-    if ($LASTEXITCODE -ne 0) {
-        git checkout -B $Branch "old-origin/$Branch"
+    finally {
+        $ErrorActionPreference = $prevEap
     }
 }
 
