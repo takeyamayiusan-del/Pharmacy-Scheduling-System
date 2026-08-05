@@ -207,9 +207,14 @@ function Invoke-NpmBuild {
 
     try {
         New-Item -ItemType File -Path $lockFile -ErrorAction Stop | Out-Null
+
+        # 先停 PM2，避免 build 期間 autorestart 或與 next start 同時讀寫 .next
+        if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+            & pm2 stop pharmacy-web 2>$null | Out-Null
+        }
         Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
 
-        Write-Host "  Building site ..."
+        Write-Host "  Building site (old server stopped) ..."
         Push-Location $ProjectRoot
         try {
             & $npm run build
@@ -222,6 +227,9 @@ function Invoke-NpmBuild {
                 if ($LASTEXITCODE -ne 0) {
                     throw "npm run build failed with exit code $LASTEXITCODE"
                 }
+            }
+            if (-not (Test-PharmacyWebBuildReady -ProjectRoot $ProjectRoot)) {
+                throw "Build finished but .next artifacts are incomplete"
             }
         } finally {
             Pop-Location
@@ -361,6 +369,170 @@ function Stop-PortListenerForce {
     return (-not (Test-PortListening $Port))
 }
 
+function Test-PharmacyWebBuildReady {
+    param([string]$ProjectRoot)
+
+    $paths = @(
+        (Join-Path $ProjectRoot ".next\BUILD_ID"),
+        (Join-Path $ProjectRoot ".next\prerender-manifest.json"),
+        (Join-Path $ProjectRoot ".next\server")
+    )
+    foreach ($p in $paths) {
+        if (-not (Test-Path -LiteralPath $p)) { return $false }
+    }
+    return $true
+}
+
+function Get-PharmacyWebEcosystemPath {
+    param([string]$ProjectRoot)
+    return Join-Path $ProjectRoot "ecosystem.config.cjs"
+}
+
+function Clear-PharmacyWebPort {
+    param(
+        [scriptblock]$WriteLog = { param($m) Write-Host $m },
+        [int]$MaxRounds = 5
+    )
+
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        pm2 stop pharmacy-web 2>$null | Out-Null
+        Start-Sleep -Seconds 1
+        for ($i = 1; $i -le $MaxRounds; $i++) {
+            $listenerPid = Get-PortListenerPid -Port 3000
+            if (-not $listenerPid) { return $true }
+            & $WriteLog ("[{0}/{1}] Clearing :3000 pid={2} ..." -f $i, $MaxRounds, $listenerPid)
+            [void](Stop-PortListenerForce -Port 3000 -WriteLog $WriteLog)
+            Start-Sleep -Seconds 2
+        }
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+    return (-not (Test-PortListening 3000))
+}
+
+function Ensure-PharmacyWebPm2Registered {
+    param(
+        [string]$ProjectRoot,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+        & $WriteLog "pm2 not found"
+        return $false
+    }
+
+    $ecosystem = Get-PharmacyWebEcosystemPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $ecosystem)) {
+        & $WriteLog "Missing ecosystem.config.cjs"
+        return $false
+    }
+
+    & $WriteLog "Registering pharmacy-web via ecosystem.config.cjs"
+    & pm2 start $ecosystem --only pharmacy-web 2>&1 | ForEach-Object { & $WriteLog $_ }
+    if ($LASTEXITCODE -ne 0) { return $false }
+    & pm2 save 2>$null | Out-Null
+    return $true
+}
+
+function Test-PharmacyWebPm2OwningPort {
+    if (-not (Get-Pm2Online -Name "pharmacy-web")) { return $false }
+
+    $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
+    $listenPid = Get-PortListenerPid -Port 3000
+    if (-not $listenPid) { return $false }
+    if ($pm2Pid -and ($pm2Pid -ne $listenPid)) { return $false }
+    return $true
+}
+
+function Wait-PharmacyWebHealthy {
+    param(
+        [int]$TimeoutSeconds = 60,
+        [int]$IntervalSeconds = 3
+    )
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if ((Test-PharmacyWebPm2OwningPort) -and (Test-SiteHealthy)) { return $true }
+        Start-Sleep -Seconds $IntervalSeconds
+    }
+    return $false
+}
+
+function Restart-PharmacyWebPm2 {
+    param(
+        [string]$ProjectRoot,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m },
+        [switch]$SkipPortCleanup,
+        [int]$MaxAttempts = 3
+    )
+
+    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+        & $WriteLog "pm2 not found"
+        return $false
+    }
+
+    if (-not (Test-Path (Join-Path $ProjectRoot ".env.local"))) {
+        & $WriteLog "WARNING: .env.local missing (startup may fail)"
+    }
+
+    if (-not (Test-PharmacyWebBuildReady -ProjectRoot $ProjectRoot)) {
+        & $WriteLog "Build incomplete. Run: npm run build"
+        return $false
+    }
+
+    Push-Location $ProjectRoot
+    try {
+        & node -e "const fs=require('fs'); fs.accessSync('.next/BUILD_ID'); fs.accessSync('.next/prerender-manifest.json');" 2>$null
+        if ($LASTEXITCODE -ne 0) {
+            & $WriteLog "Build verification failed"
+            return $false
+        }
+    } finally {
+        Pop-Location
+    }
+
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        & $WriteLog ("Restart pharmacy-web attempt {0}/{1}" -f $attempt, $MaxAttempts)
+
+        if (-not $SkipPortCleanup) {
+            if (-not (Clear-PharmacyWebPort -WriteLog $WriteLog)) {
+                $stuck = Get-PortListenerPid -Port 3000
+                & $WriteLog ("Port 3000 still held by pid=$stuck (try Administrator)")
+                if ($attempt -ge $MaxAttempts) { return $false }
+                Start-Sleep -Seconds 2
+                continue
+            }
+        }
+
+        & pm2 delete pharmacy-web 2>$null | Out-Null
+        if (-not (Ensure-PharmacyWebPm2Registered -ProjectRoot $ProjectRoot -WriteLog $WriteLog)) {
+            if ($attempt -ge $MaxAttempts) { return $false }
+            Start-Sleep -Seconds 3
+            continue
+        }
+
+        if (Wait-PharmacyWebHealthy -TimeoutSeconds 50) {
+            & pm2 save 2>$null | Out-Null
+            $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
+            $listenPid = Get-PortListenerPid -Port 3000
+            & $WriteLog ("pharmacy-web online pm2={0} port={1}" -f $pm2Pid, $listenPid)
+            return $true
+        }
+
+        & $WriteLog "pharmacy-web not healthy after start"
+        & pm2 logs pharmacy-web --lines 15 --nostream 2>$null | ForEach-Object { & $WriteLog $_ }
+        $errLog = Join-Path $env:USERPROFILE ".pm2\logs\pharmacy-web-error.log"
+        if (Test-Path -LiteralPath $errLog) {
+            Get-Content -LiteralPath $errLog -Tail 10 -ErrorAction SilentlyContinue | ForEach-Object { & $WriteLog $_ }
+        }
+        Start-Sleep -Seconds 2
+    }
+
+    return $false
+}
+
 function Repair-Pm2AppIfNeeded {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -405,33 +577,15 @@ function Start-SiteViaPm2OrRunner {
 
     if (Get-Command pm2 -ErrorAction SilentlyContinue) {
         & $WriteLog "Restarting pharmacy-web (+ cashflow if present) via pm2..."
-        & pm2 resurrect 2>$null | Out-Null
-        if ((Get-PortListenerPid 3000) -and (-not (Get-Pm2Online -Name "pharmacy-web"))) {
-            [void](Stop-PortListenerForce -Port 3000 -WriteLog $WriteLog)
-        }
-        & pm2 restart pharmacy-web --update-env 2>$null | Out-Null
-        if (Get-Pm2Online -Name "cashflow") {
-            & pm2 restart cashflow --update-env 2>$null | Out-Null
-        } elseif ((pm2 jlist 2>$null) -match '"name"\s*:\s*"cashflow"') {
-            & pm2 restart cashflow --update-env 2>$null | Out-Null
-        }
-        if ($LASTEXITCODE -eq 0) { return }
-
-        & $WriteLog "pm2 restart failed, starting pharmacy-web via ecosystem.config.cjs..."
-        Push-Location $ProjectRoot
-        try {
-            [void](Stop-PortListenerForce -Port 3000 -WriteLog $WriteLog)
-            $ecosystem = Join-Path $ProjectRoot "ecosystem.config.cjs"
-            if (Test-Path -LiteralPath $ecosystem) {
-                & pm2 delete pharmacy-web 2>$null | Out-Null
-                & pm2 start $ecosystem --only pharmacy-web 2>$null | Out-Null
-            } else {
-                & $WriteLog "ecosystem.config.cjs missing; cannot register pharmacy-web on Windows"
+        if (Restart-PharmacyWebPm2 -ProjectRoot $ProjectRoot -WriteLog $WriteLog) {
+            if (Get-Pm2Online -Name "cashflow") {
+                & pm2 restart cashflow --update-env 2>$null | Out-Null
+            } elseif ((pm2 jlist 2>$null) -match '"name"\s*:\s*"cashflow"') {
+                & pm2 restart cashflow --update-env 2>$null | Out-Null
             }
-            & pm2 save 2>$null | Out-Null
-        } finally {
-            Pop-Location
+            return
         }
+        & $WriteLog "Restart-PharmacyWebPm2 failed"
         return
     }
 
