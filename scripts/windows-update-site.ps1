@@ -97,8 +97,9 @@ if (Test-PortListening 3000) {
 }
 
 pm2 start pharmacy-web --update-env
-if ($LASTEXITCODE -ne 0) {
-    pm2 restart pharmacy-web --update-env
+if ($LASTEXITCODE -ne 0 -or -not (Get-Pm2Online -Name "pharmacy-web")) {
+    Write-Host "pm2 start pharmacy-web failed; registering via next binary ..." -ForegroundColor Yellow
+    & (Join-Path $PSScriptRoot "windows-start-pharmacy-web.ps1") -SkipPortCleanup
 }
 pm2 restart cashflow --update-env 2>$null
 
