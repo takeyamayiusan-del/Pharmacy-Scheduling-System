@@ -233,6 +233,9 @@ export type PayrollRecord = {
   overtimePay: number;
   tardinessDeduction: number;
   bonusTotal: number;
+  positionGradeTotal?: number;
+  fixedAllowanceTotal?: number;
+  fullAttendancePay?: number;
   finalPay: number;
   note?: string;
   isPublished: boolean;
@@ -3581,6 +3584,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         overtimePay: Number(r.overtime_pay),
         tardinessDeduction: Number(r.tardiness_deduction),
         bonusTotal: Number(r.bonus_total),
+        positionGradeTotal: Number(r.position_grade_total ?? 0),
+        fixedAllowanceTotal: Number(r.fixed_allowance_total ?? 0),
+        fullAttendancePay: Number(r.full_attendance_pay ?? 0),
         finalPay: Number(r.final_pay),
         note: r.note,
         isPublished: r.is_published,

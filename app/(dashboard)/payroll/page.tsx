@@ -24,6 +24,17 @@ import {
   getDefaultPayrollPeriod,
   computeMonthlyAttendanceHours,
 } from "@/lib/payroll/monthlyHours";
+import {
+  calculateFullAttendancePay,
+  contractualPay,
+  getYearlySickLeaveDays,
+  mapSalaryItemRow,
+  sumSalaryItems,
+  wageBaseForOvertime,
+  type EmployeeSalaryItem,
+  type SalaryItemDraft,
+} from "@/lib/payroll/salaryItems";
+import EmployeeSalaryItemsEditor from "@/components/payroll/EmployeeSalaryItemsEditor";
 import XLSX from "xlsx-js-style";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -97,6 +108,10 @@ type EmployeePayroll = {
   tardinessDeduction: number;
   adjustments: Adjustment[];
   bonusTotal: number;
+  positionGradeTotal: number;
+  fixedAllowanceTotal: number;
+  fullAttendancePay: number;
+  contractualPay: number;
   finalPay: number;
 };
 
@@ -150,12 +165,14 @@ export default function PayrollPage() {
   const [showTrial, setShowTrial] = useState(true);
 
   const [salaryConfigs, setSalaryConfigs] = useState<Record<string, SalaryConfig>>({});
+  const [salaryItemsByUser, setSalaryItemsByUser] = useState<Record<string, EmployeeSalaryItem[]>>({});
   const [rateConfigs, setRateConfigs] = useState<RateConfig[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   const [editingSalary, setEditingSalary] = useState<string | null>(null);
   const [salaryForm, setSalaryForm] = useState<Omit<SalaryConfig, "userId">>(emptySalaryForm);
+  const [editingItems, setEditingItems] = useState<SalaryItemDraft[]>([]);
   const [editingRate, setEditingRate] = useState<string | null>(null);
   const [rateForm, setRateForm] = useState({
     label: "",
@@ -175,10 +192,11 @@ export default function PayrollPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [salaryRes, rateRes, adjRes] = await Promise.all([
+      const [salaryRes, rateRes, adjRes, itemRes] = await Promise.all([
         supabase.from("employee_salary_config").select("*"),
         supabase.from("payroll_rate_config").select("*").order("sort_order"),
         supabase.from("payroll_adjustments").select("*").eq("year", year).eq("month", month),
+        supabase.from("employee_salary_items").select("*").order("sort_order"),
       ]);
       if (salaryRes.data) {
         const map: Record<string, SalaryConfig> = {};
@@ -200,6 +218,18 @@ export default function PayrollPage() {
           };
         });
         setSalaryConfigs(map);
+      }
+      if (itemRes.data) {
+        const map: Record<string, EmployeeSalaryItem[]> = {};
+        itemRes.data.forEach((r) => {
+          const item = mapSalaryItemRow(r as Record<string, unknown>);
+          if (!map[item.userId]) map[item.userId] = [];
+          map[item.userId].push(item);
+        });
+        setSalaryItemsByUser(map);
+      } else if (itemRes.error) {
+        // migration 尚未套用時略過
+        setSalaryItemsByUser({});
       }
       if (rateRes.data) {
         setRateConfigs(rateRes.data.map((r) => ({
@@ -249,8 +279,12 @@ export default function PayrollPage() {
 
     return displayEmployees.map((emp) => {
       const cfg = salaryConfigs[emp.id] ?? { ...emptySalaryForm, userId: emp.id };
+      const items = salaryItemsByUser[emp.id] ?? [];
+      const positionGradeTotal = sumSalaryItems(items, "position_grade");
+      const contractPay = contractualPay(cfg.baseSalary, items);
+      const wageBase = wageBaseForOvertime(cfg.baseSalary, items);
       const salaryBasis = {
-        baseSalary: cfg.baseSalary,
+        baseSalary: wageBase > 0 ? wageBase : cfg.baseSalary,
         hourlyRate: cfg.hourlyRate,
       };
 
@@ -277,6 +311,7 @@ export default function PayrollPage() {
 
       let leaveHours = 0;
       let leaveDeduction = 0;
+      const leaveHoursByType: Record<string, number> = {};
       for (const r of empLeaves) {
         const hours = getApprovedLeaveHoursInMonth({
           request: r,
@@ -286,6 +321,7 @@ export default function PayrollPage() {
           shiftTimeConfig,
         });
         leaveHours += hours;
+        leaveHoursByType[r.type] = (leaveHoursByType[r.type] ?? 0) + hours;
         const leaveRate = leaveRateCfgByType(r.type);
         if (leaveRate) {
           leaveDeduction += calculateRateAmount(hours, leaveRate, salaryBasis, "hour");
@@ -315,8 +351,31 @@ export default function PayrollPage() {
         ? calculateRateAmount(tardinessMinutes, tardinessRateCfg, salaryBasis, "minute")
         : 0;
 
+      // 固定津貼：全勤依規則試算；其餘啟用項目全額
+      let fullAttendancePay = 0;
+      let fixedAllowanceTotal = 0;
+      for (const item of items.filter((i) => i.isEnabled && i.category === "fixed_allowance")) {
+        if (item.presetKey === "full_attendance") {
+          const fa = calculateFullAttendancePay({
+            configuredAmount: item.amount,
+            leaveHoursByType,
+            yearlySickLeaveDays: getYearlySickLeaveDays({
+              employeeId: emp.id,
+              leaveRequests,
+              asOfYear: year,
+              asOfMonth: month,
+            }),
+          });
+          fullAttendancePay = fa.paidAmount;
+          fixedAllowanceTotal += fa.paidAmount;
+        } else {
+          fixedAllowanceTotal += item.amount;
+        }
+      }
+
       const finalPayRaw =
-        cfg.baseSalary -
+        contractPay +
+        fixedAllowanceTotal -
         cfg.laborInsurance -
         cfg.healthInsurance -
         cfg.pensionDeduction -
@@ -353,12 +412,17 @@ export default function PayrollPage() {
         tardinessDeduction,
         adjustments: empAdj,
         bonusTotal,
+        positionGradeTotal,
+        fixedAllowanceTotal,
+        fullAttendancePay,
+        contractualPay: contractPay,
         finalPay,
       };
     });
   }, [
     displayEmployees,
     salaryConfigs,
+    salaryItemsByUser,
     rateConfigs,
     adjustments,
     leaveRequests,
@@ -387,8 +451,8 @@ export default function PayrollPage() {
 
     if (!confirm(`確定要發布 ${p.name} 的 ${year} 年 ${month} 月薪資單嗎？發布後員工將收到通知並可查看詳情。`)) return;
 
-    // 先存檔到資料庫
-    const { data, error } = await supabase.from("payroll_records").upsert({
+    // 先存檔到資料庫（含新結構欄位；舊庫無欄位時退回基本欄位）
+    const payload = {
       user_id: p.userId,
       year,
       month,
@@ -399,11 +463,21 @@ export default function PayrollPage() {
       leave_deduction: p.leaveDeduction,
       overtime_pay: p.overtimePay,
       tardiness_deduction: p.tardinessDeduction,
-      bonus_total: p.bonusTotal,
+      bonus_total: p.bonusTotal + p.fixedAllowanceTotal,
+      position_grade_total: p.positionGradeTotal,
+      fixed_allowance_total: p.fixedAllowanceTotal,
+      full_attendance_pay: p.fullAttendancePay,
       final_pay: p.finalPay,
-      note: "",
+      note: p.positionGradeTotal > 0 || p.fixedAllowanceTotal > 0
+        ? `合約加級 ${p.positionGradeTotal}；固定項目 ${p.fixedAllowanceTotal}（含全勤 ${p.fullAttendancePay}）`
+        : "",
       created_by: currentUser?.id,
-    }, { onConflict: "user_id,year,month" }).select().single();
+    };
+    let { data, error } = await supabase.from("payroll_records").upsert(payload, { onConflict: "user_id,year,month" }).select().single();
+    if (error && /position_grade_total|fixed_allowance_total|full_attendance_pay/.test(String(error.message || ""))) {
+      const { position_grade_total: _a, fixed_allowance_total: _b, full_attendance_pay: _c, ...legacy } = payload;
+      ({ data, error } = await supabase.from("payroll_records").upsert(legacy, { onConflict: "user_id,year,month" }).select().single());
+    }
 
     if (error) {
       alert("儲存失敗：" + error.message);
@@ -419,7 +493,7 @@ export default function PayrollPage() {
   // ─── Save salary config ─────────────────────────────────────────────────────
 
   const saveSalaryConfig = async (userId: string) => {
-    await supabase.from("employee_salary_config").upsert({
+    const { error: cfgErr } = await supabase.from("employee_salary_config").upsert({
       user_id: userId,
       base_salary: salaryForm.baseSalary,
       labor_insurance: salaryForm.laborInsurance,
@@ -435,8 +509,62 @@ export default function PayrollPage() {
       union_fee: salaryForm.unionFee,
       updated_by: currentUser?.id,
     }, { onConflict: "user_id" });
+    if (cfgErr) {
+      alert("儲存薪資設定失敗：" + cfgErr.message);
+      return;
+    }
+
+    // 重寫薪資項目（職位加級／固定項目）
+    const { error: delErr } = await supabase.from("employee_salary_items").delete().eq("user_id", userId);
+    if (delErr && !String(delErr.message || "").includes("does not exist")) {
+      // 表不存在時略過；其他錯誤提示
+      if (!/relation|does not exist|schema cache/i.test(String(delErr.message || ""))) {
+        alert("儲存薪資項目失敗：" + delErr.message);
+        return;
+      }
+    } else if (!delErr) {
+      const rows = editingItems
+        .filter((i) => i.label.trim())
+        .map((i, idx) => ({
+          user_id: userId,
+          category: i.category,
+          label: i.label.trim(),
+          amount: Number(i.amount) || 0,
+          preset_key: i.presetKey,
+          counts_as_wage: i.countsAsWage,
+          is_enabled: i.isEnabled !== false,
+          sort_order: idx,
+        }));
+      if (rows.length > 0) {
+        const { error: insErr } = await supabase.from("employee_salary_items").insert(rows);
+        if (insErr) {
+          alert("儲存薪資項目失敗：" + insErr.message + "\n請先套用 migration：employee_salary_items");
+          return;
+        }
+      }
+      setSalaryItemsByUser((prev) => ({
+        ...prev,
+        [userId]: rows.map((r, idx) =>
+          mapSalaryItemRow({ ...r, id: `local-${idx}` })
+        ),
+      }));
+      // 重新載入以取得正式 id
+      const { data: refreshed } = await supabase
+        .from("employee_salary_items")
+        .select("*")
+        .eq("user_id", userId)
+        .order("sort_order");
+      if (refreshed) {
+        setSalaryItemsByUser((prev) => ({
+          ...prev,
+          [userId]: refreshed.map((r) => mapSalaryItemRow(r as Record<string, unknown>)),
+        }));
+      }
+    }
+
     setSalaryConfigs((prev) => ({ ...prev, [userId]: { userId, ...salaryForm } }));
     setEditingSalary(null);
+    setEditingItems([]);
   };
 
   // ─── Save rate config ───────────────────────────────────────────────────────
@@ -915,31 +1043,115 @@ export default function PayrollPage() {
 
           {/* ── 員工薪資詳細設定 ── */}
           <div className="bg-white rounded-xl shadow-sm border p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">員工薪資設定</h2>
+            <h2 className="font-semibold text-gray-900 mb-1">員工薪資設定</h2>
+            <p className="text-xs text-gray-500 mb-4">
+              合約項目：底薪＋職位加級（應給）。固定津貼／獎金可新增（全勤、包班等）；全勤依請假規則試算，屬工資並計入加班基數。
+            </p>
             <div className="space-y-3">
               {displayEmployees.map((emp) => {
                 const cfg = salaryConfigs[emp.id];
+                const items = salaryItemsByUser[emp.id] ?? [];
+                const gradeTotal = sumSalaryItems(items, "position_grade");
                 const isEditing = editingSalary === emp.id;
+                const faItem = items.find((i) => i.presetKey === "full_attendance" && i.isEnabled);
+                let faHint: string | null = null;
+                if (isEditing && faItem) {
+                  const leaveHoursByType: Record<string, number> = {};
+                  leaveRequests
+                    .filter(
+                      (r) =>
+                        r.employeeId === emp.id &&
+                        r.status === "approved" &&
+                        r.endDate >= `${year}-${String(month).padStart(2, "0")}-01` &&
+                        r.startDate <=
+                          `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
+                    )
+                    .forEach((r) => {
+                      const hours = getApprovedLeaveHoursInMonth({
+                        request: r,
+                        year,
+                        month,
+                        getShiftForDate,
+                        shiftTimeConfig,
+                      });
+                      leaveHoursByType[r.type] = (leaveHoursByType[r.type] ?? 0) + hours;
+                    });
+                  const preview = calculateFullAttendancePay({
+                    configuredAmount: editingItems.find((i) => i.presetKey === "full_attendance")?.amount ?? faItem.amount,
+                    leaveHoursByType,
+                    yearlySickLeaveDays: getYearlySickLeaveDays({
+                      employeeId: emp.id,
+                      leaveRequests,
+                      asOfYear: year,
+                      asOfMonth: month,
+                    }),
+                  });
+                  faHint = `本月試算實發 $${preview.paidAmount.toLocaleString()}（設定 $${preview.configuredAmount.toLocaleString()}）`;
+                  if (preview.notes[0]) faHint += ` · ${preview.notes[0]}`;
+                }
                 return (
                   <div key={emp.id} className="border rounded-lg overflow-hidden">
-                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50">
+                    <div className="flex items-center justify-between px-4 py-3 bg-gray-50 gap-2 flex-wrap">
                       <span className="font-medium text-gray-900">{emp.name}</span>
-                      <div className="flex items-center gap-4 text-sm text-gray-600">
+                      <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
                         <span>底薪 ${(cfg?.baseSalary ?? 0).toLocaleString()}</span>
+                        <span>加級 ${gradeTotal.toLocaleString()}</span>
                         <span>時薪 ${cfg?.hourlyRate ?? 0}/hr</span>
                         <span>職位 {cfg?.position || "—"}</span>
                         {!isEditing && (
                           <button
-                            onClick={() => { setEditingSalary(emp.id); setSalaryForm(cfg ? { ...cfg } : emptySalaryForm); }}
+                            onClick={() => {
+                              setEditingSalary(emp.id);
+                              setSalaryForm(cfg ? { ...cfg } : emptySalaryForm);
+                              setEditingItems(
+                                (salaryItemsByUser[emp.id] ?? []).map((i) => ({
+                                  id: i.id,
+                                  category: i.category,
+                                  label: i.label,
+                                  amount: i.amount,
+                                  presetKey: i.presetKey,
+                                  countsAsWage: i.countsAsWage,
+                                  isEnabled: i.isEnabled,
+                                  sortOrder: i.sortOrder,
+                                }))
+                              );
+                            }}
                             className="px-3 py-1 bg-blue-600 text-white text-xs rounded"
-                          >編輯</button>
+                          >
+                            編輯
+                          </button>
                         )}
                       </div>
                     </div>
                     {isEditing && (
                       <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div className="col-span-2 md:col-span-4 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-600">
+                          合約應給試算：底薪 ${(Number(salaryForm.baseSalary) || 0).toLocaleString()} + 職位加級 $
+                          {sumSalaryItems(
+                            editingItems.map((i) => ({
+                              ...i,
+                              isEnabled: i.isEnabled !== false,
+                            })),
+                            "position_grade"
+                          ).toLocaleString()}{" "}
+                          = $
+                          {contractualPay(
+                            Number(salaryForm.baseSalary) || 0,
+                            editingItems.map((i, idx) => ({
+                              id: String(i.id ?? idx),
+                              userId: emp.id,
+                              category: i.category,
+                              label: i.label,
+                              amount: Number(i.amount) || 0,
+                              presetKey: i.presetKey,
+                              countsAsWage: i.countsAsWage,
+                              isEnabled: i.isEnabled !== false,
+                              sortOrder: i.sortOrder,
+                            }))
+                          ).toLocaleString()}
+                        </div>
                         {([
-                          ["姓名底薪", "baseSalary", "number"],
+                          ["底薪（合約）", "baseSalary", "number"],
                           ["勞保費（員工）", "laborInsurance", "number"],
                           ["健保費（員工）", "healthInsurance", "number"],
                           ["退休金提撥（員工6%）", "pensionDeduction", "number"],
@@ -957,11 +1169,23 @@ export default function PayrollPage() {
                             <input
                               type={type}
                               value={salaryForm[field] as string | number}
-                              onChange={(e) => setSalaryForm({ ...salaryForm, [field]: type === "number" ? Number(e.target.value) : e.target.value })}
+                              onChange={(e) =>
+                                setSalaryForm({
+                                  ...salaryForm,
+                                  [field]: type === "number" ? Number(e.target.value) : e.target.value,
+                                })
+                              }
                               className="w-full border rounded px-2 py-1.5 text-sm"
                             />
                           </div>
                         ))}
+
+                        <EmployeeSalaryItemsEditor
+                          items={editingItems}
+                          onChange={setEditingItems}
+                          fullAttendanceHint={faHint}
+                        />
+
                         <div className="col-span-2 md:col-span-4 flex flex-wrap gap-2 pt-2 items-center">
                           <button
                             type="button"
@@ -989,21 +1213,46 @@ export default function PayrollPage() {
                           <button
                             type="button"
                             onClick={() => {
-                              const derived = deriveHourlyRateByLaborStandard(
-                                Number(salaryForm.baseSalary)
+                              const contract = contractualPay(
+                                Number(salaryForm.baseSalary) || 0,
+                                editingItems.map((i, idx) => ({
+                                  id: String(i.id ?? idx),
+                                  userId: emp.id,
+                                  category: i.category,
+                                  label: i.label,
+                                  amount: Number(i.amount) || 0,
+                                  presetKey: i.presetKey,
+                                  countsAsWage: i.countsAsWage,
+                                  isEnabled: i.isEnabled !== false,
+                                  sortOrder: i.sortOrder,
+                                }))
                               );
+                              const derived = deriveHourlyRateByLaborStandard(contract);
                               if (derived <= 0) {
-                                alert("請先填寫底薪，才能依勞基法（月薪÷30÷8）推算時薪。");
+                                alert("請先填寫底薪（與職位加級），才能依勞基法（月薪÷30÷8）推算時薪。");
                                 return;
                               }
                               setSalaryForm({ ...salaryForm, hourlyRate: derived });
                             }}
                             className="px-3 py-2 border text-sm rounded text-sky-700 border-sky-200 bg-sky-50"
                           >
-                            依勞基法（月薪÷30÷8）推算時薪
+                            依勞基法（合約月薪÷30÷8）推算時薪
                           </button>
-                          <button onClick={() => saveSalaryConfig(emp.id)} className="px-4 py-2 bg-blue-600 text-white text-sm rounded">儲存</button>
-                          <button onClick={() => setEditingSalary(null)} className="px-4 py-2 border text-sm rounded">取消</button>
+                          <button
+                            onClick={() => saveSalaryConfig(emp.id)}
+                            className="px-4 py-2 bg-blue-600 text-white text-sm rounded"
+                          >
+                            儲存
+                          </button>
+                          <button
+                            onClick={() => {
+                              setEditingSalary(null);
+                              setEditingItems([]);
+                            }}
+                            className="px-4 py-2 border text-sm rounded"
+                          >
+                            取消
+                          </button>
                         </div>
                       </div>
                     )}
@@ -1086,7 +1335,8 @@ export default function PayrollPage() {
                       "出勤時數",
                       "請假時數",
                       "加班時數",
-                      "底薪",
+                      "合約應給",
+                      "固定項目",
                       "勞保",
                       "健保",
                       "退休金",
@@ -1134,7 +1384,28 @@ export default function PayrollPage() {
                               "—"
                             )}
                           </td>
-                          <td className="px-3 py-3 text-right">${p.baseSalary.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-right tabular-nums">
+                            <div>${p.contractualPay.toLocaleString()}</div>
+                            {p.positionGradeTotal > 0 ? (
+                              <div className="text-[10px] text-gray-400">
+                                底薪 {p.baseSalary.toLocaleString()}+加級 {p.positionGradeTotal.toLocaleString()}
+                              </div>
+                            ) : null}
+                          </td>
+                          <td className="px-3 py-3 text-right tabular-nums text-green-700">
+                            {p.fixedAllowanceTotal > 0 ? (
+                              <>
+                                <div>+${p.fixedAllowanceTotal.toLocaleString()}</div>
+                                {p.fullAttendancePay > 0 ? (
+                                  <div className="text-[10px] text-gray-400">
+                                    含全勤 {p.fullAttendancePay.toLocaleString()}
+                                  </div>
+                                ) : null}
+                              </>
+                            ) : (
+                              "—"
+                            )}
+                          </td>
                           <td className="px-3 py-3 text-right text-red-600">-${p.laborInsurance.toLocaleString()}</td>
                           <td className="px-3 py-3 text-right text-red-600">-${p.healthInsurance.toLocaleString()}</td>
                           <td className="px-3 py-3 text-right text-red-600">-${p.pensionDeduction.toLocaleString()}</td>
