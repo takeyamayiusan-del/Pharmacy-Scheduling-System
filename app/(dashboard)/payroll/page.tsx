@@ -475,7 +475,10 @@ export default function PayrollPage() {
     };
     let { data, error } = await supabase.from("payroll_records").upsert(payload, { onConflict: "user_id,year,month" }).select().single();
     if (error && /position_grade_total|fixed_allowance_total|full_attendance_pay/.test(String(error.message || ""))) {
-      const { position_grade_total: _a, fixed_allowance_total: _b, full_attendance_pay: _c, ...legacy } = payload;
+      const legacy = { ...payload };
+      delete legacy.position_grade_total;
+      delete legacy.fixed_allowance_total;
+      delete legacy.full_attendance_pay;
       ({ data, error } = await supabase.from("payroll_records").upsert(legacy, { onConflict: "user_id,year,month" }).select().single());
     }
 
