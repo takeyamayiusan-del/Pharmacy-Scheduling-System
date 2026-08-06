@@ -35,6 +35,7 @@ import {
   type SalaryItemDraft,
 } from "@/lib/payroll/salaryItems";
 import EmployeeSalaryItemsEditor from "@/components/payroll/EmployeeSalaryItemsEditor";
+import { buildPayslipWorksheet } from "@/lib/payroll/payslipExcelLayout";
 import XLSX from "xlsx-js-style";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -699,14 +700,10 @@ export default function PayrollPage() {
 
   const exportExcel = () => {
     const rocYear = toROC(year);
-    // 使用 xlsx-js-style 相容的結構，但需注意環境是否支援。
-    // 如果單純使用 xlsx 庫，樣式 .s 屬性在 writeFile 時會被忽略。
-    // 我們改用更結構化的排版，並確保欄位與合併單元格正確。
     const wb = XLSX.utils.book_new();
 
     payrollData.forEach((p) => {
-      // A=約定薪資結構（應給／結構內扣），B=非固定，C=應代扣（含員工自提）
-      // 金額為 0 的項目不列出
+      // A=約定薪資結構，B=非固定，C=應代扣（含員工自提）；金額 0 不列出
       const colA: [string, number | string][] = [];
       if (p.baseSalary > 0) colA.push(["薪資", p.baseSalary]);
       if ((p.positionGradeTotal ?? 0) > 0) colA.push(["職位加級", p.positionGradeTotal]);
@@ -733,140 +730,27 @@ export default function PayrollPage() {
       if (p.laborInsurance > 0) colC.push(["勞保費", p.laborInsurance]);
       if (p.healthInsurance > 0) colC.push(["健保費", p.healthInsurance]);
       if (p.pensionDeduction > 0) colC.push(["員工自提", p.pensionDeduction]);
-      // 職業工會補助費為公司補助說明，不列入應代扣
 
-      const subA = colA.reduce((s, [, v]) => s + Number(v), 0);
-      const subB = colB.reduce((s, [, v]) => s + v, 0);
-      const subC = colC.reduce((s, [, v]) => s + v, 0);
-      const finalPay = p.finalPay;
-
-      const normalPay = Math.round(p.effectiveNormalHours * p.hourlyRate);
-      const overtimePay2 = p.overtimePay;
-      const companyPensionAmt = Math.round((p.companyPensionBase * p.companyPensionRate) / 100);
-
-      const aoa: (string | number | null)[][] = [];
-      aoa.push([`耀聖藥局　${rocYear}年${month}月　薪資明細表`]);
-      aoa.push([]);
-      aoa.push([
-        `姓名：${p.name}`,
-        null,
-        `職位：${p.position || "—"}`,
-        null,
-        `入帳帳號：${p.bankAccount || "—"}`,
-        null,
-        `發薪日期：${p.payDate || "—"}`,
-      ]);
-      aoa.push([]);
-      const sectionHeaderRow = aoa.length;
-      aoa.push(["約定薪資結構", null, "非固定支付項目", null, "應代扣項目"]);
-      const colHeaderRow = aoa.length;
-      aoa.push(["項目", "金額", "項目", "金額", "項目", "金額"]);
-
-      const maxRows = Math.max(colA.length, colB.length, colC.length, 1);
-      for (let i = 0; i < maxRows; i++) {
-        aoa.push([
-          colA[i]?.[0] ?? "",
-          colA[i]?.[1] ?? "",
-          colB[i]?.[0] ?? "",
-          colB[i]?.[1] ?? "",
-          colC[i]?.[0] ?? "",
-          colC[i]?.[1] ?? "",
-        ]);
-      }
-
-      aoa.push([`小計(A)`, subA, `小計(B)`, subB, `小計(C)`, subC]);
-      aoa.push([]);
-
-      if (p.effectiveNormalHours > 0) aoa.push(["正常時數", p.effectiveNormalHours, normalPay]);
-      if (p.overtimeHours > 0) aoa.push(["額外時數", p.overtimeHours, overtimePay2]);
-      if (p.holidayOvertimeHours > 0) aoa.push(["其中國定假加班", p.holidayOvertimeHours, ""]);
-      if (p.leaveHours > 0) {
-        aoa.push(["請假時數", p.leaveHours, p.leaveDeduction > 0 ? -p.leaveDeduction : ""]);
-      }
-      aoa.push([]);
-      if (p.baseSalary > 0) aoa.push(["總計（底薪）", null, p.baseSalary]);
-      if (p.hourlyRate > 0) aoa.push(["時薪", `${p.hourlyRate} /HR`]);
-      aoa.push([]);
-
-      if (p.companyPensionRate > 0 || p.companyPensionBase > 0) {
-        aoa.push(["公司提撥退休金資訊（雇主負擔，非員工扣款）"]);
-        if (p.companyPensionRate > 0) aoa.push(["公司提撥退休金", `${p.companyPensionRate}%`]);
-        if (p.companyPensionBase > 0) aoa.push(["提撥工資級距（部分工時）", p.companyPensionBase]);
-        if (companyPensionAmt > 0) aoa.push(["提撥金額", companyPensionAmt]);
-      }
-      if (p.hourlyRate > 0) {
-        aoa.push([`時薪自 ${rocYear}/01/01 調整為 ${p.hourlyRate} 元`]);
-      }
-      if (p.unionFee > 0) {
-        aoa.push([`每月補助職業工會會費 ${p.unionFee} 元`]);
-      }
-      aoa.push([]);
-      aoa.push(["實領金額"]);
-      aoa.push(["(A)+(B)-(C) =", finalPay]);
-      aoa.push([]);
-      aoa.push(["簽收："]);
-
-      const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-      ws["!merges"] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } },
-        { s: { r: 2, c: 2 }, e: { r: 2, c: 3 } },
-        { s: { r: 2, c: 4 }, e: { r: 2, c: 6 } },
-        { s: { r: sectionHeaderRow, c: 0 }, e: { r: sectionHeaderRow, c: 1 } },
-        { s: { r: sectionHeaderRow, c: 2 }, e: { r: sectionHeaderRow, c: 3 } },
-        { s: { r: sectionHeaderRow, c: 4 }, e: { r: sectionHeaderRow, c: 5 } },
-      ];
-
-      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:G50");
-      for (let R = range.s.r; R <= range.e.r; ++R) {
-        for (let C = range.s.c; C <= range.e.c; ++C) {
-          const cell_ref = XLSX.utils.encode_cell({ r: R, c: C });
-          if (!ws[cell_ref]) ws[cell_ref] = { t: "s", v: "" };
-          if (!ws[cell_ref].s) ws[cell_ref].s = {};
-
-          ws[cell_ref].s.font = { name: "Microsoft JhengHei", sz: 11, color: { rgb: "1F2937" } };
-          ws[cell_ref].s.alignment = { vertical: "center", wrapText: true };
-          ws[cell_ref].s.border = {
-            top: { style: "thin", color: { rgb: "E5E7EB" } },
-            bottom: { style: "thin", color: { rgb: "E5E7EB" } },
-            left: { style: "thin", color: { rgb: "E5E7EB" } },
-            right: { style: "thin", color: { rgb: "E5E7EB" } },
-          };
-
-          if (R === 0) {
-            ws[cell_ref].s.font = { name: "Microsoft JhengHei", bold: true, sz: 16, color: { rgb: "0F766E" } };
-            ws[cell_ref].s.fill = { patternType: "solid", fgColor: { rgb: "ECFDF5" } };
-          }
-          if (R === sectionHeaderRow) {
-            ws[cell_ref].s.font = { name: "Microsoft JhengHei", bold: true, sz: 11, color: { rgb: "FFFFFF" } };
-            ws[cell_ref].s.fill = { patternType: "solid", fgColor: { rgb: "0F766E" } };
-            ws[cell_ref].s.alignment = { vertical: "center", horizontal: "center", wrapText: true };
-          }
-          if (R === colHeaderRow) {
-            ws[cell_ref].s.font = { name: "Microsoft JhengHei", bold: true, sz: 10, color: { rgb: "334155" } };
-            ws[cell_ref].s.fill = { patternType: "solid", fgColor: { rgb: "F1F5F9" } };
-          }
-          if (C === 1 || C === 3 || C === 5) {
-            ws[cell_ref].s.alignment = { vertical: "center", horizontal: "right", wrapText: true };
-          }
-          if (ws[cell_ref].v === "實領金額") {
-            ws[cell_ref].s.font = { name: "Microsoft JhengHei", bold: true, color: { rgb: "1D4ED8" }, sz: 12 };
-          }
-        }
-      }
-
-      // 加寬欄位，避免中文被擠壓
-      ws["!cols"] = [
-        { wch: 26 },
-        { wch: 14 },
-        { wch: 30 },
-        { wch: 14 },
-        { wch: 18 },
-        { wch: 14 },
-        { wch: 22 },
-      ];
-      ws["!rows"] = [{ hpt: 28 }];
+      const ws = buildPayslipWorksheet({
+        title: `耀聖藥局　${rocYear}年${month}月　薪資明細表`,
+        employeeName: p.name,
+        position: p.position,
+        bankAccount: p.bankAccount,
+        payDate: p.payDate || "—",
+        colA,
+        colB,
+        colC,
+        overtimeHours: p.overtimeHours,
+        overtimePay: p.overtimePay,
+        holidayOvertimeHours: p.holidayOvertimeHours,
+        leaveHours: p.leaveHours,
+        leaveDeduction: p.leaveDeduction,
+        hourlyRate: p.hourlyRate,
+        companyPensionRate: p.companyPensionRate,
+        companyPensionBase: p.companyPensionBase,
+        unionFee: p.unionFee,
+        finalPay: p.finalPay,
+      });
 
       const sheetName = p.name.substring(0, 31);
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
