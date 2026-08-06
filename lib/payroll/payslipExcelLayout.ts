@@ -208,6 +208,7 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+    { s: { r: infoRow1, c: 0 }, e: { r: infoRow1, c: 1 } },
     { s: { r: infoRow1, c: 2 }, e: { r: infoRow1, c: 3 } },
     { s: { r: infoRow1, c: 4 }, e: { r: infoRow1, c: 5 } },
     { s: { r: infoRow2, c: 0 }, e: { r: infoRow2, c: 5 } },
@@ -225,12 +226,14 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
 
   // 只有「真正有項目」的格子才畫表格線
   const itemGrids: Block[] = [
+    // 姓名／職位／發薪日／帳號：基本資料區塊
+    { r0: infoRow1, r1: infoRow2, c0: 0, c1: 5, thick: THICK },
     { r0: sectionHeaderRow, r1: mainBlockEnd, c0: 0, c1: 5, thick: THICK },
   ];
   if (hoursStart >= 0) {
     itemGrids.push({ r0: hoursStart, r1: hoursEnd, c0: 0, c1: 2, thick: THICK });
   }
-  // 公司提撥明細只包 A–B；標題列另外用外框處理，避免你選到的 C–F 空白出現格線
+  // 公司提撥明細只包 A–B；標題列另外用外框處理，避免空白欄出現格線
   if (pensionStart >= 0 && pensionEnd > pensionStart) {
     itemGrids.push({ r0: pensionStart + 1, r1: pensionEnd, c0: 0, c1: 1, thick: THICK });
   }
@@ -277,6 +280,11 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
         s.font = { name: FONT, sz: 14, bold: true, color: { rgb: "0F766E" } };
         s.fill = { patternType: "solid", fgColor: { rgb: "ECFDF5" } };
         s.alignment = { vertical: "center", horizontal: "left" };
+      }
+      // 基本資料區塊淡底，讓姓名／職位成一塊
+      if (R >= infoRow1 && R <= infoRow2) {
+        s.fill = { patternType: "solid", fgColor: { rgb: "F8FAFC" } };
+        s.font = { name: FONT, sz: 10, bold: true, color: { rgb: "334155" } };
       }
       if (R === sectionHeaderRow) {
         s.font = { name: FONT, sz: 10, bold: true, color: { rgb: "FFFFFF" } };
