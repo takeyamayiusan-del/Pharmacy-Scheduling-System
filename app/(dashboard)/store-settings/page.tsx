@@ -86,7 +86,7 @@ export default function StoreSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">店家設定</h1>
         <p className="text-sm text-gray-500 mt-1">
-          班別、預設班、功能開關與週期輪值晚班。之後多分店可各自一份設定；目前為本店共用。
+          班別、預設班、功能開關與週期輪班。之後多分店可各自一份設定；目前為本店共用。
         </p>
       </div>
 
@@ -206,7 +206,7 @@ export default function StoreSettingsPage() {
             }
           />
           <span>
-            <span className="font-medium text-gray-900">週期輪值晚班</span>
+            <span className="font-medium text-gray-900">週期輪班</span>
             <span className="block text-gray-500">
               關閉後側欄會隱藏「{draft.rotationEvening.menuLabel}」選單。
             </span>
@@ -238,7 +238,7 @@ export default function StoreSettingsPage() {
           draft.features.rotationEvening ? "" : "opacity-60"
         }`}
       >
-        <h2 className="font-semibold text-gray-900">週期輪值晚班（原禮三晚班）</h2>
+        <h2 className="font-semibold text-gray-900">週期輪班</h2>
         <p className="text-sm text-gray-500">
           可複選星期；選單名稱依店顯示。參與員工仍在「固定班表」用規則標籤勾選。
         </p>
@@ -333,7 +333,7 @@ export default function StoreSettingsPage() {
         </label>
 
         <label className="block text-sm">
-          <span className="text-gray-700">每月可休上限（空白＝自動一半無條件進位）</span>
+          <span className="text-gray-700">每月可排休上限</span>
           <input
             type="number"
             min={0}
@@ -352,6 +352,9 @@ export default function StoreSettingsPage() {
             className="mt-1 w-full border rounded-lg px-3 py-2"
             placeholder="自動"
           />
+          <span className="mt-1 block text-xs text-gray-500">
+            每人每月最多可選幾天「不輪班」。空白＝依本月輪班日數自動算一半（奇數則多一天，例如 5 天→上限 3）。填數字則用固定天數。
+          </span>
         </label>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

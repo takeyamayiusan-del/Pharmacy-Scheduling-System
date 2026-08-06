@@ -94,7 +94,7 @@ export default function WednesdayShiftsPage() {
         <div className="bg-white rounded-xl shadow-sm border p-6">
           <h1 className="text-2xl font-bold text-gray-900">{menuLabel}</h1>
           <p className="text-gray-500 mt-2">
-            本店未開放週期輪值晚班功能。店長可至「店家設定」開啟。
+            本店未開放週期輪班功能。店長可至「店家設定」開啟。
           </p>
         </div>
       </div>

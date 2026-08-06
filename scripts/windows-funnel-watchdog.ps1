@@ -86,10 +86,11 @@ if (-not $siteOk) {
 }
 
 $cashflowOk = $true
+$cashflowBootstrap = Test-Path -LiteralPath (Get-CashflowBootstrapConfigPath -ProjectRoot $ProjectRoot)
 if (Get-Command pm2 -ErrorAction SilentlyContinue) {
     $hasCashflow = ((& pm2 jlist 2>$null) | Out-String) -match '"name"\s*:\s*"cashflow"'
-    if ($hasCashflow) {
-        $cashflowOk = Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck { Test-CashflowHealthy } -WriteLog {
+    if ($hasCashflow -or $cashflowBootstrap) {
+        $cashflowOk = Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck { Test-CashflowHealthy -ProjectRoot $ProjectRoot } -WriteLog {
             param($m)
             Write-Log $m
         }
@@ -100,8 +101,19 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
 }
 
 $funnelUrl = Get-FunnelUrl
-$funnelStatus = (tailscale funnel status 2>&1 | Out-String)
-$funnelConfigured = $funnelStatus -match "Funnel on" -and $funnelStatus -match "127\.0\.0\.1:3000"
+$cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+$hasCashflowInPm2 = $false
+if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+    $hasCashflowInPm2 = ((& pm2 jlist 2>$null) | Out-String) -match '"name"\s*:\s*"cashflow"'
+}
+$expectCashflowFunnel = $hasCashflowInPm2 -or $cashflowBootstrap
+# 純文字 status 常只印 443；用 JSON 判斷雙入口，避免誤判後 reset 清掉 8443
+$funnelPharmacyOk = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
+$funnelCashflowOk = (-not $expectCashflowFunnel) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort)
+$funnelConfigured = $funnelPharmacyOk -and $funnelCashflowOk
+if (-not $funnelConfigured) {
+    Write-Log "Funnel routes incomplete pharmacyOk=$funnelPharmacyOk cashflowOk=$funnelCashflowOk (text status may hide :8443)"
+}
 $healthy = $authOk -and $siteOk -and $cashflowOk -and $funnelConfigured -and (Test-FunnelHealthy $funnelUrl)
 
 if ($healthy) {
@@ -115,9 +127,13 @@ Repair-Funnel
 
 Start-Sleep -Seconds 5
 $funnelUrl = Get-FunnelUrl
-if ($authOk -and $siteOk -and (Test-FunnelHealthy $funnelUrl)) {
+$cashflowPort2 = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+$funnelPharmacyOk2 = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
+$funnelCashflowOk2 = (-not $expectCashflowFunnel) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort2 -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort2)
+$funnelOk2 = $funnelPharmacyOk2 -and $funnelCashflowOk2
+if ($authOk -and $siteOk -and $cashflowOk -and $funnelOk2 -and (Test-FunnelHealthy $funnelUrl)) {
     Warmup-SiteRoutes -BaseUrl $funnelUrl
-    Write-Log "Repaired OK: $funnelUrl"
+    Write-Log "Repaired OK: $funnelUrl (pharmacy+cashflow funnel)"
     exit 0
 }
 

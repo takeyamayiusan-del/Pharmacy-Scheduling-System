@@ -24,8 +24,7 @@ import {
   adjustPunchSlotsForApprovedLeave,
   resolvePunchLateMinutes,
 } from "@/lib/attendance/punchLeaveAdjust";
-import { MapPin, Clock, AlertCircle, CheckCircle2, Megaphone, X } from "lucide-react";
-import { type BulletinItem } from "@/lib/context/AppContext";
+import { MapPin, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
 
 type GpsState = "loading" | "denied" | "outside" | "inside";
 
@@ -44,42 +43,11 @@ export default function PunchPage() {
     getTodayPunchRecords,
     punchRecordsReady,
     refreshTodayPunchRecords,
-    bulletinItems,
     leaveRequests,
     geofenceLocations,
   } = useApp();
 
   const [matchedLocationName, setMatchedLocationName] = useState<string | null>(null);
-
-  const [announcementModal, setAnnouncementModal] = useState<boolean>(false);
-  const [latestAnnouncement, setLatestAnnouncement] = useState<BulletinItem | null>(null);
-
-  // 檢測是否有未讀的重要公告
-  useEffect(() => {
-    if (bulletinItems.length > 0) {
-      const important = bulletinItems.find((item: BulletinItem) => item.isUrgent && item.status === "active");
-      const latest = bulletinItems[0];
-      const target = important || latest;
-      
-      if (target) {
-        const lastSeenId = localStorage.getItem("last_seen_announcement");
-        if (lastSeenId !== target.id) {
-          setLatestAnnouncement(target);
-          setAnnouncementModal(true);
-        }
-      }
-    }
-  }, [bulletinItems]);
-
-  const handleCloseAnnouncement = (shouldRedirect: boolean): void => {
-    if (latestAnnouncement) {
-      localStorage.setItem("last_seen_announcement", latestAnnouncement.id);
-    }
-    setAnnouncementModal(false);
-    if (shouldRedirect) {
-      router.push("/schedule");
-    }
-  };
 
   const [gpsState, setGpsState] = useState<GpsState>("loading");
   const [coords, setCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -410,49 +378,6 @@ export default function PunchPage() {
 
   return (
     <div className="space-y-6 max-w-lg mx-auto">
-      {/* 公告提醒 Modal */}
-      {announcementModal && latestAnnouncement && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full relative animate-in fade-in zoom-in duration-300">
-            <button
-              onClick={() => handleCloseAnnouncement(false)}
-              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
-            >
-              <X className="h-5 w-5" />
-            </button>
-            <div className="flex flex-col items-center text-center">
-              <div className={`p-3 rounded-full mb-4 ${latestAnnouncement?.isUrgent ? 'bg-amber-100' : 'bg-blue-100'}`}>
-                <Megaphone className={`h-8 w-8 ${latestAnnouncement?.isUrgent ? 'text-amber-600' : 'text-blue-600'}`} />
-              </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-2">最新公告消息</h3>
-              <p className="text-sm text-gray-500 mb-4">店鋪有新的重要公告或需求，請前往班表頁面查看詳細內容。</p>
-              
-              <div className="w-full p-4 bg-gray-50 rounded-xl mb-6 text-left border border-gray-100">
-                <p className="text-xs font-bold text-blue-600 mb-1">
-                  {latestAnnouncement.isUrgent ? "【重要】" : ""} {latestAnnouncement.title}
-                </p>
-                <p className="text-sm text-gray-700 line-clamp-2">{latestAnnouncement.content}</p>
-              </div>
-
-              <div className="flex gap-3 w-full">
-                <button
-                  onClick={() => handleCloseAnnouncement(false)}
-                  className="flex-1 py-3 px-4 border border-gray-200 text-gray-600 font-medium rounded-xl hover:bg-gray-50 transition-colors"
-                >
-                  稍後再說
-                </button>
-                <button
-                  onClick={() => handleCloseAnnouncement(true)}
-                  className="flex-1 py-3 px-4 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all active:scale-95"
-                >
-                  前往查看
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       <h2 className="text-2xl font-bold text-gray-900">上下班打卡</h2>
 
       {!punchRecordsReady && (

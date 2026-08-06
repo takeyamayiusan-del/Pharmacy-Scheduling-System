@@ -80,6 +80,6 @@ describe("store-config", () => {
   it("suggestRotationMenuLabel", () => {
     expect(suggestRotationMenuLabel([3])).toBe("禮三晚班");
     expect(suggestRotationMenuLabel([4])).toBe("週四晚班");
-    expect(suggestRotationMenuLabel([3, 4])).toBe("週期輪值晚班");
+    expect(suggestRotationMenuLabel([3, 4])).toBe("週期輪班");
   });
 });
