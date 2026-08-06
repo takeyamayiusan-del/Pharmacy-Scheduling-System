@@ -264,7 +264,13 @@ export default function LoginPopupStack() {
                 已到每月提醒時間，您尚未選擇下個月排休。建議依序完成：
               </p>
               <ol className="mt-2 text-sm text-gray-700 list-decimal list-inside space-y-1">
-                <li>先討論休假日；若撞晚班／禮三晚班，先換班</li>
+                <li>
+                  先討論休假日；若撞晚班
+                  {storeConfig.features.rotationEvening
+                    ? `／${storeConfig.rotationEvening.menuLabel}`
+                    : ""}
+                  ，先換班
+                </li>
                 <li>再到排休選擇勾選日期</li>
               </ol>
             </div>
