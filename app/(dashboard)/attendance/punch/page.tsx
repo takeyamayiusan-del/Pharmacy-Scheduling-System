@@ -24,6 +24,14 @@ import {
   adjustPunchSlotsForApprovedLeave,
   resolvePunchLateMinutes,
 } from "@/lib/attendance/punchLeaveAdjust";
+import {
+  calcOvertimeHours,
+  canChooseOvertimePay,
+  overtimeCompensationHint,
+  resolveAllowedCompensationType,
+  validateOvertimeCompensation,
+  type OvertimeCompensationType,
+} from "@/lib/attendance/overtimeCompensation";
 import { MapPin, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
 
 type GpsState = "loading" | "denied" | "outside" | "inside";
@@ -45,6 +53,7 @@ export default function PunchPage() {
     refreshTodayPunchRecords,
     leaveRequests,
     geofenceLocations,
+    addOvertimeRequest,
   } = useApp();
 
   const [matchedLocationName, setMatchedLocationName] = useState<string | null>(null);
@@ -67,6 +76,17 @@ export default function PunchPage() {
     askLeave: boolean;
     askOvertime: boolean;
   } | null>(null);
+
+  /** 超時下班：一鍵申請加班（時間已帶入，只需選補休／加班費） */
+  const [quickOvertime, setQuickOvertime] = useState<{
+    date: string;
+    startTime: string;
+    endTime: string;
+    reason: string;
+    message: string;
+  } | null>(null);
+  const [quickOtComp, setQuickOtComp] = useState<OvertimeCompensationType>("time_off");
+  const [quickOtSubmitting, setQuickOtSubmitting] = useState(false);
 
   // 無班表打卡的加班詢問 Modal
   const [noShiftOvertimeModal, setNoShiftOvertimeModal] = useState<{
@@ -249,11 +269,29 @@ export default function PunchPage() {
       });
 
       setNoShiftOvertimeModal(null);
-      setSuccessModal({
-        message: `${action === "work_in" ? "上班" : "下班"}打卡成功！今日無排班，建議申請加班。`,
-        askLeave: false,
-        askOvertime: true,
-      });
+      const punchTime = now;
+      if (action === "work_out") {
+        const lastIn = todayPunches
+          .filter((p) => p.action === "work_in")
+          .sort((a, b) => timeToMinutes(b.time) - timeToMinutes(a.time))[0];
+        setQuickOtComp("time_off");
+        setQuickOvertime({
+          date: today,
+          startTime: lastIn?.time || "",
+          endTime: punchTime,
+          reason: lastIn
+            ? `無班表加班（上班 ${lastIn.time} ～ 下班 ${punchTime}）`
+            : `無班表加班（下班打卡 ${punchTime}）`,
+          message:
+            "打卡成功！今日無排班。已帶入打卡時間，請確認起迄並選擇補休或加班費後送出。",
+        });
+      } else {
+        setSuccessModal({
+          message: "上班打卡成功！今日無排班，下班打卡後可一鍵申請加班。",
+          askLeave: false,
+          askOvertime: false,
+        });
+      }
     } catch (err) {
       alert(err instanceof Error ? err.message : "打卡失敗，請稍後再試");
     } finally {
@@ -327,14 +365,18 @@ export default function PunchPage() {
       const minutesPastEnd = minutesDiff(actual, scheduled);
       if (minutesPastEnd >= OVERTIME_REDIRECT_MINUTES) {
         try {
+          const punchTime = formatNowTime();
           await finalizePunch(
             slot,
             `加班（超過下班 ${minutesPastEnd} 分鐘）`
           );
-          setSuccessModal({
-            message: `打卡成功！已超過下班時間 ${minutesPastEnd} 分鐘，是否申請加班？`,
-            askLeave: false,
-            askOvertime: true,
+          setQuickOtComp("time_off");
+          setQuickOvertime({
+            date: today,
+            startTime: slot.scheduledTime,
+            endTime: punchTime,
+            reason: `下班打卡逾時（應下班 ${slot.scheduledTime}，實際 ${punchTime}，逾時 ${minutesPastEnd} 分鐘）`,
+            message: `打卡成功！已超過下班時間 ${minutesPastEnd} 分鐘。時間已依打卡帶入，請選擇補休或加班費後一鍵送出。`,
           });
         } catch {
           // finalizePunch 已顯示錯誤訊息
@@ -369,6 +411,66 @@ export default function PunchPage() {
       setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
     } catch {
       // finalizePunch 已顯示錯誤訊息
+    }
+  };
+
+  const quickOtPayAllowed = quickOvertime
+    ? canChooseOvertimePay(quickOvertime.startTime, quickOvertime.endTime)
+    : false;
+  const quickOtHours = quickOvertime
+    ? calcOvertimeHours(quickOvertime.startTime, quickOvertime.endTime)
+    : 0;
+
+  useEffect(() => {
+    if (quickOvertime && !quickOtPayAllowed && quickOtComp === "pay") {
+      setQuickOtComp("time_off");
+    }
+  }, [quickOvertime, quickOtPayAllowed, quickOtComp]);
+
+  const submitQuickOvertime = async () => {
+    if (!currentUser || !quickOvertime || quickOtSubmitting) return;
+    if (!quickOvertime.startTime || !quickOvertime.endTime) {
+      alert("請填寫加班起迄時間");
+      return;
+    }
+    const compensationType = resolveAllowedCompensationType(
+      quickOvertime.startTime,
+      quickOvertime.endTime,
+      quickOtComp
+    );
+    const err = validateOvertimeCompensation(
+      quickOvertime.startTime,
+      quickOvertime.endTime,
+      compensationType
+    );
+    if (err) {
+      alert(err);
+      return;
+    }
+    setQuickOtSubmitting(true);
+    try {
+      await addOvertimeRequest({
+        employeeId: currentUser.id,
+        employeeName: currentUser.name,
+        date: quickOvertime.date,
+        startTime: quickOvertime.startTime,
+        endTime: quickOvertime.endTime,
+        reason: quickOvertime.reason,
+        compensationType,
+        status: "pending",
+      });
+      setQuickOvertime(null);
+      setSuccessModal({
+        message: `加班申請已送出（${quickOvertime.startTime}–${quickOvertime.endTime}，${
+          compensationType === "pay" ? "加班費" : "補休"
+        }），等候店長審核。`,
+        askLeave: false,
+        askOvertime: false,
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "加班申請失敗");
+    } finally {
+      setQuickOtSubmitting(false);
     }
   };
 
@@ -673,6 +775,108 @@ export default function PunchPage() {
                   申請加班
                 </button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 超時下班一鍵加班申請：時間已帶入，只需選補休／加班費 */}
+      {quickOvertime && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-start gap-2">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold text-gray-900">打卡成功 · 一鍵申請加班</p>
+                <p className="text-sm text-gray-600 mt-1">{quickOvertime.message}</p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-slate-50 p-3 space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs text-gray-500">開始（應下班／上班打卡）</span>
+                  <input
+                    type="time"
+                    value={quickOvertime.startTime}
+                    onChange={(e) =>
+                      setQuickOvertime((prev) =>
+                        prev ? { ...prev, startTime: e.target.value } : prev
+                      )
+                    }
+                    className="mt-1 w-full border rounded-lg px-2 py-2 bg-white"
+                  />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-gray-500">結束（本次下班打卡）</span>
+                  <input
+                    type="time"
+                    value={quickOvertime.endTime}
+                    onChange={(e) =>
+                      setQuickOvertime((prev) =>
+                        prev ? { ...prev, endTime: e.target.value } : prev
+                      )
+                    }
+                    className="mt-1 w-full border rounded-lg px-2 py-2 bg-white"
+                  />
+                </label>
+              </div>
+              <p className="text-xs text-gray-600">
+                加班約 {quickOtHours} 小時。
+                {overtimeCompensationHint(quickOvertime.startTime, quickOvertime.endTime)}
+              </p>
+              <div>
+                <p className="text-xs text-gray-500 mb-2">補償方式</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    disabled={!quickOtPayAllowed}
+                    onClick={() => setQuickOtComp("pay")}
+                    className={`flex-1 py-2 rounded-lg border text-sm ${
+                      quickOtComp === "pay"
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white text-gray-700"
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  >
+                    加班費
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setQuickOtComp("time_off")}
+                    className={`flex-1 py-2 rounded-lg border text-sm ${
+                      quickOtComp === "time_off"
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white text-gray-700"
+                    }`}
+                  >
+                    補休
+                  </button>
+                </div>
+                {!quickOtPayAllowed && (
+                  <p className="text-[11px] text-amber-700 mt-1">
+                    超過半小時僅能選補休。
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={quickOtSubmitting}
+                onClick={() => setQuickOvertime(null)}
+                className="flex-1 py-2 border rounded-lg text-gray-700"
+              >
+                稍後再說
+              </button>
+              <button
+                type="button"
+                disabled={quickOtSubmitting}
+                onClick={() => void submitQuickOvertime()}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {quickOtSubmitting ? "送出中…" : "一鍵送出申請"}
+              </button>
             </div>
           </div>
         </div>
