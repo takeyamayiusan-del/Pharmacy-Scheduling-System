@@ -195,7 +195,7 @@ export default function BulletinBoard() {
       </div>
 
       <p className="text-xs text-gray-500 -mt-2">
-        僅手動發布才會出現在佈告欄；換班申請不會自動公告。代班需求可讓同事點選「我能代班」前往換班申請。
+        僅手動發布才會出現在佈告欄。平常換班若已指定對象，請走換班申請、不會自動公告；只有公開徵求代班時才發「代班需求」。
       </p>
 
       {showAddForm && (
