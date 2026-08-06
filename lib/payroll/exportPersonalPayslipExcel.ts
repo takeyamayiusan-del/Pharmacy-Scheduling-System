@@ -102,7 +102,7 @@ export function exportPersonalPayslipExcel(
 
   // A：約定應給（不含員工自提）
   const colA: [string, number][] = [];
-  pushIfNonZero(colA, "底薪（合約）", Number(record.baseSalary) || 0);
+  pushIfNonZero(colA, "薪資", Number(record.baseSalary) || 0);
   pushIfNonZero(colA, "職位加級", positionGrade);
   pushIfNonZero(colA, "請假扣款", -(Number(record.leaveDeduction) || 0));
   pushIfNonZero(colA, "遲到扣款", -(Number(record.tardinessDeduction) || 0));
