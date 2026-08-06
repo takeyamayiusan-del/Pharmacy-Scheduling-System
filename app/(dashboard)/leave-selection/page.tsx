@@ -211,7 +211,7 @@ export default function LeaveSelectionPage() {
           <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
           <p>• 平常大家預設都是 B 班，A 班代表全天＋晚班</p>
           <p>• 點選日期後會<strong>立即儲存</strong>，無需另外提交</p>
-          <p>• 若選到您原為全天班（含晚班）的日期，系統會提示是否發布代班公告或提出換班申請</p>
+          <p>• 若選到您原為全天班（含晚班）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
           {saturdayCount >= 5 && (
             <p className="text-purple-600 font-medium">
               • 本月有 5 個禮拜六，但每人仍最多只能排休 2 天禮拜六
@@ -355,23 +355,17 @@ export default function LeaveSelectionPage() {
               <span className="font-medium">{pendingEveningLeave.shiftLabel}</span>
               （含晚班）。若排休，建議找人代晚班。
             </p>
-            <p className="text-sm text-gray-500 mb-5">請選擇後續處理方式：</p>
+            <p className="text-sm text-gray-500 mb-5">
+              若已有指定換班對象，請用換班申請即可，不必發公告；只有需要公開徵求代班時才發布公告。
+            </p>
             <div className="flex flex-col gap-2">
               <button
                 type="button"
                 disabled={isSubmittingLeaveAction}
-                onClick={() => completeEveningLeave("bulletin")}
+                onClick={() => completeEveningLeave("swap")}
                 className="w-full px-4 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
-                排休並發布代班公告
-              </button>
-              <button
-                type="button"
-                disabled={isSubmittingLeaveAction}
-                onClick={() => completeEveningLeave("swap")}
-                className="w-full px-4 py-2.5 border-2 border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50"
-              >
-                排休並提出換班申請
+                排休並提出換班申請（指定對象）
               </button>
               <button
                 type="button"
@@ -380,6 +374,14 @@ export default function LeaveSelectionPage() {
                 className="w-full px-4 py-2.5 border rounded-lg hover:bg-gray-50 disabled:opacity-50"
               >
                 仍要排休（不公告）
+              </button>
+              <button
+                type="button"
+                disabled={isSubmittingLeaveAction}
+                onClick={() => completeEveningLeave("bulletin")}
+                className="w-full px-4 py-2.5 border-2 border-amber-200 text-amber-800 rounded-lg hover:bg-amber-50 disabled:opacity-50"
+              >
+                有需要再公告（公開徵求代班）
               </button>
               <button
                 type="button"
