@@ -47,7 +47,13 @@ export const exportPayslipPdf = async (record: PayrollRecord, employeeName: stri
       </div>`
     : "";
 
-  const row = (label: string, value: string, tone: "earn" | "deduct" | "muted" = "muted") => {
+  const row = (
+    label: string,
+    value: string,
+    tone: "earn" | "deduct" | "muted" = "muted",
+    amount?: number
+  ) => {
+    if (amount !== undefined && Math.abs(Number(amount) || 0) < 0.0001) return "";
     const color = tone === "earn" ? "#047857" : tone === "deduct" ? "#b91c1c" : "#0f172a";
     return `<tr>
       <td style="padding:11px 16px;border-bottom:1px solid #f1f5f9;color:#475569;font-size:13px;">${label}</td>
@@ -107,15 +113,16 @@ export const exportPayslipPdf = async (record: PayrollRecord, employeeName: stri
           應發項目
         </div>
         <table style="width:100%;border-collapse:collapse;">
-          ${row("底薪（合約）", `${money(base)} 元`, "earn")}
-          ${row("職位加級", `${money(positionGrade)} 元`, "earn")}
+          ${row("底薪（合約）", `${money(base)} 元`, "earn", base)}
+          ${row("職位加級", `${money(positionGrade)} 元`, "earn", positionGrade)}
           ${row(
             fullAttendance > 0 ? `固定津貼／獎金（含全勤 ${money(fullAttendance)}）` : "固定津貼／獎金",
             `${money(fixedAllowance)} 元`,
-            "earn"
+            "earn",
+            fixedAllowance
           )}
-          ${row("加班費", `${money(overtime)} 元`, "earn")}
-          ${row("其他異動加項", `${money(bonus)} 元`, "earn")}
+          ${row("加班費", `${money(overtime)} 元`, "earn", overtime)}
+          ${row("其他異動加項", `${money(bonus)} 元`, "earn", bonus)}
           <tr>
             <td style="padding:12px 16px;background:#f0fdfa;font-weight:800;font-size:13px;color:#0f766e;">應發合計</td>
             <td style="padding:12px 16px;background:#f0fdfa;text-align:right;font-weight:800;font-size:15px;color:#0f766e;font-variant-numeric:tabular-nums;">${money(totalEarnings)} 元</td>
@@ -129,11 +136,11 @@ export const exportPayslipPdf = async (record: PayrollRecord, employeeName: stri
           扣除項目
         </div>
         <table style="width:100%;border-collapse:collapse;">
-          ${row("請假扣款", `- ${money(leave)} 元`, "deduct")}
-          ${row("遲到扣款", `- ${money(tardiness)} 元`, "deduct")}
-          ${row("勞保", `- ${money(labor)} 元`, "deduct")}
-          ${row("健保", `- ${money(health)} 元`, "deduct")}
-          ${row("退休金", `- ${money(pension)} 元`, "deduct")}
+          ${row("請假扣款", `- ${money(leave)} 元`, "deduct", leave)}
+          ${row("遲到扣款", `- ${money(tardiness)} 元`, "deduct", tardiness)}
+          ${row("勞保", `- ${money(labor)} 元`, "deduct", labor)}
+          ${row("健保", `- ${money(health)} 元`, "deduct", health)}
+          ${row("員工自提", `- ${money(pension)} 元`, "deduct", pension)}
           <tr>
             <td style="padding:12px 16px;background:#fff1f2;font-weight:800;font-size:13px;color:#9f1239;">扣除合計</td>
             <td style="padding:12px 16px;background:#fff1f2;text-align:right;font-weight:800;font-size:15px;color:#9f1239;font-variant-numeric:tabular-nums;">- ${money(totalDeductions)} 元</td>

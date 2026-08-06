@@ -374,10 +374,12 @@ export default function PayrollDetailPage() {
                       應發項目
                     </h4>
                     <div className="space-y-2 pl-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">底薪（合約）</span>
-                        <span className="font-medium">${formatCurrency(selectedRecord.baseSalary)}</span>
-                      </div>
+                      {selectedRecord.baseSalary > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">底薪（合約）</span>
+                          <span className="font-medium">${formatCurrency(selectedRecord.baseSalary)}</span>
+                        </div>
+                      )}
                       {grade > 0 && (
                         <div className="flex justify-between">
                           <span className="text-gray-600">職位加級</span>
@@ -392,12 +394,14 @@ export default function PayrollDetailPage() {
                           <span className="font-medium text-green-700">+${formatCurrency(fixed)}</span>
                         </div>
                       )}
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">加班費</span>
-                        <span className="font-medium text-green-600">
-                          +${formatCurrency(selectedRecord.overtimePay)}
-                        </span>
-                      </div>
+                      {selectedRecord.overtimePay > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">加班費</span>
+                          <span className="font-medium text-green-600">
+                            +${formatCurrency(selectedRecord.overtimePay)}
+                          </span>
+                        </div>
+                      )}
                       {otherBonus > 0 && (
                         <div className="flex justify-between">
                           <span className="text-gray-600">其他加項／異動</span>
@@ -417,36 +421,46 @@ export default function PayrollDetailPage() {
                       扣除項目
                     </h4>
                     <div className="space-y-2 pl-3 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">請假扣款</span>
-                        <span className="font-medium text-red-500">
-                          -${formatCurrency(selectedRecord.leaveDeduction)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">遲到扣款</span>
-                        <span className="font-medium text-red-500">
-                          -${formatCurrency(selectedRecord.tardinessDeduction)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">勞保</span>
-                        <span className="font-medium text-red-500">
-                          -${formatCurrency(selectedRecord.laborInsurance)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">健保</span>
-                        <span className="font-medium text-red-500">
-                          -${formatCurrency(selectedRecord.healthInsurance)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-gray-600">退休金</span>
-                        <span className="font-medium text-red-500">
-                          -${formatCurrency(selectedRecord.pensionDeduction)}
-                        </span>
-                      </div>
+                      {selectedRecord.leaveDeduction > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">請假扣款</span>
+                          <span className="font-medium text-red-500">
+                            -${formatCurrency(selectedRecord.leaveDeduction)}
+                          </span>
+                        </div>
+                      )}
+                      {selectedRecord.tardinessDeduction > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">遲到扣款</span>
+                          <span className="font-medium text-red-500">
+                            -${formatCurrency(selectedRecord.tardinessDeduction)}
+                          </span>
+                        </div>
+                      )}
+                      {selectedRecord.laborInsurance > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">勞保</span>
+                          <span className="font-medium text-red-500">
+                            -${formatCurrency(selectedRecord.laborInsurance)}
+                          </span>
+                        </div>
+                      )}
+                      {selectedRecord.healthInsurance > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">健保</span>
+                          <span className="font-medium text-red-500">
+                            -${formatCurrency(selectedRecord.healthInsurance)}
+                          </span>
+                        </div>
+                      )}
+                      {selectedRecord.pensionDeduction > 0 && (
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">員工自提</span>
+                          <span className="font-medium text-red-500">
+                            -${formatCurrency(selectedRecord.pensionDeduction)}
+                          </span>
+                        </div>
+                      )}
                       <div className="flex justify-between border-t pt-2 font-semibold text-red-700">
                         <span>扣除小計</span>
                         <span>-${formatCurrency(deductSum)}</span>

@@ -645,7 +645,7 @@ export default function PayrollPage() {
         "底薪",
         "勞保費",
         "健保費",
-        "退休金",
+        "員工自提",
         "請假扣款",
         "加班費",
         "遲到扣款",
@@ -667,7 +667,7 @@ export default function PayrollPage() {
         p.baseSalary,
         -p.laborInsurance,
         -p.healthInsurance,
-        -p.pensionDeduction,
+        p.pensionDeduction > 0 ? -p.pensionDeduction : "",
         p.leaveDeduction > 0 ? -p.leaveDeduction : 0,
         p.overtimePay,
         p.tardinessDeduction > 0 ? -p.tardinessDeduction : 0,
@@ -690,157 +690,169 @@ export default function PayrollPage() {
     const wb = XLSX.utils.book_new();
 
     payrollData.forEach((p) => {
-      // 準備三欄資料：A=約定薪資結構, B=非固定支付, C=應代扣
-      const colA: [string, number | string][] = [
-        ["薪資", p.baseSalary],
-        ["退休金提撥", -p.pensionDeduction],
-      ];
+      // A=約定薪資結構（應給／結構內扣），B=非固定，C=應代扣（含員工自提）
+      // 金額為 0 的項目不列出
+      const colA: [string, number | string][] = [];
+      if (p.baseSalary > 0) colA.push(["薪資", p.baseSalary]);
+      if ((p.positionGradeTotal ?? 0) > 0) colA.push(["職位加級", p.positionGradeTotal]);
       if (p.leaveDeduction > 0) colA.push(["請假扣款", -p.leaveDeduction]);
       if (p.tardinessDeduction > 0) colA.push(["遲到扣款", -p.tardinessDeduction]);
 
-      const colB: [string, number][] = p.adjustments
-        .filter((a) => !a.isDeduction)
-        .map((a) => [a.label, a.amount]);
+      const colB: [string, number][] = [];
+      if ((p.fixedAllowanceTotal ?? 0) > 0) {
+        const fa = p.fullAttendancePay ?? 0;
+        colB.push([
+          fa > 0 ? `固定津貼／獎金（含全勤 ${fa}）` : "固定津貼／獎金",
+          p.fixedAllowanceTotal,
+        ]);
+      }
+      p.adjustments
+        .filter((a) => !a.isDeduction && a.amount > 0)
+        .forEach((a) => colB.push([a.label, a.amount]));
       if (p.overtimePay > 0) colB.push(["加班費", p.overtimePay]);
-      const deductAdj = p.adjustments.filter((a) => a.isDeduction);
-      if (deductAdj.length > 0) deductAdj.forEach((a) => colB.push([a.label, -a.amount]));
+      p.adjustments
+        .filter((a) => a.isDeduction && a.amount > 0)
+        .forEach((a) => colB.push([a.label, -a.amount]));
 
-      const colC: [string, number][] = [
-        ["勞保費", p.laborInsurance],
-        ["健保費", p.healthInsurance],
-      ];
-      // 職業工會補助費為公司補助說明，不列入應代扣（與畫面實領公式一致）
+      const colC: [string, number][] = [];
+      if (p.laborInsurance > 0) colC.push(["勞保費", p.laborInsurance]);
+      if (p.healthInsurance > 0) colC.push(["健保費", p.healthInsurance]);
+      if (p.pensionDeduction > 0) colC.push(["員工自提", p.pensionDeduction]);
+      // 職業工會補助費為公司補助說明，不列入應代扣
 
       const subA = colA.reduce((s, [, v]) => s + Number(v), 0);
       const subB = colB.reduce((s, [, v]) => s + v, 0);
       const subC = colC.reduce((s, [, v]) => s + v, 0);
-      // 與薪資頁 finalPay 一致，避免匯出與畫面不符
       const finalPay = p.finalPay;
 
-      // 正常工時薪資 = 有效正常時數 × 時薪（設定為 0 時改用出勤匯入時數）
       const normalPay = Math.round(p.effectiveNormalHours * p.hourlyRate);
-      // 加班金額改用費率公式結果（與畫面一致）
       const overtimePay2 = p.overtimePay;
-      // 公司提撥退休金金額
-      const companyPensionAmt = Math.round(p.companyPensionBase * p.companyPensionRate / 100);
+      const companyPensionAmt = Math.round((p.companyPensionBase * p.companyPensionRate) / 100);
 
-      // ── 用 aoa（array of arrays）手工排版 ──
       const aoa: (string | number | null)[][] = [];
-
-      // 標題
-      aoa.push(["耀聖藥局", null, null, `${rocYear}年`, null, `${month}月 薪資明細表`]);
+      aoa.push([`耀聖藥局　${rocYear}年${month}月　薪資明細表`]);
       aoa.push([]);
       aoa.push([
         `姓名：${p.name}`,
         null,
-        `職位：${p.position}`,
+        `職位：${p.position || "—"}`,
         null,
-        `入帳帳號：${p.bankAccount}`,
+        `入帳帳號：${p.bankAccount || "—"}`,
         null,
-        `發薪日期：${p.payDate}`,
+        `發薪日期：${p.payDate || "—"}`,
       ]);
       aoa.push([]);
-
-      // 三欄表頭
+      const sectionHeaderRow = aoa.length;
       aoa.push(["約定薪資結構", null, "非固定支付項目", null, "應代扣項目"]);
+      const colHeaderRow = aoa.length;
       aoa.push(["項目", "金額", "項目", "金額", "項目", "金額"]);
 
-      // 三欄內容（取最大行數對齊）
-      const maxRows = Math.max(colA.length, colB.length, colC.length);
+      const maxRows = Math.max(colA.length, colB.length, colC.length, 1);
       for (let i = 0; i < maxRows; i++) {
         aoa.push([
-          colA[i]?.[0] ?? "", colA[i]?.[1] ?? "",
-          colB[i]?.[0] ?? "", colB[i]?.[1] ?? "",
-          colC[i]?.[0] ?? "", colC[i]?.[1] ?? "",
+          colA[i]?.[0] ?? "",
+          colA[i]?.[1] ?? "",
+          colB[i]?.[0] ?? "",
+          colB[i]?.[1] ?? "",
+          colC[i]?.[0] ?? "",
+          colC[i]?.[1] ?? "",
         ]);
       }
 
-      // 小計列
       aoa.push([`小計(A)`, subA, `小計(B)`, subB, `小計(C)`, subC]);
       aoa.push([]);
 
-      // 工時區塊（左側）— 時數由班表／請假／加班／國定假彙總匯入
-      aoa.push(["正常時數", p.effectiveNormalHours, normalPay]);
-      aoa.push(["額外時數", p.overtimeHours, overtimePay2]);
-      if (p.holidayOvertimeHours > 0) {
-        aoa.push(["其中國定假加班", p.holidayOvertimeHours, ""]);
-      }
+      if (p.effectiveNormalHours > 0) aoa.push(["正常時數", p.effectiveNormalHours, normalPay]);
+      if (p.overtimeHours > 0) aoa.push(["額外時數", p.overtimeHours, overtimePay2]);
+      if (p.holidayOvertimeHours > 0) aoa.push(["其中國定假加班", p.holidayOvertimeHours, ""]);
       if (p.leaveHours > 0) {
-        aoa.push(["請假時數", p.leaveHours, p.leaveDeduction > 0 ? -p.leaveDeduction : 0]);
+        aoa.push(["請假時數", p.leaveHours, p.leaveDeduction > 0 ? -p.leaveDeduction : ""]);
       }
       aoa.push([]);
-      aoa.push(["總計", null, p.baseSalary]);
-      aoa.push([`時薪：`, `${p.hourlyRate} /HR`]);
+      if (p.baseSalary > 0) aoa.push(["總計（底薪）", null, p.baseSalary]);
+      if (p.hourlyRate > 0) aoa.push(["時薪", `${p.hourlyRate} /HR`]);
       aoa.push([]);
 
-      // 公司提撥退休金（右側，放在備註行）
-      aoa.push(["公司提撥退休金資訊："]);
-      aoa.push([`公司提撥退休金`, `${p.companyPensionRate}%`]);
-      aoa.push([`提撥工資級距 部分工時`, p.companyPensionBase]);
-      aoa.push([`提撥金額`, companyPensionAmt]);
+      if (p.companyPensionRate > 0 || p.companyPensionBase > 0) {
+        aoa.push(["公司提撥退休金資訊（雇主負擔，非員工扣款）"]);
+        if (p.companyPensionRate > 0) aoa.push(["公司提撥退休金", `${p.companyPensionRate}%`]);
+        if (p.companyPensionBase > 0) aoa.push(["提撥工資級距（部分工時）", p.companyPensionBase]);
+        if (companyPensionAmt > 0) aoa.push(["提撥金額", companyPensionAmt]);
+      }
       if (p.hourlyRate > 0) {
-        aoa.push([`時薪自 ${rocYear}/01/01 調整為${p.hourlyRate}元`]);
+        aoa.push([`時薪自 ${rocYear}/01/01 調整為 ${p.hourlyRate} 元`]);
       }
       if (p.unionFee > 0) {
-        aoa.push([`每月補助職業工會會費${p.unionFee}元`]);
+        aoa.push([`每月補助職業工會會費 ${p.unionFee} 元`]);
       }
       aoa.push([]);
-
-      // 實領金額
       aoa.push(["實領金額"]);
-      aoa.push([`(A)+(B)-(C) =`, finalPay]);
+      aoa.push(["(A)+(B)-(C) =", finalPay]);
       aoa.push([]);
       aoa.push(["簽收："]);
 
       const ws = XLSX.utils.aoa_to_sheet(aoa);
-      
-      // 設定合併單元格以美化標題與區塊
+
       ws["!merges"] = [
-        { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } }, // 標題
-        { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } }, // 姓名
-        { s: { r: 2, c: 2 }, e: { r: 2, c: 3 } }, // 職位
-        { s: { r: 2, c: 4 }, e: { r: 2, c: 6 } }, // 帳號
-        { s: { r: 4, c: 0 }, e: { r: 4, c: 1 } }, // A區表頭
-        { s: { r: 4, c: 2 }, e: { r: 4, c: 3 } }, // B區表頭
-        { s: { r: 4, c: 4 }, e: { r: 4, c: 5 } }, // C區表頭
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
+        { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } },
+        { s: { r: 2, c: 2 }, e: { r: 2, c: 3 } },
+        { s: { r: 2, c: 4 }, e: { r: 2, c: 6 } },
+        { s: { r: sectionHeaderRow, c: 0 }, e: { r: sectionHeaderRow, c: 1 } },
+        { s: { r: sectionHeaderRow, c: 2 }, e: { r: sectionHeaderRow, c: 3 } },
+        { s: { r: sectionHeaderRow, c: 4 }, e: { r: sectionHeaderRow, c: 5 } },
       ];
 
-      // 由於 xlsx 基礎版不支援 .s 樣式對象，
-      // 如果您需要框線，必須確保在環境中安裝了 xlsx-js-style 或類似庫。
-      // 這裡我保留邏輯，並確保基礎結構清晰。
-      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:G50');
+      const range = XLSX.utils.decode_range(ws["!ref"] || "A1:G50");
       for (let R = range.s.r; R <= range.e.r; ++R) {
         for (let C = range.s.c; C <= range.e.c; ++C) {
           const cell_ref = XLSX.utils.encode_cell({ r: R, c: C });
-          if (!ws[cell_ref]) ws[cell_ref] = { t: 's', v: '' };
+          if (!ws[cell_ref]) ws[cell_ref] = { t: "s", v: "" };
           if (!ws[cell_ref].s) ws[cell_ref].s = {};
-          
+
+          ws[cell_ref].s.font = { name: "Microsoft JhengHei", sz: 11, color: { rgb: "1F2937" } };
+          ws[cell_ref].s.alignment = { vertical: "center", wrapText: true };
           ws[cell_ref].s.border = {
-            top: { style: 'thin' },
-            bottom: { style: 'thin' },
-            left: { style: 'thin' },
-            right: { style: 'thin' }
+            top: { style: "thin", color: { rgb: "E5E7EB" } },
+            bottom: { style: "thin", color: { rgb: "E5E7EB" } },
+            left: { style: "thin", color: { rgb: "E5E7EB" } },
+            right: { style: "thin", color: { rgb: "E5E7EB" } },
           };
-          
-          if (R === 4 || R === 5) {
-            ws[cell_ref].s.font = { bold: true };
-            ws[cell_ref].s.fill = { fgColor: { rgb: "F2F2F2" } };
+
+          if (R === 0) {
+            ws[cell_ref].s.font = { name: "Microsoft JhengHei", bold: true, sz: 16, color: { rgb: "0F766E" } };
+            ws[cell_ref].s.fill = { patternType: "solid", fgColor: { rgb: "ECFDF5" } };
           }
-          
-          if (C === 1 || C === 3 || C === 5) ws[cell_ref].s.border.right = { style: 'medium' };
-          if (C === 0 || C === 2 || C === 4) ws[cell_ref].s.border.left = { style: 'medium' };
-          if (R === 0) ws[cell_ref].s.font = { bold: true, sz: 14 };
-          if (ws[cell_ref].v === "實領金額") ws[cell_ref].s.font = { bold: true, color: { rgb: "0000FF" } };
+          if (R === sectionHeaderRow) {
+            ws[cell_ref].s.font = { name: "Microsoft JhengHei", bold: true, sz: 11, color: { rgb: "FFFFFF" } };
+            ws[cell_ref].s.fill = { patternType: "solid", fgColor: { rgb: "0F766E" } };
+            ws[cell_ref].s.alignment = { vertical: "center", horizontal: "center", wrapText: true };
+          }
+          if (R === colHeaderRow) {
+            ws[cell_ref].s.font = { name: "Microsoft JhengHei", bold: true, sz: 10, color: { rgb: "334155" } };
+            ws[cell_ref].s.fill = { patternType: "solid", fgColor: { rgb: "F1F5F9" } };
+          }
+          if (C === 1 || C === 3 || C === 5) {
+            ws[cell_ref].s.alignment = { vertical: "center", horizontal: "right", wrapText: true };
+          }
+          if (ws[cell_ref].v === "實領金額") {
+            ws[cell_ref].s.font = { name: "Microsoft JhengHei", bold: true, color: { rgb: "1D4ED8" }, sz: 12 };
+          }
         }
       }
 
-      // 欄寬
+      // 加寬欄位，避免中文被擠壓
       ws["!cols"] = [
-        { wch: 16 }, { wch: 12 }, { wch: 16 }, { wch: 12 },
-        { wch: 16 }, { wch: 12 }, { wch: 18 },
+        { wch: 26 },
+        { wch: 14 },
+        { wch: 30 },
+        { wch: 14 },
+        { wch: 18 },
+        { wch: 14 },
+        { wch: 22 },
       ];
+      ws["!rows"] = [{ hpt: 28 }];
 
-      // Sheet 名稱：姓名（避免特殊字元問題，最多 31 字）
       const sheetName = p.name.substring(0, 31);
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     });
@@ -1154,7 +1166,7 @@ export default function PayrollPage() {
                           ["底薪（合約）", "baseSalary", "number"],
                           ["勞保費（員工）", "laborInsurance", "number"],
                           ["健保費（員工）", "healthInsurance", "number"],
-                          ["退休金提撥（員工6%）", "pensionDeduction", "number"],
+                          ["員工自提（勞退自提，屬扣項）", "pensionDeduction", "number"],
                           ["職位", "position", "text"],
                           ["入帳帳號（如：合庫 0251-9880-17402）", "bankAccount", "text"],
                           ["時薪（元/HR）", "hourlyRate", "number"],
@@ -1339,7 +1351,7 @@ export default function PayrollPage() {
                       "固定項目",
                       "勞保",
                       "健保",
-                      "退休金",
+                      "員工自提",
                       "請假扣",
                       "加班費",
                       "遲到扣",
@@ -1406,9 +1418,15 @@ export default function PayrollPage() {
                               "—"
                             )}
                           </td>
-                          <td className="px-3 py-3 text-right text-red-600">-${p.laborInsurance.toLocaleString()}</td>
-                          <td className="px-3 py-3 text-right text-red-600">-${p.healthInsurance.toLocaleString()}</td>
-                          <td className="px-3 py-3 text-right text-red-600">-${p.pensionDeduction.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-right text-red-600">
+                            {p.laborInsurance > 0 ? `-$${p.laborInsurance.toLocaleString()}` : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-right text-red-600">
+                            {p.healthInsurance > 0 ? `-$${p.healthInsurance.toLocaleString()}` : "—"}
+                          </td>
+                          <td className="px-3 py-3 text-right text-red-600">
+                            {p.pensionDeduction > 0 ? `-$${p.pensionDeduction.toLocaleString()}` : "—"}
+                          </td>
                           <td className="px-3 py-3 text-right text-red-600">{p.leaveDeduction > 0 ? `-$${p.leaveDeduction}` : "—"}</td>
                           <td className="px-3 py-3 text-right text-green-600">{p.overtimePay > 0 ? `+$${p.overtimePay}` : "—"}</td>
                           <td className="px-3 py-3 text-right text-red-600">{p.tardinessDeduction > 0 ? `-$${p.tardinessDeduction}` : "—"}</td>
