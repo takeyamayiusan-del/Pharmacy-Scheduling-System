@@ -1,0 +1,113 @@
+# 離機前全面健康檢查：本機雙站 + PM2 + Funnel 雙入口 + 排程
+#   powershell -ExecutionPolicy Bypass -File scripts\windows-health-check.ps1
+
+$ErrorActionPreference = "Continue"
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $ProjectRoot
+. (Join-Path $PSScriptRoot "windows-site-common.ps1")
+
+$fail = 0
+function Ok([string]$m) { Write-Host "  OK  $m" -ForegroundColor Green }
+function Bad([string]$m) { Write-Host "  FAIL $m" -ForegroundColor Red; $script:fail++ }
+function Info([string]$m) { Write-Host "  --  $m" -ForegroundColor DarkGray }
+
+Write-Host "=== Dual-site health check ===" -ForegroundColor Cyan
+Write-Host "Project: $ProjectRoot"
+Write-Host ""
+
+Write-Host "[1] PM2 apps" -ForegroundColor Cyan
+if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+    Bad "pm2 not found"
+} else {
+    $pharmacyOnline = Get-Pm2Online -Name "pharmacy-web"
+    $cashflowOnline = Get-Pm2Online -Name "cashflow"
+    if ($pharmacyOnline) { Ok "pharmacy-web online" } else { Bad "pharmacy-web not online" }
+    if ($cashflowOnline) { Ok "cashflow online" } else { Bad "cashflow not online (register with windows-register-cashflow.ps1)" }
+}
+
+Write-Host ""
+Write-Host "[2] Local HTTP" -ForegroundColor Cyan
+$cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+if (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8) {
+    Ok "pharmacy http://127.0.0.1:3000/login"
+} else {
+    Bad "pharmacy :3000/login not 200"
+}
+if (Test-HttpOk -Uri "http://127.0.0.1:$cashflowPort/" -TimeoutSec 8) {
+    Ok "cashflow http://127.0.0.1:$cashflowPort/"
+} else {
+    Bad "cashflow :$cashflowPort/ not healthy"
+}
+
+Write-Host ""
+Write-Host "[3] Port ownership (no zombie on :3000)" -ForegroundColor Cyan
+if (Test-PharmacyWebPm2OwningPort) {
+    Ok "PM2 pharmacy-web owns :3000 (wrapper/child tree OK)"
+} else {
+    Bad "PM2 does not own :3000 — risk of EADDRINUSE restart loop"
+    $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
+    $listenPid = Get-PortListenerPid -Port 3000
+    Info ("pm2 pid={0} listen pid={1}" -f $(if ($pm2Pid) { $pm2Pid } else { "?" }), $(if ($listenPid) { $listenPid } else { "?" }))
+}
+
+Write-Host ""
+Write-Host "[4] Cashflow bootstrap (for auto-recover)" -ForegroundColor Cyan
+$bootPath = Get-CashflowBootstrapConfigPath -ProjectRoot $ProjectRoot
+if (Test-Path -LiteralPath $bootPath) {
+    Ok "bootstrap exists: $bootPath"
+    try {
+        $cfg = (Get-Content -LiteralPath $bootPath -Raw) | ConvertFrom-Json
+        Info ("script={0} cwd={1} port={2}" -f $cfg.script, $cfg.cwd, $(if ($cfg.port) { $cfg.port } else { 5000 }))
+    } catch {
+        Bad "bootstrap JSON invalid"
+    }
+} else {
+    Bad "missing data\ops\cashflow-bootstrap.json — watchdog cannot re-register cashflow after wipe"
+}
+
+Write-Host ""
+Write-Host "[5] Tailscale Funnel dual routes" -ForegroundColor Cyan
+$phOk = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
+$cfOk = (Test-FunnelProxyConfigured -LocalPort $cashflowPort -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort)
+if ($phOk) { Ok "funnel 443 → 3000" } else { Bad "funnel missing pharmacy (443→3000)" }
+if ($cfOk) { Ok "funnel 8443 → $cashflowPort" } else { Bad "funnel missing cashflow (8443→$cashflowPort) — old watchdog may have wiped it" }
+Info "Verify with browser (not curl) for :8443"
+
+Write-Host ""
+Write-Host "[6] Scheduled tasks (boot + watchdog)" -ForegroundColor Cyan
+foreach ($name in @("YaoshengPharmacyStart", "YaoshengPharmacyWatchdog")) {
+    $t = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
+    if (-not $t) {
+        Bad "$name not registered"
+        continue
+    }
+    if ($t.State -eq "Disabled") {
+        Bad "$name is Disabled — enable after new scripts are deployed"
+    } else {
+        Ok ("{0} state={1}" -f $name, $t.State)
+    }
+}
+
+Write-Host ""
+Write-Host "[7] Auth (optional but needed for pharmacy login)" -ForegroundColor Cyan
+if (Test-HttpOk -Uri "http://127.0.0.1:54321/auth/v1/health" -TimeoutSec 5) {
+    Ok "Supabase Auth :54321"
+} else {
+    Bad "Auth :54321 unhealthy — login may fail until Docker/supabase is up"
+}
+
+Write-Host ""
+if ($fail -eq 0) {
+    Write-Host "ALL CHECKS PASSED. Safe to leave." -ForegroundColor Green
+    Write-Host "Updates:" -ForegroundColor Yellow
+    Write-Host "  pharmacy:  powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1"
+    Write-Host "  cashflow:  powershell -ExecutionPolicy Bypass -File scripts\windows-update-cashflow.ps1"
+    exit 0
+}
+
+Write-Host ("FAILED checks: {0}" -f $fail) -ForegroundColor Red
+Write-Host "Fix with:" -ForegroundColor Yellow
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-one-time-ops-setup.ps1"
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-register-cashflow.ps1 -ScriptPath `"C:\cash-flow-app\backend\index.js`" -Cwd `"C:\cash-flow-app`" -Port 5000"
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1"
+exit 1
