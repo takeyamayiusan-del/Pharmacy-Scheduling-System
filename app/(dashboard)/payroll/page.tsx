@@ -183,7 +183,12 @@ export default function PayrollPage() {
     formulaType: "fixed_amount" as PayrollFormulaType,
     percentage: 0,
   });
-  const [newAdjForm, setNewAdjForm] = useState({ userId: "", label: "", amount: 0, isDeduction: false });
+  const [newAdjForm, setNewAdjForm] = useState({
+    userIds: [] as string[],
+    label: "",
+    amount: 0,
+    isDeduction: false,
+  });
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
   const displayEmployees = employees.filter((e) => e.role !== "owner");
@@ -626,13 +631,47 @@ export default function PayrollPage() {
   // ─── Adjustments ───────────────────────────────────────────────────────────
 
   const addAdjustment = async () => {
-    if (!newAdjForm.userId || !newAdjForm.label) return;
-    const { data } = await supabase.from("payroll_adjustments").insert({
-      user_id: newAdjForm.userId, year, month, label: newAdjForm.label,
-      amount: newAdjForm.amount, is_deduction: newAdjForm.isDeduction, created_by: currentUser?.id,
-    }).select().single();
-    if (data) setAdjustments((prev) => [...prev, { id: data.id, userId: data.user_id, label: data.label, amount: Number(data.amount), isDeduction: data.is_deduction }]);
-    setNewAdjForm({ userId: "", label: "", amount: 0, isDeduction: false });
+    if (newAdjForm.userIds.length === 0 || !newAdjForm.label.trim()) {
+      alert("請至少選擇一位員工，並填寫項目名稱。");
+      return;
+    }
+    const rows = newAdjForm.userIds.map((userId) => ({
+      user_id: userId,
+      year,
+      month,
+      label: newAdjForm.label.trim(),
+      amount: newAdjForm.amount,
+      is_deduction: newAdjForm.isDeduction,
+      created_by: currentUser?.id,
+    }));
+    const { data, error } = await supabase.from("payroll_adjustments").insert(rows).select();
+    if (error) {
+      alert("新增異動失敗：" + error.message);
+      return;
+    }
+    if (data?.length) {
+      setAdjustments((prev) => [
+        ...prev,
+        ...data.map((row) => ({
+          id: row.id,
+          userId: row.user_id,
+          label: row.label,
+          amount: Number(row.amount),
+          isDeduction: row.is_deduction,
+        })),
+      ]);
+    }
+    setNewAdjForm({ userIds: [], label: "", amount: 0, isDeduction: false });
+  };
+
+  const toggleAdjEmployee = (userId: string) => {
+    setNewAdjForm((prev) => {
+      const exists = prev.userIds.includes(userId);
+      return {
+        ...prev,
+        userIds: exists ? prev.userIds.filter((id) => id !== userId) : [...prev.userIds, userId],
+      };
+    });
   };
 
   const deleteAdjustment = async (id: string) => {
@@ -1167,18 +1206,88 @@ export default function PayrollPage() {
                 })}
               </div>
             )}
-            <div className="flex flex-wrap gap-2 pt-3 border-t">
-              <select value={newAdjForm.userId} onChange={(e) => setNewAdjForm({ ...newAdjForm, userId: e.target.value })} className="border rounded px-3 py-1.5 text-sm">
-                <option value="">選擇員工</option>
-                {displayEmployees.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-              </select>
-              <input type="text" placeholder="項目名稱（如：業績獎金）" value={newAdjForm.label} onChange={(e) => setNewAdjForm({ ...newAdjForm, label: e.target.value })} className="border rounded px-3 py-1.5 text-sm w-44" />
-              <input type="number" placeholder="金額" value={newAdjForm.amount} onChange={(e) => setNewAdjForm({ ...newAdjForm, amount: Number(e.target.value) })} className="border rounded px-3 py-1.5 text-sm w-24" />
-              <select value={newAdjForm.isDeduction ? "true" : "false"} onChange={(e) => setNewAdjForm({ ...newAdjForm, isDeduction: e.target.value === "true" })} className="border rounded px-3 py-1.5 text-sm">
-                <option value="false">加項（獎金）</option>
-                <option value="true">扣款</option>
-              </select>
-              <button onClick={addAdjustment} className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded">新增</button>
+            <div className="pt-3 border-t space-y-3">
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <label className="text-xs text-gray-500">選擇員工（可複選）</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setNewAdjForm({
+                          ...newAdjForm,
+                          userIds: displayEmployees.map((e) => e.id),
+                        })
+                      }
+                      className="text-xs text-sky-700 hover:underline"
+                    >
+                      全選
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNewAdjForm({ ...newAdjForm, userIds: [] })}
+                      className="text-xs text-gray-500 hover:underline"
+                    >
+                      清除
+                    </button>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2 rounded-lg border bg-slate-50 p-2">
+                  {displayEmployees.map((e) => {
+                    const checked = newAdjForm.userIds.includes(e.id);
+                    return (
+                      <label
+                        key={e.id}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-sm cursor-pointer ${
+                          checked
+                            ? "bg-blue-600 text-white border-blue-600"
+                            : "bg-white text-gray-700 border-gray-200 hover:border-blue-300"
+                        }`}
+                      >
+                        <input
+                          type="checkbox"
+                          className="sr-only"
+                          checked={checked}
+                          onChange={() => toggleAdjEmployee(e.id)}
+                        />
+                        {e.name}
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">
+                  已選 {newAdjForm.userIds.length} 人；新增後每人各一筆相同項目與金額
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="text"
+                  placeholder="項目名稱（如：業績獎金）"
+                  value={newAdjForm.label}
+                  onChange={(e) => setNewAdjForm({ ...newAdjForm, label: e.target.value })}
+                  className="border rounded px-3 py-1.5 text-sm w-44"
+                />
+                <input
+                  type="number"
+                  placeholder="金額"
+                  value={newAdjForm.amount}
+                  onChange={(e) => setNewAdjForm({ ...newAdjForm, amount: Number(e.target.value) })}
+                  className="border rounded px-3 py-1.5 text-sm w-24"
+                />
+                <select
+                  value={newAdjForm.isDeduction ? "true" : "false"}
+                  onChange={(e) =>
+                    setNewAdjForm({ ...newAdjForm, isDeduction: e.target.value === "true" })
+                  }
+                  className="border rounded px-3 py-1.5 text-sm"
+                >
+                  <option value="false">加項（獎金）</option>
+                  <option value="true">扣款</option>
+                </select>
+                <button onClick={addAdjustment} className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded">
+                  新增
+                </button>
+              </div>
             </div>
           </div>
 
