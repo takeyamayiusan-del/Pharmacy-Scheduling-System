@@ -176,7 +176,8 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   const netValueRow = aoa.length;
   aoa.push(["(A)+(B)-(C) =", input.finalPay]);
   aoa.push([]);
-  aoa.push(["簽收："]);
+  const signRow = aoa.length;
+  aoa.push(["簽收：", "______________________________", null, null, null, null]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> = [
@@ -235,6 +236,10 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
         const left = C === 0 ? THICK_NET : THIN;
         const right = C === 5 ? THICK_NET : THIN;
         border = cellBorder(top, bottom, left, right);
+      }
+      // 簽名長底線
+      if (R === signRow && C === 1) {
+        border = cellBorder(THIN, THICK, THIN, THIN);
       }
 
       const s: CellStyle = {
