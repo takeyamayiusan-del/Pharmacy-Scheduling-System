@@ -519,14 +519,39 @@ function Ensure-PharmacyWebPm2Registered {
     return $true
 }
 
+function Test-ProcessInTree {
+    param(
+        [int]$AncestorPid,
+        [int]$CandidatePid
+    )
+
+    if ($AncestorPid -le 0 -or $CandidatePid -le 0) { return $false }
+    if ($AncestorPid -eq $CandidatePid) { return $true }
+
+    $current = $CandidatePid
+    for ($i = 0; $i -lt 12; $i++) {
+        $proc = Get-CimInstance Win32_Process -Filter "ProcessId=$current" -ErrorAction SilentlyContinue
+        if (-not $proc) { return $false }
+        $parent = 0
+        if (-not [int]::TryParse([string]$proc.ParentProcessId, [ref]$parent) -or $parent -le 0) {
+            return $false
+        }
+        if ($parent -eq $AncestorPid) { return $true }
+        if ($parent -eq $current) { return $false }
+        $current = $parent
+    }
+    return $false
+}
+
 function Test-PharmacyWebPm2OwningPort {
     if (-not (Get-Pm2Online -Name "pharmacy-web")) { return $false }
 
     $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
     $listenPid = Get-PortListenerPid -Port 3000
     if (-not $listenPid) { return $false }
-    if ($pm2Pid -and ($pm2Pid -ne $listenPid)) { return $false }
-    return $true
+    if (-not $pm2Pid) { return $false }
+    # wrapper 啟動 next：聽埠的是子進程，不可要求 PID 完全相等
+    return (Test-ProcessInTree -AncestorPid $pm2Pid -CandidatePid $listenPid)
 }
 
 function Wait-PharmacyWebHealthy {

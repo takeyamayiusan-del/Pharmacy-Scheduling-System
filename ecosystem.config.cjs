@@ -13,6 +13,8 @@ module.exports = {
       min_uptime: "5s",
       env: {
         NODE_ENV: "production",
+        // 強制 3000，避免 shell／系統 PORT=5000（現金帳）污染排班站
+        PORT: "3000",
       },
     },
   ],
