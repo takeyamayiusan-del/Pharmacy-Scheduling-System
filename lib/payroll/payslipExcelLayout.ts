@@ -53,14 +53,15 @@ function applyA5Print(ws: WorkSheet) {
     paperSize: 11,
     orientation: "portrait",
     fitToWidth: 1,
-    fitToHeight: 1,
+    fitToHeight: false,
     fitToPage: true,
+    scale: 100,
   };
   sheet["!margins"] = {
-    left: 0.35,
-    right: 0.35,
-    top: 0.35,
-    bottom: 0.35,
+    left: 0.2,
+    right: 0.2,
+    top: 0.2,
+    bottom: 0.2,
     header: 0.15,
     footer: 0.15,
   };
@@ -91,14 +92,14 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   const aoa: (string | number | null)[][] = [];
   aoa.push([input.title]);
   aoa.push([]);
-  // 表頭兩列，限制在 A–F（A5 寬度），發薪日往中間欄位擺放
+  // 表頭兩列，限制在 A–F（A5 寬度）
   const infoRow1 = aoa.length;
   aoa.push([
     `姓名：${input.employeeName}`,
+    null,
     `職位：${input.position || "—"}`,
+    null,
     `發薪日期：${input.payDate || "—"}`,
-    null,
-    null,
     null,
   ]);
   const infoRow2 = aoa.length;
@@ -183,6 +184,7 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   const merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
     { s: { r: infoRow1, c: 2 }, e: { r: infoRow1, c: 3 } },
+    { s: { r: infoRow1, c: 4 }, e: { r: infoRow1, c: 5 } },
     { s: { r: infoRow2, c: 0 }, e: { r: infoRow2, c: 5 } },
     { s: { r: sectionHeaderRow, c: 0 }, e: { r: sectionHeaderRow, c: 1 } },
     { s: { r: sectionHeaderRow, c: 2 }, e: { r: sectionHeaderRow, c: 3 } },
@@ -288,14 +290,27 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     }
   }
 
-  // A5 直式可容納寬度（約 6 欄）；發薪日放 C–D
+  // 整張薪資單外框（包含簽名區）粗線包覆
+  for (let R = range.s.r; R <= range.e.r; R++) {
+    for (let C = range.s.c; C <= range.e.c; C++) {
+      const ref = XLSX.utils.encode_cell({ r: R, c: C });
+      const cell = ws[ref];
+      if (!cell?.s?.border) continue;
+      if (R === range.s.r) cell.s.border.top = THICK;
+      if (R === range.e.r) cell.s.border.bottom = THICK;
+      if (C === range.s.c) cell.s.border.left = THICK;
+      if (C === range.e.c) cell.s.border.right = THICK;
+    }
+  }
+
+  // A5 直式可容納寬度（約 6 欄）
   ws["!cols"] = [
-    { wch: 14 },
+    { wch: 13 },
+    { wch: 12 },
+    { wch: 13 },
+    { wch: 11 },
     { wch: 12 },
     { wch: 11 },
-    { wch: 16 },
-    { wch: 10 },
-    { wch: 10 },
   ];
   ws["!rows"] = [{ hpt: 24 }, { hpt: 6 }, { hpt: 18 }, { hpt: 18 }];
   applyA5Print(ws);
