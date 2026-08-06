@@ -75,7 +75,6 @@ function applyA5Print(ws: WorkSheet) {
     horizontalCentered: true,
     gridLines: false,
   };
-  // 隱藏 Excel 格線，避免區塊外看起來像表格
   sheet["!sheetViews"] = [{ showGridLines: false }];
 }
 
@@ -98,8 +97,8 @@ function blockBorder(b: Block, R: number, C: number): CellStyle["border"] {
 
 /**
  * 建立 A5 薪資明細表
- * - 只有粗線區塊才有表格線
- * - 區塊外白底、無格線
+ * - 只有「有項目」的表格區才有格線
+ * - 空白欄／空白列無格線
  * - 整張外框粗線包覆
  */
 export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
@@ -204,7 +203,6 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   aoa.push(["(A)+(B)-(C) =", input.finalPay]);
   aoa.push([]);
   const signRow = aoa.length;
-  // 簽名只靠底線（合併格），不要再放底線字元，避免雙線
   aoa.push(["簽收：", "", null, null, null, null]);
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
@@ -216,25 +214,26 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     { s: { r: sectionHeaderRow, c: 0 }, e: { r: sectionHeaderRow, c: 1 } },
     { s: { r: sectionHeaderRow, c: 2 }, e: { r: sectionHeaderRow, c: 3 } },
     { s: { r: sectionHeaderRow, c: 4 }, e: { r: sectionHeaderRow, c: 5 } },
-    // 簽名長底線：B–F 合併
     { s: { r: signRow, c: 1 }, e: { r: signRow, c: 5 } },
+    { s: { r: netLabelRow, c: 0 }, e: { r: netLabelRow, c: 5 } },
+    { s: { r: netValueRow, c: 0 }, e: { r: netValueRow, c: 5 } },
   ];
   if (pensionStart >= 0) {
     merges.push({ s: { r: pensionStart, c: 0 }, e: { r: pensionStart, c: 5 } });
   }
-  merges.push({ s: { r: netLabelRow, c: 0 }, e: { r: netLabelRow, c: 5 } });
   ws["!merges"] = merges;
 
-  const blocks: Block[] = [
+  // 只有「真正有項目」的格子才畫表格線
+  const itemGrids: Block[] = [
     { r0: sectionHeaderRow, r1: mainBlockEnd, c0: 0, c1: 5, thick: THICK },
   ];
   if (hoursStart >= 0) {
-    blocks.push({ r0: hoursStart, r1: hoursEnd, c0: 0, c1: 2, thick: THICK });
+    itemGrids.push({ r0: hoursStart, r1: hoursEnd, c0: 0, c1: 2, thick: THICK });
   }
-  if (pensionStart >= 0) {
-    blocks.push({ r0: pensionStart, r1: pensionEnd, c0: 0, c1: 5, thick: THICK });
+  // 公司提撥明細只包 A–B；標題列另外用外框處理，避免你選到的 C–F 空白出現格線
+  if (pensionStart >= 0 && pensionEnd > pensionStart) {
+    itemGrids.push({ r0: pensionStart + 1, r1: pensionEnd, c0: 0, c1: 1, thick: THICK });
   }
-  blocks.push({ r0: netLabelRow, r1: netValueRow, c0: 0, c1: 5, thick: THICK_NET });
 
   const range = XLSX.utils.decode_range(ws["!ref"] || "A1:F40");
   for (let R = range.s.r; R <= range.e.r; R++) {
@@ -243,17 +242,28 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
       if (!ws[ref]) ws[ref] = { t: "s", v: "" };
       const cell = ws[ref];
 
-      const block = inBlock(blocks, R, C);
-      // 區塊外：白底、無格線；區塊內才有表格線
-      let border = block ? blockBorder(block, R, C) : noBorder();
+      let border = noBorder();
+      const grid = inBlock(itemGrids, R, C);
+      if (grid) border = blockBorder(grid, R, C);
 
-      // 簽名：僅一條長底線（無上下左右框，避免雙線）
+      // 公司提撥標題：整列外框，內部不畫細線
+      if (pensionStart >= 0 && R === pensionStart && C <= 5) {
+        border = cellBorder(THICK, THICK, C === 0 ? THICK : NONE, C === 5 ? THICK : NONE);
+      }
+
+      // 實領：合併列只留粗外框
+      if ((R === netLabelRow || R === netValueRow) && C <= 5) {
+        border = cellBorder(
+          R === netLabelRow ? THICK_NET : NONE,
+          R === netValueRow ? THICK_NET : NONE,
+          C === 0 ? THICK_NET : NONE,
+          C === 5 ? THICK_NET : NONE
+        );
+      }
+
+      // 簽名：一條底線
       if (R === signRow) {
-        if (C === 0) {
-          border = noBorder();
-        } else {
-          border = cellBorder(NONE, THICK, NONE, NONE);
-        }
+        border = C === 0 ? noBorder() : cellBorder(NONE, THICK, NONE, NONE);
       }
 
       const s: CellStyle = {
@@ -293,12 +303,12 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
       if (R === netValueRow) {
         s.font = { name: FONT, sz: 12, bold: true, color: { rgb: "0F766E" } };
         s.fill = { patternType: "solid", fgColor: { rgb: "ECFDF5" } };
+        s.alignment = { vertical: "center", horizontal: "left" };
       }
       if (R === signRow) {
-        s.alignment = { vertical: "bottom", horizontal: C === 0 ? "left" : "left" };
+        s.alignment = { vertical: "bottom", horizontal: "left" };
       }
-      // 金額欄靠右（僅區塊內）
-      if (block && (C === 1 || C === 3 || C === 5)) {
+      if (grid && (C === 1 || C === 3 || C === 5)) {
         s.alignment = { ...(s.alignment || {}), horizontal: "right", vertical: "center" };
       }
 
@@ -306,7 +316,7 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     }
   }
 
-  // 整張薪資單外框粗線（覆蓋外緣）
+  // 整張薪資單最外圍粗框
   for (let R = range.s.r; R <= range.e.r; R++) {
     for (let C = range.s.c; C <= range.e.c; C++) {
       const ref = XLSX.utils.encode_cell({ r: R, c: C });
@@ -320,7 +330,6 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     }
   }
 
-  // A5 直式拉滿可用寬度（約 6 欄）
   ws["!cols"] = [
     { wch: 18 },
     { wch: 14 },
