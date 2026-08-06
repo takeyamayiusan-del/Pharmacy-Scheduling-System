@@ -52,7 +52,7 @@ export type StoreConfig = {
   /** 週六未設固定班時的預設班 */
   defaultSaturdayShift: StoreShiftCode;
   features: {
-    /** 週期輪值晚班（原「禮三晚班」） */
+    /** 週期輪班（原「禮三晚班」） */
     rotationEvening: boolean;
     /** 平日不排休規則 */
     weekdayOffRule: boolean;
@@ -299,8 +299,8 @@ export function suggestRotationMenuLabel(weekdays: number[]): string {
     if (d === 3) return "禮三晚班";
     return `週${weekdayLabel(d)}晚班`;
   }
-  if (weekdays.length === 0) return "輪值晚班";
-  return "週期輪值晚班";
+  if (weekdays.length === 0) return "輪班";
+  return "週期輪班";
 }
 
 export function isRotationEveningDay(

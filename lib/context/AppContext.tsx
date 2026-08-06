@@ -1921,7 +1921,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const toggleWednesdayOff = async (employeeId: string, date: string) => {
     const emp = employees.find((e) => e.id === employeeId);
     if (!storeConfig.features.rotationEvening)
-      return { success: false, message: "本店未開放週期輪值晚班功能" };
+      return { success: false, message: "本店未開放週期輪班功能" };
     if (!emp?.isWednesdayRotation)
       return { success: false, message: "此員工未設定輪值晚班規則" };
     if (!isRotationEveningDay(date, storeConfig)) {
