@@ -54,11 +54,20 @@ export default function OvertimePage() {
   useEffect(() => {
     const date = searchParams.get("date");
     const reason = searchParams.get("reason");
-    if (date || reason) {
-      setFormData(prev => ({
+    const startTime = searchParams.get("start");
+    const endTime = searchParams.get("end");
+    if (date || reason || startTime || endTime) {
+      setFormData((prev) => ({
         ...prev,
         date: date || prev.date,
-        reason: reason || prev.reason
+        reason: reason || prev.reason,
+        startTime: startTime || prev.startTime,
+        endTime: endTime || prev.endTime,
+        compensationType: resolveAllowedCompensationType(
+          startTime || prev.startTime,
+          endTime || prev.endTime,
+          prev.compensationType
+        ),
       }));
       setShowForm(true);
     }

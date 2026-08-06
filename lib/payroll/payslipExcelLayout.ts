@@ -198,9 +198,10 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
 
   aoa.push([]);
   const netLabelRow = aoa.length;
-  aoa.push(["實領金額"]);
+  aoa.push(["實領金額（總薪資）"]);
   const netValueRow = aoa.length;
-  aoa.push(["(A)+(B)-(C) =", input.finalPay]);
+  // 公式與金額分欄：不可整列合併，否則金額會被蓋掉
+  aoa.push(["(A)+(B)-(C) = 總薪資", null, null, null, input.finalPay, null]);
   aoa.push([]);
   const signRow = aoa.length;
   aoa.push(["簽收：", "", null, null, null, null]);
@@ -217,7 +218,8 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     { s: { r: sectionHeaderRow, c: 4 }, e: { r: sectionHeaderRow, c: 5 } },
     { s: { r: signRow, c: 1 }, e: { r: signRow, c: 5 } },
     { s: { r: netLabelRow, c: 0 }, e: { r: netLabelRow, c: 5 } },
-    { s: { r: netValueRow, c: 0 }, e: { r: netValueRow, c: 5 } },
+    { s: { r: netValueRow, c: 0 }, e: { r: netValueRow, c: 3 } },
+    { s: { r: netValueRow, c: 4 }, e: { r: netValueRow, c: 5 } },
   ];
   if (pensionStart >= 0) {
     merges.push({ s: { r: pensionStart, c: 0 }, e: { r: pensionStart, c: 5 } });
@@ -254,11 +256,14 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
         border = cellBorder(THICK, THICK, C === 0 ? THICK : NONE, C === 5 ? THICK : NONE);
       }
 
-      // 實領：合併列只留粗外框
-      if ((R === netLabelRow || R === netValueRow) && C <= 5) {
+      // 實領／總薪資：標題列與公式列外框；公式左、金額右
+      if (R === netLabelRow && C <= 5) {
+        border = cellBorder(THICK_NET, NONE, C === 0 ? THICK_NET : NONE, C === 5 ? THICK_NET : NONE);
+      }
+      if (R === netValueRow && C <= 5) {
         border = cellBorder(
-          R === netLabelRow ? THICK_NET : NONE,
-          R === netValueRow ? THICK_NET : NONE,
+          NONE,
+          THICK_NET,
           C === 0 ? THICK_NET : NONE,
           C === 5 ? THICK_NET : NONE
         );
@@ -311,7 +316,10 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
       if (R === netValueRow) {
         s.font = { name: FONT, sz: 12, bold: true, color: { rgb: "0F766E" } };
         s.fill = { patternType: "solid", fgColor: { rgb: "ECFDF5" } };
-        s.alignment = { vertical: "center", horizontal: "left" };
+        s.alignment = {
+          vertical: "center",
+          horizontal: C >= 4 ? "right" : "left",
+        };
       }
       if (R === signRow) {
         s.alignment = { vertical: "bottom", horizontal: "left" };
