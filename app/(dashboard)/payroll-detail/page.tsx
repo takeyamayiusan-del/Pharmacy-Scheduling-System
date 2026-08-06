@@ -13,7 +13,6 @@ type SalaryMeta = {
   bankAccount: string;
   payDate: string;
   hourlyRate: number;
-  normalHours: number;
   companyPensionRate: number;
   companyPensionBase: number;
   unionFee: number;
@@ -89,7 +88,6 @@ export default function PayrollDetailPage() {
           bankAccount: cfg.bank_account ?? "",
           payDate: cfg.pay_date ?? "",
           hourlyRate: Number(cfg.hourly_rate ?? 0),
-          normalHours: Number(cfg.normal_hours ?? 0),
           companyPensionRate: Number(cfg.company_pension_rate ?? 6),
           companyPensionBase: Number(cfg.company_pension_base ?? 0),
           unionFee: Number(cfg.union_fee ?? 0),
@@ -133,7 +131,6 @@ export default function PayrollDetailPage() {
         bankAccount: salaryMeta?.bankAccount,
         payDate: salaryMeta?.payDate || "隔月5日",
         hourlyRate: salaryMeta?.hourlyRate,
-        normalHours: salaryMeta?.normalHours,
         companyPensionRate: salaryMeta?.companyPensionRate,
         companyPensionBase: salaryMeta?.companyPensionBase,
         unionFee: salaryMeta?.unionFee,

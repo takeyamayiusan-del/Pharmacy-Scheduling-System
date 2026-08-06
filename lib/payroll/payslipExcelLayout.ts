@@ -73,6 +73,7 @@ function applyA5Print(ws: WorkSheet) {
   };
   sheet["!printOptions"] = {
     horizontalCentered: true,
+    gridLines: false,
   };
   // 隱藏 Excel 格線，避免區塊外看起來像表格
   sheet["!sheetViews"] = [{ showGridLines: false }];
@@ -319,15 +320,16 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     }
   }
 
+  // A5 直式拉滿可用寬度（約 6 欄）
   ws["!cols"] = [
-    { wch: 13 },
-    { wch: 12 },
-    { wch: 13 },
-    { wch: 11 },
-    { wch: 12 },
-    { wch: 11 },
+    { wch: 18 },
+    { wch: 14 },
+    { wch: 20 },
+    { wch: 14 },
+    { wch: 16 },
+    { wch: 14 },
   ];
-  ws["!rows"] = [{ hpt: 24 }, { hpt: 6 }, { hpt: 18 }, { hpt: 18 }];
+  ws["!rows"] = [{ hpt: 26 }, { hpt: 6 }, { hpt: 20 }, { hpt: 18 }];
   applyA5Print(ws);
   return ws;
 }

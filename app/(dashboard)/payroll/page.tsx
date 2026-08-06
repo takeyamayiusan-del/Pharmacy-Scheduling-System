@@ -335,8 +335,7 @@ export default function PayrollPage() {
       const holidayOvertimeHours = attendanceHours.holidayOvertimeHours;
       const overtimeHours = Math.round((overtimeAppHours + holidayOvertimeHours) * 100) / 100;
       const workHours = attendanceHours.workHours;
-      const effectiveNormalHours =
-        cfg.normalHours > 0 ? cfg.normalHours : workHours;
+      const effectiveNormalHours = workHours;
 
       const tardinessMinutes = effectiveTardinessRecords
         .filter((r) => r.employeeId === emp.id && isDateInMonth(r.date, year, month))
@@ -518,7 +517,6 @@ export default function PayrollPage() {
       position: salaryForm.position,
       bank_account: salaryForm.bankAccount,
       hourly_rate: salaryForm.hourlyRate,
-      normal_hours: salaryForm.normalHours,
       company_pension_rate: salaryForm.companyPensionRate,
       company_pension_base: salaryForm.companyPensionBase,
       pay_date: salaryForm.payDate,
@@ -1069,7 +1067,6 @@ export default function PayrollPage() {
                           ["職位", "position", "text"],
                           ["入帳帳號（如：合庫 0251-9880-17402）", "bankAccount", "text"],
                           ["時薪（元/HR）", "hourlyRate", "number"],
-                          ["本月正常時數", "normalHours", "number"],
                           ["公司提撥比率（%）", "companyPensionRate", "number"],
                           ["提撥工資級距", "companyPensionBase", "number"],
                           ["發薪日期（如：115/05/05）", "payDate", "text"],
@@ -1098,29 +1095,6 @@ export default function PayrollPage() {
                         />
 
                         <div className="col-span-2 md:col-span-4 flex flex-wrap gap-2 pt-2 items-center">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const hours = computeMonthlyAttendanceHours({
-                                employeeId: emp.id,
-                                year,
-                                month,
-                                getShiftForDate,
-                                getHolidayInfo,
-                                shiftTimeConfig,
-                                leaveRequests,
-                                overtimeRequests,
-                              });
-                              if (hours.workHours <= 0) {
-                                alert("此月份尚無班表應出勤時數可匯入。");
-                                return;
-                              }
-                              setSalaryForm({ ...salaryForm, normalHours: hours.workHours });
-                            }}
-                            className="px-3 py-2 border text-sm rounded text-emerald-700 border-emerald-200 bg-emerald-50"
-                          >
-                            匯入本月出勤時數
-                          </button>
                           <button
                             type="button"
                             onClick={() => {
@@ -1278,9 +1252,6 @@ export default function PayrollPage() {
                           </td>
                           <td className="px-3 py-3 text-right tabular-nums">
                             <div>{p.workHours > 0 ? p.workHours : "—"}</div>
-                            {p.normalHours > 0 && p.normalHours !== p.workHours ? (
-                              <div className="text-[10px] text-gray-400">設定 {p.normalHours}</div>
-                            ) : null}
                           </td>
                           <td className="px-3 py-3 text-right tabular-nums">
                             {p.leaveHours > 0 ? p.leaveHours : "—"}

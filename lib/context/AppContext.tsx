@@ -3616,22 +3616,48 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       is_published: true,
       published_at: now
     }).eq("id", id);
-    
-    // 找出該筆記錄的員工資訊
-    const record = payrollRecords.find(r => r.id === id);
+
+    // 優先用本機快取；若剛 upsert 尚未進 state，改從 DB 讀取以免漏通知
+    let record = payrollRecords.find((r) => r.id === id);
+    if (!record) {
+      const { data } = await supabase.from("payroll_records").select("*").eq("id", id).maybeSingle();
+      if (data) {
+        record = {
+          id: String(data.id),
+          userId: String(data.user_id),
+          year: Number(data.year),
+          month: Number(data.month),
+          baseSalary: Number(data.base_salary),
+          laborInsurance: Number(data.labor_insurance),
+          healthInsurance: Number(data.health_insurance),
+          pensionDeduction: Number(data.pension_deduction),
+          leaveDeduction: Number(data.leave_deduction),
+          overtimePay: Number(data.overtime_pay),
+          tardinessDeduction: Number(data.tardiness_deduction),
+          bonusTotal: Number(data.bonus_total),
+          positionGradeTotal: Number(data.position_grade_total ?? 0),
+          fixedAllowanceTotal: Number(data.fixed_allowance_total ?? 0),
+          fullAttendancePay: Number(data.full_attendance_pay ?? 0),
+          finalPay: Number(data.final_pay),
+          note: data.note ? String(data.note) : undefined,
+          isPublished: true,
+          publishedAt: now,
+          createdAt: String(data.created_at),
+        };
+      }
+    }
+
     if (record) {
       await insertNotification({
         recipientId: record.userId,
         type: "success",
         title: "薪資單已發布",
-        body: `您的 ${record.year} 年 ${record.month} 月薪資單已發布，請前往首頁查看。`,
+        body: `您的 ${record.year} 年 ${record.month} 月薪資單已發布，請前往「薪資查詢」查看。`,
         relatedId: record.id,
-        relatedType: "payroll"
+        relatedType: "payroll",
       });
+      await loadPayrollRecords(record.year, record.month);
     }
-    
-    // 重新加載資料（假設我們還在當前選擇的年月）
-    if (record) await loadPayrollRecords(record.year, record.month);
   };
 
   const unpublishPayrollRecord = async (id: string): Promise<void> => {
