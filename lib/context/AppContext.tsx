@@ -62,6 +62,15 @@ import {
   type HolidayOneClickMode,
   type HolidayWorkShiftChoice,
 } from "@/lib/schedule/holidayOneClick";
+import {
+  defaultStoreConfig,
+  getMonthRotationDates,
+  isRotationEveningDay,
+  parseStoreConfig,
+  resolveRotationOffLimit,
+  STORE_CONFIG_SETTING_ID,
+  type StoreConfig,
+} from "@/lib/store-config";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -73,8 +82,9 @@ export type Employee = {
   password?: string;
   hireDate: string;               // 入職日期
   endDate?: string | null;        // 到期日（含當日）；空=持續在職
-  isWednesdayRotation?: boolean;  // 禮拜三晚班輪值
-  isWeekdayOffRule?: boolean;     // 平日不排班規則
+  /** 參與週期輪值晚班（DB: is_wednesday_rotation，語意已泛化） */
+  isWednesdayRotation?: boolean;
+  isWeekdayOffRule?: boolean;     // 平日不排休規則
 };
 
 export type ShiftType = "A" | "B" | "C" | "D" | "E" | "X";
@@ -359,19 +369,13 @@ export const countSaturdaysInMonth = (year: number, month: number): number => {
   return count;
 };
 
+/** @deprecated 請改用 getMonthRotationDates + storeConfig — 保留 export 相容舊測試 */
+export const getMonthWednesdays = (year: number, month: number) =>
+  getMonthRotationDates(year, month, [3]);
+
 const isInMonth = (dateStr: string, year: number, month: number) => {
   const date = new Date(dateStr);
   return date.getFullYear() === year && date.getMonth() + 1 === month;
-};
-
-const getMonthWednesdays = (year: number, month: number) => {
-  const dates: string[] = [];
-  const daysInMonth = new Date(year, month, 0).getDate();
-  for (let day = 1; day <= daysInMonth; day += 1) {
-    const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    if (isWednesday(dateStr)) dates.push(dateStr);
-  }
-  return dates;
 };
 
 const normalizeFixedShifts = (shifts: FixedShift[]) => {
@@ -428,6 +432,12 @@ interface AppContextType {
   getWednesdayOffLimit: (year: number, month: number) => number;
   toggleWednesdayOff: (employeeId: string, date: string) => Promise<{ success: boolean; message?: string }>;
   isWednesdayOff: (employeeId: string, date: string) => boolean;
+  /** 店家設定（班別／預設班／輪值晚班等） */
+  storeConfig: StoreConfig;
+  loadStoreConfig: () => Promise<void>;
+  saveStoreConfig: (next: StoreConfig) => Promise<void>;
+  /** 該日是否為店家設定的輪值晚班日 */
+  isRotationEveningDate: (dateStr: string) => boolean;
   getLeaveSummary: (employeeId: string, year: number, month: number) => LeaveSummary;
   toggleLeaveDate: (employeeId: string, date: string) => { success: boolean; message?: string };
   isLeaveMonthLocked: (year: number, month: number) => boolean;
@@ -575,6 +585,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     X: { label: "休假", displayText: "X", bgColor: "#e2e8f0", textColor: "#334155", borderColor: "#94a3b8" },
   });
   const [wednesdayNightShifts, setWednesdayNightShifts] = useState<WednesdayNightShift[]>([]);
+  const [storeConfig, setStoreConfig] = useState<StoreConfig>(() => defaultStoreConfig());
 
   // ─── Load data from Supabase ────────────────────────────────────────────────
 
@@ -984,6 +995,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGeofenceLocations(parseGeofenceSettings(data?.value ?? null));
   }, [supabase]);
 
+  const loadStoreConfig = useCallback(async () => {
+    const { data, error } = await supabase
+      .from("app_settings")
+      .select("value")
+      .eq("id", STORE_CONFIG_SETTING_ID)
+      .maybeSingle();
+    if (error) {
+      console.error("loadStoreConfig:", error);
+      setStoreConfig(defaultStoreConfig());
+      return;
+    }
+    setStoreConfig(parseStoreConfig(data?.value ?? null));
+  }, [supabase]);
+
+  const saveStoreConfig = async (next: StoreConfig) => {
+    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
+      throw new Error("僅店長或老闆可調整店家設定");
+    }
+    const normalized = parseStoreConfig(next);
+    const { error } = await supabase.from("app_settings").upsert({
+      id: STORE_CONFIG_SETTING_ID,
+      value: normalized,
+      updated_by: currentUser.id,
+      updated_at: new Date().toISOString(),
+    });
+    if (error) throw new Error(error.message || "儲存店家設定失敗");
+    setStoreConfig(normalized);
+
+    // 同步班別顯示名稱到 shift_time_config（班表圖例／固定班表）
+    setShiftDisplayConfig((prev) => {
+      const merged = { ...prev };
+      for (const shift of normalized.shifts) {
+        if (!merged[shift.code]) continue;
+        merged[shift.code] = { ...merged[shift.code], label: shift.name };
+      }
+      return merged;
+    });
+    await Promise.all(
+      normalized.shifts.map((shift) => {
+        const prev = shiftDisplayConfig[shift.code];
+        if (!prev) return Promise.resolve();
+        return supabase.from("shift_time_config").upsert(
+          {
+            shift_code: shift.code,
+            display_label: shift.name,
+            display_text: prev.displayText,
+            bg_color: prev.bgColor,
+            text_color: prev.textColor,
+            border_color: prev.borderColor,
+          },
+          { onConflict: "shift_code" }
+        );
+      })
+    );
+  };
+
+  const isRotationEveningDate = useCallback(
+    (dateStr: string) => isRotationEveningDay(dateStr, storeConfig),
+    [storeConfig]
+  );
+
   const saveGeofenceLocations = async (locations: GeofenceLocation[]) => {
     if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
       throw new Error("僅店長或老闆可調整打卡圍籬");
@@ -1275,6 +1347,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               loadBulletinItems(),
               loadHolidays(),
               loadGeofenceConfig(),
+              loadStoreConfig(),
               loadAnnualLeaveConfigs(new Date().getFullYear()),
               loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
             ]).catch((e) => console.error("[initAuth] background load error:", e));
@@ -1343,6 +1416,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 loadBulletinItems(),
                 loadHolidays(),
                 loadGeofenceConfig(),
+                loadStoreConfig(),
                 loadAnnualLeaveConfigs(new Date().getFullYear()),
                 loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
               ]).catch((e) => console.error("[SIGNED_IN] background load error:", e));
@@ -1361,7 +1435,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadTodayPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks, loadHolidays, loadGeofenceConfig]);
+  }, [supabase, loadEmployees, loadLeaveRequests, loadCompLeaveLedger, loadSwapRequests, loadOvertimeRequests, loadTardinessRecords, loadPunchRecords, loadTodayPunchRecords, loadNotifications, loadScheduleOverrides, loadLeaveSelections, loadFixedShifts, loadShiftTimeConfig, loadWednesdayOffSelections, loadLeaveMonthLocks, loadHolidays, loadGeofenceConfig, loadStoreConfig]);
 
   // ─── Auth functions ──────────────────────────────────────────────────────────
 
@@ -1498,39 +1572,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const emp = employees.find((e) => e.id === employeeId);
     if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
 
-    const isWednesdayRotation = emp?.isWednesdayRotation ?? false;
+    const isRotationParticipant = emp?.isWednesdayRotation ?? false;
     const dayOfWeek = getLocalDayOfWeek(date);
     const fixedShift = fixedShifts.find(
       (s) => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek
     );
 
-    // 禮拜六：優先套用固定班（含休假 X）；未設定才預設 C
+    // 禮拜六：優先套用固定班（含休假 X）；未設定才用店家預設
     if (isSaturday(date)) {
-      return fixedShift?.shift ?? "C";
+      return fixedShift?.shift ?? storeConfig.defaultSaturdayShift;
     }
 
-    if (isWednesday(date) && isWednesdayRotation) {
+    if (isRotationEveningDay(date, storeConfig) && isRotationParticipant) {
       const rotationEmployees = employees.filter(
         (e) => e.isWednesdayRotation && isEmployeeActiveOnDate(e, date)
       );
-      if (rotationEmployees.length === 0) return "B";
+      const onDuty = storeConfig.rotationEvening.onDutyShift;
+      const offDuty = storeConfig.rotationEvening.offDutyShift;
+      if (rotationEmployees.length === 0) return offDuty;
       if (rotationEmployees.length === 1) {
-        return employeeId === rotationEmployees[0].id ? "A" : "B";
+        return employeeId === rotationEmployees[0].id ? onDuty : offDuty;
       }
       const offEmployees = rotationEmployees.filter((e) =>
         (wednesdayOffSelections[e.id] ?? []).includes(date)
       );
-      const onDutyEmployees = rotationEmployees.filter((e) =>
-        !(wednesdayOffSelections[e.id] ?? []).includes(date)
+      const onDutyEmployees = rotationEmployees.filter(
+        (e) => !(wednesdayOffSelections[e.id] ?? []).includes(date)
       );
-      if (offEmployees.length === rotationEmployees.length || onDutyEmployees.length === rotationEmployees.length) {
-        return "B";
+      if (
+        offEmployees.length === rotationEmployees.length ||
+        onDutyEmployees.length === rotationEmployees.length
+      ) {
+        return offDuty;
       }
       const isOnDuty = onDutyEmployees.some((e) => e.id === employeeId);
-      return isOnDuty ? "A" : "B";
+      return isOnDuty ? onDuty : offDuty;
     }
 
-    return fixedShift?.shift ?? "B";
+    return fixedShift?.shift ?? storeConfig.defaultWeekdayShift;
   };
 
   const getBaseShiftForDate = (date: string, employeeId: string): ShiftType => {
@@ -1833,20 +1912,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const getWednesdayOffDates = (employeeId: string, year: number, month: number) =>
     (wednesdayOffSelections[employeeId] ?? []).filter((d) => isInMonth(d, year, month));
 
-  const getWednesdayOffLimit = (year: number, month: number) => {
-    const totalWednesdays = getMonthWednesdays(year, month).length;
-    return Math.ceil(totalWednesdays / 2);
-  };
+  const getWednesdayOffLimit = (year: number, month: number) =>
+    resolveRotationOffLimit(year, month, storeConfig);
 
   const isWednesdayOff = (employeeId: string, date: string) =>
     (wednesdayOffSelections[employeeId] ?? []).includes(date);
 
   const toggleWednesdayOff = async (employeeId: string, date: string) => {
     const emp = employees.find((e) => e.id === employeeId);
+    if (!storeConfig.features.rotationEvening)
+      return { success: false, message: "本店未開放週期輪值晚班功能" };
     if (!emp?.isWednesdayRotation)
-      return { success: false, message: "此員工未設定禮拜三晚班輪值規則" };
-    if (!isWednesday(date))
-      return { success: false, message: "只能設定禮拜三的晚班排休" };
+      return { success: false, message: "此員工未設定輪值晚班規則" };
+    if (!isRotationEveningDay(date, storeConfig)) {
+      const days = storeConfig.rotationEvening.weekdays
+        .map((d) => `禮拜${["日", "一", "二", "三", "四", "五", "六"][d]}`)
+        .join("、");
+      return { success: false, message: `只能設定${days}的晚班排休` };
+    }
 
     const year = new Date(date).getFullYear();
     const month = new Date(date).getMonth() + 1;
@@ -1861,7 +1944,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .eq("user_id", employeeId)
         .eq("date", date);
       if (error) {
-        console.error("刪除禮拜三排休記錄失敗:", error);
+        console.error("刪除輪值晚班排休記錄失敗:", error);
         return { success: false, message: "刪除失敗，請重試" };
       }
       // 等待成功後才更新本地狀態，確保打卡頁面能取得最新資料
@@ -1874,14 +1957,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const offLimit = getWednesdayOffLimit(year, month);
     if (selectedDates.length >= offLimit)
-      return { success: false, message: `本月最多只能選擇 ${offLimit} 個禮拜三不輪晚班` };
+      return {
+        success: false,
+        message: `本月最多只能選擇 ${offLimit} 個輪值日不輪晚班`,
+      };
 
     // 先寫入資料庫，等待完成後再更新本地狀態
     const { error } = await supabase
       .from("wednesday_off_selections")
       .insert({ user_id: employeeId, date });
     if (error) {
-      console.error("新增禮拜三排休記錄失敗:", error);
+      console.error("新增輪值晚班排休記錄失敗:", error);
       return { success: false, message: "新增失敗，請重試" };
     }
     // 等待成功後才更新本地狀態
@@ -3701,6 +3787,10 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         getWednesdayOffLimit,
         toggleWednesdayOff,
         isWednesdayOff,
+        storeConfig,
+        loadStoreConfig,
+        saveStoreConfig,
+        isRotationEveningDate,
         getLeaveSummary,
         toggleLeaveDate,
         isLeaveMonthLocked,

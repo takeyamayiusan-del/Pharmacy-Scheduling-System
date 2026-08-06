@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useApp } from "@/lib/context/AppContext";
 
 /**
  * Soft guidance only: does not block leave selection.
- * Recommended ops order when evening/Wednesday coverage conflicts exist.
+ * Recommended ops order when evening/rotation coverage conflicts exist.
  */
 export function LeaveOrderGuide({
   compact = false,
@@ -13,6 +14,10 @@ export function LeaveOrderGuide({
   compact?: boolean;
   className?: string;
 }) {
+  const { storeConfig } = useApp();
+  const rotationOn = storeConfig.features.rotationEvening;
+  const menuLabel = storeConfig.rotationEvening.menuLabel;
+
   if (compact) {
     return (
       <div className={`text-sm text-gray-700 space-y-2 ${className}`}>
@@ -20,15 +25,21 @@ export function LeaveOrderGuide({
         <ol className="list-decimal list-inside space-y-1 text-gray-700">
           <li>先私下／群組討論誰要休哪天</li>
           <li>
-            若會撞到<strong>晚班／禮三晚班</strong>，先完成{" "}
+            若會撞到
+            <strong>晚班{rotationOn ? `／${menuLabel}` : ""}</strong>
+            ，先完成{" "}
             <Link href="/applications/shift-swap" className="text-blue-700 underline">
               換班
             </Link>
-            （必要時先看{" "}
-            <Link href="/wednesday-shifts" className="text-blue-700 underline">
-              禮三晚班
-            </Link>
-            ）
+            {rotationOn && (
+              <>
+                （必要時先看{" "}
+                <Link href="/wednesday-shifts" className="text-blue-700 underline">
+                  {menuLabel}
+                </Link>
+                ）
+              </>
+            )}
           </li>
           <li>
             換班談妥後，再到{" "}
@@ -52,13 +63,17 @@ export function LeaveOrderGuide({
         <li>先討論／確認大家想休的日期（尤其含晚班的日子）</li>
         <li>
           有衝突先去{" "}
-          <Link
-            href="/wednesday-shifts"
-            className="font-medium text-emerald-800 underline underline-offset-2"
-          >
-            禮三晚班
-          </Link>
-          ，或直接{" "}
+          {rotationOn ? (
+            <>
+              <Link
+                href="/wednesday-shifts"
+                className="font-medium text-emerald-800 underline underline-offset-2"
+              >
+                {menuLabel}
+              </Link>
+              ，或直接{" "}
+            </>
+          ) : null}
           <Link
             href="/applications/shift-swap"
             className="font-medium text-emerald-800 underline underline-offset-2"
@@ -69,12 +84,14 @@ export function LeaveOrderGuide({
         <li>換班核准後，再在本頁勾選排休日（點選即儲存）</li>
       </ol>
       <div className="mt-3 flex flex-wrap gap-2">
-        <Link
-          href="/wednesday-shifts"
-          className="inline-flex items-center px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-sm text-emerald-900 hover:bg-emerald-100"
-        >
-          禮三晚班
-        </Link>
+        {rotationOn && (
+          <Link
+            href="/wednesday-shifts"
+            className="inline-flex items-center px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-sm text-emerald-900 hover:bg-emerald-100"
+          >
+            {menuLabel}
+          </Link>
+        )}
         <Link
           href="/applications/shift-swap"
           className="inline-flex items-center px-3 py-1.5 rounded-lg border border-emerald-300 bg-white text-sm text-emerald-900 hover:bg-emerald-100"

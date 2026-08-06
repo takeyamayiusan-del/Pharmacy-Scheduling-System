@@ -1,10 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp, type ShiftType, type Employee } from "@/lib/context/AppContext";
+import {
+  getActiveRuleTags,
+  getEnabledShiftCodes,
+  type StoreRuleTagId,
+} from "@/lib/store-config";
 
-const shiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
+
+const RULE_FIELD: Record<
+  StoreRuleTagId,
+  "isWednesdayRotation" | "isWeekdayOffRule"
+> = {
+  rotation_evening: "isWednesdayRotation",
+  weekday_off: "isWeekdayOffRule",
+};
 
 export default function FixedShiftsPage() {
   const {
@@ -19,7 +31,14 @@ export default function FixedShiftsPage() {
     shiftDisplayConfig,
     updateShiftDisplayConfig,
     updateEmployee,
+    storeConfig,
   } = useApp();
+
+  const shiftOptions = useMemo(
+    () => getEnabledShiftCodes(storeConfig) as ShiftType[],
+    [storeConfig]
+  );
+  const activeRuleTags = useMemo(() => getActiveRuleTags(storeConfig), [storeConfig]);
 
   const [newEmployeeId, setNewEmployeeId] = useState<string>("");
   const [newDayOfWeek, setNewDayOfWeek] = useState<number>(1);
@@ -55,9 +74,13 @@ export default function FixedShiftsPage() {
     });
   }, [shiftDisplayConfig]);
 
-  // 只顯示員工（不包含老闆）
-  const displayEmployees = employees.filter((e) => e.role !== "owner");
+  useEffect(() => {
+    if (!shiftOptions.includes(newShift)) {
+      setNewShift(shiftOptions.find((s) => s !== "X") ?? "B");
+    }
+  }, [shiftOptions, newShift]);
 
+  const displayEmployees = employees.filter((e) => e.role !== "owner");
   const canManage = currentUser?.role === "owner" || currentUser?.role === "manager";
 
   const handleAdd = async () => {
@@ -135,23 +158,34 @@ export default function FixedShiftsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className="text-2xl font-bold text-gray-900">固定班表管理</h1>
+        <a
+          href="/store-settings"
+          className="text-sm text-blue-700 hover:underline"
+        >
+          班別清單／功能開關 → 店家設定
+        </a>
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
-        可為個別員工設定「禮拜六 → 休假（X）」。儲存後未來週六班表會顯示休假；未設定時禮拜六預設仍為 C 班。
+        可為個別員工設定「禮拜六 → 休假（X）」。儲存後未來週六班表會顯示休假；未設定時禮拜六預設為{" "}
+        {storeConfig.defaultSaturdayShift} 班。平日預設為 {storeConfig.defaultWeekdayShift} 班。
         若該月班表已鎖定且格子仍是舊資料，請店長解鎖後再確認。
       </div>
 
-      {/* ── 特殊規則設定 ── */}
+      {/* ── 特殊規則設定（依店家功能開關動態欄位） ── */}
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-semibold text-gray-900 mb-1">特殊排班規則</h3>
         <p className="text-sm text-gray-500 mb-4">
-          規則綁定員工身份，換人後只要重新設定即可，不受名字影響。
+          規則綁定員工身份，換人後只要重新設定即可。欄位依「店家設定」功能開關顯示。
         </p>
 
-        {displayEmployees.length === 0 ? (
+        {activeRuleTags.length === 0 ? (
+          <p className="text-gray-400 text-sm">
+            目前沒有啟用的規則標籤。請至「店家設定」開啟輪值晚班或平日不排休等功能。
+          </p>
+        ) : displayEmployees.length === 0 ? (
           <p className="text-gray-400 text-sm">目前沒有員工，請先到員工管理新增。</p>
         ) : (
           <div className="overflow-x-auto">
@@ -159,81 +193,65 @@ export default function FixedShiftsPage() {
               <thead>
                 <tr className="bg-gray-50">
                   <th className="px-4 py-3 text-left font-medium text-gray-700">員工</th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-700">
-                    <div>禮拜三晚班輪值</div>
-                    <div className="text-xs font-normal text-gray-500 mt-0.5">
-                      週三依選休輪流上 A/B 班
-                    </div>
-                  </th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-700">
-                    <div>平日不排休規則</div>
-                    <div className="text-xs font-normal text-gray-500 mt-0.5">
-                      平日正常上班，排休只能選週六
-                    </div>
-                  </th>
+                  {activeRuleTags.map((tag) => (
+                    <th
+                      key={tag.id}
+                      className="px-4 py-3 text-center font-medium text-gray-700"
+                    >
+                      <div>{tag.label}</div>
+                      <div className="text-xs font-normal text-gray-500 mt-0.5">
+                        {tag.description}
+                      </div>
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {displayEmployees.map((emp) => {
-                  const wKey = `${emp.id}-isWednesdayRotation`;
-                  const dKey = `${emp.id}-isWeekdayOffRule`;
-                  return (
-                    <tr key={emp.id} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium text-gray-900">{emp.name}</td>
-
-                      {/* 禮拜三晚班輪值 */}
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          disabled={savingRule === wKey}
-                          onClick={() => handleToggleRule(emp, "isWednesdayRotation")}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                            emp.isWednesdayRotation ? "bg-blue-600" : "bg-gray-200"
-                          } ${savingRule === wKey ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                          aria-label={`${emp.name} 禮拜三晚班輪值`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                              emp.isWednesdayRotation ? "translate-x-6" : "translate-x-1"
-                            }`}
-                          />
-                        </button>
-                        {emp.isWednesdayRotation && (
-                          <span className="ml-2 text-xs text-blue-600 font-medium">已啟用</span>
-                        )}
-                      </td>
-
-                      {/* 平日不排休 */}
-                      <td className="px-4 py-3 text-center">
-                        <button
-                          type="button"
-                          disabled={savingRule === dKey}
-                          onClick={() => handleToggleRule(emp, "isWeekdayOffRule")}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
-                            emp.isWeekdayOffRule ? "bg-purple-600" : "bg-gray-200"
-                          } ${savingRule === dKey ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-                          aria-label={`${emp.name} 平日不排休規則`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
-                              emp.isWeekdayOffRule ? "translate-x-6" : "translate-x-1"
-                            }`}
-                          />
-                        </button>
-                        {emp.isWeekdayOffRule && (
-                          <span className="ml-2 text-xs text-purple-600 font-medium">已啟用</span>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                {displayEmployees.map((emp) => (
+                  <tr key={emp.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">{emp.name}</td>
+                    {activeRuleTags.map((tag) => {
+                      const field = RULE_FIELD[tag.id];
+                      const enabled = Boolean(emp[field]);
+                      const key = `${emp.id}-${field}`;
+                      const onColor =
+                        tag.id === "weekday_off" ? "bg-purple-600" : "bg-blue-600";
+                      const textColor =
+                        tag.id === "weekday_off" ? "text-purple-600" : "text-blue-600";
+                      return (
+                        <td key={tag.id} className="px-4 py-3 text-center">
+                          <button
+                            type="button"
+                            disabled={savingRule === key}
+                            onClick={() => handleToggleRule(emp, field)}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                              enabled ? onColor : "bg-gray-200"
+                            } ${savingRule === key ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
+                            aria-label={`${emp.name} ${tag.label}`}
+                          >
+                            <span
+                              className={`inline-block h-4 w-4 rounded-full bg-white shadow transition-transform ${
+                                enabled ? "translate-x-6" : "translate-x-1"
+                              }`}
+                            />
+                          </button>
+                          {enabled && (
+                            <span className={`ml-2 text-xs font-medium ${textColor}`}>
+                              已啟用
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </div>
 
-      {/* ── 班別時段設定 ── */}
+      {/* ── 班別時段設定（依店家啟用班別） ── */}
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">班別時段設定（可客製）</h3>
         <div className="space-y-3">
@@ -264,11 +282,10 @@ export default function FixedShiftsPage() {
           ))}
         </div>
         <p className="text-xs text-gray-500 mt-3">
-          用逗號分隔多個時段，更新後班表下方圖例會即時顯示。
+          用逗號分隔多個時段，更新後班表下方圖例會即時顯示。要增減班別請至店家設定。
         </p>
       </div>
 
-      {/* ── 新增固定班表 ── */}
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">班別顯示設定（文字 / 顏色）</h3>
         <div className="space-y-3">
@@ -350,77 +367,62 @@ export default function FixedShiftsPage() {
                 onClick={() => handleSaveShiftDisplay(shift)}
                 className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
               >
-                儲存樣式
+                儲存
               </button>
             </div>
           ))}
         </div>
-        <p className="text-xs text-gray-500 mt-3">
-          可客製每個班別在班表中的框色、顯示文字與圖例名稱。
-        </p>
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">新增固定班表</h3>
-        <div className="flex flex-wrap gap-4">
-          <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">員工</label>
-            <select
-              value={newEmployeeId}
-              onChange={(e) => setNewEmployeeId(e.target.value)}
-              className="border rounded-lg px-4 py-2"
-            >
-              <option value="">請選擇</option>
-              {displayEmployees.map((emp) => (
-                <option key={emp.id} value={emp.id}>
-                  {emp.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">星期</label>
-            <select
-              value={newDayOfWeek}
-              onChange={(e) => setNewDayOfWeek(parseInt(e.target.value))}
-              className="border rounded-lg px-4 py-2"
-            >
-              {[1, 2, 3, 4, 5, 6].map((day) => (
-                <option key={day} value={day}>
-                  {dayLabels[day]}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col">
-            <label className="text-sm text-gray-600 mb-1">班別</label>
-            <select
-              value={newShift}
-              onChange={(e) => setNewShift(e.target.value as ShiftType)}
-              className="border rounded-lg px-4 py-2"
-            >
-              {shiftOptions.map((shift) => (
-                <option key={shift} value={shift}>
-                  {shiftDisplayConfig[shift].label}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col justify-end">
-            <button
-              onClick={handleAdd}
-              disabled={!newEmployeeId}
-              className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              新增
-            </button>
-          </div>
+        <div className="flex flex-wrap gap-3 items-center">
+          <select
+            value={newEmployeeId}
+            onChange={(e) => setNewEmployeeId(e.target.value)}
+            className="border rounded-lg px-3 py-2"
+          >
+            <option value="">選擇員工</option>
+            {displayEmployees.map((emp) => (
+              <option key={emp.id} value={emp.id}>
+                {emp.name}
+              </option>
+            ))}
+          </select>
+          <select
+            value={newDayOfWeek}
+            onChange={(e) => setNewDayOfWeek(Number(e.target.value))}
+            className="border rounded-lg px-3 py-2"
+          >
+            {[1, 2, 3, 4, 5, 6].map((day) => (
+              <option key={day} value={day}>
+                禮拜{dayLabels[day]}
+              </option>
+            ))}
+          </select>
+          <select
+            value={newShift}
+            onChange={(e) => setNewShift(e.target.value as ShiftType)}
+            className="border rounded-lg px-3 py-2"
+          >
+            {shiftOptions.map((shift) => (
+              <option key={shift} value={shift}>
+                {shift}（{shiftDisplayConfig[shift].label}）
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            onClick={handleAdd}
+            className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
+          >
+            新增
+          </button>
         </div>
       </div>
 
-      {/* ── 固定班表列表 ── */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="p-6">
+      <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div>
           <h3 className="font-medium text-gray-900 mb-4">已設定的固定班表</h3>
           {fixedShifts.length === 0 ? (
             <p className="text-gray-500 text-center py-8">目前沒有設定任何固定班表</p>
@@ -429,24 +431,24 @@ export default function FixedShiftsPage() {
               {fixedShifts.map((fs, index) => {
                 const emp = employees.find((e) => e.id === fs.employeeId);
                 return (
-                  <div key={index} className="flex items-center gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div
+                    key={`${fs.employeeId}-${fs.dayOfWeek}-${index}`}
+                    className="flex flex-wrap items-center gap-3 p-3 bg-gray-50 rounded-lg"
+                  >
                     <select
                       value={fs.employeeId}
                       onChange={(e) => handleUpdate(index, "employeeId", e.target.value)}
                       className="border rounded px-3 py-2"
                     >
-                      {displayEmployees.map((emp) => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.name}
+                      {displayEmployees.map((e) => (
+                        <option key={e.id} value={e.id}>
+                          {e.name}
                         </option>
                       ))}
                     </select>
-                    <span className="text-gray-400">→</span>
                     <select
                       value={fs.dayOfWeek}
-                      onChange={(e) =>
-                        handleUpdate(index, "dayOfWeek", parseInt(e.target.value))
-                      }
+                      onChange={(e) => handleUpdate(index, "dayOfWeek", Number(e.target.value))}
                       className="border rounded px-3 py-2"
                     >
                       {[1, 2, 3, 4, 5, 6].map((day) => (
@@ -466,17 +468,27 @@ export default function FixedShiftsPage() {
                           {shiftDisplayConfig[shift].label}
                         </option>
                       ))}
+                      {/* 若舊資料班別已停用，仍顯示目前值 */}
+                      {!shiftOptions.includes(fs.shift) && (
+                        <option value={fs.shift}>{fs.shift}（已停用）</option>
+                      )}
                     </select>
-                    {emp?.isWednesdayRotation && (
-                      <span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">
-                        禮三輪值
-                      </span>
-                    )}
-                    {emp?.isWeekdayOffRule && (
-                      <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full">
-                        平日不排休
-                      </span>
-                    )}
+                    {activeRuleTags.map((tag) => {
+                      const field = RULE_FIELD[tag.id];
+                      if (!emp?.[field]) return null;
+                      const chip =
+                        tag.id === "weekday_off"
+                          ? "bg-purple-100 text-purple-700"
+                          : "bg-blue-100 text-blue-700";
+                      return (
+                        <span
+                          key={tag.id}
+                          className={`text-xs px-2 py-0.5 rounded-full ${chip}`}
+                        >
+                          {tag.label}
+                        </span>
+                      );
+                    })}
                     <button
                       onClick={() => deleteFixedShift(index)}
                       className="ml-auto text-red-600 hover:text-red-800 text-sm"
