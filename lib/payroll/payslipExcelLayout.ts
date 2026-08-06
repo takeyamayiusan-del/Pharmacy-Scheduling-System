@@ -197,11 +197,9 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   }
 
   aoa.push([]);
-  const netLabelRow = aoa.length;
-  aoa.push(["實領金額（總薪資）"]);
   const netValueRow = aoa.length;
-  // 公式與金額分欄：不可整列合併，否則金額會被蓋掉
-  aoa.push(["(A)+(B)-(C) = 總薪資", null, null, null, input.finalPay, null]);
+  // 直接顯示總薪資與金額（小計仍保留 A/B/C，此處不再寫公式）
+  aoa.push(["總薪資", null, null, null, input.finalPay, null]);
   aoa.push([]);
   const signRow = aoa.length;
   aoa.push(["簽收：", "", null, null, null, null]);
@@ -217,7 +215,6 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     { s: { r: sectionHeaderRow, c: 2 }, e: { r: sectionHeaderRow, c: 3 } },
     { s: { r: sectionHeaderRow, c: 4 }, e: { r: sectionHeaderRow, c: 5 } },
     { s: { r: signRow, c: 1 }, e: { r: signRow, c: 5 } },
-    { s: { r: netLabelRow, c: 0 }, e: { r: netLabelRow, c: 5 } },
     { s: { r: netValueRow, c: 0 }, e: { r: netValueRow, c: 3 } },
     { s: { r: netValueRow, c: 4 }, e: { r: netValueRow, c: 5 } },
   ];
@@ -256,13 +253,10 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
         border = cellBorder(THICK, THICK, C === 0 ? THICK : NONE, C === 5 ? THICK : NONE);
       }
 
-      // 實領／總薪資：標題列與公式列外框；公式左、金額右
-      if (R === netLabelRow && C <= 5) {
-        border = cellBorder(THICK_NET, NONE, C === 0 ? THICK_NET : NONE, C === 5 ? THICK_NET : NONE);
-      }
+      // 總薪資列：左標籤、右金額，整列粗外框
       if (R === netValueRow && C <= 5) {
         border = cellBorder(
-          NONE,
+          THICK_NET,
           THICK_NET,
           C === 0 ? THICK_NET : NONE,
           C === 5 ? THICK_NET : NONE
@@ -309,12 +303,8 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
         s.fill = { patternType: "solid", fgColor: { rgb: "334155" } };
         s.alignment = { vertical: "center", horizontal: "left", wrapText: true };
       }
-      if (R === netLabelRow) {
-        s.font = { name: FONT, sz: 11, bold: true, color: { rgb: "1D4ED8" } };
-        s.fill = { patternType: "solid", fgColor: { rgb: "EFF6FF" } };
-      }
       if (R === netValueRow) {
-        s.font = { name: FONT, sz: 12, bold: true, color: { rgb: "0F766E" } };
+        s.font = { name: FONT, sz: 13, bold: true, color: { rgb: "0F766E" } };
         s.fill = { patternType: "solid", fgColor: { rgb: "ECFDF5" } };
         s.alignment = {
           vertical: "center",
