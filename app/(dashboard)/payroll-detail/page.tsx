@@ -5,22 +5,24 @@ import { useApp, type PayrollRecord } from "@/lib/context/AppContext";
 import { createClient } from "@/lib/supabase/client";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle } from "lucide-react";
 import { exportPayslipPdf } from "@/lib/payroll/exportPayslipPdf";
+import { getDefaultPayrollPeriod } from "@/lib/payroll/monthlyHours";
 
 export default function PayrollDetailPage() {
   const { currentUser, payrollRecords, setPayrollRecords } = useApp();
   const supabase = createClient();
-  
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedRecord, setSelectedRecord] = useState<PayrollRecord | null>(null);
+
+  // 隔月 5 號發薪：上方顯示「上個月」薪資（與結算預設期間一致）
+  const payrollPeriod = getDefaultPayrollPeriod();
 
   useEffect(() => {
     const loadData = async () => {
       if (!currentUser) return;
       setIsLoading(true);
 
-      // 一次性載入該員工所有已發布的薪資記錄
       const { data: records } = await supabase
         .from("payroll_records")
         .select("*")
@@ -49,7 +51,6 @@ export default function PayrollDetailPage() {
           publishedAt: r.published_at,
           createdAt: r.created_at,
         }));
-        // 直接更新 payrollRecords
         mapped.forEach((r) => {
           setPayrollRecords((prev) => {
             const exists = prev.find((p) => p.id === r.id);
@@ -68,16 +69,19 @@ export default function PayrollDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, supabase]);
 
-  // 取得當前員工的已發布薪資記錄
   const myPublishedRecords = payrollRecords
-    .filter(r => r.userId === currentUser?.id && r.isPublished)
+    .filter((r) => r.userId === currentUser?.id && r.isPublished)
     .sort((a, b) => {
       if (a.year !== b.year) return b.year - a.year;
       return b.month - a.month;
     });
 
-  const currentMonthRecord = myPublishedRecords.find(
-    r => r.year === new Date().getFullYear() && r.month === new Date().getMonth() + 1
+  const lastMonthRecord = myPublishedRecords.find(
+    (r) => r.year === payrollPeriod.year && r.month === payrollPeriod.month
+  );
+
+  const historyRecords = myPublishedRecords.filter(
+    (r) => !(r.year === payrollPeriod.year && r.month === payrollPeriod.month)
   );
 
   const handleViewDetail = (record: PayrollRecord) => {
@@ -90,13 +94,13 @@ export default function PayrollDetailPage() {
     try {
       await exportPayslipPdf(record, currentUser.name);
     } catch (err) {
-      console.error('PDF generation error:', err);
-      alert('PDF 生成失敗');
+      console.error("PDF generation error:", err);
+      alert("PDF 生成失敗");
     }
   };
 
   const formatCurrency = (amount: number) => {
-    return amount?.toLocaleString('zh-TW', { minimumFractionDigits: 0 }) ?? "0";
+    return amount?.toLocaleString("zh-TW", { minimumFractionDigits: 0 }) ?? "0";
   };
 
   if (isLoading) {
@@ -116,49 +120,53 @@ export default function PayrollDetailPage() {
         </h1>
       </div>
 
-      {/* 當月薪資預覽 */}
-      {currentMonthRecord ? (
+      {/* 上個月薪資（隔月 5 號發放） */}
+      {lastMonthRecord ? (
         <div className="app-card p-6 bg-gradient-to-br from-emerald-50 to-blue-50 border-emerald-200">
-          <div className="flex items-center gap-2 mb-4">
-            <span className="bg-emerald-500 text-white text-xs px-2 py-1 rounded-full">本月已發布</span>
-            <span className="text-sm text-gray-600">{new Date().getFullYear()}年{new Date().getMonth() + 1}月</span>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <span className="bg-emerald-500 text-white text-xs px-2 py-1 rounded-full">上個月薪水</span>
+            <span className="text-sm text-gray-600">
+              {payrollPeriod.year}年{payrollPeriod.month}月
+            </span>
+            <span className="text-xs text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">已發布</span>
           </div>
-          
+          <p className="text-xs text-gray-500 mb-4">隔月 5 號發薪 · 所屬工作月份如上</p>
+
           <div className="text-center mb-4">
             <p className="text-sm text-gray-600 mb-1">實領金額</p>
             <p className="text-4xl font-bold text-emerald-600">
-              ${formatCurrency(currentMonthRecord.finalPay)}
+              ${formatCurrency(lastMonthRecord.finalPay)}
             </p>
           </div>
 
           <div className="grid grid-cols-2 gap-4 text-sm mb-4">
             <div className="bg-white/50 rounded-lg p-3">
               <p className="text-gray-500 text-xs">底薪</p>
-              <p className="font-medium">${formatCurrency(currentMonthRecord.baseSalary)}</p>
+              <p className="font-medium">${formatCurrency(lastMonthRecord.baseSalary)}</p>
             </div>
             <div className="bg-white/50 rounded-lg p-3">
               <p className="text-gray-500 text-xs">加班費</p>
-              <p className="font-medium text-green-600">+${formatCurrency(currentMonthRecord.overtimePay)}</p>
+              <p className="font-medium text-green-600">+${formatCurrency(lastMonthRecord.overtimePay)}</p>
             </div>
             <div className="bg-white/50 rounded-lg p-3">
               <p className="text-gray-500 text-xs">請假扣款</p>
-              <p className="font-medium text-red-500">-${formatCurrency(currentMonthRecord.leaveDeduction)}</p>
+              <p className="font-medium text-red-500">-${formatCurrency(lastMonthRecord.leaveDeduction)}</p>
             </div>
             <div className="bg-white/50 rounded-lg p-3">
               <p className="text-gray-500 text-xs">遲到扣款</p>
-              <p className="font-medium text-red-500">-${formatCurrency(currentMonthRecord.tardinessDeduction)}</p>
+              <p className="font-medium text-red-500">-${formatCurrency(lastMonthRecord.tardinessDeduction)}</p>
             </div>
           </div>
 
           <div className="flex gap-2">
             <button
-              onClick={() => handleViewDetail(currentMonthRecord)}
+              onClick={() => handleViewDetail(lastMonthRecord)}
               className="flex-1 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition-colors"
             >
               查看詳細
             </button>
             <button
-              onClick={() => downloadSalaryPDF(currentMonthRecord)}
+              onClick={() => downloadSalaryPDF(lastMonthRecord)}
               className="flex items-center gap-2 px-4 py-2 border border-emerald-600 text-emerald-600 rounded-lg hover:bg-emerald-50 transition-colors"
             >
               <Download className="h-4 w-4" />
@@ -169,7 +177,10 @@ export default function PayrollDetailPage() {
       ) : (
         <div className="app-card p-6 text-center text-gray-500">
           <AlertCircle className="h-12 w-12 mx-auto mb-3 text-gray-300" />
-          <p>本月薪資尚未發布</p>
+          <p className="font-medium text-gray-700">上個月薪水尚未發布</p>
+          <p className="text-sm mt-1">
+            {payrollPeriod.year}年{payrollPeriod.month}月 · 通常隔月 5 號發薪
+          </p>
           <p className="text-sm mt-1">請耐心等候，或聯繫管理員</p>
         </div>
       )}
@@ -182,50 +193,43 @@ export default function PayrollDetailPage() {
             歷史薪資記錄
           </h2>
         </div>
-        
-        {myPublishedRecords.length === 0 ? (
-          <div className="p-6 text-center text-gray-500">
-            尚無歷史薪資記錄
-          </div>
+
+        {historyRecords.length === 0 ? (
+          <div className="p-6 text-center text-gray-500">尚無其他歷史薪資記錄</div>
         ) : (
           <div className="divide-y">
-            {myPublishedRecords
-              .filter(r => !(r.year === new Date().getFullYear() && r.month === new Date().getMonth() + 1))
-              .map((record) => (
-                <div key={record.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
-                  <div>
-                    <p className="font-medium text-gray-900">
-                      {record.year}年{record.month}月
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      實領 ${formatCurrency(record.finalPay)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 flex items-center gap-1">
-                      <CheckCircle className="h-3 w-3 text-emerald-500" />
-                      已發布
-                    </span>
-                    <button
-                      onClick={() => handleViewDetail(record)}
-                      className="text-xs text-blue-600 hover:text-blue-700"
-                    >
-                      詳細
-                    </button>
-                    <button
-                      onClick={() => downloadSalaryPDF(record)}
-                      className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
-                  </div>
+            {historyRecords.map((record) => (
+              <div key={record.id} className="p-4 flex items-center justify-between hover:bg-gray-50">
+                <div>
+                  <p className="font-medium text-gray-900">
+                    {record.year}年{record.month}月
+                  </p>
+                  <p className="text-sm text-gray-500">實領 ${formatCurrency(record.finalPay)}</p>
                 </div>
-              ))}
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400 flex items-center gap-1">
+                    <CheckCircle className="h-3 w-3 text-emerald-500" />
+                    已發布
+                  </span>
+                  <button
+                    onClick={() => handleViewDetail(record)}
+                    className="text-xs text-blue-600 hover:text-blue-700"
+                  >
+                    詳細
+                  </button>
+                  <button
+                    onClick={() => downloadSalaryPDF(record)}
+                    className="p-1.5 text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 rounded"
+                  >
+                    <Download className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* 詳細薪資 Modal */}
       {showDetailModal && selectedRecord && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md max-h-[80vh] overflow-y-auto">
@@ -237,9 +241,8 @@ export default function PayrollDetailPage() {
                 ✕
               </button>
             </div>
-            
+
             <div className="p-4 space-y-4">
-              {/* 應發項目 */}
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
                   <span className="w-2 h-2 bg-green-500 rounded-full"></span>
@@ -252,18 +255,21 @@ export default function PayrollDetailPage() {
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">加班費</span>
-                    <span className="font-medium text-green-600">+${formatCurrency(selectedRecord.overtimePay)}</span>
+                    <span className="font-medium text-green-600">
+                      +${formatCurrency(selectedRecord.overtimePay)}
+                    </span>
                   </div>
                   {selectedRecord.bonusTotal > 0 && (
                     <div className="flex justify-between text-sm">
                       <span className="text-gray-600">獎金</span>
-                      <span className="font-medium text-green-600">+${formatCurrency(selectedRecord.bonusTotal)}</span>
+                      <span className="font-medium text-green-600">
+                        +${formatCurrency(selectedRecord.bonusTotal)}
+                      </span>
                     </div>
                   )}
                 </div>
               </div>
 
-              {/* 扣除項目 */}
               <div>
                 <h4 className="text-sm font-medium text-gray-700 mb-2 flex items-center gap-1">
                   <span className="w-2 h-2 bg-red-500 rounded-full"></span>
@@ -272,28 +278,37 @@ export default function PayrollDetailPage() {
                 <div className="space-y-2 pl-4">
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">請假扣款</span>
-                    <span className="font-medium text-red-500">-${formatCurrency(selectedRecord.leaveDeduction)}</span>
+                    <span className="font-medium text-red-500">
+                      -${formatCurrency(selectedRecord.leaveDeduction)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">遲到扣款</span>
-                    <span className="font-medium text-red-500">-${formatCurrency(selectedRecord.tardinessDeduction)}</span>
+                    <span className="font-medium text-red-500">
+                      -${formatCurrency(selectedRecord.tardinessDeduction)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">勞保</span>
-                    <span className="font-medium text-red-500">-${formatCurrency(selectedRecord.laborInsurance)}</span>
+                    <span className="font-medium text-red-500">
+                      -${formatCurrency(selectedRecord.laborInsurance)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">健保</span>
-                    <span className="font-medium text-red-500">-${formatCurrency(selectedRecord.healthInsurance)}</span>
+                    <span className="font-medium text-red-500">
+                      -${formatCurrency(selectedRecord.healthInsurance)}
+                    </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-gray-600">退休金</span>
-                    <span className="font-medium text-red-500">-${formatCurrency(selectedRecord.pensionDeduction)}</span>
+                    <span className="font-medium text-red-500">
+                      -${formatCurrency(selectedRecord.pensionDeduction)}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              {/* 實領金額 */}
               <div className="border-t pt-4">
                 <div className="flex justify-between items-center">
                   <span className="font-medium text-gray-900">實領金額</span>
@@ -303,10 +318,12 @@ export default function PayrollDetailPage() {
                 </div>
               </div>
 
-              {/* 發布資訊 */}
               <div className="text-xs text-gray-400 flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                發布於 {selectedRecord.publishedAt ? new Date(selectedRecord.publishedAt).toLocaleString('zh-TW') : 'N/A'}
+                發布於{" "}
+                {selectedRecord.publishedAt
+                  ? new Date(selectedRecord.publishedAt).toLocaleString("zh-TW")
+                  : "N/A"}
               </div>
             </div>
 
