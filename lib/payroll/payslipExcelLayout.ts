@@ -91,17 +91,25 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   const aoa: (string | number | null)[][] = [];
   aoa.push([input.title]);
   aoa.push([]);
+  // 表頭兩列，限制在 A–F（A5 寬度），避免發薪日被擠到 G 欄吃掉
+  const infoRow1 = aoa.length;
   aoa.push([
     `姓名：${input.employeeName}`,
     null,
     `職位：${input.position || "—"}`,
     null,
-    `入帳帳號：${input.bankAccount || "—"}`,
+    `發薪日期：${input.payDate || "—"}`,
     null,
   ]);
-  if (input.payDate) {
-    aoa[2].push(`發薪日期：${input.payDate}`);
-  }
+  const infoRow2 = aoa.length;
+  aoa.push([
+    `入帳帳號：${input.bankAccount || "—"}`,
+    null,
+    null,
+    null,
+    null,
+    null,
+  ]);
   aoa.push([]);
 
   const sectionHeaderRow = aoa.length;
@@ -173,9 +181,10 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-    { s: { r: 2, c: 0 }, e: { r: 2, c: 1 } },
-    { s: { r: 2, c: 2 }, e: { r: 2, c: 3 } },
-    { s: { r: 2, c: 4 }, e: { r: 2, c: 5 } },
+    { s: { r: infoRow1, c: 0 }, e: { r: infoRow1, c: 1 } },
+    { s: { r: infoRow1, c: 2 }, e: { r: infoRow1, c: 3 } },
+    { s: { r: infoRow1, c: 4 }, e: { r: infoRow1, c: 5 } },
+    { s: { r: infoRow2, c: 0 }, e: { r: infoRow2, c: 5 } },
     { s: { r: sectionHeaderRow, c: 0 }, e: { r: sectionHeaderRow, c: 1 } },
     { s: { r: sectionHeaderRow, c: 2 }, e: { r: sectionHeaderRow, c: 3 } },
     { s: { r: sectionHeaderRow, c: 4 }, e: { r: sectionHeaderRow, c: 5 } },
@@ -275,16 +284,16 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     }
   }
 
-  // A5 直式可容納寬度（約 6 欄）
+  // A5 直式可容納寬度（約 6 欄）；發薪日佔 E–F
   ws["!cols"] = [
+    { wch: 16 },
+    { wch: 11 },
     { wch: 18 },
     { wch: 11 },
-    { wch: 20 },
-    { wch: 11 },
-    { wch: 14 },
-    { wch: 11 },
+    { wch: 16 },
+    { wch: 12 },
   ];
-  ws["!rows"] = [{ hpt: 24 }, { hpt: 6 }, { hpt: 18 }];
+  ws["!rows"] = [{ hpt: 24 }, { hpt: 6 }, { hpt: 18 }, { hpt: 18 }];
   applyA5Print(ws);
   return ws;
 }
