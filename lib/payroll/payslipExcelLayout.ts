@@ -91,14 +91,14 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   const aoa: (string | number | null)[][] = [];
   aoa.push([input.title]);
   aoa.push([]);
-  // 表頭兩列，限制在 A–F（A5 寬度），避免發薪日被擠到 G 欄吃掉
+  // 表頭兩列，限制在 A–F（A5 寬度），發薪日往中間欄位擺放
   const infoRow1 = aoa.length;
   aoa.push([
     `姓名：${input.employeeName}`,
-    null,
     `職位：${input.position || "—"}`,
-    null,
     `發薪日期：${input.payDate || "—"}`,
+    null,
+    null,
     null,
   ]);
   const infoRow2 = aoa.length;
@@ -181,9 +181,7 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   const merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }> = [
     { s: { r: 0, c: 0 }, e: { r: 0, c: 5 } },
-    { s: { r: infoRow1, c: 0 }, e: { r: infoRow1, c: 1 } },
     { s: { r: infoRow1, c: 2 }, e: { r: infoRow1, c: 3 } },
-    { s: { r: infoRow1, c: 4 }, e: { r: infoRow1, c: 5 } },
     { s: { r: infoRow2, c: 0 }, e: { r: infoRow2, c: 5 } },
     { s: { r: sectionHeaderRow, c: 0 }, e: { r: sectionHeaderRow, c: 1 } },
     { s: { r: sectionHeaderRow, c: 2 }, e: { r: sectionHeaderRow, c: 3 } },
@@ -242,6 +240,7 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
       const s: CellStyle = {
         font: { name: FONT, sz: 10, color: { rgb: "1F2937" } },
         alignment: { vertical: "center", wrapText: true },
+        fill: { patternType: "solid", fgColor: { rgb: "FFFFFF" } },
         border,
       };
 
@@ -284,14 +283,14 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
     }
   }
 
-  // A5 直式可容納寬度（約 6 欄）；發薪日佔 E–F
+  // A5 直式可容納寬度（約 6 欄）；發薪日放 C–D
   ws["!cols"] = [
-    { wch: 16 },
-    { wch: 11 },
-    { wch: 18 },
-    { wch: 11 },
-    { wch: 16 },
+    { wch: 14 },
     { wch: 12 },
+    { wch: 11 },
+    { wch: 16 },
+    { wch: 10 },
+    { wch: 10 },
   ];
   ws["!rows"] = [{ hpt: 24 }, { hpt: 6 }, { hpt: 18 }, { hpt: 18 }];
   applyA5Print(ws);
