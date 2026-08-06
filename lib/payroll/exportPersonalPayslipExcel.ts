@@ -1,4 +1,5 @@
 import XLSX from "xlsx-js-style";
+import type { CellObject, WorkSheet } from "xlsx-js-style";
 import type { PayrollRecord } from "@/lib/context/AppContext";
 
 export type PersonalPayslipExcelMeta = {
@@ -24,9 +25,9 @@ function pushIfNonZero(rows: [string, number][], label: string, amount: number) 
   rows.push([label, n]);
 }
 
-type CellStyle = NonNullable<XLSX.CellObject["s"]>;
+type CellStyle = NonNullable<CellObject["s"]>;
 
-function styleSheet(ws: XLSX.WorkSheet, opts: { titleRow: number; sectionHeaderRow: number; colHeaderRow: number }) {
+function styleSheet(ws: WorkSheet, opts: { titleRow: number; sectionHeaderRow: number; colHeaderRow: number }) {
   const range = XLSX.utils.decode_range(ws["!ref"] || "A1:G40");
   for (let R = range.s.r; R <= range.e.r; R++) {
     for (let C = range.s.c; C <= range.e.c; C++) {

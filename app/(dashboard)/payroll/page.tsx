@@ -475,10 +475,22 @@ export default function PayrollPage() {
     };
     let { data, error } = await supabase.from("payroll_records").upsert(payload, { onConflict: "user_id,year,month" }).select().single();
     if (error && /position_grade_total|fixed_allowance_total|full_attendance_pay/.test(String(error.message || ""))) {
-      const legacy = { ...payload };
-      delete legacy.position_grade_total;
-      delete legacy.fixed_allowance_total;
-      delete legacy.full_attendance_pay;
+      const legacy = {
+        user_id: payload.user_id,
+        year: payload.year,
+        month: payload.month,
+        base_salary: payload.base_salary,
+        labor_insurance: payload.labor_insurance,
+        health_insurance: payload.health_insurance,
+        pension_deduction: payload.pension_deduction,
+        leave_deduction: payload.leave_deduction,
+        overtime_pay: payload.overtime_pay,
+        tardiness_deduction: payload.tardiness_deduction,
+        bonus_total: payload.bonus_total,
+        final_pay: payload.final_pay,
+        note: payload.note,
+        created_by: payload.created_by,
+      };
       ({ data, error } = await supabase.from("payroll_records").upsert(legacy, { onConflict: "user_id,year,month" }).select().single());
     }
 
