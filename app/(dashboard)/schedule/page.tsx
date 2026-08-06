@@ -45,6 +45,7 @@ export default function SchedulePage() {
     unlockLeaveMonth,
     leaveRequests,
     overtimeRequests,
+    storeConfig,
   } = useApp();
   
   const [currentDate, setCurrentDate] = useState(() => {
@@ -565,7 +566,11 @@ export default function SchedulePage() {
               <div className="flex items-center gap-2">
                 <div className="w-3 h-3 rounded-full bg-pink-500"></div>
                 <span className="text-gray-600">
-                  禮拜三晚班輪流{rotationEmployees.length > 0 ? `（${rotationLabel}）` : ""}
+                  {storeConfig.features.rotationEvening
+                    ? `${storeConfig.rotationEvening.menuLabel}輪流${
+                        rotationEmployees.length > 0 ? `（${rotationLabel}）` : ""
+                      }`
+                    : "輪值晚班（本店未啟用）"}
                 </span>
               </div>
             </div>
@@ -799,10 +804,12 @@ export default function SchedulePage() {
         </div>
       </div>
 
-      {/* 禮拜三輪流晚班 */}
+      {/* 週期輪值晚班 */}
+      {storeConfig.features.rotationEvening && (
       <div className="app-card p-4">
         <h3 className="font-medium text-gray-900 mb-3">
-          🌙 禮拜三晚班輪流{rotationEmployees.length > 0 ? `（${rotationLabel}）` : "（尚未設定輪值人員）"}
+          🌙 {storeConfig.rotationEvening.menuLabel}
+          {rotationEmployees.length > 0 ? `（${rotationLabel}）` : "（尚未設定輪值人員）"}
         </h3>
         <div className="flex flex-wrap gap-2">
           {wednesdayNightShifts
@@ -829,10 +836,13 @@ export default function SchedulePage() {
               );
             })}
           {rotationEmployees.length === 0 && (
-            <p className="text-sm text-gray-500">請至「固定班表」啟用員工的禮拜三晚班輪值</p>
+            <p className="text-sm text-gray-500">
+              請至「固定班表」啟用員工的{storeConfig.rotationEvening.menuLabel}輪值
+            </p>
           )}
         </div>
       </div>
+      )}
 
       {/* 本月資訊 */}
       <div className="app-card p-4">

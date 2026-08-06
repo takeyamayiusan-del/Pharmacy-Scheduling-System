@@ -47,6 +47,7 @@ export async function updateSession(request: NextRequest) {
     "/leave-selection",
     "/fixed-shifts",
     "/wednesday-shifts",
+    "/store-settings",
     "/applications",
     "/attendance",
     "/employees",

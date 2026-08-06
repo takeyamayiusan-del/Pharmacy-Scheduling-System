@@ -29,7 +29,7 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { currentUser, logout, notifications, markNotificationRead, deleteNotification, deleteAllNotifications, refreshNotifications, getLeaveSummary, isLoading } = useApp();
+  const { currentUser, logout, notifications, markNotificationRead, deleteNotification, deleteAllNotifications, refreshNotifications, getLeaveSummary, isLoading, storeConfig } = useApp();
   const router = useRouter();
   const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
@@ -118,13 +118,19 @@ export default function DashboardLayout({
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
     { href: '/attendance/punch-admin', label: '打卡管理', icon: Clock, allowed: isManager },
     { href: '/fixed-shifts', label: '固定班表', icon: Settings, allowed: isManager },
-    { href: '/wednesday-shifts', label: '禮三晚班', icon: MoonStar, allowed: true },
+    {
+      href: '/wednesday-shifts',
+      label: storeConfig.rotationEvening.menuLabel,
+      icon: MoonStar,
+      allowed: storeConfig.features.rotationEvening,
+    },
     { href: '/applications/leave', label: '請假申請', icon: FileText, allowed: true },
     { href: '/applications/shift-swap', label: '換班申請', icon: Repeat, allowed: true },
     { href: '/applications/overtime', label: '加班申請', icon: Clock, allowed: true },
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
     { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: isManager },
     { href: '/employees', label: '員工管理', icon: UserPlus, allowed: isManager },
+    { href: '/store-settings', label: '店家設定', icon: Settings, allowed: isManager },
     { href: '/payroll-detail', label: '薪資查詢', icon: DollarSign, allowed: true },
     { href: '/payroll', label: '薪資結算', icon: DollarSign, allowed: isManager },
   ];
@@ -394,7 +400,13 @@ export default function DashboardLayout({
                   已到每月提醒時間，您尚未選擇下個月排休。建議依序完成：
                 </p>
                 <ol className="mt-2 text-sm text-gray-700 list-decimal list-inside space-y-1">
-                  <li>先討論休假日；若撞晚班／禮三晚班，先換班</li>
+                  <li>
+                    先討論休假日；若撞晚班
+                    {storeConfig.features.rotationEvening
+                      ? `／${storeConfig.rotationEvening.menuLabel}`
+                      : ""}
+                    ，先換班
+                  </li>
                   <li>再到排休選擇勾選日期</li>
                 </ol>
               </div>
