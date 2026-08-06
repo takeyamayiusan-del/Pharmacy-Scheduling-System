@@ -199,11 +199,10 @@ export default function PayrollDetailPage() {
           </p>
 
           <div className="text-center mb-4">
-            <p className="text-sm text-gray-600 mb-1">實領金額（總薪資）</p>
+            <p className="text-sm text-gray-600 mb-1">總薪資</p>
             <p className="text-4xl font-bold text-emerald-600">
               ${formatCurrency(featuredRecord.finalPay)}
             </p>
-            <p className="text-xs text-emerald-800/80 mt-1">(A)+(B)-(C) = 總薪資</p>
           </div>
 
           <div className="grid grid-cols-2 gap-3 text-sm mb-4">
@@ -466,16 +465,13 @@ export default function PayrollDetailPage() {
                     </div>
                   </div>
 
-                  <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3 space-y-1">
+                  <div className="rounded-lg bg-emerald-50 border border-emerald-100 p-3">
                     <div className="flex justify-between items-center">
-                      <span className="font-medium text-gray-900">實領金額（總薪資）</span>
+                      <span className="font-medium text-gray-900">總薪資</span>
                       <span className="text-xl font-bold text-emerald-600">
                         ${formatCurrency(selectedRecord.finalPay)}
                       </span>
                     </div>
-                    <p className="text-xs text-emerald-800/80">
-                      (A)+(B)-(C) = 總薪資（約定薪資結構＋非固定−應代扣）
-                    </p>
                   </div>
 
                   {selectedRecord.note ? (

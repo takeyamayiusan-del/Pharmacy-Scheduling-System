@@ -151,8 +151,8 @@ export const exportPayslipPdf = async (record: PayrollRecord, employeeName: stri
       <!-- 實領 -->
       <div style="margin-top:20px;background:linear-gradient(135deg,#0f172a 0%,#134e4a 100%);color:#fff;border-radius:14px;padding:18px 20px;display:flex;justify-content:space-between;align-items:center;">
         <div>
-          <div style="font-size:12px;opacity:0.75;letter-spacing:0.1em;margin-bottom:4px;">實領金額／總薪資 NET PAY</div>
-          <div style="font-size:13px;opacity:0.85;">(A)+(B)-(C) = 總薪資　應發 ${money(totalEarnings)} − 扣除 ${money(totalDeductions)}</div>
+          <div style="font-size:12px;opacity:0.75;letter-spacing:0.1em;margin-bottom:4px;">總薪資 NET PAY</div>
+          <div style="font-size:13px;opacity:0.85;">應發 ${money(totalEarnings)} − 扣除 ${money(totalDeductions)}</div>
         </div>
         <div style="font-size:34px;font-weight:800;letter-spacing:0.02em;font-variant-numeric:tabular-nums;">
           NT$ ${money(record.finalPay)}
