@@ -65,8 +65,8 @@ if (Get-Command pm2 -ErrorAction SilentlyContinue) {
     if (-not $siteRepair) {
         Write-BootLog "WARNING: pharmacy-web repair failed during boot"
     }
-    if (Test-Pm2AppExists -Name "cashflow") {
-        [void](Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck { Test-CashflowHealthy } -WriteLog {
+    if (Test-Pm2AppExists -Name "cashflow" -or (Test-Path -LiteralPath (Get-CashflowBootstrapConfigPath -ProjectRoot $ProjectRoot))) {
+        [void](Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck { Test-CashflowHealthy -ProjectRoot $ProjectRoot } -WriteLog {
             param($m)
             Write-BootLog $m
         })

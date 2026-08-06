@@ -22,6 +22,7 @@ function killChildTree() {
   if (!child.pid || shuttingDown) return;
   shuttingDown = true;
   if (process.platform === "win32") {
+    // Windows: PM2 殺 wrapper 時 SIGTERM 常傳不到子進程，需 taskkill /T
     spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], {
       stdio: "ignore",
       windowsHide: true,
@@ -46,6 +47,7 @@ child.on("exit", (code, signal) => {
 for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"]) {
   process.on(sig, () => {
     killChildTree();
+    // 給子進程一點時間後再結束 wrapper
     setTimeout(() => process.exit(1), process.platform === "win32" ? 1500 : 200);
   });
 }
