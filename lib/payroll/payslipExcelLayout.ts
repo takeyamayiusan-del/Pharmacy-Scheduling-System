@@ -197,7 +197,6 @@ export function buildPayslipWorksheet(input: PayslipExcelInput): WorkSheet {
   }
 
   aoa.push([]);
-  const netLabelRow = -1; // 改為單列：總薪資 + 金額
   const netValueRow = aoa.length;
   // 直接顯示總薪資與金額（小計仍保留 A/B/C，此處不再寫公式）
   aoa.push(["總薪資", null, null, null, input.finalPay, null]);
