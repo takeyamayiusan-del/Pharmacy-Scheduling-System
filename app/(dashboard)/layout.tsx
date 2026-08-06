@@ -331,9 +331,9 @@ export default function DashboardLayout({
           </nav>
         </aside>
 
-        {/* 主要內容 */}
-        <main className="flex-1 min-w-0">
-          <div className="p-4 sm:p-6 lg:p-8">
+        {/* 主要內容：min-w-0 + overflow 避免手機左右被撐破 */}
+        <main className="flex-1 min-w-0 overflow-x-hidden">
+          <div className="p-3 sm:p-6 lg:p-8 max-w-full overflow-x-hidden">
             {children}
           </div>
         </main>

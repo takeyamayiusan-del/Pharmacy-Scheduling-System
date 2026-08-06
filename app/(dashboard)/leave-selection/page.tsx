@@ -191,13 +191,15 @@ export default function LeaveSelectionPage() {
         </div>
       )}
 
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <button onClick={prevMonth} className="p-2 border rounded hover:bg-gray-100">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+          <button onClick={prevMonth} className="p-2 border rounded hover:bg-gray-100 shrink-0">
             ◀
           </button>
-          <h2 className="text-2xl font-bold text-gray-900">{year}年{month}月 排休選擇</h2>
-          <button onClick={nextMonth} className="p-2 border rounded hover:bg-gray-100">
+          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">
+            {year}年{month}月 排休選擇
+          </h2>
+          <button onClick={nextMonth} className="p-2 border rounded hover:bg-gray-100 shrink-0">
             ▶
           </button>
         </div>
@@ -277,20 +279,21 @@ export default function LeaveSelectionPage() {
         )}
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
-        <div className="p-4">
-          <div className="grid grid-cols-7 gap-2">
+      {/* 桌面端限制寬度，避免日期格因全寬變得過大 */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden max-w-2xl">
+        <div className="p-3 sm:p-4">
+          <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
             {["一", "二", "三", "四", "五", "六", "日"].map((d, i) => (
               <div
                 key={i}
-                className={`text-center font-medium py-2 ${i === 6 ? "text-red-600" : i === 5 ? "text-orange-600" : "text-gray-700"}`}
+                className={`text-center font-medium py-1.5 text-xs sm:text-sm ${i === 6 ? "text-red-600" : i === 5 ? "text-orange-600" : "text-gray-700"}`}
               >
                 {d}
               </div>
             ))}
 
             {Array.from({ length: firstDayOffset }, (_, i) => (
-              <div key={`empty-${i}`} className="aspect-square rounded-lg bg-transparent" />
+              <div key={`empty-${i}`} className="h-12 sm:h-14 rounded-lg bg-transparent" />
             ))}
 
             {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
@@ -306,18 +309,18 @@ export default function LeaveSelectionPage() {
                   key={day}
                   onClick={() => canSelect && toggleDate(day)}
                   className={`
-                    aspect-square flex flex-col items-center justify-center rounded-lg relative
+                    h-12 sm:h-14 flex flex-col items-center justify-center rounded-lg relative text-sm
                     ${isSelected ? "bg-green-500 text-white cursor-pointer" : "bg-gray-50 hover:bg-gray-100"}
                     ${isSun ? "bg-red-50 text-red-600" : ""}
                     ${isSat && !isSelected ? "bg-orange-50" : ""}
                     ${!canSelect && !isSelected && !isSun ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
                   `}
                 >
-                  <span className="font-medium">{day}</span>
-                  {isSelected && <span className="text-xs">已選</span>}
-                  {isSun && <span className="text-xs">固定</span>}
+                  <span className="font-medium leading-none">{day}</span>
+                  {isSelected && <span className="text-[10px] sm:text-xs leading-tight mt-0.5">已選</span>}
+                  {isSun && <span className="text-[10px] sm:text-xs leading-tight mt-0.5">固定</span>}
                   {holidayInfo.isHoliday && !isSun && (
-                    <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-yellow-400 text-yellow-950 text-lg font-black leading-tight py-1 text-center border-t-2 border-amber-600 shadow-sm">
+                    <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-yellow-400 text-yellow-950 text-[10px] sm:text-xs font-bold leading-none py-0.5 text-center border-t border-amber-600">
                       國定
                     </div>
                   )}
@@ -327,7 +330,7 @@ export default function LeaveSelectionPage() {
           </div>
         </div>
 
-        <div className="p-4 border-t bg-gray-50 flex flex-wrap gap-4 text-sm">
+        <div className="p-3 sm:p-4 border-t bg-gray-50 flex flex-wrap gap-3 sm:gap-4 text-sm">
           <span className="flex items-center gap-2">
             <span className="w-6 h-6 bg-green-500 rounded flex items-center justify-center text-white text-xs">選</span>
             已選擇
@@ -337,7 +340,7 @@ export default function LeaveSelectionPage() {
             固定禮拜日
           </span>
           <span className="flex items-center gap-2">
-            <span className="px-2 py-0.5 bg-yellow-400 text-yellow-950 text-sm font-black rounded border-2 border-amber-600">國定</span>
+            <span className="px-2 py-0.5 bg-yellow-400 text-yellow-950 text-xs font-bold rounded border border-amber-600">國定</span>
             國定假日
           </span>
         </div>
