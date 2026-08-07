@@ -279,10 +279,10 @@ export default function LeaveSelectionPage() {
         )}
       </div>
 
-      {/* 桌面端限制寬度，避免日期格因全寬變得過大 */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden max-w-2xl">
-        <div className="p-3 sm:p-4">
-          <div className="grid grid-cols-7 gap-1 sm:gap-1.5">
+      {/* 桌面端適中寬度：比 max-w-2xl 寬一些，仍避免全寬過大 */}
+      <div className="bg-white rounded-xl shadow-sm border overflow-hidden max-w-4xl">
+        <div className="p-3 sm:p-5">
+          <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
             {["一", "二", "三", "四", "五", "六", "日"].map((d, i) => (
               <div
                 key={i}
@@ -293,7 +293,7 @@ export default function LeaveSelectionPage() {
             ))}
 
             {Array.from({ length: firstDayOffset }, (_, i) => (
-              <div key={`empty-${i}`} className="h-12 sm:h-14 rounded-lg bg-transparent" />
+              <div key={`empty-${i}`} className="h-14 sm:h-16 rounded-lg bg-transparent" />
             ))}
 
             {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
@@ -309,7 +309,7 @@ export default function LeaveSelectionPage() {
                   key={day}
                   onClick={() => canSelect && toggleDate(day)}
                   className={`
-                    h-12 sm:h-14 flex flex-col items-center justify-center rounded-lg relative text-sm
+                    h-14 sm:h-16 flex flex-col items-center justify-center rounded-lg relative text-sm
                     ${isSelected ? "bg-green-500 text-white cursor-pointer" : "bg-gray-50 hover:bg-gray-100"}
                     ${isSun ? "bg-red-50 text-red-600" : ""}
                     ${isSat && !isSelected ? "bg-orange-50" : ""}
