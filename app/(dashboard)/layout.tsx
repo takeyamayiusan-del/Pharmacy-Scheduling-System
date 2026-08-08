@@ -162,7 +162,6 @@ export default function DashboardLayout({
 
   const storeLabel =
     storeConfig.storeName?.trim() || SITES[activeSiteId].displayName;
-  const siteShortName = SITES[activeSiteId].name;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50/60 via-sky-50/40 to-white">
