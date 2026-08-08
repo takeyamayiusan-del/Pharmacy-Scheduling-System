@@ -75,7 +75,6 @@ import {
   DEFAULT_SITE_ID,
   parseSiteId,
   readActiveSiteFromStorage,
-  SITES,
   storeConfigSettingId,
   writeActiveSiteToStorage,
   type SiteId,
