@@ -9,6 +9,8 @@ import {
 } from "@/lib/attendance/punchLeaveAdjust";
 import {
   createEmptyGeofenceDraft,
+  DEFAULT_GEOFENCE_JIJI,
+  hasJijiGeofenceLocation,
   type GeofenceLocation,
 } from "@/lib/attendance/geofence";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
@@ -110,6 +112,16 @@ export default function PunchAdminPage() {
       radiusMeters: 150,
     });
     setGeoDrafts((prev) => [...prev, toDraft(next)]);
+  };
+
+  const addJijiDefaultDraft = () => {
+    const draftsAsLoc = geoDrafts.map(fromDraft);
+    if (hasJijiGeofenceLocation(draftsAsLoc)) {
+      alert("清單中已有集集／家禾相關店點");
+      return;
+    }
+    setGeoDirty(true);
+    setGeoDrafts((prev) => [...prev, toDraft({ ...DEFAULT_GEOFENCE_JIJI })]);
   };
 
   const removeGeoDraft = (id: string) => {
@@ -320,17 +332,32 @@ export default function PunchAdminPage() {
               可新增多個座標（本店、總點等）。員工在任一店點半徑內都能打卡，方便支援調度。
             </p>
           </div>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              addGeoDraft();
-            }}
-            className="px-3 py-2 border text-sm rounded-lg hover:bg-gray-50 whitespace-nowrap"
-          >
-            + 新增店點
-          </button>
+          <div className="flex flex-wrap gap-2 justify-end">
+            {!hasJijiGeofenceLocation(geoDrafts.map(fromDraft)) && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  addJijiDefaultDraft();
+                }}
+                className="px-3 py-2 border border-sky-300 text-sky-800 bg-sky-50 text-sm rounded-lg hover:bg-sky-100 whitespace-nowrap"
+              >
+                + 加入集集預設
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                addGeoDraft();
+              }}
+              className="px-3 py-2 border text-sm rounded-lg hover:bg-gray-50 whitespace-nowrap"
+            >
+              + 新增店點
+            </button>
+          </div>
         </div>
 
         <div className="space-y-4">

@@ -284,9 +284,14 @@ export default function LeaveApplicationPage() {
 
   const getEmpName = (id: string) => employees.find((e) => e.id === id)?.name ?? id;
 
+  const siteEmployeeIds = useMemo(
+    () => new Set(employees.map((e) => e.id)),
+    [employees]
+  );
+
   const visibleRequests = useMemo(() => {
     const scoped = isManager
-      ? leaveRequests
+      ? leaveRequests.filter((r) => siteEmployeeIds.has(r.employeeId))
       : leaveRequests.filter((r) => r.employeeId === currentUser?.id);
     return scoped.filter((r) => {
       if (!doesRangeOverlapYearMonth(r.startDate, r.endDate, filterYear, filterMonth)) {
@@ -304,6 +309,7 @@ export default function LeaveApplicationPage() {
     filterYear,
     filterMonth,
     filterEmployeeId,
+    siteEmployeeIds,
   ]);
 
   const filterHoursSummary = useMemo(() => {

@@ -28,6 +28,19 @@ export const DEFAULT_GEOFENCE: GeofenceLocation = {
   radiusMeters: 150,
 };
 
+/**
+ * 預設：南投縣集集鎮家禾藥局（民生路237號）
+ * 座標為地圖近似值，現場請用「目前位置」校正後儲存。
+ */
+export const DEFAULT_GEOFENCE_JIJI: GeofenceLocation = {
+  id: "default-jiji",
+  name: "家禾藥局（集集）",
+  address: "南投縣集集鎮民生路237號",
+  latitude: 23.8292,
+  longitude: 120.7849,
+  radiusMeters: 150,
+};
+
 function readEnvNumber(key: string, fallback: number): number {
   const raw = process.env[key];
   if (raw == null || raw.trim() === "") return fallback;
@@ -62,7 +75,22 @@ export function geofenceFromEnv(): GeofenceLocation {
 }
 
 export function defaultGeofenceLocations(): GeofenceLocation[] {
-  return [geofenceFromEnv()];
+  const primary = geofenceFromEnv();
+  // 全新環境預設含竹山＋集集；已存 DB 的清單不會被這份覆蓋
+  if (primary.id === "default-zhushan" || primary.id === "env-default") {
+    return [primary, { ...DEFAULT_GEOFENCE_JIJI }];
+  }
+  return [primary, { ...DEFAULT_GEOFENCE_JIJI }];
+}
+
+/** 是否已有名稱／地址近似集集家禾的店點 */
+export function hasJijiGeofenceLocation(locations: GeofenceLocation[]): boolean {
+  return locations.some(
+    (loc) =>
+      loc.id === DEFAULT_GEOFENCE_JIJI.id ||
+      /集集|家禾/.test(loc.name) ||
+      /集集|民生路\s*237/.test(loc.address)
+  );
 }
 
 export function normalizeGeofenceLocation(

@@ -233,9 +233,14 @@ export default function OvertimePage() {
     }
   };
 
+  const siteEmployeeIds = useMemo(
+    () => new Set(employees.map((e) => e.id)),
+    [employees]
+  );
+
   const visibleRequests = useMemo(() => {
     const scoped = isManager
-      ? overtimeRequests
+      ? overtimeRequests.filter((r) => siteEmployeeIds.has(r.employeeId))
       : overtimeRequests.filter((r) => r.employeeId === currentUser?.id);
     return scoped.filter((r) => {
       if (!isDateInYearMonth(r.date, filterYear, filterMonth)) return false;
@@ -251,6 +256,7 @@ export default function OvertimePage() {
     filterYear,
     filterMonth,
     filterEmployeeId,
+    siteEmployeeIds,
   ]);
 
   const filterHoursSummary = useMemo(() => {

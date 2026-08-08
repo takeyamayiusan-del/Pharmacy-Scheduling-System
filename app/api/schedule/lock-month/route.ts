@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { assertManagerAuth } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { parseSiteId } from "@/lib/sites";
 
 type LockAction = "lock" | "unlock";
 
 // POST /api/schedule/lock-month
-// Body: { year: number, month: number, action: "lock" | "unlock" }
+// Body: { year, month, action, site_id? }
 export async function POST(req: NextRequest) {
   try {
     const auth = await assertManagerAuth(req);
@@ -17,9 +18,11 @@ export async function POST(req: NextRequest) {
       year?: number;
       month?: number;
       action?: LockAction;
+      site_id?: string;
     };
 
     const { year, month, action } = body;
+    const siteId = parseSiteId(body.site_id);
     if (
       !year ||
       !month ||
@@ -37,12 +40,13 @@ export async function POST(req: NextRequest) {
         .from("leave_month_locks")
         .delete()
         .eq("year", year)
-        .eq("month", month);
+        .eq("month", month)
+        .eq("site_id", siteId);
       if (error) {
         console.error("[lock-month] unlock:", error);
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
-      return NextResponse.json({ success: true, action: "unlock" });
+      return NextResponse.json({ success: true, action: "unlock", site_id: siteId });
     }
 
     const { data: existing } = await admin
@@ -50,16 +54,22 @@ export async function POST(req: NextRequest) {
       .select("id")
       .eq("year", year)
       .eq("month", month)
+      .eq("site_id", siteId)
       .maybeSingle();
 
     if (existing) {
-      return NextResponse.json({ success: true, action: "lock", alreadyLocked: true });
+      return NextResponse.json({
+        success: true,
+        action: "lock",
+        alreadyLocked: true,
+        site_id: siteId,
+      });
     }
 
     const { data, error } = await admin
       .from("leave_month_locks")
-      .insert({ year, month, locked_by: auth.callerId })
-      .select("year, month, locked_by, locked_at")
+      .insert({ year, month, site_id: siteId, locked_by: auth.callerId })
+      .select("year, month, site_id, locked_by, locked_at")
       .single();
 
     if (error) {
