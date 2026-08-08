@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultStoreConfig,
+  defaultStoreConfigForSite,
   getActiveRuleTags,
   getEnabledShiftCodes,
   getMonthRotationDates,
@@ -9,15 +10,27 @@ import {
   resolveRotationOffLimit,
   suggestRotationMenuLabel,
 } from "@/lib/store-config";
+import { getHeadStoreShiftTemplate } from "@/lib/shift-catalog";
 
 describe("store-config", () => {
   it("default matches YaoSheng Wednesday rotation", () => {
     const c = defaultStoreConfig();
     expect(c.features.rotationEvening).toBe(true);
+    expect(c.features.customShiftCatalog).toBe(false);
     expect(c.rotationEvening.weekdays).toEqual([3]);
     expect(c.rotationEvening.menuLabel).toBe("禮三晚班");
     expect(c.defaultWeekdayShift).toBe("B");
     expect(c.defaultSaturdayShift).toBe("C");
+    expect(c.shiftCatalog).toEqual([]);
+  });
+
+  it("jiji defaults enable catalog and disable zhushan rotation rules", () => {
+    const c = defaultStoreConfigForSite("jiji");
+    expect(c.storeName).toBe("家禾藥局");
+    expect(c.siteId).toBe("jiji");
+    expect(c.features.customShiftCatalog).toBe(true);
+    expect(c.features.rotationEvening).toBe(false);
+    expect(c.features.weekdayOffRule).toBe(false);
   });
 
   it("parseStoreConfig fills missing fields", () => {
@@ -29,9 +42,25 @@ describe("store-config", () => {
     expect(c.storeName).toBe("分店A");
     expect(c.features.rotationEvening).toBe(false);
     expect(c.features.weekdayOffRule).toBe(true);
+    expect(c.features.customShiftCatalog).toBe(false);
     expect(c.rotationEvening.weekdays).toEqual([4, 5]);
     expect(c.rotationEvening.menuLabel).toBe("週四晚班");
     expect(c.shifts).toHaveLength(6);
+  });
+
+  it("parseStoreConfig keeps jiji catalog when provided", () => {
+    const template = getHeadStoreShiftTemplate().slice(0, 2);
+    const c = parseStoreConfig(
+      {
+        storeName: "家禾藥局",
+        features: { customShiftCatalog: true },
+        shiftCatalog: template,
+      },
+      "jiji"
+    );
+    expect(c.features.customShiftCatalog).toBe(true);
+    expect(c.shiftCatalog).toHaveLength(2);
+    expect(c.shiftCatalog[0].name).toBeTruthy();
   });
 
   it("isRotationEveningDay respects feature flag and weekdays", () => {

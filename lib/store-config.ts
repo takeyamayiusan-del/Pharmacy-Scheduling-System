@@ -1,9 +1,12 @@
 /**
  * 店家設定（site / store config）
- * 目前單店寫入 app_settings.id = "store_config"；之後多分店可加 site_id。
+ * 竹山：app_settings.id = "store_config"（相容舊資料）
+ * 其他店：app_settings.id = "store_config:<siteId>"
  */
 
 import { getLocalDayOfWeek } from "@/lib/schedule/sundayRest";
+import { parseCatalogShifts, type CatalogShift } from "@/lib/shift-catalog";
+import { SITES, type SiteId } from "@/lib/sites";
 
 export type StoreShiftCode = "A" | "B" | "C" | "D" | "E" | "X";
 
@@ -44,8 +47,10 @@ export type RotationEveningConfig = {
 
 export type StoreConfig = {
   version: 1;
-  /** 店名（顯示用，未來多分店可辨識） */
+  /** 店名（顯示用） */
   storeName: string;
+  /** 所屬店（寫入時帶上，方便除錯） */
+  siteId?: SiteId;
   shifts: StoreShiftDef[];
   /** 平日（非輪值日、非固定班）預設班 */
   defaultWeekdayShift: StoreShiftCode;
@@ -56,10 +61,17 @@ export type StoreConfig = {
     rotationEvening: boolean;
     /** 平日不排休規則 */
     weekdayOffRule: boolean;
+    /**
+     * 進階班別目錄（自訂名稱／多段休息）。
+     * 竹山預設 false，排班維持 A–E；集集預設 true。
+     */
+    customShiftCatalog: boolean;
   };
   rotationEvening: RotationEveningConfig;
   /** 規則標籤文案（勾選欄位用，非功能開關） */
   ruleTags: StoreRuleTag[];
+  /** 進階班別目錄（僅 customShiftCatalog 開啟時使用） */
+  shiftCatalog: CatalogShift[];
 };
 
 export const STORE_CONFIG_SETTING_ID = "store_config";
@@ -88,17 +100,26 @@ const DEFAULT_RULE_TAGS: StoreRuleTag[] = [
   },
 ];
 
-/** 耀聖藥局現況預設（禮三晚班等） */
+/** 竹山現況預設（禮三晚班等）— 排班行為不變 */
 export function defaultStoreConfig(): StoreConfig {
+  return defaultStoreConfigForSite("zhushan");
+}
+
+/** 依店別預設；集集開啟進階班別目錄且關閉竹山禮三規則 */
+export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
+  const site = SITES[siteId];
+  const isZhushan = siteId === "zhushan";
   return {
     version: 1,
-    storeName: "耀聖藥局",
+    storeName: site.defaultStoreName,
+    siteId,
     shifts: DEFAULT_SHIFTS.map((s) => ({ ...s })),
     defaultWeekdayShift: "B",
     defaultSaturdayShift: "C",
     features: {
-      rotationEvening: true,
-      weekdayOffRule: true,
+      rotationEvening: isZhushan,
+      weekdayOffRule: isZhushan,
+      customShiftCatalog: site.customShiftCatalog,
     },
     rotationEvening: {
       weekdays: [3],
@@ -108,6 +129,7 @@ export function defaultStoreConfig(): StoreConfig {
       menuLabel: "禮三晚班",
     },
     ruleTags: DEFAULT_RULE_TAGS.map((t) => ({ ...t })),
+    shiftCatalog: [],
   };
 }
 
@@ -186,9 +208,9 @@ function normalizeRuleTags(raw: unknown, menuLabel: string): StoreRuleTag[] {
   return base;
 }
 
-/** 解析 DB／表單值；缺欄位時補預設 */
-export function parseStoreConfig(raw: unknown): StoreConfig {
-  const defaults = defaultStoreConfig();
+/** 解析 DB／表單值；缺欄位時補預設（可指定店別預設） */
+export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): StoreConfig {
+  const defaults = defaultStoreConfigForSite(siteId);
   if (!raw || typeof raw !== "object") return defaults;
   const obj = raw as Record<string, unknown>;
 
@@ -231,6 +253,10 @@ export function parseStoreConfig(raw: unknown): StoreConfig {
       typeof featuresRaw.weekdayOffRule === "boolean"
         ? featuresRaw.weekdayOffRule
         : defaults.features.weekdayOffRule,
+    customShiftCatalog:
+      typeof featuresRaw.customShiftCatalog === "boolean"
+        ? featuresRaw.customShiftCatalog
+        : defaults.features.customShiftCatalog,
   };
 
   return {
@@ -239,6 +265,7 @@ export function parseStoreConfig(raw: unknown): StoreConfig {
       typeof obj.storeName === "string" && obj.storeName.trim()
         ? obj.storeName.trim()
         : defaults.storeName,
+    siteId,
     shifts: normalizeShifts(obj.shifts),
     defaultWeekdayShift: isShiftCode(obj.defaultWeekdayShift)
       ? obj.defaultWeekdayShift
@@ -255,6 +282,7 @@ export function parseStoreConfig(raw: unknown): StoreConfig {
       menuLabel,
     },
     ruleTags: normalizeRuleTags(obj.ruleTags, menuLabel),
+    shiftCatalog: parseCatalogShifts(obj.shiftCatalog),
   };
 }
 

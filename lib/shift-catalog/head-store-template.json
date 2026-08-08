@@ -1,0 +1,539 @@
+[
+  {
+    "id": "tpl_001",
+    "code": "白班1",
+    "name": "白班1",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:00"
+      }
+    ],
+    "breaks": [],
+    "nominalHours": 3.5,
+    "enabled": true,
+    "sortOrder": 0
+  },
+  {
+    "id": "tpl_002",
+    "code": "白班2",
+    "name": "白班2",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:30"
+      }
+    ],
+    "breaks": [],
+    "nominalHours": 4.0,
+    "enabled": true,
+    "sortOrder": 1
+  },
+  {
+    "id": "tpl_003",
+    "code": "白班3",
+    "name": "白班3",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "09:00",
+        "end": "12:30"
+      }
+    ],
+    "breaks": [],
+    "nominalHours": 3.5,
+    "enabled": true,
+    "sortOrder": 2
+  },
+  {
+    "id": "tpl_004",
+    "code": "白班4",
+    "name": "白班4",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "09:00",
+        "end": "12:30"
+      },
+      {
+        "start": "13:30",
+        "end": "15:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:30"
+      }
+    ],
+    "nominalHours": 5.0,
+    "enabled": true,
+    "sortOrder": 3
+  },
+  {
+    "id": "tpl_005",
+    "code": "白班5",
+    "name": "白班5",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "09:00",
+        "end": "12:30"
+      },
+      {
+        "start": "13:00",
+        "end": "15:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:00"
+      }
+    ],
+    "nominalHours": 5.5,
+    "enabled": true,
+    "sortOrder": 4
+  },
+  {
+    "id": "tpl_006",
+    "code": "白班6",
+    "name": "白班6",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:30"
+      },
+      {
+        "start": "13:00",
+        "end": "14:30"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:00"
+      }
+    ],
+    "nominalHours": 5.5,
+    "enabled": true,
+    "sortOrder": 5
+  },
+  {
+    "id": "tpl_007",
+    "code": "白班7",
+    "name": "白班7",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "09:00",
+        "end": "12:30"
+      },
+      {
+        "start": "13:00",
+        "end": "16:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:00"
+      }
+    ],
+    "nominalHours": 6.5,
+    "enabled": true,
+    "sortOrder": 6
+  },
+  {
+    "id": "tpl_008",
+    "code": "白班8",
+    "name": "白班8",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:30"
+      },
+      {
+        "start": "13:00",
+        "end": "17:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:00"
+      }
+    ],
+    "nominalHours": 8.0,
+    "enabled": true,
+    "sortOrder": 7
+  },
+  {
+    "id": "tpl_009",
+    "code": "白班9",
+    "name": "白班9",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:30"
+      },
+      {
+        "start": "13:30",
+        "end": "17:30"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:30"
+      }
+    ],
+    "nominalHours": 8.0,
+    "enabled": true,
+    "sortOrder": 8
+  },
+  {
+    "id": "tpl_010",
+    "code": "白班10",
+    "name": "白班10",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "09:00",
+        "end": "12:30"
+      },
+      {
+        "start": "13:00",
+        "end": "17:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:00"
+      }
+    ],
+    "nominalHours": 7.5,
+    "enabled": true,
+    "sortOrder": 9
+  },
+  {
+    "id": "tpl_011",
+    "code": "白班11",
+    "name": "白班11",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "09:00",
+        "end": "13:00"
+      },
+      {
+        "start": "13:30",
+        "end": "17:30"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "13:00",
+        "end": "13:30"
+      }
+    ],
+    "nominalHours": 8.0,
+    "enabled": true,
+    "sortOrder": 10
+  },
+  {
+    "id": "tpl_012",
+    "code": "白班12",
+    "name": "白班12",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "09:00",
+        "end": "13:00"
+      },
+      {
+        "start": "14:00",
+        "end": "18:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "13:00",
+        "end": "14:00"
+      }
+    ],
+    "nominalHours": 8.0,
+    "enabled": true,
+    "sortOrder": 11
+  },
+  {
+    "id": "tpl_013",
+    "code": "白班13",
+    "name": "白班13",
+    "category": "day",
+    "workSegments": [
+      {
+        "start": "09:30",
+        "end": "13:30"
+      },
+      {
+        "start": "14:00",
+        "end": "18:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "13:30",
+        "end": "14:00"
+      }
+    ],
+    "nominalHours": 8.0,
+    "enabled": true,
+    "sortOrder": 12
+  },
+  {
+    "id": "tpl_014",
+    "code": "中班1",
+    "name": "中班1",
+    "category": "mid",
+    "workSegments": [
+      {
+        "start": "12:00",
+        "end": "15:30"
+      }
+    ],
+    "breaks": [],
+    "nominalHours": 3.5,
+    "enabled": true,
+    "sortOrder": 13
+  },
+  {
+    "id": "tpl_015",
+    "code": "中班2",
+    "name": "中班2",
+    "category": "mid",
+    "workSegments": [
+      {
+        "start": "12:30",
+        "end": "16:30"
+      },
+      {
+        "start": "17:00",
+        "end": "21:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "16:30",
+        "end": "17:00"
+      }
+    ],
+    "nominalHours": 8.0,
+    "enabled": true,
+    "sortOrder": 14
+  },
+  {
+    "id": "tpl_016",
+    "code": "中班3",
+    "name": "中班3",
+    "category": "mid",
+    "workSegments": [
+      {
+        "start": "13:00",
+        "end": "17:00"
+      },
+      {
+        "start": "17:30",
+        "end": "21:30"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "17:00",
+        "end": "17:30"
+      }
+    ],
+    "nominalHours": 8.0,
+    "enabled": true,
+    "sortOrder": 15
+  },
+  {
+    "id": "tpl_017",
+    "code": "晚班1",
+    "name": "晚班1",
+    "category": "night",
+    "workSegments": [
+      {
+        "start": "18:00",
+        "end": "21:30"
+      }
+    ],
+    "breaks": [],
+    "nominalHours": 3.5,
+    "enabled": true,
+    "sortOrder": 16
+  },
+  {
+    "id": "tpl_018",
+    "code": "晚班2",
+    "name": "晚班2",
+    "category": "night",
+    "workSegments": [
+      {
+        "start": "16:30",
+        "end": "18:00"
+      },
+      {
+        "start": "18:30",
+        "end": "21:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "18:00",
+        "end": "18:30"
+      }
+    ],
+    "nominalHours": 4.0,
+    "enabled": true,
+    "sortOrder": 17
+  },
+  {
+    "id": "tpl_019",
+    "code": "兩頭班兩段班1",
+    "name": "兩頭班(兩段班)1",
+    "category": "split",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:30"
+      },
+      {
+        "start": "16:30",
+        "end": "18:00"
+      },
+      {
+        "start": "18:30",
+        "end": "21:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "16:30"
+      },
+      {
+        "start": "18:00",
+        "end": "18:30"
+      }
+    ],
+    "nominalHours": 8.0,
+    "enabled": true,
+    "sortOrder": 18
+  },
+  {
+    "id": "tpl_020",
+    "code": "兩頭班三段班1",
+    "name": "兩頭班(三段班)1",
+    "category": "split",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:30"
+      },
+      {
+        "start": "16:30",
+        "end": "18:00"
+      },
+      {
+        "start": "18:30",
+        "end": "21:30"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "16:30"
+      },
+      {
+        "start": "18:00",
+        "end": "18:30"
+      }
+    ],
+    "nominalHours": 8.5,
+    "enabled": true,
+    "sortOrder": 19
+  },
+  {
+    "id": "tpl_021",
+    "code": "整天班all班1",
+    "name": "整天班(all班)1",
+    "category": "all_day",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:30"
+      },
+      {
+        "start": "13:00",
+        "end": "17:00"
+      },
+      {
+        "start": "17:30",
+        "end": "21:00"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:00"
+      },
+      {
+        "start": "17:00",
+        "end": "17:30"
+      }
+    ],
+    "nominalHours": 11.5,
+    "enabled": true,
+    "sortOrder": 20
+  },
+  {
+    "id": "tpl_022",
+    "code": "整天班all班2",
+    "name": "整天班(all班)2",
+    "category": "all_day",
+    "workSegments": [
+      {
+        "start": "08:30",
+        "end": "12:30"
+      },
+      {
+        "start": "13:00",
+        "end": "17:00"
+      },
+      {
+        "start": "17:30",
+        "end": "21:30"
+      }
+    ],
+    "breaks": [
+      {
+        "start": "12:30",
+        "end": "13:00"
+      },
+      {
+        "start": "17:00",
+        "end": "17:30"
+      }
+    ],
+    "nominalHours": 12.0,
+    "enabled": true,
+    "sortOrder": 21
+  }
+]

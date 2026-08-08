@@ -3,6 +3,15 @@
 import { useEffect, useState } from "react";
 import { useApp, type ShiftType } from "@/lib/context/AppContext";
 import {
+  createEmptyCatalogShift,
+  formatCatalogShiftSummary,
+  getHeadStoreShiftTemplate,
+  SHIFT_CATEGORY_LABELS,
+  type CatalogShift,
+  type ShiftCategory,
+} from "@/lib/shift-catalog";
+import { SITES } from "@/lib/sites";
+import {
   ALL_SHIFT_CODES,
   parseStoreConfig,
   suggestRotationMenuLabel,
@@ -12,18 +21,22 @@ import {
 } from "@/lib/store-config";
 
 const WEEKDAY_OPTIONS = [1, 2, 3, 4, 5, 6]; // 不含日：公休
+const CATEGORY_OPTIONS = Object.keys(SHIFT_CATEGORY_LABELS) as ShiftCategory[];
 
 export default function StoreSettingsPage() {
-  const { currentUser, storeConfig, saveStoreConfig } = useApp();
+  const { currentUser, storeConfig, saveStoreConfig, activeSiteId } = useApp();
   const [draft, setDraft] = useState<StoreConfig>(storeConfig);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     setDraft(storeConfig);
-  }, [storeConfig]);
+    setMessage(null);
+  }, [storeConfig, activeSiteId]);
 
   const canManage = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const siteMeta = SITES[activeSiteId];
+  const useCatalog = draft.features.customShiftCatalog;
 
   if (!canManage) {
     return (
@@ -64,11 +77,79 @@ export default function StoreSettingsPage() {
     });
   };
 
+  const updateCatalogShift = (id: string, patch: Partial<CatalogShift>) => {
+    setDraft((prev) => ({
+      ...prev,
+      shiftCatalog: prev.shiftCatalog.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+    }));
+  };
+
+  const updateCatalogRange = (
+    id: string,
+    field: "workSegments" | "breaks",
+    index: number,
+    key: "start" | "end",
+    value: string
+  ) => {
+    setDraft((prev) => ({
+      ...prev,
+      shiftCatalog: prev.shiftCatalog.map((s) => {
+        if (s.id !== id) return s;
+        const next = [...s[field]];
+        next[index] = { ...next[index], [key]: value };
+        return { ...s, [field]: next };
+      }),
+    }));
+  };
+
+  const addCatalogRange = (id: string, field: "workSegments" | "breaks") => {
+    setDraft((prev) => ({
+      ...prev,
+      shiftCatalog: prev.shiftCatalog.map((s) => {
+        if (s.id !== id) return s;
+        return {
+          ...s,
+          [field]: [...s[field], { start: "12:00", end: "13:00" }],
+        };
+      }),
+    }));
+  };
+
+  const removeCatalogRange = (
+    id: string,
+    field: "workSegments" | "breaks",
+    index: number
+  ) => {
+    setDraft((prev) => ({
+      ...prev,
+      shiftCatalog: prev.shiftCatalog.map((s) => {
+        if (s.id !== id) return s;
+        if (field === "workSegments" && s.workSegments.length <= 1) return s;
+        return { ...s, [field]: s[field].filter((_, i) => i !== index) };
+      }),
+    }));
+  };
+
+  const handleLoadTemplate = () => {
+    if (
+      draft.shiftCatalog.length > 0 &&
+      !window.confirm("將以總店班別範本覆蓋目前目錄，確定？")
+    ) {
+      return;
+    }
+    setDraft((prev) => ({
+      ...prev,
+      features: { ...prev.features, customShiftCatalog: true },
+      shiftCatalog: getHeadStoreShiftTemplate(),
+    }));
+    setMessage("已載入總店班別範本（尚未儲存）");
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setMessage(null);
     try {
-      const normalized = parseStoreConfig(draft);
+      const normalized = parseStoreConfig(draft, activeSiteId);
       if (normalized.features.rotationEvening && normalized.rotationEvening.weekdays.length === 0) {
         throw new Error("輪值晚班至少需選擇一個星期");
       }
@@ -86,8 +167,32 @@ export default function StoreSettingsPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">店家設定</h1>
         <p className="text-sm text-gray-500 mt-1">
-          班別、預設班、功能開關與週期輪班。之後多分店可各自一份設定；目前為本店共用。
+          目前編輯：{siteMeta.displayName}。各店設定分開儲存，互不影響。
         </p>
+      </div>
+
+      <div
+        className={`rounded-lg border px-4 py-3 text-sm ${
+          activeSiteId === "zhushan"
+            ? "border-amber-200 bg-amber-50 text-amber-950"
+            : "border-sky-200 bg-sky-50 text-sky-950"
+        }`}
+      >
+        {activeSiteId === "zhushan" ? (
+          <>
+            <p className="font-medium">竹山店（現行排班）</p>
+            <p className="mt-1 text-amber-900/90">
+              維持 A–E 班別與禮三晚班邏輯；請勿在此店開啟進階班別目錄，以免影響現有排班。
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="font-medium">集集／家禾（實驗店）</p>
+            <p className="mt-1 text-sky-900/90">
+              可自訂班別目錄、多段休息與兩頭班；此處調整不會改到竹山排班。穩定後再將竹山改為同一套。
+            </p>
+          </>
+        )}
       </div>
 
       {message && (
@@ -108,88 +213,328 @@ export default function StoreSettingsPage() {
         </label>
       </section>
 
-      <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-        <h2 className="font-semibold text-gray-900">班別清單</h2>
-        <p className="text-sm text-gray-500">
-          啟用的班別會出現在固定班表選單。休假（X）建議保持啟用。
-        </p>
-        <div className="space-y-2">
-          {ALL_SHIFT_CODES.map((code) => {
-            const row = draft.shifts.find((s) => s.code === code)!;
-            return (
-              <div
-                key={code}
-                className="grid grid-cols-[48px_1fr_auto] gap-3 items-center"
-              >
-                <span className="font-mono font-semibold text-gray-800">{code}</span>
-                <input
-                  value={row.name}
-                  onChange={(e) => updateShift(code, { name: e.target.value })}
-                  className="border rounded-lg px-3 py-2 text-sm"
-                  placeholder="班別名稱"
-                />
-                <label className="inline-flex items-center gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={row.enabled}
-                    disabled={code === "X"}
-                    onChange={(e) => updateShift(code, { enabled: e.target.checked })}
-                  />
-                  啟用
-                </label>
-              </div>
-            );
-          })}
-        </div>
-      </section>
+      {activeSiteId === "jiji" && (
+        <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="font-semibold text-gray-900">進階班別目錄</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                自訂名稱、多段上班／休息。目前供設定與日後排班接線；尚未寫入竹山 A–E 班表。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleLoadTemplate}
+              className="px-3 py-2 text-sm rounded-lg border border-sky-300 text-sky-800 bg-sky-50 hover:bg-sky-100"
+            >
+              載入總店範本
+            </button>
+          </div>
 
-      <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-        <h2 className="font-semibold text-gray-900">預設班</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <label className="block text-sm">
-            <span className="text-gray-700">平日預設（無固定班時）</span>
-            <select
-              value={draft.defaultWeekdayShift}
+          <label className="flex items-start gap-3 text-sm">
+            <input
+              type="checkbox"
+              className="mt-1"
+              checked={draft.features.customShiftCatalog}
               onChange={(e) =>
                 setDraft((p) => ({
                   ...p,
-                  defaultWeekdayShift: e.target.value as StoreShiftCode,
+                  features: { ...p.features, customShiftCatalog: e.target.checked },
                 }))
               }
-              className="mt-1 w-full border rounded-lg px-3 py-2"
-            >
-              {draft.shifts
-                .filter((s) => s.enabled)
-                .map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.code}（{s.name}）
-                  </option>
-                ))}
-            </select>
+            />
+            <span>
+              <span className="font-medium text-gray-900">啟用進階班別目錄</span>
+              <span className="block text-gray-500">關閉後仍保留目錄資料，僅不以此為主。</span>
+            </span>
           </label>
-          <label className="block text-sm">
-            <span className="text-gray-700">週六預設（無固定班時）</span>
-            <select
-              value={draft.defaultSaturdayShift}
-              onChange={(e) =>
-                setDraft((p) => ({
-                  ...p,
-                  defaultSaturdayShift: e.target.value as StoreShiftCode,
-                }))
-              }
-              className="mt-1 w-full border rounded-lg px-3 py-2"
-            >
-              {draft.shifts
-                .filter((s) => s.enabled)
-                .map((s) => (
-                  <option key={s.code} value={s.code}>
-                    {s.code}（{s.name}）
-                  </option>
-                ))}
-            </select>
-          </label>
-        </div>
-      </section>
+
+          {useCatalog && (
+            <div className="space-y-4">
+              {draft.shiftCatalog.length === 0 && (
+                <p className="text-sm text-gray-500">尚無班別，請載入總店範本或新增一筆。</p>
+              )}
+              {draft.shiftCatalog.map((shift) => (
+                <div key={shift.id} className="border rounded-lg p-4 space-y-3 bg-gray-50/60">
+                  <div className="flex flex-wrap gap-3 items-end">
+                    <label className="text-sm flex-1 min-w-[8rem]">
+                      <span className="text-gray-700">名稱</span>
+                      <input
+                        value={shift.name}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, {
+                            name: e.target.value,
+                            code: e.target.value.trim().slice(0, 24) || shift.code,
+                          })
+                        }
+                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
+                      />
+                    </label>
+                    <label className="text-sm w-28">
+                      <span className="text-gray-700">短碼</span>
+                      <input
+                        value={shift.code}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, { code: e.target.value.slice(0, 24) })
+                        }
+                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white font-mono text-sm"
+                      />
+                    </label>
+                    <label className="text-sm w-32">
+                      <span className="text-gray-700">類型</span>
+                      <select
+                        value={shift.category}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, {
+                            category: e.target.value as ShiftCategory,
+                          })
+                        }
+                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
+                      >
+                        {CATEGORY_OPTIONS.map((c) => (
+                          <option key={c} value={c}>
+                            {SHIFT_CATEGORY_LABELS[c]}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="text-sm w-24">
+                      <span className="text-gray-700">工時</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        value={shift.nominalHours}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, {
+                            nominalHours: Number(e.target.value) || 0,
+                          })
+                        }
+                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
+                      />
+                    </label>
+                    <label className="inline-flex items-center gap-2 text-sm pb-2">
+                      <input
+                        type="checkbox"
+                        checked={shift.enabled}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, { enabled: e.target.checked })
+                        }
+                      />
+                      啟用
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setDraft((p) => ({
+                          ...p,
+                          shiftCatalog: p.shiftCatalog.filter((s) => s.id !== shift.id),
+                        }))
+                      }
+                      className="text-sm text-red-700 px-2 py-2 hover:underline"
+                    >
+                      刪除
+                    </button>
+                  </div>
+
+                  <p className="text-xs text-gray-500">{formatCatalogShiftSummary(shift)}</p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-gray-700">上班時段</span>
+                        <button
+                          type="button"
+                          className="text-xs text-sky-700"
+                          onClick={() => addCatalogRange(shift.id, "workSegments")}
+                        >
+                          ＋時段
+                        </button>
+                      </div>
+                      {shift.workSegments.map((seg, i) => (
+                        <div key={i} className="flex gap-2 items-center mb-1">
+                          <input
+                            type="time"
+                            value={seg.start}
+                            onChange={(e) =>
+                              updateCatalogRange(shift.id, "workSegments", i, "start", e.target.value)
+                            }
+                            className="border rounded px-2 py-1 text-sm bg-white"
+                          />
+                          <span className="text-gray-400">–</span>
+                          <input
+                            type="time"
+                            value={seg.end}
+                            onChange={(e) =>
+                              updateCatalogRange(shift.id, "workSegments", i, "end", e.target.value)
+                            }
+                            className="border rounded px-2 py-1 text-sm bg-white"
+                          />
+                          {shift.workSegments.length > 1 && (
+                            <button
+                              type="button"
+                              className="text-xs text-red-600"
+                              onClick={() => removeCatalogRange(shift.id, "workSegments", i)}
+                            >
+                              刪
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm text-gray-700">休息</span>
+                        <button
+                          type="button"
+                          className="text-xs text-sky-700"
+                          onClick={() => addCatalogRange(shift.id, "breaks")}
+                        >
+                          ＋休息
+                        </button>
+                      </div>
+                      {shift.breaks.length === 0 && (
+                        <p className="text-xs text-gray-400">無休息段</p>
+                      )}
+                      {shift.breaks.map((br, i) => (
+                        <div key={i} className="flex gap-2 items-center mb-1">
+                          <input
+                            type="time"
+                            value={br.start}
+                            onChange={(e) =>
+                              updateCatalogRange(shift.id, "breaks", i, "start", e.target.value)
+                            }
+                            className="border rounded px-2 py-1 text-sm bg-white"
+                          />
+                          <span className="text-gray-400">–</span>
+                          <input
+                            type="time"
+                            value={br.end}
+                            onChange={(e) =>
+                              updateCatalogRange(shift.id, "breaks", i, "end", e.target.value)
+                            }
+                            className="border rounded px-2 py-1 text-sm bg-white"
+                          />
+                          <button
+                            type="button"
+                            className="text-xs text-red-600"
+                            onClick={() => removeCatalogRange(shift.id, "breaks", i)}
+                          >
+                            刪
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() =>
+                  setDraft((p) => ({
+                    ...p,
+                    shiftCatalog: [
+                      ...p.shiftCatalog,
+                      createEmptyCatalogShift({ sortOrder: p.shiftCatalog.length }),
+                    ],
+                  }))
+                }
+                className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+              >
+                新增班別
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
+      {!useCatalog && (
+        <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+          <h2 className="font-semibold text-gray-900">班別清單（A–E）</h2>
+          <p className="text-sm text-gray-500">
+            啟用的班別會出現在固定班表選單。休假（X）建議保持啟用。
+          </p>
+          <div className="space-y-2">
+            {ALL_SHIFT_CODES.map((code) => {
+              const row = draft.shifts.find((s) => s.code === code)!;
+              return (
+                <div
+                  key={code}
+                  className="grid grid-cols-[48px_1fr_auto] gap-3 items-center"
+                >
+                  <span className="font-mono font-semibold text-gray-800">{code}</span>
+                  <input
+                    value={row.name}
+                    onChange={(e) => updateShift(code, { name: e.target.value })}
+                    className="border rounded-lg px-3 py-2 text-sm"
+                    placeholder="班別名稱"
+                  />
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={row.enabled}
+                      disabled={code === "X"}
+                      onChange={(e) => updateShift(code, { enabled: e.target.checked })}
+                    />
+                    啟用
+                  </label>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {!useCatalog && (
+        <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+          <h2 className="font-semibold text-gray-900">預設班</h2>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <label className="block text-sm">
+              <span className="text-gray-700">平日預設（無固定班時）</span>
+              <select
+                value={draft.defaultWeekdayShift}
+                onChange={(e) =>
+                  setDraft((p) => ({
+                    ...p,
+                    defaultWeekdayShift: e.target.value as StoreShiftCode,
+                  }))
+                }
+                className="mt-1 w-full border rounded-lg px-3 py-2"
+              >
+                {draft.shifts
+                  .filter((s) => s.enabled)
+                  .map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.code}（{s.name}）
+                    </option>
+                  ))}
+              </select>
+            </label>
+            <label className="block text-sm">
+              <span className="text-gray-700">週六預設（無固定班時）</span>
+              <select
+                value={draft.defaultSaturdayShift}
+                onChange={(e) =>
+                  setDraft((p) => ({
+                    ...p,
+                    defaultSaturdayShift: e.target.value as StoreShiftCode,
+                  }))
+                }
+                className="mt-1 w-full border rounded-lg px-3 py-2"
+              >
+                {draft.shifts
+                  .filter((s) => s.enabled)
+                  .map((s) => (
+                    <option key={s.code} value={s.code}>
+                      {s.code}（{s.name}）
+                    </option>
+                  ))}
+              </select>
+            </label>
+          </div>
+        </section>
+      )}
 
       <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">功能開關</h2>
@@ -209,6 +554,7 @@ export default function StoreSettingsPage() {
             <span className="font-medium text-gray-900">週期輪班</span>
             <span className="block text-gray-500">
               關閉後側欄會隱藏「{draft.rotationEvening.menuLabel}」選單。
+              {activeSiteId === "jiji" && "（集集預設關閉）"}
             </span>
           </span>
         </label>

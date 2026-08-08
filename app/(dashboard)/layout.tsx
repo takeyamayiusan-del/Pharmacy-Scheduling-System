@@ -21,22 +21,38 @@ import {
   PanelLeftOpen,
   Fingerprint,
   DollarSign,
+  Store,
 } from 'lucide-react';
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
+import { SITE_IDS, SITES, type SiteId } from '@/lib/sites';
 
 export default function DashboardLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const { currentUser, logout, notifications, markNotificationRead, deleteNotification, deleteAllNotifications, refreshNotifications, isLoading, storeConfig } = useApp();
+  const {
+    currentUser,
+    logout,
+    notifications,
+    markNotificationRead,
+    deleteNotification,
+    deleteAllNotifications,
+    refreshNotifications,
+    isLoading,
+    storeConfig,
+    activeSiteId,
+    setActiveSite,
+    canSwitchSite,
+  } = useApp();
   const router = useRouter();
   const pathname = usePathname();
   const [showNotifications, setShowNotifications] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [switchingSite, setSwitchingSite] = useState(false);
 
   useEffect(() => {
     setIsMounted(true);
@@ -124,6 +140,18 @@ export default function DashboardLayout({
     router.replace('/login');
   };
 
+  const handleSiteChange = async (next: SiteId) => {
+    if (next === activeSiteId || switchingSite) return;
+    setSwitchingSite(true);
+    try {
+      await setActiveSite(next);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : '切換店別失敗');
+    } finally {
+      setSwitchingSite(false);
+    }
+  };
+
   const closeMobileSidebar = () => {
     setIsMobileSidebarOpen(false);
   };
@@ -132,23 +160,26 @@ export default function DashboardLayout({
     currentUser.role === 'owner' ? '老闆' : 
     currentUser.role === 'manager' ? '店長' : '員工';
 
+  const brandTitle = storeConfig.storeName?.trim() || SITES[activeSiteId].displayName;
+  const siteShortName = SITES[activeSiteId].name;
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50/60 via-sky-50/40 to-white">
       {/* 頂部導航欄 */}
       <header className="bg-white/85 backdrop-blur shadow-sm border-b border-pink-100 sticky top-0 z-40">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 sm:gap-4 min-w-0">
               <button
                 onClick={() => setIsMobileSidebarOpen(true)}
-                className="lg:hidden p-2 text-gray-600 hover:text-gray-900 hover:bg-pink-50 rounded-full"
+                className="lg:hidden p-2 text-gray-600 hover:text-gray-900 hover:bg-pink-50 rounded-full shrink-0"
                 aria-label="開啟選單"
               >
                 <Menu className="h-5 w-5" />
               </button>
               <button
                 onClick={() => setIsSidebarCollapsed((prev) => !prev)}
-                className="hidden lg:inline-flex p-2 text-gray-600 hover:text-gray-900 hover:bg-pink-50 rounded-full"
+                className="hidden lg:inline-flex p-2 text-gray-600 hover:text-gray-900 hover:bg-pink-50 rounded-full shrink-0"
                 aria-label="收合側邊欄"
               >
                 {isSidebarCollapsed ? (
@@ -157,9 +188,56 @@ export default function DashboardLayout({
                   <PanelLeftClose className="h-5 w-5" />
                 )}
               </button>
-              <h1 className="text-xl font-bold text-gray-900">耀聖藥局</h1>
+              <div className="min-w-0">
+                <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
+                  {brandTitle}
+                </h1>
+                <p className="text-xs text-gray-500 truncate sm:hidden">
+                  {siteShortName}店
+                </p>
+              </div>
+              {canSwitchSite ? (
+                <label className="hidden sm:flex items-center gap-2 shrink-0 ml-1">
+                  <Store className="h-4 w-4 text-sky-700" aria-hidden />
+                  <select
+                    value={activeSiteId}
+                    disabled={switchingSite}
+                    onChange={(e) => void handleSiteChange(e.target.value as SiteId)}
+                    className="text-sm border border-sky-200 bg-sky-50/80 text-sky-900 rounded-lg px-2.5 py-1.5 font-medium focus:outline-none focus:ring-2 focus:ring-sky-300 disabled:opacity-60"
+                    aria-label="選擇店別"
+                  >
+                    {SITE_IDS.map((id) => (
+                      <option key={id} value={id}>
+                        {SITES[id].displayName}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1 shrink-0">
+                  <Store className="h-3.5 w-3.5" aria-hidden />
+                  {siteShortName}
+                </span>
+              )}
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
+              {canSwitchSite && (
+                <label className="sm:hidden flex items-center shrink-0">
+                  <select
+                    value={activeSiteId}
+                    disabled={switchingSite}
+                    onChange={(e) => void handleSiteChange(e.target.value as SiteId)}
+                    className="max-w-[7.5rem] text-xs border border-sky-200 bg-sky-50 text-sky-900 rounded-lg px-2 py-1.5 font-medium"
+                    aria-label="選擇店別"
+                  >
+                    {SITE_IDS.map((id) => (
+                      <option key={id} value={id}>
+                        {SITES[id].name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <span className="hidden sm:inline text-sm text-gray-600">
                 {currentUser.name} ({roleLabel})
               </span>
