@@ -78,10 +78,15 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
     getCompLeaveBalance,
     loadCompLeaveLedger,
     loadBulletinItems,
+    activeSiteId,
   } = useApp();
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
   const supabase = useMemo(() => createClient(), []);
+  const siteEmployeeIds = useMemo(
+    () => new Set(employees.map((e) => e.id)),
+    [employees]
+  );
 
   const [days, setDays] = useState<FlexibleAttendanceDay[]>([]);
   const [pendingList, setPendingList] = useState<PendingMakeupHours[]>([]);
@@ -124,6 +129,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
       supabase
         .from("flexible_attendance_days")
         .select("*")
+        .eq("site_id", activeSiteId)
         .neq("status", "cancelled")
         .gte("day_date", monthStart)
         .order("day_date", { ascending: false })
@@ -135,9 +141,15 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
         .order("source_date", { ascending: false }),
     ]);
     if (daysRes.data) setDays(daysRes.data.map(mapDay));
-    if (pendingRes.data) setPendingList(pendingRes.data.map(mapPending));
+    if (pendingRes.data) {
+      setPendingList(
+        pendingRes.data
+          .map(mapPending)
+          .filter((p) => siteEmployeeIds.has(p.userId))
+      );
+    }
     setLoading(false);
-  }, [supabase]);
+  }, [supabase, activeSiteId, siteEmployeeIds]);
 
   useEffect(() => {
     void loadData();
@@ -196,6 +208,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
         note: formNote,
         publishBulletin,
         originalSchedule,
+        site_id: activeSiteId,
       });
       setShowCreate(false);
       setFormNote("");

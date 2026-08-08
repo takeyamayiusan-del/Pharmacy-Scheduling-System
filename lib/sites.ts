@@ -56,6 +56,12 @@ export function storeConfigSettingId(siteId: SiteId): string {
   return `store_config:${siteId}`;
 }
 
+/** app_settings 鍵：每店一份打卡圍籬 */
+export function geofenceSettingId(siteId: SiteId): string {
+  if (siteId === "zhushan") return "geofence"; // 相容既有竹山設定
+  return `geofence:${siteId}`;
+}
+
 export const ACTIVE_SITE_STORAGE_KEY = "pharmacy_active_site_id";
 
 export function readActiveSiteFromStorage(): SiteId | null {

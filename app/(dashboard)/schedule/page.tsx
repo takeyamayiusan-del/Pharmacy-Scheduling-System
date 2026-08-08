@@ -47,6 +47,7 @@ export default function SchedulePage() {
     leaveRequests,
     overtimeRequests,
     storeConfig,
+    activeSiteId,
   } = useApp();
   
   const [currentDate, setCurrentDate] = useState(() => {
@@ -63,7 +64,7 @@ export default function SchedulePage() {
   >({});
   const [editingCell, setEditingCell] = useState<{ date: string; employeeId: string } | null>(null);
 
-  // 班表規則說明（可編輯）
+  // 班表規則說明（可編輯；依店分開）
   const supabase = createClient();
   const [schedulingNotes, setSchedulingNotes] = useState("");
   const [notesId, setNotesId] = useState<string | null>(null);
@@ -71,25 +72,42 @@ export default function SchedulePage() {
   const [notesDraft, setNotesDraft] = useState("");
 
   useEffect(() => {
-    supabase.from("scheduling_notes").select("id, content").limit(1).single()
+    let cancelled = false;
+    setSchedulingNotes("");
+    setNotesId(null);
+    setIsEditingNotes(false);
+    supabase
+      .from("scheduling_notes")
+      .select("id, content")
+      .eq("site_id", activeSiteId)
+      .maybeSingle()
       .then(({ data }) => {
+        if (cancelled) return;
         if (data) {
           setSchedulingNotes(data.content);
           setNotesId(data.id);
         }
       });
+    return () => {
+      cancelled = true;
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeSiteId]);
 
   const saveNotes = async () => {
     if (notesId) {
       await supabase.from("scheduling_notes")
         .update({ content: notesDraft, updated_by: currentUser?.id })
-        .eq("id", notesId);
+        .eq("id", notesId)
+        .eq("site_id", activeSiteId);
     } else {
       const { data } = await supabase.from("scheduling_notes")
-        .insert({ content: notesDraft, updated_by: currentUser?.id })
-        .select().single();
+        .upsert(
+          { content: notesDraft, updated_by: currentUser?.id, site_id: activeSiteId },
+          { onConflict: "site_id" }
+        )
+        .select()
+        .single();
       if (data) setNotesId(data.id);
     }
     setSchedulingNotes(notesDraft);
@@ -113,6 +131,7 @@ export default function SchedulePage() {
       const { data } = await supabase
         .from("flexible_attendance_days")
         .select("day_date, title, period_mode, from_time, status")
+        .eq("site_id", activeSiteId)
         .neq("status", "cancelled")
         .gte("day_date", `${year}-${String(month).padStart(2, "0")}-01`)
         .lte("day_date", `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`);
@@ -134,7 +153,7 @@ export default function SchedulePage() {
     return () => {
       cancelled = true;
     };
-  }, [supabase, year, month, daysInMonth, typhoonReloadKey]);
+  }, [supabase, year, month, daysInMonth, typhoonReloadKey, activeSiteId]);
 
   const saturdayCount = countSaturdaysInMonth(year, month);
   const monthLocked = isLeaveMonthLocked(year, month);

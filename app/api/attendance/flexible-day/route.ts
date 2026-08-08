@@ -10,6 +10,7 @@ import {
   resolveTyphoonScheduleShift,
 } from "@/lib/attendance/flexibleAttendance";
 import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import { parseSiteId } from "@/lib/sites";
 
 type CreateBody = {
   action: "create";
@@ -20,6 +21,7 @@ type CreateBody = {
   note?: string;
   publishBulletin?: boolean;
   originalSchedule: OriginalScheduleEntry[];
+  site_id?: string;
 };
 
 type ConfirmAttendeesBody = {
@@ -189,11 +191,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "缺少原班表快照" }, { status: 400 });
       }
 
-      // 同日若尚有已取消殘留，先刪除以釋放唯一鍵
+      const siteId = parseSiteId(body.site_id);
+
+      // 同日若尚有已取消殘留，先刪除以釋放唯一鍵（僅本店）
       await admin
         .from("flexible_attendance_days")
         .delete()
         .eq("day_date", body.date)
+        .eq("site_id", siteId)
         .eq("status", "cancelled");
 
       const title = body.title?.trim() || "颱風／彈性出勤日";
@@ -231,6 +236,7 @@ export async function POST(req: NextRequest) {
             is_pinned: true,
             target_type: "all",
             target_ids: [],
+            site_id: siteId,
           })
           .select("id")
           .single();
@@ -245,6 +251,7 @@ export async function POST(req: NextRequest) {
         .from("flexible_attendance_days")
         .insert({
           day_date: body.date,
+          site_id: siteId,
           title,
           period_mode: body.periodMode,
           from_time: body.periodMode === "from_time" ? body.fromTime : null,

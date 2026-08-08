@@ -62,6 +62,8 @@ export default function BulletinBoard() {
     deleteBulletinItem,
     readBulletinItem,
     isBulletinRead,
+    activeSiteId,
+    storeConfig,
   } = useApp();
   const [showAddForm, setShowAddForm] = useState(false);
   const [formData, setFormData] = useState(DEFAULT_FORM);
@@ -176,6 +178,9 @@ export default function BulletinBoard() {
           <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
             <Megaphone className="h-5 w-5 text-blue-600" />
             店內佈告欄
+            <span className="text-xs font-medium text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-2 py-0.5">
+              {storeConfig.storeName?.trim() || (activeSiteId === "jiji" ? "集集" : "竹山")}
+            </span>
           </h3>
           {unreadCount > 0 && (
             <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">

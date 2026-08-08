@@ -327,9 +327,9 @@ export default function PunchAdminPage() {
       <div className="bg-white rounded-xl shadow-sm border p-4 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <h3 className="font-medium text-gray-900">打卡圍籬（多家店）</h3>
+            <h3 className="font-medium text-gray-900">打卡圍籬（本店）</h3>
             <p className="text-xs text-gray-500 mt-1">
-              可新增多個座標（本店、總點等）。員工在任一店點半徑內都能打卡，方便支援調度。
+              依目前選取的店別分開儲存。集集員工不會使用竹山圍籬；可新增多個座標供本店調度。
             </p>
           </div>
           <div className="flex flex-wrap gap-2 justify-end">
