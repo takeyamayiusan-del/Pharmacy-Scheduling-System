@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
+import { SYSTEM_NAME } from "@/lib/sites";
 
 export default function LoginPage() {
   const [activeTab, setActiveTab] = useState<"employee" | "manager">("manager");
@@ -77,8 +78,10 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-800 mb-2">耀聖藥局</h1>
-          <p className="text-xl text-gray-600">智慧排班管理系統</p>
+          <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2">
+            {SYSTEM_NAME}
+          </h1>
+          <p className="text-base text-gray-600">竹山／集集多分店排班</p>
         </div>
 
         <div className="bg-white rounded-2xl shadow-xl p-8">

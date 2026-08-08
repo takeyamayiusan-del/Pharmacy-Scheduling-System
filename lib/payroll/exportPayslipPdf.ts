@@ -162,7 +162,7 @@ export const exportPayslipPdf = async (record: PayrollRecord, employeeName: stri
       ${noteHtml}
 
       <div style="margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8;">
-        <span>耀聖藥局排班系統 · 薪資單僅供本人核對</span>
+        <span>家禾體系排班系統 · 薪資單僅供本人核對</span>
         <span>隔月 5 日發薪</span>
       </div>
     </div>

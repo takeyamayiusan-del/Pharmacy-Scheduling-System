@@ -3,6 +3,10 @@
  * 排班資料以「該店員工」過濾；竹山既有使用者預設 site=zhushan，行為不變。
  */
 
+/** 體系／網站顯示名稱（分店店名仍各自用 store_config.storeName） */
+export const SYSTEM_NAME = "家禾體系排班系統";
+export const SYSTEM_DESCRIPTION = "家禾體系多分店排班管理平台";
+
 export type SiteId = "zhushan" | "jiji";
 
 export type SiteDef = {

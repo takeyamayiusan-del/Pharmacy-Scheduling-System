@@ -1,10 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AppProvider } from "@/lib/context/AppContext";
+import { SYSTEM_DESCRIPTION, SYSTEM_NAME } from "@/lib/sites";
 
 export const metadata: Metadata = {
-  title: "耀聖藥局智慧排班系統",
-  description: "耀聖藥局智慧排班管理平台",
+  title: SYSTEM_NAME,
+  description: SYSTEM_DESCRIPTION,
 };
 
 export default function RootLayout({
