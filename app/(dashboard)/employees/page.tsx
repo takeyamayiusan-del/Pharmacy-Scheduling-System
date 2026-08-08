@@ -2,11 +2,20 @@
 
 import { useState } from "react";
 import { useApp, type Employee } from "@/lib/context/AppContext";
+import { SITE_IDS, SITES, type SiteId } from "@/lib/sites";
 
 type Role = "owner" | "manager" | "staff";
 
 export default function EmployeesPage() {
-  const { currentUser, employees, addEmployee, updateEmployee, deleteEmployee } = useApp();
+  const {
+    currentUser,
+    employees,
+    addEmployee,
+    updateEmployee,
+    deleteEmployee,
+    activeSiteId,
+    canSwitchSite,
+  } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selfPassword, setSelfPassword] = useState({ newPassword: "", confirmPassword: "" });
@@ -18,6 +27,7 @@ export default function EmployeesPage() {
     password: "",
     hireDate: new Date().toISOString().split('T')[0],
     endDate: "",
+    siteId: activeSiteId as SiteId,
   });
   
   const loadEmployee = (employee: Employee) => {
@@ -29,6 +39,7 @@ export default function EmployeesPage() {
       password: "",
       hireDate: employee.hireDate || new Date().toISOString().split('T')[0],
       endDate: employee.endDate || "",
+      siteId: employee.siteId ?? activeSiteId,
     });
     setShowForm(true);
   };
@@ -41,6 +52,7 @@ export default function EmployeesPage() {
       password: "",
       hireDate: new Date().toISOString().split('T')[0],
       endDate: "",
+      siteId: activeSiteId,
     });
     setEditingId(null);
     setShowForm(false);
@@ -58,12 +70,19 @@ export default function EmployeesPage() {
           username: formData.username.trim() || undefined,
           hireDate: formData.hireDate,
           endDate: formData.endDate.trim() || null,
+          siteId: formData.siteId,
         };
         if (formData.password) {
           updates.password = formData.password;
         }
         await updateEmployee(editingId, updates);
-        alert("員工資料已更新！");
+        if (formData.siteId !== activeSiteId) {
+          alert(
+            `已更新。此人員屬於「${SITES[formData.siteId].name}」，請用上方選店切換後查看。`
+          );
+        } else {
+          alert("員工資料已更新！");
+        }
       } else {
         if (!formData.username.trim() || !formData.password) {
           alert("新增員工請設定登入帳號與密碼");
@@ -76,8 +95,15 @@ export default function EmployeesPage() {
           password: formData.password,
           hireDate: formData.hireDate,
           endDate: formData.endDate.trim() || null,
+          siteId: formData.siteId,
         });
-        alert("員工已新增！");
+        if (formData.siteId !== activeSiteId) {
+          alert(
+            `員工已新增至「${SITES[formData.siteId].name}」。請用上方選店切換後查看。`
+          );
+        } else {
+          alert("員工已新增！");
+        }
       }
       
       resetForm();
@@ -156,10 +182,18 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-6">
       {/* 頁頭 */}
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">員工管理</h2>
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">員工管理</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            目前店別：{SITES[activeSiteId].displayName}（僅顯示此店人員）
+          </p>
+        </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => {
+            setFormData((prev) => ({ ...prev, siteId: activeSiteId }));
+            setShowForm(true);
+          }}
           className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
         >
           新增員工
@@ -269,6 +303,35 @@ export default function EmployeesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
+                  所屬店
+                </label>
+                {canSwitchSite ? (
+                  <select
+                    value={formData.siteId}
+                    onChange={(e) =>
+                      setFormData({ ...formData, siteId: e.target.value as SiteId })
+                    }
+                    className="w-full px-3 py-2 border rounded-lg"
+                  >
+                    {SITE_IDS.map((id) => (
+                      <option key={id} value={id}>
+                        {SITES[id].displayName}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    value={SITES[formData.siteId].displayName}
+                    disabled
+                    className="w-full px-3 py-2 border rounded-lg bg-gray-50 text-gray-700"
+                  />
+                )}
+                <p className="text-xs text-gray-500 mt-1">
+                  集集店長／員工請選「家禾藥局（集集）」；與竹山帳號互不影響。
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
                   入職日期
                 </label>
                 <input
@@ -295,36 +358,32 @@ export default function EmployeesPage() {
                 <p className="text-xs text-gray-500 mt-1">到期日後不顯示於班表；空白=持續在職</p>
               </div>
             </div>
-            {formData.role === "staff" && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  登入帳號
-                </label>
-                <input
-                  type="text"
-                  value={formData.username}
-                  onChange={e => setFormData({ ...formData, username: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder="員工登入用"
-                  required={!editingId}
-                />
-              </div>
-            )}
-            {(formData.role === "staff" || (editingId && formData.role === "manager")) && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  登入密碼{editingId ? "（留空則不變更）" : ""}
-                </label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={e => setFormData({ ...formData, password: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                  placeholder={editingId ? "不變更請留空" : "請設定密碼"}
-                  required={!editingId && formData.role === "staff"}
-                />
-              </div>
-            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                登入帳號
+              </label>
+              <input
+                type="text"
+                value={formData.username}
+                onChange={e => setFormData({ ...formData, username: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder={formData.role === "manager" ? "店長登入用" : "員工登入用"}
+                required={!editingId}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                登入密碼{editingId ? "（留空則不變更）" : ""}
+              </label>
+              <input
+                type="password"
+                value={formData.password}
+                onChange={e => setFormData({ ...formData, password: e.target.value })}
+                className="w-full px-3 py-2 border rounded-lg"
+                placeholder={editingId ? "不變更請留空" : "請設定密碼"}
+                required={!editingId}
+              />
+            </div>
             <div className="flex gap-3">
               <button
                 type="submit"
@@ -354,6 +413,7 @@ export default function EmployeesPage() {
             <thead className="bg-gray-50">
               <tr>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">員工姓名</th>
+                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">所屬店</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">入職日期</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">到期日</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">登入帳號</th>
@@ -368,13 +428,16 @@ export default function EmployeesPage() {
                     {employee.name}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
+                    {SITES[employee.siteId ?? activeSiteId].name}
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-600">
                     {employee.hireDate}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
                     {employee.endDate || "—"}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">
-                    {employee.role === "staff" ? employee.username ?? "—" : "店長/老闆專用帳號"}
+                    {employee.username ?? "—"}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(employee.role)}`}>

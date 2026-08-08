@@ -64,13 +64,22 @@ import {
 } from "@/lib/schedule/holidayOneClick";
 import {
   defaultStoreConfig,
+  defaultStoreConfigForSite,
   getMonthRotationDates,
   isRotationEveningDay,
   parseStoreConfig,
   resolveRotationOffLimit,
-  STORE_CONFIG_SETTING_ID,
   type StoreConfig,
 } from "@/lib/store-config";
+import {
+  DEFAULT_SITE_ID,
+  parseSiteId,
+  readActiveSiteFromStorage,
+  SITES,
+  storeConfigSettingId,
+  writeActiveSiteToStorage,
+  type SiteId,
+} from "@/lib/sites";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -82,6 +91,8 @@ export type Employee = {
   password?: string;
   hireDate: string;               // 入職日期
   endDate?: string | null;        // 到期日（含當日）；空=持續在職
+  /** 所屬店：zhushan=竹山、jiji=集集家禾 */
+  siteId?: SiteId;
   /** 參與週期輪值晚班（DB: is_wednesday_rotation，語意已泛化） */
   isWednesdayRotation?: boolean;
   isWeekdayOffRule?: boolean;     // 平日不排休規則
@@ -441,6 +452,11 @@ interface AppContextType {
   saveStoreConfig: (next: StoreConfig) => Promise<void>;
   /** 該日是否為店家設定的輪值晚班日 */
   isRotationEveningDate: (dateStr: string) => boolean;
+  /** 目前檢視的店（老闆可切換；店長／員工固定所屬店） */
+  activeSiteId: SiteId;
+  setActiveSite: (siteId: SiteId) => Promise<void>;
+  /** 是否老闆（可跨店） */
+  canSwitchSite: boolean;
   getLeaveSummary: (employeeId: string, year: number, month: number) => LeaveSummary;
   toggleLeaveDate: (employeeId: string, date: string) => { success: boolean; message?: string };
   isLeaveMonthLocked: (year: number, month: number) => boolean;
@@ -543,7 +559,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const supabase = useMemo(() => createClient(), []);
 
   const [currentUser, setCurrentUser] = useState<Employee | null>(null);
-  const [employees, setEmployees] = useState<Employee[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   // Supabase-backed state
@@ -589,6 +604,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [wednesdayNightShifts, setWednesdayNightShifts] = useState<WednesdayNightShift[]>([]);
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(() => defaultStoreConfig());
+  const [activeSiteId, setActiveSiteIdState] = useState<SiteId>(DEFAULT_SITE_ID);
+  const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const canSwitchSite = currentUser?.role === "owner";
+
+  /** 畫面／排班只顯示目前店的員工（竹山既有資料預設都在 zhushan） */
+  const employees = useMemo(
+    () => allEmployees.filter((e) => parseSiteId(e.siteId) === activeSiteId),
+    [allEmployees, activeSiteId]
+  );
 
   // ─── Load data from Supabase ────────────────────────────────────────────────
 
@@ -688,25 +712,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase]);
 
+  const mapUserRow = (r: {
+    id: string;
+    username?: string | null;
+    name: string;
+    role: string;
+    hire_date?: string | null;
+    end_date?: string | null;
+    is_wednesday_rotation?: boolean | null;
+    is_weekday_off_rule?: boolean | null;
+    site_id?: string | null;
+  }): Employee => ({
+    id: r.id,
+    name: r.name,
+    username: r.username ?? undefined,
+    role: mapRole(r.role),
+    hireDate: r.hire_date || "2026-04-01",
+    endDate: r.end_date ?? null,
+    siteId: parseSiteId(r.site_id),
+    isWednesdayRotation: r.is_wednesday_rotation ?? false,
+    isWeekdayOffRule: r.is_weekday_off_rule ?? false,
+  });
+
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase
       .from("users")
-      .select("id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule")
+      .select(
+        "id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id"
+      )
       .eq("is_active", true);
-      if (data) {
-        setEmployees(
-          data.map((r) => ({
-            id: r.id,
-            name: r.name,
-            username: r.username ?? undefined,
-            role: mapRole(r.role),
-            hireDate: r.hire_date || '2026-04-01',
-            endDate: r.end_date ?? null,
-            isWednesdayRotation: r.is_wednesday_rotation,
-            isWeekdayOffRule: r.is_weekday_off_rule,
-          }))
-        );
-      }
+    if (data) {
+      setAllEmployees(data.map((r) => mapUserRow(r)));
+    }
   }, [supabase]);
 
   const formatDbTime = (value: string | null | undefined, fallback: string) => {
@@ -998,27 +1035,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setGeofenceLocations(parseGeofenceSettings(data?.value ?? null));
   }, [supabase]);
 
-  const loadStoreConfig = useCallback(async () => {
+  const loadStoreConfig = useCallback(async (siteId: SiteId = activeSiteId) => {
+    const settingId = storeConfigSettingId(siteId);
     const { data, error } = await supabase
       .from("app_settings")
       .select("value")
-      .eq("id", STORE_CONFIG_SETTING_ID)
+      .eq("id", settingId)
       .maybeSingle();
     if (error) {
       console.error("loadStoreConfig:", error);
-      setStoreConfig(defaultStoreConfig());
+      setStoreConfig(defaultStoreConfigForSite(siteId));
       return;
     }
-    setStoreConfig(parseStoreConfig(data?.value ?? null));
-  }, [supabase]);
+    setStoreConfig(parseStoreConfig(data?.value ?? null, siteId));
+  }, [supabase, activeSiteId]);
 
   const saveStoreConfig = async (next: StoreConfig) => {
     if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
       throw new Error("僅店長或老闆可調整店家設定");
     }
-    const normalized = parseStoreConfig(next);
+    const siteId = activeSiteId;
+    const normalized = parseStoreConfig({ ...next, siteId }, siteId);
+    const settingId = storeConfigSettingId(siteId);
     const { error } = await supabase.from("app_settings").upsert({
-      id: STORE_CONFIG_SETTING_ID,
+      id: settingId,
       value: normalized,
       updated_by: currentUser.id,
       updated_at: new Date().toISOString(),
@@ -1026,32 +1066,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (error) throw new Error(error.message || "儲存店家設定失敗");
     setStoreConfig(normalized);
 
-    // 同步班別顯示名稱到 shift_time_config（班表圖例／固定班表）
-    setShiftDisplayConfig((prev) => {
-      const merged = { ...prev };
-      for (const shift of normalized.shifts) {
-        if (!merged[shift.code]) continue;
-        merged[shift.code] = { ...merged[shift.code], label: shift.name };
-      }
-      return merged;
-    });
-    await Promise.all(
-      normalized.shifts.map((shift) => {
-        const prev = shiftDisplayConfig[shift.code];
-        if (!prev) return Promise.resolve();
-        return supabase.from("shift_time_config").upsert(
-          {
-            shift_code: shift.code,
-            display_label: shift.name,
-            display_text: prev.displayText,
-            bg_color: prev.bgColor,
-            text_color: prev.textColor,
-            border_color: prev.borderColor,
-          },
-          { onConflict: "shift_code" }
-        );
-      })
-    );
+    // 僅竹山傳統 A–E 同步到共用 shift_time_config，避免集集設定改到竹山班表圖例
+    if (siteId === "zhushan" && !normalized.features.customShiftCatalog) {
+      setShiftDisplayConfig((prev) => {
+        const merged = { ...prev };
+        for (const shift of normalized.shifts) {
+          if (!merged[shift.code]) continue;
+          merged[shift.code] = { ...merged[shift.code], label: shift.name };
+        }
+        return merged;
+      });
+      await Promise.all(
+        normalized.shifts.map((shift) => {
+          const prev = shiftDisplayConfig[shift.code];
+          if (!prev) return Promise.resolve();
+          return supabase.from("shift_time_config").upsert(
+            {
+              shift_code: shift.code,
+              display_label: shift.name,
+              display_text: prev.displayText,
+              bg_color: prev.bgColor,
+              text_color: prev.textColor,
+              border_color: prev.borderColor,
+            },
+            { onConflict: "shift_code" }
+          );
+        })
+      );
+    }
+  };
+
+  const setActiveSite = async (siteId: SiteId) => {
+    if (!currentUser || currentUser.role !== "owner") {
+      throw new Error("僅老闆可切換店別");
+    }
+    setActiveSiteIdState(siteId);
+    writeActiveSiteToStorage(siteId);
+    await loadStoreConfig(siteId);
   };
 
   const isRotationEveningDate = useCallback(
@@ -1282,9 +1333,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       relatedId?: string;
       relatedType?: string;
     }) => {
-      const managers = employees.filter((e) => e.role === "owner" || e.role === "manager");
+      // 店長：僅目前店；老闆：全店都通知（跨店切換仍收得到）
+      const recipients = allEmployees.filter(
+        (e) =>
+          e.role === "owner" ||
+          (e.role === "manager" && parseSiteId(e.siteId) === activeSiteId)
+      );
       await Promise.all(
-        managers.map((m) =>
+        recipients.map((m) =>
           insertNotification({
             recipientId: m.id,
             type: params.type,
@@ -1296,7 +1352,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         )
       );
     },
-    [employees, insertNotification]
+    [allEmployees, activeSiteId, insertNotification]
   );
 
   // ─── Auth state ──────────────────────────────────────────────────────────────
@@ -1315,23 +1371,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (mounted) {
             const { data: userRow } = await supabase
               .from("users")
-              .select("id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule")
+              .select(
+                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id"
+              )
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[initAuth] userRow:", userRow);
             if (userRow && mounted) {
-              const emp: Employee = {
-                id: userRow.id,
-                name: userRow.name,
-                role: mapRole(userRow.role),
-                hireDate: userRow.hire_date || "2026-04-01",
-                endDate: userRow.end_date ?? null,
-                isWednesdayRotation: userRow.is_wednesday_rotation ?? false,
-                isWeekdayOffRule: userRow.is_weekday_off_rule ?? false,
-              };
-            setCurrentUser(emp);
-            await loadTodayPunchRecords(userRow.id);
-            // Load remaining data in background without blocking login UI
+              const emp = mapUserRow(userRow);
+              const homeSite = parseSiteId(userRow.site_id);
+              const viewSite =
+                emp.role === "owner"
+                  ? readActiveSiteFromStorage() ?? homeSite
+                  : homeSite;
+              setCurrentUser(emp);
+              setActiveSiteIdState(viewSite);
+              await loadTodayPunchRecords(userRow.id);
+              // Load remaining data in background without blocking login UI
             Promise.allSettled([
               loadEmployees(),
               loadLeaveRequests(),
@@ -1350,7 +1406,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               loadBulletinItems(),
               loadHolidays(),
               loadGeofenceConfig(),
-              loadStoreConfig(),
+              loadStoreConfig(viewSite),
               loadAnnualLeaveConfigs(new Date().getFullYear()),
               loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
             ]).catch((e) => console.error("[initAuth] background load error:", e));
@@ -1372,9 +1428,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       
       if (event === "SIGNED_OUT" || !session) {
         setCurrentUser(null);
-        setEmployees([]);
+        setAllEmployees([]);
         setPunchRecords([]);
         setPunchRecordsReady(false);
+        setActiveSiteIdState(DEFAULT_SITE_ID);
         return;
       }
       
@@ -1385,21 +1442,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const { data: userRow } = await supabase
               .from("users")
-              .select("id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule")
+              .select(
+                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id"
+              )
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[SIGNED_IN] userRow:", userRow);
             if (userRow && mounted) {
-              const emp: Employee = {
-                id: userRow.id,
-                name: userRow.name,
-                role: mapRole(userRow.role),
-                hireDate: userRow.hire_date || "2026-04-01",
-                endDate: userRow.end_date ?? null,
-                isWednesdayRotation: userRow.is_wednesday_rotation ?? false,
-                isWeekdayOffRule: userRow.is_weekday_off_rule ?? false,
-              };
+              const emp = mapUserRow(userRow);
+              const homeSite = parseSiteId(userRow.site_id);
+              const viewSite =
+                emp.role === "owner"
+                  ? readActiveSiteFromStorage() ?? homeSite
+                  : homeSite;
               setCurrentUser(emp);
+              setActiveSiteIdState(viewSite);
               await loadTodayPunchRecords(userRow.id);
               Promise.allSettled([
                 loadEmployees(),
@@ -1419,7 +1476,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 loadBulletinItems(),
                 loadHolidays(),
                 loadGeofenceConfig(),
-                loadStoreConfig(),
+                loadStoreConfig(viewSite),
                 loadAnnualLeaveConfigs(new Date().getFullYear()),
                 loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
               ]).catch((e) => console.error("[SIGNED_IN] background load error:", e));
@@ -1461,7 +1518,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const { data: profile, error: profileError } = await supabase
         .from("users")
-        .select("id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule")
+        .select(
+          "id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule, site_id"
+        )
         .eq("id", data.user.id)
         .single();
 
@@ -1470,15 +1529,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return false;
       }
 
-      setCurrentUser({
-        id: profile.id,
-        name: profile.name,
-        role: mapRole(profile.role),
-        hireDate: profile.hire_date || "2026-04-01",
-        endDate: profile.end_date ?? null,
-        isWednesdayRotation: profile.is_wednesday_rotation ?? false,
-        isWeekdayOffRule: profile.is_weekday_off_rule ?? false,
-      });
+      const emp = mapUserRow(profile);
+      const homeSite = parseSiteId(profile.site_id);
+      const viewSite =
+        emp.role === "owner" ? readActiveSiteFromStorage() ?? homeSite : homeSite;
+      setCurrentUser(emp);
+      setActiveSiteIdState(viewSite);
 
       return true;
     } catch (e) {
@@ -1497,7 +1553,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     setCurrentUser(null);
-    setEmployees([]);
+    setAllEmployees([]);
+    setActiveSiteIdState(DEFAULT_SITE_ID);
     const { error } = await supabase.auth.signOut({ scope: "local" });
     if (error) {
       console.error("[logout] signOut error:", error);
@@ -1517,6 +1574,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         role: employee.role,
         hire_date: employee.hireDate,
         end_date: employee.endDate || null,
+        site_id: employee.siteId ?? activeSiteId,
       }),
     });
     if (!res.ok) {
@@ -1540,6 +1598,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         isWeekdayOffRule: updates.isWeekdayOffRule,
         hire_date: updates.hireDate,
         end_date: updates.endDate === undefined ? undefined : updates.endDate || null,
+        site_id: updates.siteId,
       }),
     });
     if (!res.ok) {
@@ -3823,6 +3882,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         loadStoreConfig,
         saveStoreConfig,
         isRotationEveningDate,
+        activeSiteId,
+        setActiveSite,
+        canSwitchSite,
         getLeaveSummary,
         toggleLeaveDate,
         isLeaveMonthLocked,

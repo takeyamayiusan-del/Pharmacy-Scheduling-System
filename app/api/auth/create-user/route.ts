@@ -13,13 +13,14 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { username, password, name, role, hire_date, end_date } = body as {
+    const { username, password, name, role, hire_date, end_date, site_id } = body as {
       username: string;
       password: string;
       name: string;
       role: string;
       hire_date?: string;
       end_date?: string | null;
+      site_id?: string;
     };
 
     if (!username || !password || !name || !role) {
@@ -44,6 +45,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: authError.message }, { status: 400 });
     }
 
+    const siteId = site_id === "jiji" ? "jiji" : "zhushan";
+
     const { data: userRow, error: insertError } = await admin
       .from("users")
       .insert({
@@ -54,6 +57,7 @@ export async function POST(req: NextRequest) {
         is_active: true,
         hire_date: hire_date || "2026-04-01",
         end_date: end_date || null,
+        site_id: siteId,
       })
       .select()
       .single();
