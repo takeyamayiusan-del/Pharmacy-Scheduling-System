@@ -29,7 +29,7 @@ import {
 } from "@/lib/applications/duplicateGuard";
 import { resolveAnnualLeaveQuotaDays } from "@/lib/attendance/annualLeave";
 import {
-  defaultGeofenceLocations,
+  defaultGeofenceLocationsForSite,
   parseGeofenceSettings,
   type GeofenceLocation,
 } from "@/lib/attendance/geofence";
@@ -73,6 +73,7 @@ import {
 } from "@/lib/store-config";
 import {
   DEFAULT_SITE_ID,
+  geofenceSettingId,
   parseSiteId,
   readActiveSiteFromStorage,
   storeConfigSettingId,
@@ -581,7 +582,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [annualLeaveAdjustments, setAnnualLeaveAdjustments] = useState<AnnualLeaveAdjustment[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [geofenceLocations, setGeofenceLocations] = useState<GeofenceLocation[]>(() =>
-    defaultGeofenceLocations()
+    defaultGeofenceLocationsForSite(DEFAULT_SITE_ID)
   );
 
   // Supabase-backed state (previously in localStorage)
@@ -1023,19 +1024,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await loadHolidays();
   }, [loadHolidays]);
 
-  const loadGeofenceConfig = useCallback(async () => {
+  const loadGeofenceConfig = useCallback(async (siteId: SiteId = activeSiteId) => {
+    const settingId = geofenceSettingId(siteId);
     const { data, error } = await supabase
       .from("app_settings")
       .select("value")
-      .eq("id", "geofence")
+      .eq("id", settingId)
       .maybeSingle();
     if (error) {
       console.error("loadGeofenceConfig:", error);
-      setGeofenceLocations(defaultGeofenceLocations());
+      setGeofenceLocations(defaultGeofenceLocationsForSite(siteId));
       return;
     }
-    setGeofenceLocations(parseGeofenceSettings(data?.value ?? null));
-  }, [supabase]);
+    if (!data?.value) {
+      setGeofenceLocations(defaultGeofenceLocationsForSite(siteId));
+      return;
+    }
+    setGeofenceLocations(parseGeofenceSettings(data.value));
+  }, [supabase, activeSiteId]);
 
   const loadStoreConfig = useCallback(async (siteId: SiteId = activeSiteId) => {
     const settingId = storeConfigSettingId(siteId);
@@ -1104,7 +1110,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setActiveSiteIdState(siteId);
     writeActiveSiteToStorage(siteId);
-    await loadStoreConfig(siteId);
+    // 切店時重載該店公告／圍籬／店家設定，避免看到另一店內容
+    await Promise.all([
+      loadStoreConfig(siteId),
+      loadGeofenceConfig(siteId),
+      loadBulletinItems(siteId),
+    ]);
   };
 
   const isRotationEveningDate = useCallback(
@@ -1121,8 +1132,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("至少需要保留一個打卡店點");
     }
     const payload = { locations: normalized };
+    const settingId = geofenceSettingId(activeSiteId);
     const { error } = await supabase.from("app_settings").upsert({
-      id: "geofence",
+      id: settingId,
       value: payload,
       updated_by: currentUser.id,
       updated_at: new Date().toISOString(),
@@ -1405,9 +1417,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
               loadShiftTimeConfig(),
               loadWednesdayOffSelections(),
               loadLeaveMonthLocks(),
-              loadBulletinItems(),
+              loadBulletinItems(viewSite),
               loadHolidays(),
-              loadGeofenceConfig(),
+              loadGeofenceConfig(viewSite),
               loadStoreConfig(viewSite),
               loadAnnualLeaveConfigs(new Date().getFullYear()),
               loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
@@ -1475,9 +1487,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 loadShiftTimeConfig(),
                 loadWednesdayOffSelections(),
                 loadLeaveMonthLocks(),
-                loadBulletinItems(),
+                loadBulletinItems(viewSite),
                 loadHolidays(),
-                loadGeofenceConfig(),
+                loadGeofenceConfig(viewSite),
                 loadStoreConfig(viewSite),
                 loadAnnualLeaveConfigs(new Date().getFullYear()),
                 loadAnnualLeaveConfigs(new Date().getFullYear() + 1),
@@ -3625,11 +3637,12 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
 
   // ─── Notifications ────────────────────────────────────────────────────────────
 
-  const loadBulletinItems = useCallback(async (): Promise<void> => {
+  const loadBulletinItems = useCallback(async (siteId: SiteId = activeSiteId): Promise<void> => {
     const [boardResponse, readsResponse] = await Promise.all([
       supabase
         .from("bulletin_board")
         .select("*, users(name)")
+        .eq("site_id", siteId)
         .order("created_at", { ascending: false }),
       supabase
         .from("bulletin_reads")
@@ -3685,7 +3698,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       })
     );
-  }, [supabase]);
+  }, [supabase, activeSiteId]);
 
   const addBulletinItem = async (item: Omit<BulletinItem, "id" | "authorName" | "createdAt">): Promise<void> => {
     await supabase.from("bulletin_board").insert({
@@ -3699,8 +3712,9 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       is_pinned: item.isPinned ?? false,
       target_type: item.targetType ?? "all",
       target_ids: item.targetIds ?? [],
+      site_id: activeSiteId,
     });
-    await loadBulletinItems();
+    await loadBulletinItems(activeSiteId);
   };
 
   const updateBulletinItem = async (id: string, updates: Partial<BulletinItem>): Promise<void> => {

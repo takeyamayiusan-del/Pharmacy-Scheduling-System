@@ -1,4 +1,6 @@
-/** 打卡地理圍籬：支援多家店座標，員工在任一點範圍內即可打卡 */
+/** 打卡地理圍籬：每店一份設定；該店員工在該店店點範圍內打卡 */
+
+import type { SiteId } from "@/lib/sites";
 
 export type GeofenceLocation = {
   id: string;
@@ -74,13 +76,15 @@ export function geofenceFromEnv(): GeofenceLocation {
   };
 }
 
+/** 竹山預設（相容舊單店） */
 export function defaultGeofenceLocations(): GeofenceLocation[] {
-  const primary = geofenceFromEnv();
-  // 全新環境預設含竹山＋集集；已存 DB 的清單不會被這份覆蓋
-  if (primary.id === "default-zhushan" || primary.id === "env-default") {
-    return [primary, { ...DEFAULT_GEOFENCE_JIJI }];
-  }
-  return [primary, { ...DEFAULT_GEOFENCE_JIJI }];
+  return [geofenceFromEnv()];
+}
+
+/** 依店別預設圍籬（集集不再混入竹山座標） */
+export function defaultGeofenceLocationsForSite(siteId: SiteId): GeofenceLocation[] {
+  if (siteId === "jiji") return [{ ...DEFAULT_GEOFENCE_JIJI }];
+  return defaultGeofenceLocations();
 }
 
 /** 是否已有名稱／地址近似集集家禾的店點 */

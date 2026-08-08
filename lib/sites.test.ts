@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_SITE_ID,
+  geofenceSettingId,
   parseSiteId,
   storeConfigSettingId,
   SITES,
@@ -22,6 +23,11 @@ describe("sites", () => {
   it("keeps zhushan store_config key for backward compatibility", () => {
     expect(storeConfigSettingId("zhushan")).toBe("store_config");
     expect(storeConfigSettingId("jiji")).toBe("store_config:jiji");
+  });
+
+  it("keeps zhushan geofence key for backward compatibility", () => {
+    expect(geofenceSettingId("zhushan")).toBe("geofence");
+    expect(geofenceSettingId("jiji")).toBe("geofence:jiji");
   });
 
   it("jiji uses custom shift catalog; zhushan does not", () => {
