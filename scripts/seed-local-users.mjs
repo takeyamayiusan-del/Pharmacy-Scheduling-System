@@ -1,7 +1,8 @@
 /**
  * 建立本機預設管理者帳號
- *   店長：admin / admin123
- *   老闆：boss / boss123
+ *   竹山店長：admin / admin123（site=zhushan）
+ *   老闆：boss / boss123（site=zhushan，可跨店切換）
+ *   集集店長：jiji / jiji123（site=jiji）
  *
  * 前置：supabase start && supabase db push
  * 執行：npm run data:seed-users
@@ -22,8 +23,27 @@ if (!serviceKey) {
 }
 
 const DEFAULT_ACCOUNTS = [
-  { username: "admin", password: "admin123", name: "店長", role: "manager" },
-  { username: "boss", password: "boss123", name: "老闆", role: "boss" },
+  {
+    username: "admin",
+    password: "admin123",
+    name: "竹山店長",
+    role: "manager",
+    site_id: "zhushan",
+  },
+  {
+    username: "boss",
+    password: "boss123",
+    name: "老闆",
+    role: "boss",
+    site_id: "zhushan",
+  },
+  {
+    username: "jiji",
+    password: "jiji123",
+    name: "集集店長",
+    role: "manager",
+    site_id: "jiji",
+  },
 ];
 
 const AUTH_EMAIL_DOMAIN = "yaosheng.app";
@@ -32,8 +52,9 @@ const supabase = createClient(url, serviceKey, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
-async function seedAccount({ username, password, name, role }) {
+async function seedAccount({ username, password, name, role, site_id }) {
   const email = `${username}@${AUTH_EMAIL_DOMAIN}`;
+  const siteId = site_id === "jiji" ? "jiji" : "zhushan";
 
   const { data: existingProfile } = await supabase
     .from("users")
@@ -43,7 +64,17 @@ async function seedAccount({ username, password, name, role }) {
 
   if (existingProfile) {
     await supabase.auth.admin.updateUserById(existingProfile.id, { password });
-    console.log(`  [更新密碼] ${username}（${name}）`);
+    const { error: updateError } = await supabase
+      .from("users")
+      .update({
+        name,
+        role,
+        is_active: true,
+        site_id: siteId,
+      })
+      .eq("id", existingProfile.id);
+    if (updateError) throw new Error(`${username}：${updateError.message}`);
+    console.log(`  [更新] ${username} / ${password}（${name}，${siteId}）`);
     return;
   }
 
@@ -67,9 +98,10 @@ async function seedAccount({ username, password, name, role }) {
         role,
         is_active: true,
         hire_date: "2026-04-01",
+        site_id: siteId,
       });
       if (insertError) throw new Error(`${username}：${insertError.message}`);
-      console.log(`  [修復資料] ${username}（${name}）`);
+      console.log(`  [修復資料] ${username} / ${password}（${name}，${siteId}）`);
       return;
     }
     throw new Error(`${username}：${authError.message}`);
@@ -82,6 +114,7 @@ async function seedAccount({ username, password, name, role }) {
     role,
     is_active: true,
     hire_date: "2026-04-01",
+    site_id: siteId,
   });
 
   if (insertError) {
@@ -89,7 +122,7 @@ async function seedAccount({ username, password, name, role }) {
     throw new Error(`${username}：${insertError.message}`);
   }
 
-  console.log(`  [新建] ${username} / ${password}（${name}，${role}）`);
+  console.log(`  [新建] ${username} / ${password}（${name}，${siteId}）`);
 }
 
 async function seedSchedulingRules() {
@@ -128,11 +161,12 @@ async function main() {
   }
 
   console.log("");
-  console.log("完成！登入方式：");
-  console.log("  店長分頁 → admin / admin123");
-  console.log("  老闆分頁 → boss / boss123");
+  console.log("完成！登入方式（店長／老闆分頁）：");
+  console.log("  竹山店長 → admin / admin123");
+  console.log("  老闆　　 → boss / boss123（可切換店別）");
+  console.log("  集集店長 → jiji / jiji123");
   console.log("");
-  console.log("請在首次登入後修改密碼（員工管理 → 編輯自己的帳號）。");
+  console.log("請在首次登入後修改密碼（員工管理 → 變更我的密碼）。");
 }
 
 main().catch((err) => {
