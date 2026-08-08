@@ -82,7 +82,7 @@ export async function exportMonthlyPunchPdf(params: ExportPunchPdfParams): Promi
       </h1>
       ${sections || `<p style="text-align:center;color:#6b7280;">本月無打卡資料</p>`}
       <div style="margin-top:12px;border-top:1px solid #e5e7eb;padding-top:8px;font-size:11px;color:#9ca3af;text-align:center;">
-        耀聖藥局排班系統產生 · ${new Date().toLocaleString("zh-TW")}
+        家禾體系排班系統產生 · ${new Date().toLocaleString("zh-TW")}
       </div>
     </div>
   `;

@@ -25,7 +25,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
-import { SITE_IDS, SITES, type SiteId } from '@/lib/sites';
+import { SITE_IDS, SITES, SYSTEM_NAME, type SiteId } from '@/lib/sites';
 
 export default function DashboardLayout({
   children,
@@ -160,8 +160,8 @@ export default function DashboardLayout({
     currentUser.role === 'owner' ? '老闆' : 
     currentUser.role === 'manager' ? '店長' : '員工';
 
-  const brandTitle = storeConfig.storeName?.trim() || SITES[activeSiteId].displayName;
-  const siteShortName = SITES[activeSiteId].name;
+  const storeLabel =
+    storeConfig.storeName?.trim() || SITES[activeSiteId].displayName;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-pink-50/60 via-sky-50/40 to-white">
@@ -189,11 +189,11 @@ export default function DashboardLayout({
                 )}
               </button>
               <div className="min-w-0">
-                <h1 className="text-lg sm:text-xl font-bold text-gray-900 truncate">
-                  {brandTitle}
+                <h1 className="text-base sm:text-xl font-bold text-gray-900 truncate">
+                  {SYSTEM_NAME}
                 </h1>
                 <p className="text-xs text-gray-500 truncate sm:hidden">
-                  {siteShortName}店
+                  {storeLabel}
                 </p>
               </div>
               {canSwitchSite ? (
@@ -216,7 +216,7 @@ export default function DashboardLayout({
               ) : (
                 <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-2.5 py-1 shrink-0">
                   <Store className="h-3.5 w-3.5" aria-hidden />
-                  {siteShortName}
+                  {storeLabel}
                 </span>
               )}
             </div>

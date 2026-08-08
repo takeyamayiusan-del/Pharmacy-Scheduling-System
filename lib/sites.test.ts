@@ -4,9 +4,14 @@ import {
   parseSiteId,
   storeConfigSettingId,
   SITES,
+  SYSTEM_NAME,
 } from "@/lib/sites";
 
 describe("sites", () => {
+  it("uses Jiahe system brand name", () => {
+    expect(SYSTEM_NAME).toBe("家禾體系排班系統");
+  });
+
   it("defaults to zhushan", () => {
     expect(DEFAULT_SITE_ID).toBe("zhushan");
     expect(parseSiteId(undefined)).toBe("zhushan");
