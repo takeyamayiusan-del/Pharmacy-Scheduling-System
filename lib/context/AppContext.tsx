@@ -1110,7 +1110,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     setActiveSiteIdState(siteId);
     writeActiveSiteToStorage(siteId);
-    // 切店時重載該店公告／圍籬／店家設定，避免看到另一店內容
+    // 先清空再載入，避免切店瞬間仍顯示上一店公告／圍籬
+    setBulletinItems([]);
+    setGeofenceLocations(defaultGeofenceLocationsForSite(siteId));
     await Promise.all([
       loadStoreConfig(siteId),
       loadGeofenceConfig(siteId),
