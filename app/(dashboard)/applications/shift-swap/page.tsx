@@ -113,13 +113,34 @@ export default function ShiftSwapPage() {
 
   const getEmpName = (id: string) => employees.find(e => e.id === id)?.name ?? id;
 
+  const siteEmployeeIds = useMemo(
+    () => new Set(employees.map((e) => e.id)),
+    [employees]
+  );
+
   const visibleRequests = useMemo(() => {
-    return swapRequests.filter(
-      (r) =>
+    return swapRequests.filter((r) => {
+      const inMonth =
         isDateInYearMonth(r.requesterDate, filterYear, filterMonth) ||
-        isDateInYearMonth(r.targetDate, filterYear, filterMonth)
-    );
-  }, [swapRequests, filterYear, filterMonth]);
+        isDateInYearMonth(r.targetDate, filterYear, filterMonth);
+      if (!inMonth) return false;
+      if (isManager) {
+        return (
+          siteEmployeeIds.has(r.requesterId) || siteEmployeeIds.has(r.targetEmployeeId)
+        );
+      }
+      return (
+        r.requesterId === currentUser?.id || r.targetEmployeeId === currentUser?.id
+      );
+    });
+  }, [
+    swapRequests,
+    filterYear,
+    filterMonth,
+    isManager,
+    siteEmployeeIds,
+    currentUser?.id,
+  ]);
 
   return (
     <div className="space-y-6">

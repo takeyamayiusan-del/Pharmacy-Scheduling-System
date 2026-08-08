@@ -32,6 +32,7 @@ export default function FixedShiftsPage() {
     updateShiftDisplayConfig,
     updateEmployee,
     storeConfig,
+    activeSiteId,
   } = useApp();
 
   const shiftOptions = useMemo(
@@ -39,6 +40,15 @@ export default function FixedShiftsPage() {
     [storeConfig]
   );
   const activeRuleTags = useMemo(() => getActiveRuleTags(storeConfig), [storeConfig]);
+  /** 僅目前店員工的固定班（避免集集看到竹山列） */
+  const siteFixedEntries = useMemo(() => {
+    const ids = new Set(employees.map((e) => e.id));
+    return fixedShifts
+      .map((fs, index) => ({ fs, index }))
+      .filter(({ fs }) => ids.has(fs.employeeId));
+  }, [fixedShifts, employees]);
+  const canEditSharedShiftMeta = activeSiteId === "zhushan";
+  const useCatalog = storeConfig.features.customShiftCatalog;
 
   const [newEmployeeId, setNewEmployeeId] = useState<string>("");
   const [newDayOfWeek, setNewDayOfWeek] = useState<number>(1);
@@ -101,16 +111,16 @@ export default function FixedShiftsPage() {
   };
 
   const handleUpdate = async (
-    index: number,
+    sourceIndex: number,
     field: "employeeId" | "dayOfWeek" | "shift",
     value: string | number
   ) => {
-    const updated = { ...fixedShifts[index] };
+    const updated = { ...fixedShifts[sourceIndex] };
     if (field === "employeeId" && typeof value === "string") updated.employeeId = value;
     if (field === "dayOfWeek" && typeof value === "number") updated.dayOfWeek = value;
     if (field === "shift" && typeof value === "string") updated.shift = value as ShiftType;
     try {
-      await updateFixedShift(index, updated);
+      await updateFixedShift(sourceIndex, updated);
       if (updated.dayOfWeek === 6 && updated.shift === "X") {
         alert("已更新為禮拜六固定休假。未來週六會顯示休假。");
       }
@@ -119,16 +129,24 @@ export default function FixedShiftsPage() {
     }
   };
 
-  const handleSaveShiftTimes = (shift: ShiftType) => {
+  const handleSaveShiftTimes = async (shift: ShiftType) => {
     const ranges = shiftTimeInputs[shift]
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean);
-    updateShiftTimeConfig(shift, ranges.length > 0 ? ranges : ["未設定"]);
+    try {
+      await updateShiftTimeConfig(shift, ranges.length > 0 ? ranges : ["未設定"]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "儲存失敗");
+    }
   };
 
   const handleSaveShiftDisplay = async (shift: ShiftType) => {
-    await updateShiftDisplayConfig(shift, shiftDisplayInputs[shift]);
+    try {
+      await updateShiftDisplayConfig(shift, shiftDisplayInputs[shift]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "儲存失敗");
+    }
   };
 
   const handleToggleRule = async (
@@ -251,7 +269,8 @@ export default function FixedShiftsPage() {
         )}
       </div>
 
-      {/* ── 班別時段設定（依店家啟用班別） ── */}
+      {/* ── 班別時段設定（竹山共用 A–E；集集改走店家設定目錄） ── */}
+      {canEditSharedShiftMeta ? (
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">班別時段設定（可客製）</h3>
         <div className="space-y-3">
@@ -273,7 +292,7 @@ export default function FixedShiftsPage() {
               />
               <button
                 type="button"
-                onClick={() => handleSaveShiftTimes(shift)}
+                onClick={() => void handleSaveShiftTimes(shift)}
                 className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
               >
                 儲存
@@ -285,7 +304,22 @@ export default function FixedShiftsPage() {
           用逗號分隔多個時段，更新後班表下方圖例會即時顯示。要增減班別請至店家設定。
         </p>
       </div>
+      ) : (
+        <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-950">
+          <p className="font-medium">集集店：進階班別請在「店家設定」維護</p>
+          <p className="mt-1 text-sky-900/90">
+            A–E 時段／顏色為竹山共用，此店不可修改，以免影響竹山排班圖例。
+            {useCatalog
+              ? " 請至店家設定編輯班別目錄（可載入總店範本）。"
+              : " 可至店家設定開啟進階班別目錄。"}
+          </p>
+          <a href="/store-settings" className="inline-block mt-2 text-sky-800 underline">
+            前往店家設定 →
+          </a>
+        </div>
+      )}
 
+      {canEditSharedShiftMeta && (
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">班別顯示設定（文字 / 顏色）</h3>
         <div className="space-y-3">
@@ -364,7 +398,7 @@ export default function FixedShiftsPage() {
               />
               <button
                 type="button"
-                onClick={() => handleSaveShiftDisplay(shift)}
+                onClick={() => void handleSaveShiftDisplay(shift)}
                 className="px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700"
               >
                 儲存
@@ -373,6 +407,7 @@ export default function FixedShiftsPage() {
           ))}
         </div>
       </div>
+      )}
 
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">新增固定班表</h3>
@@ -424,11 +459,11 @@ export default function FixedShiftsPage() {
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <div>
           <h3 className="font-medium text-gray-900 mb-4">已設定的固定班表</h3>
-          {fixedShifts.length === 0 ? (
+          {siteFixedEntries.length === 0 ? (
             <p className="text-gray-500 text-center py-8">目前沒有設定任何固定班表</p>
           ) : (
             <div className="space-y-3">
-              {fixedShifts.map((fs, index) => {
+              {siteFixedEntries.map(({ fs, index }) => {
                 const emp = employees.find((e) => e.id === fs.employeeId);
                 return (
                   <div

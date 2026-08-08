@@ -16,6 +16,7 @@ import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
 import FlexibleAttendancePanel from "@/components/FlexibleAttendancePanel";
+import { formatCatalogShiftSummary } from "@/lib/shift-catalog";
 
 const shiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
 
@@ -964,7 +965,7 @@ export default function SchedulePage() {
         </div>
 
         {/* 圖例 */}
-        <div className="p-4 border-t bg-gray-50">
+        <div className="p-4 border-t bg-gray-50 space-y-3">
           <div className="flex flex-wrap items-center gap-6">
             <span className="text-sm font-medium text-gray-700">圖例：</span>
             {shiftOptions.map((shiftCode) => {
@@ -1007,6 +1008,27 @@ export default function SchedulePage() {
               );
             })}
           </div>
+          {storeConfig.features.customShiftCatalog &&
+            storeConfig.shiftCatalog.filter((s) => s.enabled).length > 0 && (
+              <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2">
+                <p className="text-sm font-medium text-sky-950 mb-2">
+                  本店班別目錄（參考；班表格子仍暫用 A–E）
+                </p>
+                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-sky-900/90">
+                  {storeConfig.shiftCatalog
+                    .filter((s) => s.enabled)
+                    .map((s) => (
+                      <li key={s.id}>
+                        <span className="font-medium">{s.name}</span>
+                        <span className="text-sky-800/80">
+                          {" "}
+                          — {formatCatalogShiftSummary(s)}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              </div>
+            )}
         </div>
       </div>
 

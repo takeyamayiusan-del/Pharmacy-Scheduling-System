@@ -336,6 +336,8 @@ export type LeaveSummary = {
 export type LeaveMonthLock = {
   year: number;
   month: number;
+  /** 鎖定所屬店；缺省視為竹山（相容舊資料） */
+  siteId?: SiteId;
   lockedBy: string;
   lockedAt: string;
 };
@@ -694,7 +696,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loadLeaveMonthLocks = useCallback(async () => {
     const { data, error } = await supabase
       .from("leave_month_locks")
-      .select("year, month, locked_by, locked_at");
+      .select("year, month, site_id, locked_by, locked_at");
     if (error) {
       console.error("loadLeaveMonthLocks:", error);
       return;
@@ -704,6 +706,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         data.map((r) => ({
           year: r.year,
           month: r.month,
+          siteId: parseSiteId(r.site_id),
           lockedBy: r.locked_by,
           lockedAt: r.locked_at,
         }))
@@ -1933,6 +1936,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Shift time config ───────────────────────────────────────────────────────
 
   const updateShiftTimeConfig = async (shift: ShiftType, ranges: string[]) => {
+    // A–E 時段為竹山共用表；集集請用店家設定的進階班別目錄，避免改壞竹山圖例
+    if (activeSiteId !== "zhushan") {
+      throw new Error(
+        "班別時段為竹山共用設定。請切回竹山店再調整，或至集集「店家設定」編輯進階班別目錄。"
+      );
+    }
     setShiftTimeConfig((prev) => ({ ...prev, [shift]: ranges }));
     await supabase.from("shift_time_config").upsert(
       { shift_code: shift, time_ranges: ranges },
@@ -1941,6 +1950,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateShiftDisplayConfig = async (shift: ShiftType, style: Partial<ShiftDisplayStyle>) => {
+    if (activeSiteId !== "zhushan") {
+      throw new Error(
+        "班別顯示為竹山共用設定。請切回竹山店再調整，或至集集「店家設定」編輯進階班別目錄。"
+      );
+    }
     const next = { ...shiftDisplayConfig[shift], ...style };
     setShiftDisplayConfig((prev) => ({ ...prev, [shift]: next }));
     await supabase.from("shift_time_config").upsert(
@@ -2114,7 +2128,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const isLeaveMonthLocked = (year: number, month: number) =>
-    leaveMonthLocks.some((l) => l.year === year && l.month === month);
+    leaveMonthLocks.some(
+      (l) =>
+        l.year === year &&
+        l.month === month &&
+        parseSiteId(l.siteId) === activeSiteId
+    );
 
   const snapshotMonthSchedule = async (year: number, month: number, actorId?: string) => {
     const activeEmployees = employees.filter(
@@ -2150,17 +2169,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const lockLeaveMonth = async (year: number, month: number, lockedBy: string) => {
-    if (leaveMonthLocks.some((l) => l.year === year && l.month === month)) return;
+    if (isLeaveMonthLocked(year, month)) return;
     await snapshotMonthSchedule(year, month, lockedBy);
 
     const res = await fetch("/api/schedule/lock-month", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ year, month, action: "lock" }),
+      body: JSON.stringify({ year, month, action: "lock", site_id: activeSiteId }),
     });
     const payload = (await res.json()) as {
       error?: string;
-      lock?: { year: number; month: number; locked_by: string; locked_at: string };
+      lock?: {
+        year: number;
+        month: number;
+        site_id?: string;
+        locked_by: string;
+        locked_at: string;
+      };
       alreadyLocked?: boolean;
     };
     if (!res.ok) {
@@ -2172,6 +2197,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         {
           year: payload.lock!.year,
           month: payload.lock!.month,
+          siteId: parseSiteId(payload.lock!.site_id, activeSiteId),
           lockedBy: payload.lock!.locked_by,
           lockedAt: payload.lock!.locked_at,
         },
@@ -2185,13 +2211,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const res = await fetch("/api/schedule/lock-month", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ year, month, action: "unlock" }),
+      body: JSON.stringify({ year, month, action: "unlock", site_id: activeSiteId }),
     });
     const payload = (await res.json()) as { error?: string };
     if (!res.ok) {
       throw new Error(payload.error ?? "解除鎖定失敗");
     }
-    setLeaveMonthLocks((prev) => prev.filter((l) => !(l.year === year && l.month === month)));
+    setLeaveMonthLocks((prev) =>
+      prev.filter(
+        (l) =>
+          !(
+            l.year === year &&
+            l.month === month &&
+            parseSiteId(l.siteId) === activeSiteId
+          )
+      )
+    );
   };
 
   // ─── Leave requests (Supabase) ───────────────────────────────────────────────
