@@ -43,6 +43,7 @@ describe("shift-catalog/resolve", () => {
     expect(resolveShiftTimeRanges(code, cfg, legacyTime)[0]).toMatch(/^\d{2}:\d{2}-/);
     const style = resolveShiftDisplay(code, cfg, legacyDisplay);
     expect(style.label).toBe(cfg.shiftCatalog[0].name);
+    expect(style.displayText).toBe(code);
     expect(assertWritableShiftCode(code, cfg).ok).toBe(true);
     expect(assertWritableShiftCode("B", cfg).ok).toBe(true);
     expect(assertWritableShiftCode("不存在的班", cfg).ok).toBe(false);

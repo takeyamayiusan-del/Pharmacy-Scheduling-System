@@ -97,7 +97,7 @@ export function resolveShiftDisplay(
         const style = CATEGORY_STYLE[cat.category];
         return {
           label: cat.name,
-          displayText: cat.code.slice(0, 4),
+          displayText: cat.code,
           ...style,
         };
       }
@@ -111,7 +111,7 @@ export function resolveShiftDisplay(
       const style = CATEGORY_STYLE[cat.category];
       return {
         label: cat.name,
-        displayText: cat.code.slice(0, 4),
+        displayText: cat.code,
         ...style,
       };
     }
@@ -124,7 +124,7 @@ export function resolveShiftDisplay(
   return {
     ...FALLBACK_STYLE,
     label: shift,
-    displayText: shift.slice(0, 4) || "?",
+    displayText: shift || "?",
   };
 }
 
