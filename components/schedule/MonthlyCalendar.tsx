@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ShiftCell } from './ShiftCell';
 import { StaffingAlert } from './StaffingAlert';
 import { calculateEveningStaffingStatus, isEveningShift } from '@/lib/scheduling/staffing';
+import { useApp } from '@/lib/context/AppContext';
 import type { Database } from '@/lib/supabase/types';
 import { ChevronLeft, ChevronRight, Lock } from 'lucide-react';
 
@@ -20,6 +21,7 @@ interface MonthlyCalendarProps {
 const weekDays = ['日', '一', '二', '三', '四', '五', '六'];
 
 export function MonthlyCalendar({ editable = false }: MonthlyCalendarProps) {
+  const { storeConfig, shiftTimeConfig } = useApp();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [users, setUsers] = useState<User[]>([]);
   const [scheduleEntries, setScheduleEntries] = useState<ScheduleEntry[]>([]);
@@ -76,10 +78,12 @@ export function MonthlyCalendar({ editable = false }: MonthlyCalendarProps) {
   const getEveningStaffingStatus = useMemo(() => {
     return (dateStr: string) => {
       const entries = scheduleEntries.filter(e => e.date === dateStr);
-      const eveningCount = entries.filter(e => isEveningShift(e.shift_code)).length;
+      const eveningCount = entries.filter(e =>
+        isEveningShift(e.shift_code, storeConfig, shiftTimeConfig)
+      ).length;
       return calculateEveningStaffingStatus(eveningCount, rules?.min_evening_staff || 2);
     };
-  }, [scheduleEntries, rules]);
+  }, [scheduleEntries, rules, storeConfig, shiftTimeConfig]);
 
   const getEntry = (userId: string, dateStr: string) => {
     return scheduleEntries.find(e => e.user_id === userId && e.date === dateStr);

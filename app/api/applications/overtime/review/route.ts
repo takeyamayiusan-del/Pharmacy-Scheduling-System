@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import {
+  assertManagerAuth,
+  assertManagerCanAccessEmployee,
+} from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import {
   canChooseOvertimePay,
@@ -36,6 +39,11 @@ export async function PATCH(req: NextRequest) {
 
     if (loadError || !row) {
       return NextResponse.json({ error: "找不到加班申請" }, { status: 404 });
+    }
+
+    const access = await assertManagerCanAccessEmployee(auth, row.user_id);
+    if ("error" in access) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const prevStatus = row.status as ReviewStatus;

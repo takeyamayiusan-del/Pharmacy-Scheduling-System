@@ -1,5 +1,10 @@
 import type { ShiftTimeConfig } from "@/lib/context/AppContext";
-import { isLegacyShiftCode } from "@/lib/shift-catalog/resolve";
+import type { StoreConfig } from "@/lib/store-config";
+import {
+  findCatalogShift,
+  isLegacyShiftCode,
+  resolveShiftTimeRanges,
+} from "@/lib/shift-catalog/resolve";
 
 export type PunchAction = "work_in" | "work_out";
 
@@ -40,13 +45,27 @@ export function getPunchSlotsForRanges(ranges: string[]): PunchSlot[] {
 
 export function getPunchSlotsForShift(
   shift: string,
-  config: ShiftTimeConfig
+  config: ShiftTimeConfig,
+  storeConfig?: StoreConfig
 ): PunchSlot[] {
+  if (storeConfig) {
+    return getPunchSlotsForRanges(resolveShiftTimeRanges(shift, storeConfig, config));
+  }
   if (!isLegacyShiftCode(shift)) return [];
   return getPunchSlotsForRanges(config[shift] ?? []);
 }
 
-export function getBreakCountForShift(shift: string): number {
+export function getBreakCountForShift(
+  shift: string,
+  storeConfig?: StoreConfig
+): number {
+  if (storeConfig?.features.customShiftCatalog) {
+    const cat = findCatalogShift(storeConfig, shift);
+    if (cat) {
+      if (cat.breaks.length > 0) return cat.breaks.length;
+      return Math.max(0, cat.workSegments.length - 1);
+    }
+  }
   if (shift === "A" || shift === "E") return 2;
   if (shift === "B") return 1;
   return 0;

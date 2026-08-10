@@ -184,6 +184,8 @@ export default function SchedulePage() {
     employees,
     shiftDisplayConfig,
     getShiftForDate,
+    storeConfig,
+    shiftTimeConfig,
   });
   const today = new Date();
   const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;

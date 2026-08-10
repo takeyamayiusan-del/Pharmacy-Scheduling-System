@@ -1,5 +1,18 @@
-import type { Employee, ScheduleShiftCode, ShiftDisplayConfig, ShiftType } from "@/lib/context/AppContext";
+import type {
+  Employee,
+  ScheduleShiftCode,
+  ShiftDisplayConfig,
+  ShiftTimeConfig,
+} from "@/lib/context/AppContext";
+import type { StoreConfig } from "@/lib/store-config";
 import { formatShiftName } from "./shiftLabels";
+import {
+  findCatalogShift,
+  isOffShiftCode,
+  resolveShiftDisplay,
+  resolveShiftTimeRanges,
+} from "@/lib/shift-catalog/resolve";
+import { timeToMinutes } from "@/lib/attendance/punchSchedule";
 
 const isSunday = (dateStr: string) => new Date(dateStr).getDay() === 0;
 const isSaturday = (dateStr: string) => new Date(dateStr).getDay() === 6;
@@ -10,10 +23,62 @@ export type ScheduleWarning = {
   messages: string[];
 };
 
-/** 禮拜六預設上午班；平日檢查全天班是否有人 */
-const SATURDAY_MORNING_SHIFT: ShiftType = "C";
-const WEEKDAY_FULL_SHIFT: ShiftType = "A";
 const MIN_SATURDAY_WORKERS = 2;
+
+function isOff(
+  shift: ScheduleShiftCode,
+  storeConfig?: StoreConfig
+): boolean {
+  return storeConfig ? isOffShiftCode(shift, storeConfig) : shift === "X";
+}
+
+/** 是否含晚班時段（18:00 後仍有上班）或竹山 A／目錄 night／all_day */
+export function isEveningOrFullCoverageShift(
+  shift: ScheduleShiftCode,
+  storeConfig?: StoreConfig,
+  shiftTimeConfig?: ShiftTimeConfig
+): boolean {
+  if (shift === "A" || shift === "D" || shift === "E") return true;
+  if (!storeConfig) return false;
+  const cat = findCatalogShift(storeConfig, shift);
+  if (cat?.category === "night" || cat?.category === "all_day" || cat?.category === "split") {
+    return true;
+  }
+  if (!shiftTimeConfig) return false;
+  const ranges = resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig);
+  return ranges.some((r) => {
+    if (!r.includes("-") || r === "休假") return false;
+    const end = r.split("-")[1]?.trim();
+    return Boolean(end && timeToMinutes(end) > 18 * 60);
+  });
+}
+
+function isMorningishShift(
+  shift: ScheduleShiftCode,
+  storeConfig: StoreConfig | undefined,
+  shiftTimeConfig: ShiftTimeConfig | undefined,
+  saturdayDefault: string
+): boolean {
+  if (shift === saturdayDefault || shift === "C") return true;
+  if (!storeConfig || !shiftTimeConfig) return false;
+  const ranges = resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig);
+  return ranges.some((r) => {
+    if (!r.includes("-") || r === "休假") return false;
+    const start = r.split("-")[0]?.trim();
+    return Boolean(start && timeToMinutes(start) < 12 * 60);
+  });
+}
+
+function labelFor(
+  shift: ScheduleShiftCode,
+  shiftDisplayConfig: ShiftDisplayConfig,
+  storeConfig?: StoreConfig
+): string {
+  if (storeConfig) {
+    return resolveShiftDisplay(shift, storeConfig, shiftDisplayConfig).label;
+  }
+  return formatShiftName(shiftDisplayConfig, shift);
+}
 
 export function buildScheduleWarnings(options: {
   year: number;
@@ -22,10 +87,24 @@ export function buildScheduleWarnings(options: {
   employees: Employee[];
   shiftDisplayConfig: ShiftDisplayConfig;
   getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
+  storeConfig?: StoreConfig;
+  shiftTimeConfig?: ShiftTimeConfig;
 }): ScheduleWarning[] {
-  const { year, month, daysInMonth, employees, shiftDisplayConfig, getShiftForDate } =
-    options;
+  const {
+    year,
+    month,
+    daysInMonth,
+    employees,
+    shiftDisplayConfig,
+    getShiftForDate,
+    storeConfig,
+    shiftTimeConfig,
+  } = options;
   const staff = employees.filter((emp) => emp.role !== "owner");
+  const saturdayTarget = storeConfig?.defaultSaturdayShift || "C";
+  const weekdayCoverageTarget = storeConfig?.features.customShiftCatalog
+    ? null
+    : "A";
 
   return Array.from({ length: daysInMonth }, (_, index) => index + 1)
     .map((day) => {
@@ -39,11 +118,13 @@ export function buildScheduleWarnings(options: {
       const messages: string[] = [];
 
       if (isSaturday(dateStr)) {
-        const working = workers.filter((w) => w.shift !== "X");
-        const morning = workers.filter((w) => w.shift === SATURDAY_MORNING_SHIFT);
+        const working = workers.filter((w) => !isOff(w.shift, storeConfig));
+        const morning = workers.filter((w) =>
+          isMorningishShift(w.shift, storeConfig, shiftTimeConfig, saturdayTarget)
+        );
         if (morning.length === 0) {
           messages.push(
-            `沒有人上${formatShiftName(shiftDisplayConfig, SATURDAY_MORNING_SHIFT)}`
+            `沒有人上上午班（建議 ${labelFor(saturdayTarget, shiftDisplayConfig, storeConfig)}）`
           );
         }
         if (working.length === 0) {
@@ -54,17 +135,30 @@ export function buildScheduleWarnings(options: {
           );
         }
       } else {
-        const resting = workers.filter((w) => w.shift === "X").map((w) => w.emp.name);
-        const fullDayWorkers = workers
-          .filter((w) => w.shift === WEEKDAY_FULL_SHIFT)
+        const resting = workers
+          .filter((w) => isOff(w.shift, storeConfig))
           .map((w) => w.emp.name);
         if (resting.length > 1) {
           messages.push(`平日多人休假：${resting.join("、")}`);
         }
-        if (fullDayWorkers.length === 0) {
-          messages.push(
-            `沒有人上${formatShiftName(shiftDisplayConfig, WEEKDAY_FULL_SHIFT)}`
+
+        if (weekdayCoverageTarget) {
+          const fullDayWorkers = workers
+            .filter((w) => w.shift === weekdayCoverageTarget)
+            .map((w) => w.emp.name);
+          if (fullDayWorkers.length === 0) {
+            messages.push(
+              `沒有人上${labelFor(weekdayCoverageTarget, shiftDisplayConfig, storeConfig)}`
+            );
+          }
+        } else {
+          const coverage = workers.filter((w) =>
+            isEveningOrFullCoverageShift(w.shift, storeConfig, shiftTimeConfig)
           );
+          const anyWorking = workers.some((w) => !isOff(w.shift, storeConfig));
+          if (anyWorking && coverage.length === 0) {
+            messages.push("平日無人排晚班／整天班（含兩頭班）");
+          }
         }
       }
 

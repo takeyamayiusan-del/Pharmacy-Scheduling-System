@@ -1,4 +1,5 @@
 import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
+import type { StoreConfig } from "@/lib/store-config";
 import {
   calcLateMinutes,
   EARLY_PUNCH_MINUTES,
@@ -186,6 +187,7 @@ export function resolveLateAfterLeaveApproval(params: {
   /** 請假前原班別（用於計算剩餘班） */
   originalShift: ScheduleShiftCode;
   shiftTimeConfig: ShiftTimeConfig;
+  storeConfig?: StoreConfig;
 }): LateAfterLeaveDecision {
   if (params.period === "full_day") {
     return { clear: true, lateMinutes: 0 };
@@ -199,7 +201,11 @@ export function resolveLateAfterLeaveApproval(params: {
   const leaveStart = timeToMinutes(startTime);
   const leaveEnd = timeToMinutes(endTime);
 
-  const originalSlots = getPunchSlotsForShift(params.punchShift, params.shiftTimeConfig);
+  const originalSlots = getPunchSlotsForShift(
+    params.punchShift,
+    params.shiftTimeConfig,
+    params.storeConfig
+  );
   const adjusted = adjustPunchSlotsForApprovedLeave(
     originalSlots,
     "emp",
@@ -243,7 +249,9 @@ export function resolveLateAfterLeaveApproval(params: {
   const { shift: effective } = calculateEffectiveShift(
     params.originalShift === "X" ? params.punchShift : params.originalShift,
     startTime,
-    endTime
+    endTime,
+    params.storeConfig,
+    params.shiftTimeConfig
   );
 
   // 優先用調整後的上班格
@@ -252,9 +260,11 @@ export function resolveLateAfterLeaveApproval(params: {
     remainingIns.length > 0
       ? remainingIns
       : effective && effective !== "X"
-        ? getPunchSlotsForShift(effective, params.shiftTimeConfig).filter(
-            (s) => s.action === "work_in"
-          )
+        ? getPunchSlotsForShift(
+            effective,
+            params.shiftTimeConfig,
+            params.storeConfig
+          ).filter((s) => s.action === "work_in")
         : [];
 
   if (fallbackIns.length === 0) {

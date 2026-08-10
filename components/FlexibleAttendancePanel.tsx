@@ -5,7 +5,7 @@ import { useApp } from "@/lib/context/AppContext";
 import { createClient } from "@/lib/supabase/client";
 import {
   FLEXIBLE_PERIOD_PRESETS,
-  ATTENDEE_SHIFT_OPTIONS,
+  getAttendeeShiftOptions,
   buildOriginalScheduleSnapshot,
   buildSettlementPreview,
   calculateAffectedShiftHours,
@@ -16,7 +16,12 @@ import {
   type FlexiblePeriodMode,
 } from "@/lib/attendance/flexibleAttendance";
 import { formatCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
-import type { ScheduleShiftCode, ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode } from "@/lib/context/AppContext";
+import {
+  isOffShiftCode,
+  resolveShiftDisplay,
+  resolveShiftTimeRanges,
+} from "@/lib/shift-catalog/resolve";
 
 function mapDay(row: Record<string, unknown>): FlexibleAttendanceDay {
   const original = Array.isArray(row.original_schedule)
@@ -79,7 +84,26 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
     loadCompLeaveLedger,
     loadBulletinItems,
     activeSiteId,
+    storeConfig,
   } = useApp();
+
+  const attendeeShiftOptions = useMemo(
+    () => getAttendeeShiftOptions(storeConfig),
+    [storeConfig]
+  );
+
+  const shiftLabel = useCallback(
+    (code: ScheduleShiftCode) => {
+      const style = resolveShiftDisplay(code, storeConfig, shiftDisplayConfig);
+      return `${code} ${style.label ?? ""}`.trim();
+    },
+    [storeConfig, shiftDisplayConfig]
+  );
+
+  const isOff = useCallback(
+    (shift: ScheduleShiftCode) => isOffShiftCode(shift, storeConfig),
+    [storeConfig]
+  );
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
   const supabase = useMemo(() => createClient(), []);
@@ -174,7 +198,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
   };
 
   const openConfirm = (day: FlexibleAttendanceDay) => {
-    const originallyOnEntries = day.originalSchedule.filter((e) => e.shift !== "X");
+    const originallyOnEntries = day.originalSchedule.filter((e) => !isOff(e.shift));
     const originallyOn = originallyOnEntries.map((e) => e.userId);
     setSelectedAttendees(
       day.expectedAttendeeIds.length > 0 ? [...day.expectedAttendeeIds] : originallyOn
@@ -226,7 +250,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
           status: "announced",
           originalSchedule,
           expectedAttendeeIds: originalSchedule
-            .filter((e) => e.shift !== "X")
+            .filter((e) => !isOff(e.shift))
             .map((e) => e.userId),
           createdBy: currentUser!.id,
           createdAt: new Date().toISOString(),
@@ -282,6 +306,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
         fromTime: settleTarget.fromTime,
         shiftTimeConfig,
         punchRecords,
+        storeConfig,
       })
     : [];
 
@@ -341,9 +366,9 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
 
   const confirmTarget = days.find((d) => d.id === confirmDayId);
   const confirmOriginallyOn =
-    confirmTarget?.originalSchedule.filter((e) => e.shift !== "X") ?? [];
+    confirmTarget?.originalSchedule.filter((e) => !isOff(e.shift)) ?? [];
   const confirmOriginallyOff =
-    confirmTarget?.originalSchedule.filter((e) => e.shift === "X") ?? [];
+    confirmTarget?.originalSchedule.filter((e) => isOff(e.shift)) ?? [];
 
   return (
     <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
@@ -352,7 +377,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
           <h3 className="font-medium text-gray-900">颱風／彈性出勤日</h3>
           <p className="text-xs text-gray-600 mt-1">
             流程：發布公告 → 確認預計出勤（可為有來者指定當天班別／時段）並更新班表 → 當日打卡後一鍵結算獎勵。
-            時段停班會依班別截斷（如 19:00 停班時白班不變）；全日停班沒來則休假。
+            時段停班會依班別截斷（未受影響的班別維持原樣）；全日停班沒來則休假。
             原本休假者完全不受影響。取消後可重新設定；已結算紀錄本月保留，跨月自動清除（補休帳本仍保留）。
           </p>
         </div>
@@ -373,7 +398,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
         ) : (
           <div className="space-y-2">
             {days.map((day) => {
-              const onCount = day.originalSchedule.filter((e) => e.shift !== "X").length;
+              const onCount = day.originalSchedule.filter((e) => !isOff(e.shift)).length;
               return (
                 <div
                   key={day.id}
@@ -642,8 +667,8 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
               </h3>
               <p className="text-xs text-gray-500 mt-1">
                 {confirmTarget.periodMode === "full_day"
-                  ? "全日颱風假：勾選有來的人，並為每人指定當天班別（全天／白班／上午／下午等）。沒來者改休假。"
-                  : `時段停班（${confirmTarget.fromTime ?? ""} 起）：勾選會來的人並可指定當天班別；未勾選者班表截斷至停班時刻；白班等不受影響者維持原班。`}
+                  ? "全日颱風假：勾選有來的人，並為每人指定當天班別。沒來者改休假。"
+                  : `時段停班（${confirmTarget.fromTime ?? ""} 起）：勾選會來的人並可指定當天班別；未勾選者班表截斷至停班時刻；不受影響的班別維持原樣。`}
                 {" "}原本就休假者不動作。
               </p>
             </div>
@@ -659,12 +684,15 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
                           entry.shift,
                           shiftTimeConfig,
                           "from_time",
-                          confirmTarget.fromTime
+                          confirmTarget.fromTime,
+                          storeConfig
                         )
                       : calculateAffectedShiftHours(
                           entry.shift,
                           shiftTimeConfig,
-                          "full_day"
+                          "full_day",
+                          undefined,
+                          storeConfig
                         );
                   const assigned = attendeeShifts[entry.userId] ?? entry.shift;
                   const nextShift = resolveTyphoonScheduleShift({
@@ -674,10 +702,9 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
                     fromTime: confirmTarget.fromTime,
                     shiftTimeConfig,
                     assignedShift: willCome ? assigned : undefined,
+                    storeConfig,
                   });
                   const unaffected = confirmTarget.periodMode === "from_time" && affected <= 0;
-                  const shiftLabel = (code: ScheduleShiftCode) =>
-                    `${code} ${shiftDisplayConfig[code as ShiftType]?.label ?? ""}`.trim();
 
                   return (
                     <div
@@ -722,19 +749,26 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
                             onChange={(e) =>
                               setAttendeeShifts((prev) => ({
                                 ...prev,
-                                [entry.userId]: e.target.value as ShiftType,
+                                [entry.userId]: e.target.value as ScheduleShiftCode,
                               }))
                             }
                             className="flex-1 border rounded px-2 py-1 text-xs"
                           >
-                            {ATTENDEE_SHIFT_OPTIONS.map((code) => (
-                              <option key={code} value={code}>
-                                {shiftLabel(code)}
-                                {shiftTimeConfig[code]?.[0]
-                                  ? `（${shiftTimeConfig[code].join("、")}）`
-                                  : ""}
-                              </option>
-                            ))}
+                            {attendeeShiftOptions.map((code) => {
+                              const ranges = resolveShiftTimeRanges(
+                                code,
+                                storeConfig,
+                                shiftTimeConfig
+                              );
+                              return (
+                                <option key={code} value={code}>
+                                  {shiftLabel(code)}
+                                  {ranges[0] && ranges[0] !== "休假"
+                                    ? `（${ranges.join("、")}）`
+                                    : ""}
+                                </option>
+                              );
+                            })}
                           </select>
                         </div>
                       )}

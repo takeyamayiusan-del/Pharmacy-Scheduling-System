@@ -1,6 +1,14 @@
 import { SHIFT_HOURS } from "@/lib/attendance/calculator";
+import { getShiftWorkHours } from "@/lib/attendance/canonicalMonthHours";
 import { timeToMinutes } from "@/lib/attendance/punchSchedule";
 import type { ScheduleShiftCode, ShiftTimeConfig, ShiftType, PunchRecord } from "@/lib/context/AppContext";
+import type { StoreConfig } from "@/lib/store-config";
+import {
+  findCatalogShift,
+  getScheduleShiftOptions,
+  isOffShiftCode,
+  resolveShiftTimeRanges,
+} from "@/lib/shift-catalog/resolve";
 
 export type FlexiblePeriodMode = "full_day" | "from_time";
 
@@ -56,8 +64,18 @@ function roundHours(hours: number): number {
   return Math.round(Math.max(0, hours) * 100) / 100;
 }
 
-function parseShiftRanges(config: ShiftTimeConfig, shift: ScheduleShiftCode): Array<{ start: number; end: number }> {
-  const ranges = config[shift] ?? [];
+function isOff(shift: ScheduleShiftCode, storeConfig?: StoreConfig): boolean {
+  return storeConfig ? isOffShiftCode(shift, storeConfig) : shift === "X";
+}
+
+function parseShiftRanges(
+  config: ShiftTimeConfig,
+  shift: ScheduleShiftCode,
+  storeConfig?: StoreConfig
+): Array<{ start: number; end: number }> {
+  const ranges = storeConfig
+    ? resolveShiftTimeRanges(shift, storeConfig, config)
+    : config[shift] ?? [];
   return ranges
     .filter((r) => r !== "休假" && r.includes("-"))
     .map((r) => {
@@ -72,13 +90,14 @@ export function calculateAffectedShiftHours(
   shift: ScheduleShiftCode,
   config: ShiftTimeConfig,
   periodMode: FlexiblePeriodMode,
-  fromTime?: string
+  fromTime?: string,
+  storeConfig?: StoreConfig
 ): number {
-  if (shift === "X") return 0;
+  if (isOff(shift, storeConfig)) return 0;
 
-  const ranges = parseShiftRanges(config, shift);
+  const ranges = parseShiftRanges(config, shift, storeConfig);
   if (ranges.length === 0) {
-    return SHIFT_HOURS[shift] ?? 0;
+    return getShiftWorkHours(shift, config, storeConfig) || (SHIFT_HOURS[shift] ?? 0);
   }
 
   const windowStart = periodMode === "full_day" ? 0 : timeToMinutes(fromTime || "00:00");
@@ -122,9 +141,6 @@ export function calculateActualPunchHoursInPeriod(
 
 /**
  * 結算預覽：只處理「發布當下原本有排班」的人。
- * - 原本休假（X）完全不出現、不做任何動作
- * - 有實際打卡 → 核發補休
- * - 應來卻沒打卡 → 待補時數（擇日補／扣補休）
  */
 export function buildSettlementPreview(params: {
   employees: Array<{ id: string; name: string; role: string }>;
@@ -134,18 +150,20 @@ export function buildSettlementPreview(params: {
   fromTime?: string;
   shiftTimeConfig: ShiftTimeConfig;
   punchRecords: PunchRecord[];
+  storeConfig?: StoreConfig;
 }): SettlementPreviewRow[] {
   const nameById = new Map(params.employees.map((e) => [e.id, e.name]));
   const rows: SettlementPreviewRow[] = [];
 
   for (const entry of params.originalSchedule) {
-    if (entry.shift === "X") continue;
+    if (isOff(entry.shift, params.storeConfig)) continue;
 
     const affectedHours = calculateAffectedShiftHours(
       entry.shift,
       params.shiftTimeConfig,
       params.periodMode,
-      params.fromTime
+      params.fromTime,
+      params.storeConfig
     );
     if (affectedHours <= 0) continue;
 
@@ -213,11 +231,12 @@ function rangesKey(ranges: Array<{ start: number; end: number }>): string {
 export function truncateShiftRangesBefore(
   shift: ScheduleShiftCode,
   cutoffTime: string,
-  config: ShiftTimeConfig
+  config: ShiftTimeConfig,
+  storeConfig?: StoreConfig
 ): Array<{ start: number; end: number }> {
   const cutoff = timeToMinutes(cutoffTime);
   const remaining: Array<{ start: number; end: number }> = [];
-  for (const range of parseShiftRanges(config, shift)) {
+  for (const range of parseShiftRanges(config, shift, storeConfig)) {
     if (range.end <= cutoff) {
       remaining.push(range);
       continue;
@@ -228,29 +247,39 @@ export function truncateShiftRangesBefore(
   return remaining;
 }
 
+function candidateShiftCodes(
+  config: ShiftTimeConfig,
+  storeConfig?: StoreConfig
+): ScheduleShiftCode[] {
+  if (storeConfig?.features.customShiftCatalog) {
+    return getScheduleShiftOptions(storeConfig).filter(
+      (c) => !isOffShiftCode(c, storeConfig)
+    );
+  }
+  return ["C", "D", "B", "E", "A"];
+}
+
 /**
- * 將剩餘時段對應回標準班別。
- * - 精確符合 → 該班別
- * - 無剩餘 → X
- * - 否則找涵蓋剩餘時段、且多餘時段最少的班別（例如全天去掉晚班後接近白班）
+ * 將剩餘時段對應回標準／目錄班別。
  */
 export function matchShiftFromRanges(
   remaining: Array<{ start: number; end: number }>,
-  config: ShiftTimeConfig
-): ShiftType {
+  config: ShiftTimeConfig,
+  storeConfig?: StoreConfig
+): ScheduleShiftCode {
   if (remaining.length === 0) return "X";
 
   const targetKey = rangesKey(remaining);
-  const candidates: ShiftType[] = ["C", "D", "B", "E", "A"];
+  const candidates = candidateShiftCodes(config, storeConfig);
 
   for (const code of candidates) {
-    const ranges = parseShiftRanges(config, code);
+    const ranges = parseShiftRanges(config, code, storeConfig);
     if (ranges.length > 0 && rangesKey(ranges) === targetKey) return code;
   }
 
-  let best: { code: ShiftType; score: number } | null = null;
+  let best: { code: ScheduleShiftCode; score: number } | null = null;
   for (const code of candidates) {
-    const candidate = parseShiftRanges(config, code);
+    const candidate = parseShiftRanges(config, code, storeConfig);
     if (candidate.length === 0) continue;
 
     let covered = 0;
@@ -278,7 +307,6 @@ export function matchShiftFromRanges(
       extra += Math.max(0, slot.end - slot.start - slotCovered);
     }
 
-    // 必須完整涵蓋剩餘時段；多餘越少越好
     if (missing > 0) continue;
     const score = covered * 1000 - extra;
     if (!best || score > best.score) best = { code, score };
@@ -291,37 +319,83 @@ export function matchShiftFromRanges(
 export function resolveShiftAfterTyphoonCutoff(
   originalShift: ScheduleShiftCode,
   cutoffTime: string,
-  config: ShiftTimeConfig
+  config: ShiftTimeConfig,
+  storeConfig?: StoreConfig
 ): ScheduleShiftCode {
-  if (originalShift === "X") return "X";
-  const remaining = truncateShiftRangesBefore(originalShift, cutoffTime, config);
-  return matchShiftFromRanges(remaining, config);
+  if (isOff(originalShift, storeConfig)) return "X";
+  const remaining = truncateShiftRangesBefore(
+    originalShift,
+    cutoffTime,
+    config,
+    storeConfig
+  );
+  return matchShiftFromRanges(remaining, config, storeConfig);
 }
 
 export type AttendeeShiftChoice = "keep" | "full_day" | "morning" | "afternoon";
 
+function pickByTimeWindow(
+  storeConfig: StoreConfig,
+  config: ShiftTimeConfig,
+  window: Array<{ start: number; end: number }>,
+  fallback: ScheduleShiftCode
+): ScheduleShiftCode {
+  const matched = matchShiftFromRanges(window, config, storeConfig);
+  return matched === "X" ? fallback : matched;
+}
+
 /** 全日颱風假：有來者依店長選擇的出勤時段對應班別 */
 export function resolveFullDayAttendeeShift(
   originalShift: ScheduleShiftCode,
-  choice: AttendeeShiftChoice = "keep"
+  choice: AttendeeShiftChoice = "keep",
+  storeConfig?: StoreConfig,
+  config: ShiftTimeConfig = {}
 ): ScheduleShiftCode {
-  if (choice === "morning") return "C";
-  if (choice === "afternoon") return "D";
+  const fallback =
+    storeConfig?.defaultWeekdayShift && storeConfig.defaultWeekdayShift !== "X"
+      ? storeConfig.defaultWeekdayShift
+      : "B";
+
+  if (choice === "morning") {
+    if (storeConfig?.features.customShiftCatalog) {
+      return pickByTimeWindow(
+        storeConfig,
+        config,
+        [{ start: timeToMinutes("08:30"), end: timeToMinutes("12:00") }],
+        fallback
+      );
+    }
+    return "C";
+  }
+  if (choice === "afternoon") {
+    if (storeConfig?.features.customShiftCatalog) {
+      return pickByTimeWindow(
+        storeConfig,
+        config,
+        [{ start: timeToMinutes("13:30"), end: timeToMinutes("18:00") }],
+        fallback
+      );
+    }
+    return "D";
+  }
   if (choice === "full_day") {
+    if (storeConfig?.features.customShiftCatalog) {
+      if (!isOff(originalShift, storeConfig)) {
+        const cat = findCatalogShift(storeConfig, originalShift);
+        if (cat && (cat.category === "all_day" || cat.category === "day" || cat.category === "split")) {
+          return originalShift;
+        }
+      }
+      return fallback;
+    }
     if (originalShift === "A" || originalShift === "E") return originalShift;
     return "B";
   }
-  return originalShift === "X" ? "B" : originalShift;
+  return isOff(originalShift, storeConfig) ? fallback : originalShift;
 }
 
 /**
  * 依颱風時段、原班別、是否出席（及店長指定班別）決定班表應寫入的班別。
- * - 時段停班且原班不受影響（如白班 vs 19:00）：維持原班
- * - 時段停班且未出席受影響時段：截斷到停班時刻
- * - 有出席且有指定班別：使用指定班別
- * - 時段停班且有出席未指定：維持原班
- * - 全日停班且未出席：休假 X
- * - 全日停班且有出席：指定班別，或依快捷時段（全天／半天）
  */
 export function resolveTyphoonScheduleShift(params: {
   originalShift: ScheduleShiftCode;
@@ -330,8 +404,8 @@ export function resolveTyphoonScheduleShift(params: {
   fromTime?: string;
   shiftTimeConfig: ShiftTimeConfig;
   attendeeChoice?: AttendeeShiftChoice;
-  /** 店長直接指定有來者當天班別（優先於 attendeeChoice） */
   assignedShift?: ScheduleShiftCode;
+  storeConfig?: StoreConfig;
 }): ScheduleShiftCode {
   const {
     originalShift,
@@ -341,14 +415,25 @@ export function resolveTyphoonScheduleShift(params: {
     shiftTimeConfig,
     attendeeChoice,
     assignedShift,
+    storeConfig,
   } = params;
 
-  if (originalShift === "X" && !willAttend) return "X";
+  const fallback =
+    storeConfig?.defaultWeekdayShift && storeConfig.defaultWeekdayShift !== "X"
+      ? storeConfig.defaultWeekdayShift
+      : "B";
+
+  if (isOff(originalShift, storeConfig) && !willAttend) return "X";
 
   if (periodMode === "full_day") {
     if (!willAttend) return "X";
     if (assignedShift) return assignedShift;
-    return resolveFullDayAttendeeShift(originalShift === "X" ? "B" : originalShift, attendeeChoice);
+    return resolveFullDayAttendeeShift(
+      isOff(originalShift, storeConfig) ? fallback : originalShift,
+      attendeeChoice,
+      storeConfig,
+      shiftTimeConfig
+    );
   }
 
   const cutoff = fromTime || "00:00";
@@ -356,12 +441,17 @@ export function resolveTyphoonScheduleShift(params: {
     originalShift,
     shiftTimeConfig,
     "from_time",
-    cutoff
+    cutoff,
+    storeConfig
   );
-  // 白班等：時段完全不受颱風影響 → 班表不動
   if (affected <= 0) return originalShift;
   if (willAttend) return assignedShift ?? originalShift;
-  return resolveShiftAfterTyphoonCutoff(originalShift, cutoff, shiftTimeConfig);
+  return resolveShiftAfterTyphoonCutoff(
+    originalShift,
+    cutoff,
+    shiftTimeConfig,
+    storeConfig
+  );
 }
 
 export const FLEXIBLE_PERIOD_PRESETS: Array<{
@@ -377,8 +467,21 @@ export const FLEXIBLE_PERIOD_PRESETS: Array<{
   { label: "19:00 起停班", periodMode: "from_time", fromTime: "19:00" },
 ];
 
-/** 確認出勤時可指定的班別選項 */
+/** 竹山確認出勤可指定的班別 */
+export const LEGACY_ATTENDEE_SHIFT_OPTIONS: ScheduleShiftCode[] = ["A", "B", "C", "D", "E"];
+
+/** @deprecated 請改用 getAttendeeShiftOptions(storeConfig) */
 export const ATTENDEE_SHIFT_OPTIONS: ShiftType[] = ["A", "B", "C", "D", "E"];
+
+/** 依店設定產生出勤班別選項（集集走目錄；竹山 A–E） */
+export function getAttendeeShiftOptions(storeConfig: StoreConfig): ScheduleShiftCode[] {
+  if (!storeConfig.features.customShiftCatalog) {
+    return [...LEGACY_ATTENDEE_SHIFT_OPTIONS];
+  }
+  return getScheduleShiftOptions(storeConfig).filter(
+    (c) => !isOffShiftCode(c, storeConfig)
+  );
+}
 
 export const FULL_DAY_ATTENDEE_CHOICES: Array<{
   value: AttendeeShiftChoice;

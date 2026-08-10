@@ -1,5 +1,11 @@
-import type { ScheduleShiftCode, ShiftType } from "@/lib/context/AppContext";
-import { isLegacyShiftCode } from "@/lib/shift-catalog/resolve";
+import type { ScheduleShiftCode, ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import type { StoreConfig } from "@/lib/store-config";
+import {
+  getScheduleShiftOptions,
+  isLegacyShiftCode,
+  isOffShiftCode,
+  resolveShiftTimeRanges,
+} from "@/lib/shift-catalog/resolve";
 
 const shiftTimeSlots: Record<ShiftType, { start: string; end: string }[]> = {
   A: [
@@ -31,13 +37,35 @@ const minutesToTime = (mins: number): string => {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 };
 
-/** 請假後剩餘班別（null = 全日請假）；非 A–E 目錄碼暫以原碼＋時段細節表示 */
+function rangesToSlots(ranges: string[]): { start: string; end: string }[] {
+  return ranges
+    .filter((r) => r !== "休假" && r.includes("-"))
+    .map((r) => {
+      const [start, end] = r.split("-").map((s) => s.trim());
+      return { start, end };
+    });
+}
+
+/** 請假後剩餘班別（null = 全日請假）；目錄碼依時段解析 */
 export function calculateEffectiveShift(
   originalShift: ScheduleShiftCode,
   leaveStartTime: string,
-  leaveEndTime: string
+  leaveEndTime: string,
+  storeConfig?: StoreConfig,
+  shiftTimeConfig?: ShiftTimeConfig
 ): { shift: ScheduleShiftCode | null; details: string; isPartial: boolean } {
-  const slots = isLegacyShiftCode(originalShift) ? shiftTimeSlots[originalShift] : undefined;
+  let slots: { start: string; end: string }[] | undefined;
+  if (storeConfig && shiftTimeConfig) {
+    if (isOffShiftCode(originalShift, storeConfig)) {
+      return { shift: null, details: "休假", isPartial: false };
+    }
+    slots = rangesToSlots(
+      resolveShiftTimeRanges(originalShift, storeConfig, shiftTimeConfig)
+    );
+  } else if (isLegacyShiftCode(originalShift)) {
+    slots = shiftTimeSlots[originalShift];
+  }
+
   if (!slots || slots.length === 0) {
     return { shift: null, details: "休假", isPartial: false };
   }
@@ -82,9 +110,21 @@ export function calculateEffectiveShift(
     return true;
   };
 
-  for (const [shift, shiftSlots] of Object.entries(shiftTimeSlots)) {
-    if (checkMatch(shiftSlots)) {
-      return { shift: shift as ShiftType, details, isPartial: true };
+  if (storeConfig?.features.customShiftCatalog && shiftTimeConfig) {
+    for (const code of getScheduleShiftOptions(storeConfig)) {
+      if (isOffShiftCode(code, storeConfig)) continue;
+      const candidate = rangesToSlots(
+        resolveShiftTimeRanges(code, storeConfig, shiftTimeConfig)
+      );
+      if (checkMatch(candidate)) {
+        return { shift: code, details, isPartial: true };
+      }
+    }
+  } else {
+    for (const [shift, shiftSlots] of Object.entries(shiftTimeSlots)) {
+      if (checkMatch(shiftSlots)) {
+        return { shift: shift as ShiftType, details, isPartial: true };
+      }
     }
   }
 
