@@ -15,6 +15,7 @@ import {
   type GeofenceLocation,
 } from "@/lib/attendance/geofence";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
+import { SITES } from "@/lib/sites";
 
 type EditablePunchFields = {
   action: "work_in" | "work_out";
@@ -70,6 +71,7 @@ export default function PunchAdminPage() {
     geofenceLocations,
     saveGeofenceLocations,
     storeConfig,
+    activeSiteId,
   } = useApp();
 
   const isManager =
@@ -97,6 +99,13 @@ export default function PunchAdminPage() {
     if (geoDirty) return;
     setGeoDrafts(geofenceLocations.map(toDraft));
   }, [geofenceLocations, geoDirty]);
+
+  // 切店後清空員工篩選，避免殘留他店員工 ID
+  useEffect(() => {
+    setSelectedEmpId("");
+    setEditingId(null);
+    setShowAddForm(false);
+  }, [activeSiteId]);
 
   const updateGeoDraft = (id: string, patch: Partial<GeoDraft>) => {
     setGeoDirty(true);
@@ -326,7 +335,12 @@ export default function PunchAdminPage() {
 
   return (
     <div className="space-y-6 max-w-2xl mx-auto">
-      <h2 className="text-2xl font-bold text-gray-900">打卡紀錄管理</h2>
+      <div>
+        <h2 className="text-2xl font-bold text-gray-900">打卡紀錄管理</h2>
+        <p className="text-sm text-gray-500 mt-1">
+          目前店別：{SITES[activeSiteId].displayName}（僅顯示此店員工打卡）
+        </p>
+      </div>
 
       <div className="bg-white rounded-xl shadow-sm border p-4 space-y-4">
         <div className="flex items-start justify-between gap-3">

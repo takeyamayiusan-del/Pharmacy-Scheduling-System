@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import {
+  assertManagerAuth,
+  assertManagerCanAccessEmployee,
+} from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 
 type PunchAction = "work_in" | "work_out";
@@ -37,6 +40,11 @@ export async function POST(req: NextRequest) {
     const record = body.record;
     if (!record?.employeeId || !record.date || !record.time) {
       return NextResponse.json({ error: "參數不完整" }, { status: 400 });
+    }
+
+    const access = await assertManagerCanAccessEmployee(auth, record.employeeId);
+    if ("error" in access) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const admin = createAdminClient();
@@ -82,6 +90,25 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: "參數不完整" }, { status: 400 });
     }
 
+    const admin = createAdminClient();
+    const { data: existing, error: lookupError } = await admin
+      .from("punch_records")
+      .select("employee_id")
+      .eq("id", id)
+      .maybeSingle();
+
+    if (lookupError) {
+      return NextResponse.json({ error: lookupError.message }, { status: 500 });
+    }
+    if (!existing) {
+      return NextResponse.json({ error: "找不到打卡紀錄" }, { status: 404 });
+    }
+
+    const access = await assertManagerCanAccessEmployee(auth, existing.employee_id);
+    if ("error" in access) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+
     const dbUpdates: Record<string, unknown> = {};
     if (updates.time !== undefined) dbUpdates.time = updates.time;
     if (updates.action !== undefined) dbUpdates.action = updates.action;
@@ -89,7 +116,6 @@ export async function PATCH(req: NextRequest) {
     if (updates.lateMinutes !== undefined) dbUpdates.late_minutes = updates.lateMinutes;
     if (updates.reason !== undefined) dbUpdates.reason = updates.reason;
 
-    const admin = createAdminClient();
     const { error } = await admin.from("punch_records").update(dbUpdates).eq("id", id);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
@@ -115,6 +141,24 @@ export async function DELETE(req: NextRequest) {
     }
 
     const admin = createAdminClient();
+    const { data: existing, error: lookupError } = await admin
+      .from("punch_records")
+      .select("employee_id")
+      .eq("id", body.id)
+      .maybeSingle();
+
+    if (lookupError) {
+      return NextResponse.json({ error: lookupError.message }, { status: 500 });
+    }
+    if (!existing) {
+      return NextResponse.json({ error: "找不到打卡紀錄" }, { status: 404 });
+    }
+
+    const access = await assertManagerCanAccessEmployee(auth, existing.employee_id);
+    if ("error" in access) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+
     const { error } = await admin.from("punch_records").delete().eq("id", body.id);
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 });
