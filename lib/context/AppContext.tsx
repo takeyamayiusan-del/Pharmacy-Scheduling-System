@@ -70,6 +70,7 @@ import {
   isRotationEveningDay,
   parseStoreConfig,
   resolveRotationOffLimit,
+  shouldSeedJijiShiftCatalog,
   type StoreConfig,
 } from "@/lib/store-config";
 import {
@@ -1079,21 +1080,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // 集集首次：尚無設定列 → 寫入總店範本一次（已有列不覆寫，含刻意清空）
-    if (siteId === "jiji" && !data) {
-      const seeded = buildJijiStoreConfigWithTemplate();
-      const { error: upsertError } = await supabase.from("app_settings").upsert({
-        id: settingId,
-        value: seeded,
-        updated_at: new Date().toISOString(),
-      });
-      if (upsertError) {
-        console.error("loadStoreConfig jiji seed:", upsertError);
+    // 集集：無列，或目錄仍空 → 寫入總店範本（避免上線後只能排休）
+    if (siteId === "jiji") {
+      const existing = data?.value
+        ? parseStoreConfig(data.value, siteId)
+        : null;
+      if (shouldSeedJijiShiftCatalog(existing)) {
+        const seeded = buildJijiStoreConfigWithTemplate();
+        const { error: upsertError } = await supabase.from("app_settings").upsert({
+          id: settingId,
+          value: seeded,
+          updated_at: new Date().toISOString(),
+        });
+        if (upsertError) {
+          console.error("loadStoreConfig jiji seed:", upsertError);
+          setStoreConfig(seeded);
+          return;
+        }
         setStoreConfig(seeded);
         return;
       }
-      setStoreConfig(seeded);
-      return;
     }
 
     setStoreConfig(parseStoreConfig(data?.value ?? null, siteId));
