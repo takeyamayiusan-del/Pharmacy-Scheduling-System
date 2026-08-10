@@ -1,4 +1,4 @@
-import type { Employee, ShiftDisplayConfig, ShiftType } from "@/lib/context/AppContext";
+import type { Employee, ScheduleShiftCode, ShiftDisplayConfig, ShiftType } from "@/lib/context/AppContext";
 import { formatShiftName } from "./shiftLabels";
 
 const isSunday = (dateStr: string) => new Date(dateStr).getDay() === 0;
@@ -21,7 +21,7 @@ export function buildScheduleWarnings(options: {
   daysInMonth: number;
   employees: Employee[];
   shiftDisplayConfig: ShiftDisplayConfig;
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
 }): ScheduleWarning[] {
   const { year, month, daysInMonth, employees, shiftDisplayConfig, getShiftForDate } =
     options;

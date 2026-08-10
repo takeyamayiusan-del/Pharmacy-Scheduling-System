@@ -1,4 +1,5 @@
-import type { ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftType } from "@/lib/context/AppContext";
+import { isLegacyShiftCode } from "@/lib/shift-catalog/resolve";
 
 const shiftTimeSlots: Record<ShiftType, { start: string; end: string }[]> = {
   A: [
@@ -30,13 +31,13 @@ const minutesToTime = (mins: number): string => {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 };
 
-/** 請假後剩餘班別（null = 全日請假） */
+/** 請假後剩餘班別（null = 全日請假）；非 A–E 目錄碼暫以原碼＋時段細節表示 */
 export function calculateEffectiveShift(
-  originalShift: ShiftType,
+  originalShift: ScheduleShiftCode,
   leaveStartTime: string,
   leaveEndTime: string
-): { shift: ShiftType | null; details: string; isPartial: boolean } {
-  const slots = shiftTimeSlots[originalShift];
+): { shift: ScheduleShiftCode | null; details: string; isPartial: boolean } {
+  const slots = isLegacyShiftCode(originalShift) ? shiftTimeSlots[originalShift] : undefined;
   if (!slots || slots.length === 0) {
     return { shift: null, details: "休假", isPartial: false };
   }

@@ -1,9 +1,10 @@
-export type HolidayShiftCode = "A" | "B" | "C" | "D" | "E" | "X";
+/** 班表碼（竹山 A–E／X；集集可為目錄碼）。一鍵指定仍以 A–E 為主。 */
+export type HolidayShiftCode = string;
 
 export type HolidayOneClickMode = "work" | "off";
 
 /** 一鍵上班班別：auto = 依每人固定班／基準班；其餘為指定班別 */
-export type HolidayWorkShiftChoice = "auto" | Exclude<HolidayShiftCode, "X">;
+export type HolidayWorkShiftChoice = "auto" | "A" | "B" | "C" | "D" | "E";
 
 export const HOLIDAY_WORK_SHIFT_OPTIONS: Array<{
   value: HolidayWorkShiftChoice;

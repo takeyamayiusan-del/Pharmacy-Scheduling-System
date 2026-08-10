@@ -16,7 +16,7 @@ import {
   type FlexiblePeriodMode,
 } from "@/lib/attendance/flexibleAttendance";
 import { formatCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
-import type { ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftType } from "@/lib/context/AppContext";
 
 function mapDay(row: Record<string, unknown>): FlexibleAttendanceDay {
   const original = Array.isArray(row.original_schedule)
@@ -103,7 +103,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
 
   const [confirmDayId, setConfirmDayId] = useState<string | null>(null);
   const [selectedAttendees, setSelectedAttendees] = useState<string[]>([]);
-  const [attendeeShifts, setAttendeeShifts] = useState<Record<string, ShiftType>>({});
+  const [attendeeShifts, setAttendeeShifts] = useState<Record<string, ScheduleShiftCode>>({});
   const [settleDayId, setSettleDayId] = useState<string | null>(null);
   const [makeupDraft, setMakeupDraft] = useState<Record<string, string>>({});
 
@@ -179,7 +179,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
     setSelectedAttendees(
       day.expectedAttendeeIds.length > 0 ? [...day.expectedAttendeeIds] : originallyOn
     );
-    const initialShifts: Record<string, ShiftType> = {};
+    const initialShifts: Record<string, ScheduleShiftCode> = {};
     for (const entry of originallyOnEntries) {
       initialShifts[entry.userId] = entry.shift;
     }
@@ -249,7 +249,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
     if (!target) return;
     setBusy(true);
     try {
-      const shiftsForAttendees: Record<string, ShiftType> = {};
+      const shiftsForAttendees: Record<string, ScheduleShiftCode> = {};
       for (const id of selectedAttendees) {
         if (attendeeShifts[id]) shiftsForAttendees[id] = attendeeShifts[id];
       }
@@ -676,8 +676,8 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
                     assignedShift: willCome ? assigned : undefined,
                   });
                   const unaffected = confirmTarget.periodMode === "from_time" && affected <= 0;
-                  const shiftLabel = (code: ShiftType) =>
-                    `${code} ${shiftDisplayConfig[code]?.label ?? ""}`.trim();
+                  const shiftLabel = (code: ScheduleShiftCode) =>
+                    `${code} ${shiftDisplayConfig[code as ShiftType]?.label ?? ""}`.trim();
 
                   return (
                     <div

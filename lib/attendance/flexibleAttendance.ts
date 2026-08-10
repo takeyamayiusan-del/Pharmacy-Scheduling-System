@@ -1,12 +1,12 @@
 import { SHIFT_HOURS } from "@/lib/attendance/calculator";
 import { timeToMinutes } from "@/lib/attendance/punchSchedule";
-import type { ShiftTimeConfig, ShiftType, PunchRecord } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftTimeConfig, ShiftType, PunchRecord } from "@/lib/context/AppContext";
 
 export type FlexiblePeriodMode = "full_day" | "from_time";
 
 export type OriginalScheduleEntry = {
   userId: string;
-  shift: ShiftType;
+  shift: ScheduleShiftCode;
 };
 
 export type FlexibleAttendanceDay = {
@@ -44,7 +44,7 @@ export type PendingMakeupHours = {
 export type SettlementPreviewRow = {
   userId: string;
   employeeName: string;
-  scheduledShift: ShiftType;
+  scheduledShift: ScheduleShiftCode;
   affectedHours: number;
   actualPunchHours: number;
   outcome: "comp_leave_granted" | "pending_makeup";
@@ -56,7 +56,7 @@ function roundHours(hours: number): number {
   return Math.round(Math.max(0, hours) * 100) / 100;
 }
 
-function parseShiftRanges(config: ShiftTimeConfig, shift: ShiftType): Array<{ start: number; end: number }> {
+function parseShiftRanges(config: ShiftTimeConfig, shift: ScheduleShiftCode): Array<{ start: number; end: number }> {
   const ranges = config[shift] ?? [];
   return ranges
     .filter((r) => r !== "休假" && r.includes("-"))
@@ -69,7 +69,7 @@ function parseShiftRanges(config: ShiftTimeConfig, shift: ShiftType): Array<{ st
 
 /** 班別在彈性時段內受影響的時數 */
 export function calculateAffectedShiftHours(
-  shift: ShiftType,
+  shift: ScheduleShiftCode,
   config: ShiftTimeConfig,
   periodMode: FlexiblePeriodMode,
   fromTime?: string
@@ -188,7 +188,7 @@ export function buildSettlementPreview(params: {
 
 export function buildOriginalScheduleSnapshot(
   employees: Array<{ id: string; role: string }>,
-  getShiftForDate: (date: string, employeeId: string) => ShiftType,
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode,
   date: string
 ): OriginalScheduleEntry[] {
   return employees
@@ -211,7 +211,7 @@ function rangesKey(ranges: Array<{ start: number; end: number }>): string {
 
 /** 截斷班別時段：只保留 cutoff 之前的部分 */
 export function truncateShiftRangesBefore(
-  shift: ShiftType,
+  shift: ScheduleShiftCode,
   cutoffTime: string,
   config: ShiftTimeConfig
 ): Array<{ start: number; end: number }> {
@@ -289,10 +289,10 @@ export function matchShiftFromRanges(
 
 /** 時段颱風假：未出席受影響時段時，班表改為 cutoff 前的剩餘班別 */
 export function resolveShiftAfterTyphoonCutoff(
-  originalShift: ShiftType,
+  originalShift: ScheduleShiftCode,
   cutoffTime: string,
   config: ShiftTimeConfig
-): ShiftType {
+): ScheduleShiftCode {
   if (originalShift === "X") return "X";
   const remaining = truncateShiftRangesBefore(originalShift, cutoffTime, config);
   return matchShiftFromRanges(remaining, config);
@@ -302,9 +302,9 @@ export type AttendeeShiftChoice = "keep" | "full_day" | "morning" | "afternoon";
 
 /** 全日颱風假：有來者依店長選擇的出勤時段對應班別 */
 export function resolveFullDayAttendeeShift(
-  originalShift: ShiftType,
+  originalShift: ScheduleShiftCode,
   choice: AttendeeShiftChoice = "keep"
-): ShiftType {
+): ScheduleShiftCode {
   if (choice === "morning") return "C";
   if (choice === "afternoon") return "D";
   if (choice === "full_day") {
@@ -324,15 +324,15 @@ export function resolveFullDayAttendeeShift(
  * - 全日停班且有出席：指定班別，或依快捷時段（全天／半天）
  */
 export function resolveTyphoonScheduleShift(params: {
-  originalShift: ShiftType;
+  originalShift: ScheduleShiftCode;
   willAttend: boolean;
   periodMode: FlexiblePeriodMode;
   fromTime?: string;
   shiftTimeConfig: ShiftTimeConfig;
   attendeeChoice?: AttendeeShiftChoice;
   /** 店長直接指定有來者當天班別（優先於 attendeeChoice） */
-  assignedShift?: ShiftType;
-}): ShiftType {
+  assignedShift?: ScheduleShiftCode;
+}): ScheduleShiftCode {
   const {
     originalShift,
     willAttend,

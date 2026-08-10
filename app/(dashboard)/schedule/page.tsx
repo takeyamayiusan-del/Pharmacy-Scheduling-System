@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useApp, type ShiftType } from "@/lib/context/AppContext";
+import { useApp, type ScheduleShiftCode, type ShiftType } from "@/lib/context/AppContext";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
@@ -17,8 +17,14 @@ import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
 import FlexibleAttendancePanel from "@/components/FlexibleAttendancePanel";
 import { formatCatalogShiftSummary } from "@/lib/shift-catalog";
+import {
+  getScheduleShiftOptions,
+  isLegacyShiftCode,
+  resolveShiftDisplay,
+  resolveShiftTimeRanges,
+} from "@/lib/shift-catalog/resolve";
 
-const shiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
+const legacyShiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -115,11 +121,22 @@ export default function SchedulePage() {
   };
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [showOriginalShift, setShowOriginalShift] = useState(false); // 新增：是否顯示原始班表
-  const [activeLegendShift, setActiveLegendShift] = useState<ShiftType | null>(null);
+  const [activeLegendShift, setActiveLegendShift] = useState<ScheduleShiftCode | null>(null);
   const [lockingMonth, setLockingMonth] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [typhoonDates, setTyphoonDates] = useState<Record<string, { title: string; periodLabel: string }>>({});
   const [typhoonReloadKey, setTyphoonReloadKey] = useState(0);
+
+  const useCatalog = storeConfig.features.customShiftCatalog;
+  const shiftOptions = useCatalog
+    ? getScheduleShiftOptions(storeConfig)
+    : legacyShiftOptions.filter((code) =>
+        storeConfig.shifts.some((s) => s.code === code && s.enabled)
+      );
+  const styleOf = (code: string) =>
+    resolveShiftDisplay(code, storeConfig, shiftDisplayConfig);
+  const rangesOf = (code: string) =>
+    resolveShiftTimeRanges(code, storeConfig, shiftTimeConfig);
   
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -281,7 +298,7 @@ export default function SchedulePage() {
 
   const handleExportPdf = async (layout: ExportLayout) => {
     // 創建一個包裝函數，在匯出時考慮請假和加班
-    const getShiftForDateWithLeave = (date: string, employeeId: string): ShiftType => {
+    const getShiftForDateWithLeave = (date: string, employeeId: string): ScheduleShiftCode => {
       const shift = getShiftForDate(date, employeeId);
       
       // 檢查是否有核准的請假申請
@@ -309,6 +326,7 @@ export default function SchedulePage() {
       getHolidayInfo,
       layout,
       shiftDisplayConfig,
+      storeConfig,
       leaveRequests,
       overtimeRequests,
       typhoonDates,
@@ -400,9 +418,13 @@ export default function SchedulePage() {
 
         if (isSaturday(selectedDate)) {
           const working = dateModalWorkers.filter((worker) => worker.shift !== "X");
-          const morning = dateModalWorkers.filter((worker) => worker.shift === "C");
-          if (morning.length === 0) {
-            warnings.push(`沒有人上${formatShiftName(shiftDisplayConfig, "C")}`);
+          const morning = dateModalWorkers.filter((worker) =>
+            useCatalog
+              ? styleOf(worker.shift).label.includes("白") || worker.shift.includes("白")
+              : worker.shift === "C"
+          );
+          if (morning.length === 0 && !useCatalog) {
+            warnings.push(`沒有人上${formatShiftName(shiftDisplayConfig, "C", storeConfig)}`);
           }
           if (working.length === 0) {
             warnings.push("禮拜六無人上班");
@@ -412,16 +434,22 @@ export default function SchedulePage() {
             );
           }
         } else if (!isSunday(selectedDate)) {
-          const eveningShifts: ShiftType[] = ["A", "D", "E"];
+          const eveningShifts: ScheduleShiftCode[] = useCatalog
+            ? storeConfig.shiftCatalog
+                .filter((s) => s.enabled && (s.category === "night" || s.category === "all_day"))
+                .map((s) => s.code)
+            : ["A", "D", "E"];
           const eveningWorkers = dateModalWorkers.filter((worker) =>
             eveningShifts.includes(worker.shift)
           );
-          const aShiftWorkers = dateModalWorkers.filter((worker) => worker.shift === "A");
-          if (eveningWorkers.length < 2) {
+          if (eveningShifts.length > 0 && eveningWorkers.length < 2) {
             warnings.push(`晚班人數不足（目前 ${eveningWorkers.length} 人）`);
           }
-          if (aShiftWorkers.length === 0) {
-            warnings.push(`${formatShiftName(shiftDisplayConfig, "A")}無人`);
+          if (!useCatalog) {
+            const aShiftWorkers = dateModalWorkers.filter((worker) => worker.shift === "A");
+            if (aShiftWorkers.length === 0) {
+              warnings.push(`${formatShiftName(shiftDisplayConfig, "A", storeConfig)}無人`);
+            }
           }
         }
 
@@ -450,7 +478,7 @@ export default function SchedulePage() {
   };
 
   // 選擇班別
-  const selectShift = async (date: string, employeeId: string, shift: ShiftType) => {
+  const selectShift = async (date: string, employeeId: string, shift: ScheduleShiftCode) => {
     try {
       await updateShift(date, employeeId, shift);
       setEditingCell(null);
@@ -460,7 +488,7 @@ export default function SchedulePage() {
   };
 
   // 班表單元格
-  const ShiftCell = ({ date, employeeId, shift }: { date: string; employeeId: string; shift: ShiftType }) => {
+  const ShiftCell = ({ date, employeeId, shift }: { date: string; employeeId: string; shift: ScheduleShiftCode }) => {
     const isEditing = editingCell?.date === date && editingCell?.employeeId === employeeId;
     const editable = canEdit(employeeId, date);
     const holidayInfo = getHolidayInfo(date);
@@ -476,21 +504,25 @@ export default function SchedulePage() {
     if (isEditing) {
       return (
         <div className="p-1">
-          <div className="flex flex-col gap-1">
-            {shiftOptions.map((s) => (
+          <div className="flex flex-col gap-1 max-h-48 overflow-y-auto">
+            {shiftOptions.map((s) => {
+              const style = styleOf(s);
+              return (
               <button
                 key={s}
                 onClick={() => selectShift(date, employeeId, s)}
                 style={{
-                  backgroundColor: shiftDisplayConfig[s].bgColor,
-                  color: shiftDisplayConfig[s].textColor,
-                  borderColor: shiftDisplayConfig[s].borderColor,
+                  backgroundColor: style.bgColor,
+                  color: style.textColor,
+                  borderColor: style.borderColor,
                 }}
-                className="text-xs px-1 py-0.5 rounded border hover:opacity-80"
+                className="text-xs px-1 py-0.5 rounded border hover:opacity-80 text-left"
+                title={style.label}
               >
-                {shiftDisplayConfig[s].displayText}
+                {useCatalog ? style.label : style.displayText}
               </button>
-            ))}
+              );
+            })}
             <button
               onClick={() => setEditingCell(null)}
               className="text-xs text-gray-500 hover:text-gray-700"
@@ -502,6 +534,8 @@ export default function SchedulePage() {
       );
     }
 
+    const cellStyle = styleOf(displayShift);
+
     return (
       <div className="p-1 relative">
         <div
@@ -510,15 +544,19 @@ export default function SchedulePage() {
             isFullDayLeave
               ? undefined
               : {
-                  backgroundColor: shiftDisplayConfig[displayShift].bgColor,
-                  color: shiftDisplayConfig[displayShift].textColor,
-                  borderColor: shiftDisplayConfig[displayShift].borderColor,
+                  backgroundColor: cellStyle.bgColor,
+                  color: cellStyle.textColor,
+                  borderColor: cellStyle.borderColor,
                 }
           }
           className={`h-10 flex items-center justify-center rounded font-medium border-2 ${isFullDayLeave ? "bg-violet-500 text-white border-violet-600" : ""} ${editable ? "cursor-pointer hover:opacity-80" : ""} ${isSun && !isFullDayLeave ? "bg-red-50" : ""} ${hasFixedShift ? "ring-2 ring-orange-400" : ""}`}
-          title={isPartialLeave ? `半日請假：${shiftInfo.effectiveShiftDetails}` : undefined}
+          title={
+            isPartialLeave
+              ? `半日請假：${shiftInfo.effectiveShiftDetails}`
+              : cellStyle.label
+          }
         >
-          {isFullDayLeave ? "假" : shiftDisplayConfig[displayShift].displayText}
+          {isFullDayLeave ? "假" : (useCatalog ? cellStyle.displayText : cellStyle.displayText)}
           {editable && <span className="ml-1 text-[10px]">✏️</span>}
         </div>
         
@@ -813,7 +851,7 @@ export default function SchedulePage() {
               <div key={idx} className="border rounded-lg p-2">
                 <span className="font-medium text-gray-800">{emp?.name}</span>
                 <p className="text-gray-600 text-xs mt-1">
-                  每個 {dayLabels[fs.dayOfWeek]} - {shiftDisplayConfig[fs.shift].label}
+                  每個 {dayLabels[fs.dayOfWeek]} - {styleOf(fs.shift).label}
                 </p>
               </div>
             );
@@ -985,10 +1023,12 @@ export default function SchedulePage() {
 
         {/* 圖例 */}
         <div className="p-4 border-t bg-gray-50 space-y-3">
-          <div className="flex flex-wrap items-center gap-6">
+          <div className="flex flex-wrap items-center gap-4">
             <span className="text-sm font-medium text-gray-700">圖例：</span>
             {shiftOptions.map((shiftCode) => {
-              const s = shiftCode as ShiftType;
+              const s = shiftCode;
+              const style = styleOf(s);
+              const ranges = rangesOf(s);
               const isActive = activeLegendShift === s;
               return (
                 <button
@@ -1001,22 +1041,22 @@ export default function SchedulePage() {
                 >
                   <span
                     style={{
-                      backgroundColor: shiftDisplayConfig[s].bgColor,
-                      color: shiftDisplayConfig[s].textColor,
-                      borderColor: shiftDisplayConfig[s].borderColor,
+                      backgroundColor: style.bgColor,
+                      color: style.textColor,
+                      borderColor: style.borderColor,
                     }}
-                    className="w-8 h-8 flex items-center justify-center rounded border-2 font-medium"
+                    className="min-w-8 h-8 px-1 flex items-center justify-center rounded border-2 font-medium text-xs"
                   >
-                    {shiftDisplayConfig[s].displayText}
+                    {style.displayText}
                   </span>
-                  <span className="text-gray-600">{shiftDisplayConfig[s].label}</span>
+                  <span className="text-gray-600">{style.label}</span>
 
                   {isActive && (
                     <span className="absolute left-0 bottom-10 z-30 min-w-[170px] rounded-lg border bg-white px-3 py-2 text-left text-xs shadow-xl">
                       <span className="block font-semibold text-gray-800 mb-1">
-                        {shiftDisplayConfig[s].displayText}班時段
+                        {style.label}時段
                       </span>
-                      {shiftTimeConfig[s].map((range) => (
+                      {ranges.map((range) => (
                         <span key={range} className="block text-gray-600">
                           {range}
                         </span>
@@ -1027,27 +1067,11 @@ export default function SchedulePage() {
               );
             })}
           </div>
-          {storeConfig.features.customShiftCatalog &&
-            storeConfig.shiftCatalog.filter((s) => s.enabled).length > 0 && (
-              <div className="rounded-lg border border-sky-200 bg-sky-50/80 px-3 py-2">
-                <p className="text-sm font-medium text-sky-950 mb-2">
-                  本店班別目錄（參考；班表格子仍暫用 A–E）
-                </p>
-                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1 text-xs text-sky-900/90">
-                  {storeConfig.shiftCatalog
-                    .filter((s) => s.enabled)
-                    .map((s) => (
-                      <li key={s.id}>
-                        <span className="font-medium">{s.name}</span>
-                        <span className="text-sky-800/80">
-                          {" "}
-                          — {formatCatalogShiftSummary(s)}
-                        </span>
-                      </li>
-                    ))}
-                </ul>
-              </div>
-            )}
+          {useCatalog && (
+            <p className="text-xs text-sky-800">
+              集集班表可直接選目錄班別；請先在「店家設定」載入或維護班別目錄。
+            </p>
+          )}
         </div>
       </div>
 
@@ -1111,9 +1135,12 @@ export default function SchedulePage() {
                 const { originalShift, effectiveShift, effectiveShiftDetails } = worker.shiftInfo;
                 const hasLeave = worker.shiftInfo.hasLeave;
 
-                const formatShiftLabel = (shift: ShiftType) => {
-                  if (!shift || shift === "X") return shiftDisplayConfig[shift]?.label || "休假";
-                  return `${shiftDisplayConfig[shift].displayText}班（${shiftDisplayConfig[shift].label}）`;
+                const formatShiftLabel = (shift: ScheduleShiftCode) => {
+                  if (!shift || shift === "X") return styleOf(shift || "X").label || "休假";
+                  const st = styleOf(shift);
+                  return useCatalog
+                    ? `${st.label}（${rangesOf(shift).join("、") || "時段未設"}）`
+                    : `${st.displayText}班（${st.label}）`;
                 };
 
                 return (

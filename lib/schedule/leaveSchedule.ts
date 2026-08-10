@@ -1,4 +1,4 @@
-import type { ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode } from "@/lib/context/AppContext";
 import { calculateEffectiveShift } from "@/lib/schedule/effectiveShift";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
 
@@ -21,10 +21,10 @@ export function resolveLeaveTimesForSchedule(input: {
 export function getOriginalShiftForLeaveDay(input: {
   employeeId: string;
   date: string;
-  shiftMode: "schedule" | ShiftType;
+  shiftMode: "schedule" | ScheduleShiftCode;
   scheduleSnapshot?: ScheduleSnapshotEntry[];
-  getBaseShiftForDate: (date: string, employeeId: string) => ShiftType;
-}): ShiftType {
+  getBaseShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
+}): ScheduleShiftCode {
   const snap = input.scheduleSnapshot?.find(
     (entry) => entry.userId === input.employeeId && entry.date === input.date
   );
@@ -34,12 +34,12 @@ export function getOriginalShiftForLeaveDay(input: {
 }
 
 export function calculateLeaveDisplayOnSchedule(
-  originalShift: ShiftType,
+  originalShift: ScheduleShiftCode,
   period: LeavePeriodMode,
   startTime: string,
   endTime: string
 ): {
-  effectiveShift: ShiftType;
+  effectiveShift: ScheduleShiftCode;
   effectiveShiftDetails: string;
   isPartialLeave: boolean;
   leaveStartTime: string;
@@ -62,7 +62,7 @@ export function calculateLeaveDisplayOnSchedule(
   }
 
   const result = calculateEffectiveShift(originalShift, leaveStartTime, leaveEndTime);
-  const effectiveShift = (result.shift ?? "X") as ShiftType;
+  const effectiveShift = result.shift ?? "X";
 
   return {
     effectiveShift,

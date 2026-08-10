@@ -1,4 +1,5 @@
 import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import { isLegacyShiftCode } from "@/lib/shift-catalog/resolve";
 
 export type PunchAction = "work_in" | "work_out";
 
@@ -17,13 +18,10 @@ const parseRanges = (ranges: string[]): { start: string; end: string }[] =>
       return { start: start.trim(), end: end.trim() };
     });
 
-export function getPunchSlotsForShift(
-  shift: ShiftType,
-  config: ShiftTimeConfig
-): PunchSlot[] {
-  const ranges = parseRanges(config[shift] ?? []);
+/** 依時段字串產生打卡槽（可接目錄解析後的 ranges） */
+export function getPunchSlotsForRanges(ranges: string[]): PunchSlot[] {
   const slots: PunchSlot[] = [];
-  ranges.forEach((range, index) => {
+  parseRanges(ranges).forEach((range, index) => {
     slots.push({
       action: "work_in",
       segmentIndex: index,
@@ -40,7 +38,15 @@ export function getPunchSlotsForShift(
   return slots;
 }
 
-export function getBreakCountForShift(shift: ShiftType): number {
+export function getPunchSlotsForShift(
+  shift: string,
+  config: ShiftTimeConfig
+): PunchSlot[] {
+  if (!isLegacyShiftCode(shift)) return [];
+  return getPunchSlotsForRanges(config[shift] ?? []);
+}
+
+export function getBreakCountForShift(shift: string): number {
   if (shift === "A" || shift === "E") return 2;
   if (shift === "B") return 1;
   return 0;
