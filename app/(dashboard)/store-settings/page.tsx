@@ -279,20 +279,36 @@ export default function StoreSettingsPage() {
                         onChange={(e) =>
                           updateCatalogShift(shift.id, {
                             name: e.target.value,
-                            code: e.target.value.trim().slice(0, 24) || shift.code,
                           })
                         }
                         className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
                       />
                     </label>
                     <label className="text-sm w-28">
-                      <span className="text-gray-700">短碼</span>
+                      <span className="text-gray-700">班表短碼</span>
+                      <input
+                        value={shift.shortLabel}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, {
+                            shortLabel: e.target.value.slice(0, 6),
+                          })
+                        }
+                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white font-mono text-sm"
+                        placeholder="白2"
+                        title="班表格子顯示用"
+                      />
+                    </label>
+                    <label className="text-sm w-28">
+                      <span className="text-gray-700">識別碼</span>
                       <input
                         value={shift.code}
                         onChange={(e) =>
-                          updateCatalogShift(shift.id, { code: e.target.value.slice(0, 24) })
+                          updateCatalogShift(shift.id, {
+                            code: e.target.value.slice(0, 24),
+                          })
                         }
                         className="mt-1 w-full border rounded-lg px-3 py-2 bg-white font-mono text-sm"
+                        title="寫入班表用，改動會影響既有班表對應"
                       />
                     </label>
                     <label className="text-sm w-32">

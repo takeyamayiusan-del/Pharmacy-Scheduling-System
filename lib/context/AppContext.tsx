@@ -1898,7 +1898,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       hasLeaveSelection: (employeeId) => (leaveSelections[employeeId] ?? []).includes(date),
       hasApprovedFullDayLeave,
       workShiftChoice: mode === "work" ? options?.workShiftChoice ?? "auto" : undefined,
+      fallbackWorkShift: storeConfig.defaultWeekdayShift || "B",
     });
+
+    if (mode === "work" && options?.workShiftChoice && options.workShiftChoice !== "auto") {
+      const codeCheck = assertWritableShiftCode(options.workShiftChoice, storeConfig);
+      if (!codeCheck.ok) {
+        throw new Error(codeCheck.message);
+      }
+    }
 
     const preservedLeave = targets.filter((e) => {
       const keepLeave =
