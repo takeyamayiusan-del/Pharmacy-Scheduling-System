@@ -52,10 +52,10 @@ export type StoreConfig = {
   /** 所屬店（寫入時帶上，方便除錯） */
   siteId?: SiteId;
   shifts: StoreShiftDef[];
-  /** 平日（非輪值日、非固定班）預設班 */
-  defaultWeekdayShift: StoreShiftCode;
-  /** 週六未設固定班時的預設班 */
-  defaultSaturdayShift: StoreShiftCode;
+  /** 平日（非輪值日、非固定班）預設班；集集可為目錄短碼 */
+  defaultWeekdayShift: string;
+  /** 週六未設固定班時的預設班；集集可為目錄短碼 */
+  defaultSaturdayShift: string;
   features: {
     /** 週期輪班（原「禮三晚班」） */
     rotationEvening: boolean;
@@ -135,6 +135,21 @@ export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
 
 function isShiftCode(v: unknown): v is StoreShiftCode {
   return typeof v === "string" && (ALL_SHIFT_CODES as string[]).includes(v);
+}
+
+/** 預設班碼：竹山僅 A–X；集集可為目錄碼（相容暫存的 A–E） */
+function resolveDefaultShiftCode(
+  raw: unknown,
+  fallback: string,
+  opts: { customShiftCatalog: boolean; shiftCatalog: CatalogShift[] }
+): string {
+  if (typeof raw !== "string" || !raw.trim()) return fallback;
+  const code = raw.trim().slice(0, 24);
+  if (isShiftCode(code)) return code;
+  if (opts.customShiftCatalog) {
+    if (opts.shiftCatalog.some((s) => s.code === code)) return code;
+  }
+  return fallback;
 }
 
 function normalizeWeekdays(raw: unknown): number[] {
@@ -259,6 +274,12 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
         : defaults.features.customShiftCatalog,
   };
 
+  const shiftCatalog = parseCatalogShifts(obj.shiftCatalog);
+  const defaultOpts = {
+    customShiftCatalog: features.customShiftCatalog,
+    shiftCatalog,
+  };
+
   return {
     version: 1,
     storeName:
@@ -267,12 +288,16 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
         : defaults.storeName,
     siteId,
     shifts: normalizeShifts(obj.shifts),
-    defaultWeekdayShift: isShiftCode(obj.defaultWeekdayShift)
-      ? obj.defaultWeekdayShift
-      : defaults.defaultWeekdayShift,
-    defaultSaturdayShift: isShiftCode(obj.defaultSaturdayShift)
-      ? obj.defaultSaturdayShift
-      : defaults.defaultSaturdayShift,
+    defaultWeekdayShift: resolveDefaultShiftCode(
+      obj.defaultWeekdayShift,
+      defaults.defaultWeekdayShift,
+      defaultOpts
+    ),
+    defaultSaturdayShift: resolveDefaultShiftCode(
+      obj.defaultSaturdayShift,
+      defaults.defaultSaturdayShift,
+      defaultOpts
+    ),
     features,
     rotationEvening: {
       weekdays,
@@ -282,7 +307,7 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
       menuLabel,
     },
     ruleTags: normalizeRuleTags(obj.ruleTags, menuLabel),
-    shiftCatalog: parseCatalogShifts(obj.shiftCatalog),
+    shiftCatalog,
   };
 }
 
@@ -290,7 +315,11 @@ export function getEnabledShiftCodes(config: StoreConfig): StoreShiftCode[] {
   return config.shifts.filter((s) => s.enabled).map((s) => s.code);
 }
 
-export function getShiftName(config: StoreConfig, code: StoreShiftCode): string {
+export function getShiftName(config: StoreConfig, code: string): string {
+  if (config.features.customShiftCatalog) {
+    const cat = config.shiftCatalog.find((s) => s.code === code);
+    if (cat) return cat.name;
+  }
   return config.shifts.find((s) => s.code === code)?.name ?? code;
 }
 

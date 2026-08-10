@@ -1,12 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useApp, type ShiftType, type Employee } from "@/lib/context/AppContext";
+import { useApp, type ScheduleShiftCode, type ShiftType, type Employee } from "@/lib/context/AppContext";
 import {
   getActiveRuleTags,
   getEnabledShiftCodes,
+  getShiftName,
   type StoreRuleTagId,
 } from "@/lib/store-config";
+import {
+  getScheduleShiftOptions,
+  resolveShiftDisplay,
+} from "@/lib/shift-catalog/resolve";
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -35,8 +40,14 @@ export default function FixedShiftsPage() {
     activeSiteId,
   } = useApp();
 
+  /** 竹山 A–E 時段／顏色編輯器用 */
+  const legacyShiftOptions = useMemo(
+    () => getEnabledShiftCodes(storeConfig),
+    [storeConfig]
+  );
+  /** 固定班選單：集集走目錄，竹山走啟用中的 A–E */
   const shiftOptions = useMemo(
-    () => getEnabledShiftCodes(storeConfig) as ShiftType[],
+    () => getScheduleShiftOptions(storeConfig),
     [storeConfig]
   );
   const activeRuleTags = useMemo(() => getActiveRuleTags(storeConfig), [storeConfig]);
@@ -50,16 +61,21 @@ export default function FixedShiftsPage() {
   const canEditSharedShiftMeta = activeSiteId === "zhushan";
   const useCatalog = storeConfig.features.customShiftCatalog;
 
+  const optionLabel = (code: string) => {
+    const style = resolveShiftDisplay(code, storeConfig, shiftDisplayConfig);
+    return useCatalog ? style.label : `${code}（${style.label}）`;
+  };
+
   const [newEmployeeId, setNewEmployeeId] = useState<string>("");
   const [newDayOfWeek, setNewDayOfWeek] = useState<number>(1);
-  const [newShift, setNewShift] = useState<ShiftType>("B");
+  const [newShift, setNewShift] = useState<ScheduleShiftCode>("B");
   const [shiftTimeInputs, setShiftTimeInputs] = useState<Record<ShiftType, string>>({
-    A: shiftTimeConfig.A.join(", "),
-    B: shiftTimeConfig.B.join(", "),
-    C: shiftTimeConfig.C.join(", "),
-    D: shiftTimeConfig.D.join(", "),
-    E: shiftTimeConfig.E.join(", "),
-    X: shiftTimeConfig.X.join(", "),
+    A: (shiftTimeConfig.A ?? []).join(", "),
+    B: (shiftTimeConfig.B ?? []).join(", "),
+    C: (shiftTimeConfig.C ?? []).join(", "),
+    D: (shiftTimeConfig.D ?? []).join(", "),
+    E: (shiftTimeConfig.E ?? []).join(", "),
+    X: (shiftTimeConfig.X ?? []).join(", "),
   });
   const [shiftDisplayInputs, setShiftDisplayInputs] = useState<
     Record<ShiftType, { label: string; displayText: string; bgColor: string; textColor: string; borderColor: string }>
@@ -118,7 +134,7 @@ export default function FixedShiftsPage() {
     const updated = { ...fixedShifts[sourceIndex] };
     if (field === "employeeId" && typeof value === "string") updated.employeeId = value;
     if (field === "dayOfWeek" && typeof value === "number") updated.dayOfWeek = value;
-    if (field === "shift" && typeof value === "string") updated.shift = value as ShiftType;
+    if (field === "shift" && typeof value === "string") updated.shift = value;
     try {
       await updateFixedShift(sourceIndex, updated);
       if (updated.dayOfWeek === 6 && updated.shift === "X") {
@@ -187,9 +203,11 @@ export default function FixedShiftsPage() {
       </div>
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
-        可為個別員工設定「禮拜六 → 休假（X）」。儲存後未來週六班表會顯示休假；未設定時禮拜六預設為{" "}
-        {storeConfig.defaultSaturdayShift} 班。平日預設為 {storeConfig.defaultWeekdayShift} 班。
+        可為個別員工設定「禮拜六 → 休假（X）」。儲存後未來週六班表會顯示休假；未設定時禮拜六預設為「
+        {getShiftName(storeConfig, storeConfig.defaultSaturdayShift)}
+        」。平日預設為「{getShiftName(storeConfig, storeConfig.defaultWeekdayShift)}」。
         若該月班表已鎖定且格子仍是舊資料，請店長解鎖後再確認。
+        {useCatalog ? " 集集固定班可選店家設定中的班別目錄。" : ""}
       </div>
 
       {/* ── 特殊規則設定（依店家功能開關動態欄位） ── */}
@@ -274,7 +292,7 @@ export default function FixedShiftsPage() {
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">班別時段設定（可客製）</h3>
         <div className="space-y-3">
-          {shiftOptions.map((shift) => (
+          {legacyShiftOptions.map((shift) => (
             <div
               key={shift}
               className="grid grid-cols-1 md:grid-cols-[120px_1fr_auto] gap-3 items-center"
@@ -323,7 +341,7 @@ export default function FixedShiftsPage() {
       <div className="bg-white rounded-xl shadow-sm border p-6">
         <h3 className="font-medium text-gray-900 mb-4">班別顯示設定（文字 / 顏色）</h3>
         <div className="space-y-3">
-          {shiftOptions.map((shift) => (
+          {legacyShiftOptions.map((shift) => (
             <div
               key={shift}
               className="grid grid-cols-1 md:grid-cols-[100px_90px_1fr_1fr_1fr_1fr_auto] gap-3 items-center"
@@ -437,12 +455,12 @@ export default function FixedShiftsPage() {
           </select>
           <select
             value={newShift}
-            onChange={(e) => setNewShift(e.target.value as ShiftType)}
+            onChange={(e) => setNewShift(e.target.value)}
             className="border rounded-lg px-3 py-2"
           >
             {shiftOptions.map((shift) => (
               <option key={shift} value={shift}>
-                {shift}（{shiftDisplayConfig[shift].label}）
+                {optionLabel(shift)}
               </option>
             ))}
           </select>
@@ -500,7 +518,7 @@ export default function FixedShiftsPage() {
                     >
                       {shiftOptions.map((shift) => (
                         <option key={shift} value={shift}>
-                          {shiftDisplayConfig[shift].label}
+                          {optionLabel(shift)}
                         </option>
                       ))}
                       {/* 若舊資料班別已停用，仍顯示目前值 */}
