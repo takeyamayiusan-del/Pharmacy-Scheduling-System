@@ -326,10 +326,9 @@ export default function FixedShiftsPage() {
         <div className="bg-sky-50 border border-sky-200 rounded-xl px-4 py-3 text-sm text-sky-950">
           <p className="font-medium">集集店：進階班別請在「店家設定」維護</p>
           <p className="mt-1 text-sky-900/90">
-            A–E 時段／顏色為竹山共用，此店不可修改，以免影響竹山排班圖例。
             {useCatalog
-              ? " 請至店家設定編輯班別目錄（可載入總店範本）。"
-              : " 可至店家設定開啟進階班別目錄。"}
+              ? "已啟用進階班別目錄：名稱、時段、休息與班表顏色皆在店家設定各自調整，不影響竹山。"
+              : "可至店家設定開啟進階班別目錄，以各班別名稱為主並自訂顏色。"}
           </p>
           <a href="/store-settings" className="inline-block mt-2 text-sky-800 underline">
             前往店家設定 →

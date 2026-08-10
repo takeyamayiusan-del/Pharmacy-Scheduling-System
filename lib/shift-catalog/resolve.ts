@@ -2,7 +2,8 @@
  * 班別顯示／時段解析：竹山走 A–E 共用設定；集集走店家班別目錄。
  */
 
-import type { CatalogShift, ShiftCategory } from "@/lib/shift-catalog/types";
+import { CATEGORY_STYLE } from "@/lib/shift-catalog/colors";
+import type { CatalogShift } from "@/lib/shift-catalog/types";
 import type { StoreConfig } from "@/lib/store-config";
 
 export type ShiftDisplayStyle = {
@@ -21,16 +22,6 @@ export function isLegacyShiftCode(v: string): v is LegacyShiftCode {
   return (LEGACY_SHIFT_CODES as readonly string[]).includes(v);
 }
 
-const CATEGORY_STYLE: Record<ShiftCategory, Omit<ShiftDisplayStyle, "label" | "displayText">> = {
-  day: { bgColor: "#dbeafe", textColor: "#1e40af", borderColor: "#60a5fa" },
-  mid: { bgColor: "#ffedd5", textColor: "#9a3412", borderColor: "#fb923c" },
-  night: { bgColor: "#e0e7ff", textColor: "#3730a3", borderColor: "#818cf8" },
-  split: { bgColor: "#fce7f3", textColor: "#9d174d", borderColor: "#f472b6" },
-  all_day: { bgColor: "#d1fae5", textColor: "#065f46", borderColor: "#34d399" },
-  off: { bgColor: "#e2e8f0", textColor: "#334155", borderColor: "#94a3b8" },
-  other: { bgColor: "#f3f4f6", textColor: "#374151", borderColor: "#9ca3af" },
-};
-
 const FALLBACK_STYLE: ShiftDisplayStyle = {
   label: "班別",
   displayText: "?",
@@ -38,6 +29,17 @@ const FALLBACK_STYLE: ShiftDisplayStyle = {
   textColor: "#374151",
   borderColor: "#9ca3af",
 };
+
+function styleFromCatalog(cat: CatalogShift): ShiftDisplayStyle {
+  const fallback = CATEGORY_STYLE[cat.category];
+  return {
+    label: cat.name,
+    displayText: cat.shortLabel || cat.code,
+    bgColor: cat.bgColor || fallback.bgColor,
+    textColor: cat.textColor || fallback.textColor,
+    borderColor: cat.borderColor || fallback.borderColor,
+  };
+}
 
 export function findCatalogShift(
   storeConfig: StoreConfig,
@@ -89,32 +91,14 @@ export function resolveShiftDisplay(
   storeConfig: StoreConfig,
   legacyDisplayConfig: Record<string, ShiftDisplayStyle>
 ): ShiftDisplayStyle {
-  if (isLegacyShiftCode(shift) && legacyDisplayConfig[shift]) {
-    // 集集若同碼在目錄也有，優先目錄名稱
-    if (storeConfig.features.customShiftCatalog) {
-      const cat = findCatalogShift(storeConfig, shift);
-      if (cat) {
-        const style = CATEGORY_STYLE[cat.category];
-        return {
-          label: cat.name,
-          displayText: cat.shortLabel || cat.code,
-          ...style,
-        };
-      }
-    }
-    return legacyDisplayConfig[shift];
-  }
-
+  // 進階目錄開啟：一律以各班別自訂名稱／顏色為主（不再顯示 A–E 圖例）
   if (storeConfig.features.customShiftCatalog) {
     const cat = findCatalogShift(storeConfig, shift);
-    if (cat) {
-      const style = CATEGORY_STYLE[cat.category];
-      return {
-        label: cat.name,
-        displayText: cat.shortLabel || cat.code,
-        ...style,
-      };
-    }
+    if (cat) return styleFromCatalog(cat);
+  }
+
+  if (isLegacyShiftCode(shift) && legacyDisplayConfig[shift]) {
+    return legacyDisplayConfig[shift];
   }
 
   if (shift === "X") {

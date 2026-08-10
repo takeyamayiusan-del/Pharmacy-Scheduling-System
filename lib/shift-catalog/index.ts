@@ -1,5 +1,9 @@
 import headStoreTemplate from "@/lib/shift-catalog/head-store-template.json";
 import {
+  defaultColorsForCategory,
+  parseHexColor,
+} from "@/lib/shift-catalog/colors";
+import {
   deriveShortLabel,
   type CatalogShift,
   type ShiftCategory,
@@ -8,6 +12,10 @@ import {
 
 export type { CatalogShift, ShiftCategory, TimeRange } from "@/lib/shift-catalog/types";
 export { SHIFT_CATEGORY_LABELS, deriveShortLabel } from "@/lib/shift-catalog/types";
+export {
+  CATEGORY_STYLE,
+  defaultColorsForCategory,
+} from "@/lib/shift-catalog/colors";
 export { buildZhushanLegacyCatalog } from "@/lib/shift-catalog/zhushan-legacy";
 export {
   assertWritableShiftCode,
@@ -76,6 +84,7 @@ export function parseCatalogShift(raw: unknown, index = 0): CatalogShift | null 
     typeof o.shortLabel === "string" && o.shortLabel.trim()
       ? o.shortLabel.trim().slice(0, 6)
       : "";
+  const defaults = defaultColorsForCategory(category);
   return {
     id: typeof o.id === "string" && o.id.trim() ? o.id.trim() : newId(),
     code,
@@ -85,6 +94,9 @@ export function parseCatalogShift(raw: unknown, index = 0): CatalogShift | null 
     workSegments,
     breaks,
     nominalHours: Number.isFinite(nominalHours) ? nominalHours : 0,
+    bgColor: parseHexColor(o.bgColor, defaults.bgColor),
+    textColor: parseHexColor(o.textColor, defaults.textColor),
+    borderColor: parseHexColor(o.borderColor, defaults.borderColor),
     enabled: typeof o.enabled === "boolean" ? o.enabled : true,
     sortOrder: typeof o.sortOrder === "number" ? o.sortOrder : index,
   };
@@ -113,6 +125,7 @@ export function createEmptyCatalogShift(partial?: Partial<CatalogShift>): Catalo
   const name = partial?.name?.trim() || "新班別";
   const code = partial?.code?.trim() || name.slice(0, 24);
   const category = partial?.category ?? "day";
+  const defaults = defaultColorsForCategory(category);
   return {
     id: newId(),
     code,
@@ -125,6 +138,9 @@ export function createEmptyCatalogShift(partial?: Partial<CatalogShift>): Catalo
       : [{ start: "09:00", end: "18:00" }],
     breaks: partial?.breaks ?? [{ start: "12:30", end: "13:30" }],
     nominalHours: partial?.nominalHours ?? 8,
+    bgColor: partial?.bgColor ?? defaults.bgColor,
+    textColor: partial?.textColor ?? defaults.textColor,
+    borderColor: partial?.borderColor ?? defaults.borderColor,
     enabled: partial?.enabled ?? true,
     sortOrder: partial?.sortOrder ?? 0,
   };
