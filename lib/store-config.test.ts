@@ -6,6 +6,7 @@ import {
   getActiveRuleTags,
   getEnabledShiftCodes,
   getMonthRotationDates,
+  getRotationShiftOptions,
   isRotationEveningDay,
   parseStoreConfig,
   resolveRotationOffLimit,
@@ -42,8 +43,47 @@ describe("store-config", () => {
     expect(c.shiftCatalog.some((s) => s.code === "白班1")).toBe(true);
     expect(c.defaultWeekdayShift).toBe("白班5");
     expect(c.defaultSaturdayShift).toBe("白班2");
+    expect(c.rotationEvening.onDutyShift).toBe("晚班1");
+    expect(c.rotationEvening.offDutyShift).toBe("白班5");
+    expect(c.features.rotationEvening).toBe(false);
+    expect(getRotationShiftOptions(c)).toContain("晚班1");
+    expect(getRotationShiftOptions(c)).not.toContain("X");
     expect(shouldSeedJijiShiftCatalog(c)).toBe(false);
     expect(shouldSeedJijiShiftCatalog(defaultStoreConfigForSite("jiji"))).toBe(true);
+  });
+
+  it("parseStoreConfig keeps jiji rotation catalog codes", () => {
+    const template = getHeadStoreShiftTemplate();
+    const c = parseStoreConfig(
+      {
+        features: { customShiftCatalog: true, rotationEvening: true },
+        shiftCatalog: template,
+        rotationEvening: {
+          weekdays: [4],
+          onDutyShift: "晚班1",
+          offDutyShift: "白班5",
+        },
+      },
+      "jiji"
+    );
+    expect(c.rotationEvening.onDutyShift).toBe("晚班1");
+    expect(c.rotationEvening.offDutyShift).toBe("白班5");
+  });
+
+  it("parseStoreConfig falls back invalid rotation codes for zhushan", () => {
+    const c = parseStoreConfig({
+      features: { customShiftCatalog: false },
+      rotationEvening: {
+        onDutyShift: "晚班1",
+        offDutyShift: "白班5",
+      },
+    });
+    expect(c.rotationEvening.onDutyShift).toBe("A");
+    expect(c.rotationEvening.offDutyShift).toBe("B");
+    expect(getRotationShiftOptions(c)).toEqual(
+      expect.arrayContaining(["A", "B", "C", "D", "E"])
+    );
+    expect(getRotationShiftOptions(c)).not.toContain("X");
   });
 
   it("parseStoreConfig fills missing fields", () => {

@@ -36,10 +36,10 @@ export type StoreRuleTag = {
 export type RotationEveningConfig = {
   /** 可複選：0=日 … 6=六；預設禮拜三 */
   weekdays: number[];
-  /** 值晚班班別（預設 A） */
-  onDutyShift: StoreShiftCode;
-  /** 不值晚班時的班別（預設 B） */
-  offDutyShift: StoreShiftCode;
+  /** 值晚班班別（預設 A；集集可為目錄短碼） */
+  onDutyShift: string;
+  /** 不值晚班時的班別（預設 B；集集可為目錄短碼） */
+  offDutyShift: string;
   /**
    * 每月可選「不輪晚班」上限。
    * null = 自動 ceil(該月輪值日數 / 2)
@@ -154,6 +154,12 @@ export function buildJijiStoreConfigWithTemplate(): StoreConfig {
     shiftCatalog: catalog,
     defaultWeekdayShift: pick("白班5", "白班4", "白班1"),
     defaultSaturdayShift: pick("白班2", "白班1", "白班3"),
+    // 預填合理輪值班碼；功能仍預設關閉，店長手動開啟後即可用
+    rotationEvening: {
+      ...base.rotationEvening,
+      onDutyShift: pick("晚班1", "晚班2", "白班5"),
+      offDutyShift: pick("白班5", "白班4", "白班1"),
+    },
   };
 }
 
@@ -270,12 +276,6 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
       : {};
 
   const weekdays = normalizeWeekdays(rotRaw.weekdays);
-  const onDutyShift = isShiftCode(rotRaw.onDutyShift)
-    ? rotRaw.onDutyShift
-    : defaults.rotationEvening.onDutyShift;
-  const offDutyShift = isShiftCode(rotRaw.offDutyShift)
-    ? rotRaw.offDutyShift
-    : defaults.rotationEvening.offDutyShift;
 
   let monthlyOffLimit: number | null = null;
   if (rotRaw.monthlyOffLimit === null || rotRaw.monthlyOffLimit === undefined) {
@@ -311,6 +311,17 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
     shiftCatalog,
   };
 
+  const onDutyShift = resolveDefaultShiftCode(
+    rotRaw.onDutyShift,
+    defaults.rotationEvening.onDutyShift,
+    defaultOpts
+  );
+  const offDutyShift = resolveDefaultShiftCode(
+    rotRaw.offDutyShift,
+    defaults.rotationEvening.offDutyShift,
+    defaultOpts
+  );
+
   return {
     version: 1,
     storeName:
@@ -344,6 +355,17 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
 
 export function getEnabledShiftCodes(config: StoreConfig): StoreShiftCode[] {
   return config.shifts.filter((s) => s.enabled).map((s) => s.code);
+}
+
+/** 週期輪班 on/off 選項：目錄店走班別目錄（排除休假）；竹山走 A–E */
+export function getRotationShiftOptions(config: StoreConfig): string[] {
+  if (config.features.customShiftCatalog) {
+    return config.shiftCatalog
+      .filter((s) => s.enabled && s.category !== "off" && s.code !== "X")
+      .sort((a, b) => a.sortOrder - b.sortOrder)
+      .map((s) => s.code);
+  }
+  return getEnabledShiftCodes(config).filter((c) => c !== "X");
 }
 
 export function getShiftName(config: StoreConfig, code: string): string {
