@@ -482,9 +482,10 @@ export default function StoreSettingsPage() {
 
       {!useCatalog && (
         <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-          <h2 className="font-semibold text-gray-900">班別清單（A–E）</h2>
+          <h2 className="font-semibold text-gray-900">班別清單</h2>
           <p className="text-sm text-gray-500">
-            啟用的班別會出現在固定班表選單。休假（X）建議保持啟用。
+            請以名稱辨識班別（全天／白班／上午…）。後方代碼 A–E 僅供系統對應，可保持不動。
+            啟用的班別會出現在固定班表選單；休假建議保持啟用。
           </p>
           <div className="space-y-2">
             {ALL_SHIFT_CODES.map((code) => {
@@ -492,16 +493,27 @@ export default function StoreSettingsPage() {
               return (
                 <div
                   key={code}
-                  className="grid grid-cols-[48px_1fr_auto] gap-3 items-center"
+                  className="grid grid-cols-1 sm:grid-cols-[1fr_72px_auto] gap-3 items-center"
                 >
-                  <span className="font-mono font-semibold text-gray-800">{code}</span>
-                  <input
-                    value={row.name}
-                    onChange={(e) => updateShift(code, { name: e.target.value })}
-                    className="border rounded-lg px-3 py-2 text-sm"
-                    placeholder="班別名稱"
-                  />
-                  <label className="inline-flex items-center gap-2 text-sm text-gray-700">
+                  <label className="block text-sm min-w-0">
+                    <span className="text-gray-700">班別名稱</span>
+                    <input
+                      value={row.name}
+                      onChange={(e) => updateShift(code, { name: e.target.value })}
+                      className="mt-1 w-full border rounded-lg px-3 py-2 text-sm"
+                      placeholder="例如：全天、白班"
+                    />
+                  </label>
+                  <div className="text-sm">
+                    <span className="text-gray-500">代碼</span>
+                    <div
+                      className="mt-1 rounded-lg border bg-gray-50 px-3 py-2 font-mono text-sm text-gray-600 text-center"
+                      title="系統內部代碼，勿隨意更改"
+                    >
+                      {code}
+                    </div>
+                  </div>
+                  <label className="inline-flex items-center gap-2 text-sm text-gray-700 sm:pb-2 sm:self-end">
                     <input
                       type="checkbox"
                       checked={row.enabled}
@@ -522,7 +534,7 @@ export default function StoreSettingsPage() {
         <p className="text-sm text-gray-500">
           {useCatalog
             ? "無固定班時套用。請先在上方班別目錄建立／啟用班別，再選擇預設。"
-            : "無固定班時套用啟用中的 A–E 班別。"}
+            : "無固定班時套用啟用中的班別（以下以名稱顯示，括號內為系統代碼）。"}
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <label className="block text-sm">
@@ -538,18 +550,16 @@ export default function StoreSettingsPage() {
               className="mt-1 w-full border rounded-lg px-3 py-2"
             >
               {getScheduleShiftOptions(draft).map((code) => {
-                const name = useCatalog
-                  ? draft.shiftCatalog.find((s) => s.code === code)?.name ?? code
-                  : draft.shifts.find((s) => s.code === code)?.name ?? code;
+                const name = getShiftName(draft, code);
                 return (
                   <option key={code} value={code}>
-                    {useCatalog ? name : `${code}（${name}）`}
+                    {useCatalog ? name : `${name}（${code}）`}
                   </option>
                 );
               })}
               {!getScheduleShiftOptions(draft).includes(draft.defaultWeekdayShift) && (
                 <option value={draft.defaultWeekdayShift}>
-                  {draft.defaultWeekdayShift}（目前值）
+                  {getShiftName(draft, draft.defaultWeekdayShift)}（目前值）
                 </option>
               )}
             </select>
@@ -567,18 +577,16 @@ export default function StoreSettingsPage() {
               className="mt-1 w-full border rounded-lg px-3 py-2"
             >
               {getScheduleShiftOptions(draft).map((code) => {
-                const name = useCatalog
-                  ? draft.shiftCatalog.find((s) => s.code === code)?.name ?? code
-                  : draft.shifts.find((s) => s.code === code)?.name ?? code;
+                const name = getShiftName(draft, code);
                 return (
                   <option key={code} value={code}>
-                    {useCatalog ? name : `${code}（${name}）`}
+                    {useCatalog ? name : `${name}（${code}）`}
                   </option>
                 );
               })}
               {!getScheduleShiftOptions(draft).includes(draft.defaultSaturdayShift) && (
                 <option value={draft.defaultSaturdayShift}>
-                  {draft.defaultSaturdayShift}（目前值）
+                  {getShiftName(draft, draft.defaultSaturdayShift)}（目前值）
                 </option>
               )}
             </select>
@@ -684,7 +692,7 @@ export default function StoreSettingsPage() {
                 const name = getShiftName(draft, code);
                 return (
                   <option key={code} value={code}>
-                    {useCatalog ? name : `${code}（${name}）`}
+                    {useCatalog ? name : `${name}（${code}）`}
                   </option>
                 );
               })}
@@ -692,7 +700,7 @@ export default function StoreSettingsPage() {
                 draft.rotationEvening.onDutyShift
               ) && (
                 <option value={draft.rotationEvening.onDutyShift}>
-                  {draft.rotationEvening.onDutyShift}（目前值）
+                  {getShiftName(draft, draft.rotationEvening.onDutyShift)}（目前值）
                 </option>
               )}
             </select>
@@ -717,7 +725,7 @@ export default function StoreSettingsPage() {
                 const name = getShiftName(draft, code);
                 return (
                   <option key={code} value={code}>
-                    {useCatalog ? name : `${code}（${name}）`}
+                    {useCatalog ? name : `${name}（${code}）`}
                   </option>
                 );
               })}
@@ -725,7 +733,7 @@ export default function StoreSettingsPage() {
                 draft.rotationEvening.offDutyShift
               ) && (
                 <option value={draft.rotationEvening.offDutyShift}>
-                  {draft.rotationEvening.offDutyShift}（目前值）
+                  {getShiftName(draft, draft.rotationEvening.offDutyShift)}（目前值）
                 </option>
               )}
             </select>
