@@ -28,6 +28,11 @@ export {
   resolveShiftTimeRanges,
   type LegacyShiftCode,
 } from "@/lib/shift-catalog/resolve";
+export {
+  buildCurrentMonthShiftUsage,
+  guardCatalogIdentityChange,
+  type CatalogIdentityGuardResult,
+} from "@/lib/shift-catalog/monthProtect";
 
 function newId(): string {
   try {
