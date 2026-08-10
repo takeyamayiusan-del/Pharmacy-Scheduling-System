@@ -97,7 +97,7 @@ export function resolveShiftDisplay(
         const style = CATEGORY_STYLE[cat.category];
         return {
           label: cat.name,
-          displayText: cat.code,
+          displayText: cat.shortLabel || cat.code,
           ...style,
         };
       }
@@ -111,7 +111,7 @@ export function resolveShiftDisplay(
       const style = CATEGORY_STYLE[cat.category];
       return {
         label: cat.name,
-        displayText: cat.code,
+        displayText: cat.shortLabel || cat.code,
         ...style,
       };
     }

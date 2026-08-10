@@ -1,12 +1,19 @@
-/** 班表碼（竹山 A–E／X；集集可為目錄碼）。一鍵指定仍以 A–E 為主。 */
+import type { StoreConfig } from "@/lib/store-config";
+import {
+  findCatalogShift,
+  getScheduleShiftOptions,
+  isOffShiftCode,
+} from "@/lib/shift-catalog/resolve";
+
+/** 班表碼（竹山 A–E／X；集集可為目錄碼） */
 export type HolidayShiftCode = string;
 
 export type HolidayOneClickMode = "work" | "off";
 
-/** 一鍵上班班別：auto = 依每人固定班／基準班；其餘為指定班別 */
-export type HolidayWorkShiftChoice = "auto" | "A" | "B" | "C" | "D" | "E";
+/** 一鍵上班班別：auto = 依每人固定班／基準班；其餘為指定班別碼 */
+export type HolidayWorkShiftChoice = "auto" | string;
 
-export const HOLIDAY_WORK_SHIFT_OPTIONS: Array<{
+export const LEGACY_HOLIDAY_WORK_SHIFT_OPTIONS: Array<{
   value: HolidayWorkShiftChoice;
   label: string;
 }> = [
@@ -18,6 +25,34 @@ export const HOLIDAY_WORK_SHIFT_OPTIONS: Array<{
   { value: "E", label: "E" },
 ];
 
+/** @deprecated 請改用 getHolidayWorkShiftOptions(storeConfig) */
+export const HOLIDAY_WORK_SHIFT_OPTIONS = LEGACY_HOLIDAY_WORK_SHIFT_OPTIONS;
+
+/** 依店設定產生一鍵上班選項（集集走目錄；竹山 A–E） */
+export function getHolidayWorkShiftOptions(
+  storeConfig: StoreConfig
+): Array<{ value: HolidayWorkShiftChoice; label: string }> {
+  const auto = { value: "auto" as const, label: "依固定班" };
+  if (!storeConfig.features.customShiftCatalog) {
+    return LEGACY_HOLIDAY_WORK_SHIFT_OPTIONS;
+  }
+  const codes = getScheduleShiftOptions(storeConfig).filter(
+    (code) => code !== "X" && !isOffShiftCode(code, storeConfig)
+  );
+  return [
+    auto,
+    ...codes.map((code) => {
+      const cat = findCatalogShift(storeConfig, code);
+      const short = cat?.shortLabel || code;
+      const name = cat?.name || code;
+      return {
+        value: code,
+        label: short === name ? short : `${short}（${name}）`,
+      };
+    }),
+  ];
+}
+
 export type HolidayOneClickInput = {
   mode: HolidayOneClickMode;
   /** 當日若上班應排的班別（已忽略排休／請假；若有指定班別則為指定值） */
@@ -26,6 +61,10 @@ export type HolidayOneClickInput = {
   hasLeaveSelection: boolean;
   /** 是否有全日核准請假 */
   hasApprovedFullDayLeave: boolean;
+  /**
+   * 基準班為 X 時的後備上班班（竹山預設 B；集集用 defaultWeekdayShift）
+   */
+  fallbackWorkShift?: HolidayShiftCode;
 };
 
 /**
@@ -40,8 +79,9 @@ export function resolveHolidayOneClickShift(input: HolidayOneClickInput): Holida
     return "X";
   }
 
+  const fallback = input.fallbackWorkShift || "B";
   if (input.workShift === "X") {
-    return "B";
+    return fallback === "X" ? "B" : fallback;
   }
 
   return input.workShift;
@@ -50,10 +90,14 @@ export function resolveHolidayOneClickShift(input: HolidayOneClickInput): Holida
 /** 解析一鍵上班要用的班別（指定優先，否則用基準班） */
 export function resolveHolidayWorkShift(
   choice: HolidayWorkShiftChoice | undefined,
-  baseWorkShift: HolidayShiftCode
+  baseWorkShift: HolidayShiftCode,
+  fallbackWorkShift: HolidayShiftCode = "B"
 ): HolidayShiftCode {
   if (choice && choice !== "auto") return choice;
-  return baseWorkShift === "X" ? "B" : baseWorkShift;
+  if (baseWorkShift === "X") {
+    return fallbackWorkShift === "X" ? "B" : fallbackWorkShift;
+  }
+  return baseWorkShift;
 }
 
 export type HolidayOneClickChange = {
@@ -76,20 +120,25 @@ export function buildHolidayOneClickChanges(params: {
   hasApprovedFullDayLeave: (employeeId: string) => boolean;
   /** 設為上班時可指定全員同一班別；省略或 auto 則依每人基準班 */
   workShiftChoice?: HolidayWorkShiftChoice;
+  /** 基準班為 X 時後備（預設 B） */
+  fallbackWorkShift?: HolidayShiftCode;
 }): HolidayOneClickChange[] {
   const changes: HolidayOneClickChange[] = [];
+  const fallback = params.fallbackWorkShift || "B";
 
   for (const employeeId of params.employeeIds) {
     const from = params.getCurrentShift(employeeId);
     const workShift = resolveHolidayWorkShift(
       params.workShiftChoice,
-      params.getWorkShift(employeeId)
+      params.getWorkShift(employeeId),
+      fallback
     );
     const to = resolveHolidayOneClickShift({
       mode: params.mode,
       workShift,
       hasLeaveSelection: params.hasLeaveSelection(employeeId),
       hasApprovedFullDayLeave: params.hasApprovedFullDayLeave(employeeId),
+      fallbackWorkShift: fallback,
     });
     if (from === to) continue;
     changes.push({ employeeId, date: params.date, from, to });

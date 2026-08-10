@@ -1,8 +1,13 @@
 import headStoreTemplate from "@/lib/shift-catalog/head-store-template.json";
-import type { CatalogShift, ShiftCategory, TimeRange } from "@/lib/shift-catalog/types";
+import {
+  deriveShortLabel,
+  type CatalogShift,
+  type ShiftCategory,
+  type TimeRange,
+} from "@/lib/shift-catalog/types";
 
 export type { CatalogShift, ShiftCategory, TimeRange } from "@/lib/shift-catalog/types";
-export { SHIFT_CATEGORY_LABELS } from "@/lib/shift-catalog/types";
+export { SHIFT_CATEGORY_LABELS, deriveShortLabel } from "@/lib/shift-catalog/types";
 export {
   assertWritableShiftCode,
   findCatalogShift,
@@ -66,10 +71,15 @@ export function parseCatalogShift(raw: unknown, index = 0): CatalogShift | null 
     ? (o.breaks.map(parseRange).filter(Boolean) as TimeRange[])
     : [];
   const nominalHours = Number(o.nominalHours);
+  const shortLabelRaw =
+    typeof o.shortLabel === "string" && o.shortLabel.trim()
+      ? o.shortLabel.trim().slice(0, 6)
+      : "";
   return {
     id: typeof o.id === "string" && o.id.trim() ? o.id.trim() : newId(),
     code,
     name,
+    shortLabel: shortLabelRaw || deriveShortLabel(code, category),
     category,
     workSegments,
     breaks,
@@ -100,11 +110,15 @@ export function getHeadStoreShiftTemplate(): CatalogShift[] {
 
 export function createEmptyCatalogShift(partial?: Partial<CatalogShift>): CatalogShift {
   const name = partial?.name?.trim() || "新班別";
+  const code = partial?.code?.trim() || name.slice(0, 24);
+  const category = partial?.category ?? "day";
   return {
     id: newId(),
-    code: partial?.code?.trim() || name.slice(0, 24),
+    code,
     name,
-    category: partial?.category ?? "day",
+    shortLabel:
+      partial?.shortLabel?.trim().slice(0, 6) || deriveShortLabel(code, category),
+    category,
     workSegments: partial?.workSegments?.length
       ? partial.workSegments
       : [{ start: "09:00", end: "18:00" }],

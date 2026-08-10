@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useApp, type ScheduleShiftCode, type ShiftType } from "@/lib/context/AppContext";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
@@ -9,7 +9,7 @@ import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import { isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
 import { calculateLeaveDisplayOnSchedule, getOriginalShiftForLeaveDay } from "@/lib/schedule/leaveSchedule";
 import {
-  HOLIDAY_WORK_SHIFT_OPTIONS,
+  getHolidayWorkShiftOptions,
   type HolidayWorkShiftChoice,
 } from "@/lib/schedule/holidayOneClick";
 import { createClient } from "@/lib/supabase/client";
@@ -131,6 +131,10 @@ export default function SchedulePage() {
     : legacyShiftOptions.filter((code) =>
         storeConfig.shifts.some((s) => s.code === code && s.enabled)
       );
+  const holidayWorkShiftOptions = useMemo(
+    () => getHolidayWorkShiftOptions(storeConfig),
+    [storeConfig]
+  );
   const styleOf = (code: string) =>
     resolveShiftDisplay(code, storeConfig, shiftDisplayConfig);
   const rangesOf = (code: string) =>
@@ -661,7 +665,9 @@ export default function SchedulePage() {
         <div className="app-card p-4 border-amber-200 bg-amber-50/40">
           <h3 className="font-medium text-amber-900 mb-1">國定假日一鍵設定</h3>
           <p className="text-sm text-amber-800/80 mb-3">
-            設為上班前可先選班別（A–E），或「依固定班」。已排休或全日請假的人維持休假。設為休假則全員 X（不寫入排休選擇）。
+            設為上班前可先選班別
+            {useCatalog ? "（目錄班或依固定班）" : "（A–E，或依固定班）"}
+            。已排休或全日請假的人維持休假。設為休假則全員 X（不寫入排休選擇）。
           </p>
           <div className="space-y-2">
             {monthNationalHolidays.map((h) => {
@@ -692,7 +698,7 @@ export default function SchedulePage() {
                         }
                         className="border rounded-lg px-2 py-1.5 text-xs bg-white disabled:opacity-50"
                       >
-                        {HOLIDAY_WORK_SHIFT_OPTIONS.map((opt) => (
+                        {holidayWorkShiftOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
                             {opt.label}
                           </option>
