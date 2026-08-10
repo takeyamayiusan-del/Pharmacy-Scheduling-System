@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedType } from "@/lib/applications/statusMaps";
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
-import { getPunchSlotsForRanges, getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, todayDateStr, type PunchSlot } from "@/lib/attendance/punchSchedule";
+import { getPunchSlotsForRanges, calcLateMinutes, timeToMinutes, minutesDiff, todayDateStr, type PunchSlot } from "@/lib/attendance/punchSchedule";
 import { resolveLateAfterLeaveApproval } from "@/lib/attendance/punchLeaveAdjust";
 import {
   checkManagerLeaveAssignment,
