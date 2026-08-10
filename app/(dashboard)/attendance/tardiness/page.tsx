@@ -8,6 +8,7 @@ import {
   getCurrentYearMonth,
   isDateInYearMonth,
 } from "@/components/MonthFilterBar";
+import { SITES } from "@/lib/sites";
 
 export default function TardinessPage() {
   const {
@@ -20,6 +21,7 @@ export default function TardinessPage() {
     addTardinessRecord,
     deleteTardinessRecord,
     updatePunchRecord,
+    activeSiteId,
   } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -143,7 +145,12 @@ export default function TardinessPage() {
     <div className="space-y-6">
       {/* 頁頭 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-2xl font-bold text-gray-900">遲到管理</h2>
+        <div>
+          <h2 className="text-2xl font-bold text-gray-900">遲到管理</h2>
+          <p className="text-sm text-gray-500 mt-1">
+            目前店別：{SITES[activeSiteId].displayName}（僅顯示此店員工）
+          </p>
+        </div>
         <div className="flex flex-wrap items-center gap-3">
           <MonthFilterBar
             year={filterYear}

@@ -82,6 +82,7 @@ import {
   type SiteId,
 } from "@/lib/sites";
 import { assertWritableShiftCode, isLegacyShiftCode, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
+import { filterBySiteEmployeeIds } from "@/lib/attendance/siteScope";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -621,6 +622,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const employees = useMemo(
     () => allEmployees.filter((e) => parseSiteId(e.siteId) === activeSiteId),
     [allEmployees, activeSiteId]
+  );
+
+  const siteEmployeeIds = useMemo(
+    () => new Set(employees.map((e) => e.id)),
+    [employees]
+  );
+
+  /** 打卡／遲到依目前店員工過濾（老闆切店後不會殘留他店資料） */
+  const sitePunchRecords = useMemo(
+    () => filterBySiteEmployeeIds(punchRecords, siteEmployeeIds),
+    [punchRecords, siteEmployeeIds]
+  );
+  const siteTardinessRecords = useMemo(
+    () => filterBySiteEmployeeIds(tardinessRecords, siteEmployeeIds),
+    [tardinessRecords, siteEmployeeIds]
   );
 
   // ─── Load data from Supabase ────────────────────────────────────────────────
@@ -4019,10 +4035,10 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         updateOvertimeRequestStatus,
         updateOvertimeCompensation,
         deleteOvertimeRequest,
-        tardinessRecords,
+        tardinessRecords: siteTardinessRecords,
         addTardinessRecord,
         deleteTardinessRecord,
-        punchRecords,
+        punchRecords: sitePunchRecords,
         punchRecordsReady,
         refreshTodayPunchRecords,
         addPunchRecord,

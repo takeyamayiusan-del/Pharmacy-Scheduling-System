@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import {
+  assertManagerAuth,
+  assertManagerCanAccessEmployee,
+} from "@/lib/auth/server";
 
 export async function DELETE(req: NextRequest) {
   try {
@@ -25,6 +28,32 @@ export async function DELETE(req: NextRequest) {
     }
 
     const admin = createAdminClient();
+
+    if (id) {
+      const { data: existing, error: lookupError } = await admin
+        .from("tardiness_records")
+        .select("user_id")
+        .eq("id", id)
+        .maybeSingle();
+
+      if (lookupError) {
+        return NextResponse.json({ error: lookupError.message }, { status: 500 });
+      }
+      if (!existing) {
+        return NextResponse.json({ error: "找不到遲到紀錄" }, { status: 404 });
+      }
+
+      const access = await assertManagerCanAccessEmployee(auth, existing.user_id);
+      if ("error" in access) {
+        return NextResponse.json({ error: access.error }, { status: access.status });
+      }
+    } else if (match) {
+      const access = await assertManagerCanAccessEmployee(auth, match.employeeId);
+      if ("error" in access) {
+        return NextResponse.json({ error: access.error }, { status: access.status });
+      }
+    }
+
     let query = admin.from("tardiness_records").delete();
 
     if (id) {
