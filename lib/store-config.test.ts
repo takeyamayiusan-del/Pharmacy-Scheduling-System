@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildJijiStoreConfigWithTemplate,
   defaultStoreConfig,
   defaultStoreConfigForSite,
   getActiveRuleTags,
@@ -8,6 +9,7 @@ import {
   isRotationEveningDay,
   parseStoreConfig,
   resolveRotationOffLimit,
+  shouldSeedJijiShiftCatalog,
   suggestRotationMenuLabel,
 } from "@/lib/store-config";
 import { getHeadStoreShiftTemplate } from "@/lib/shift-catalog";
@@ -31,6 +33,17 @@ describe("store-config", () => {
     expect(c.features.customShiftCatalog).toBe(true);
     expect(c.features.rotationEvening).toBe(false);
     expect(c.features.weekdayOffRule).toBe(false);
+  });
+
+  it("buildJijiStoreConfigWithTemplate loads head-store catalog and defaults", () => {
+    const c = buildJijiStoreConfigWithTemplate();
+    expect(c.features.customShiftCatalog).toBe(true);
+    expect(c.shiftCatalog.length).toBeGreaterThan(10);
+    expect(c.shiftCatalog.some((s) => s.code === "白班1")).toBe(true);
+    expect(c.defaultWeekdayShift).toBe("白班5");
+    expect(c.defaultSaturdayShift).toBe("白班2");
+    expect(shouldSeedJijiShiftCatalog(c)).toBe(false);
+    expect(shouldSeedJijiShiftCatalog(defaultStoreConfigForSite("jiji"))).toBe(true);
   });
 
   it("parseStoreConfig fills missing fields", () => {

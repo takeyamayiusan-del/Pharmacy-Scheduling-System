@@ -63,6 +63,7 @@ import {
   type HolidayWorkShiftChoice,
 } from "@/lib/schedule/holidayOneClick";
 import {
+  buildJijiStoreConfigWithTemplate,
   defaultStoreConfig,
   defaultStoreConfigForSite,
   getMonthRotationDates,
@@ -1061,6 +1062,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setStoreConfig(defaultStoreConfigForSite(siteId));
       return;
     }
+
+    // 集集首次：尚無設定列 → 寫入總店範本一次（已有列不覆寫，含刻意清空）
+    if (siteId === "jiji" && !data) {
+      const seeded = buildJijiStoreConfigWithTemplate();
+      const { error: upsertError } = await supabase.from("app_settings").upsert({
+        id: settingId,
+        value: seeded,
+        updated_at: new Date().toISOString(),
+      });
+      if (upsertError) {
+        console.error("loadStoreConfig jiji seed:", upsertError);
+        setStoreConfig(seeded);
+        return;
+      }
+      setStoreConfig(seeded);
+      return;
+    }
+
     setStoreConfig(parseStoreConfig(data?.value ?? null, siteId));
   }, [supabase, activeSiteId]);
 
