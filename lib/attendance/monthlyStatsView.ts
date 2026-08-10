@@ -4,6 +4,7 @@ import {
 } from "@/lib/attendance/canonicalMonthHours";
 import { formatCompLeaveHours, roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
+import type { StoreConfig } from "@/lib/store-config";
 
 export type LeaveLikeForStats = CanonicalLeaveRequest & { type: string; id?: string };
 
@@ -114,6 +115,7 @@ export function buildLeaveBreakdownInMonth(params: {
   leaveRequests: LeaveLikeForStats[];
   getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   shiftTimeConfig: ShiftTimeConfig;
+  storeConfig?: StoreConfig;
 }): {
   byType: { type: string; hours: number }[];
   totalHours: number;
@@ -134,6 +136,7 @@ export function buildLeaveBreakdownInMonth(params: {
       month,
       getShiftForDate: params.getShiftForDate,
       shiftTimeConfig: params.shiftTimeConfig,
+      storeConfig: params.storeConfig,
     });
     if (hours <= 0) continue;
     typeMap.set(req.type, roundCompLeaveHours((typeMap.get(req.type) ?? 0) + hours));

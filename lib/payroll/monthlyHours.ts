@@ -5,6 +5,7 @@ import {
   type CanonicalLeaveRequest,
 } from "@/lib/attendance/canonicalMonthHours";
 import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
+import type { StoreConfig } from "@/lib/store-config";
 
 export type PayrollLeaveLike = CanonicalLeaveRequest;
 
@@ -58,6 +59,7 @@ export function computeMonthlyAttendanceHours(params: {
   shiftTimeConfig: ShiftTimeConfig;
   leaveRequests: PayrollLeaveLike[];
   overtimeRequests: PayrollOvertimeLike[];
+  storeConfig?: StoreConfig;
 }): MonthlyAttendanceHours {
   const { employeeId, year, month } = params;
   const daysInMonth = new Date(year, month, 0).getDate();
@@ -72,6 +74,7 @@ export function computeMonthlyAttendanceHours(params: {
     getShiftForDate: params.getShiftForDate,
     getHolidayInfo: params.getHolidayInfo,
     shiftTimeConfig: params.shiftTimeConfig,
+    storeConfig: params.storeConfig,
   });
 
   const empOt = params.overtimeRequests.filter(
@@ -97,6 +100,7 @@ export function computeMonthlyAttendanceHours(params: {
     leaveRequests: params.leaveRequests,
     getShiftForDate: params.getShiftForDate,
     shiftTimeConfig: params.shiftTimeConfig,
+    storeConfig: params.storeConfig,
   });
 
   const leaveDeductionHours = sumApprovedLeaveHoursInMonth({
@@ -106,6 +110,7 @@ export function computeMonthlyAttendanceHours(params: {
     leaveRequests: params.leaveRequests,
     getShiftForDate: params.getShiftForDate,
     shiftTimeConfig: params.shiftTimeConfig,
+    storeConfig: params.storeConfig,
     excludeTypes: ["補休假"],
   });
 
