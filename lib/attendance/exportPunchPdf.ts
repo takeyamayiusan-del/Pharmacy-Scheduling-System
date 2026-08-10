@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas";
-import type { PunchRecord, ShiftType } from "@/lib/context/AppContext";
+import type { PunchRecord, ScheduleShiftCode } from "@/lib/context/AppContext";
 
 export type PunchPdfEmployee = {
   id: string;
@@ -13,7 +13,7 @@ type ExportPunchPdfParams = {
   month: number;
   daysInMonth: number;
   employees: PunchPdfEmployee[];
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
 };
 
 /**

@@ -3,6 +3,17 @@ import type { CatalogShift, ShiftCategory, TimeRange } from "@/lib/shift-catalog
 
 export type { CatalogShift, ShiftCategory, TimeRange } from "@/lib/shift-catalog/types";
 export { SHIFT_CATEGORY_LABELS } from "@/lib/shift-catalog/types";
+export {
+  assertWritableShiftCode,
+  findCatalogShift,
+  getScheduleShiftOptions,
+  isLegacyShiftCode,
+  isOffShiftCode,
+  LEGACY_SHIFT_CODES,
+  resolveShiftDisplay,
+  resolveShiftTimeRanges,
+  type LegacyShiftCode,
+} from "@/lib/shift-catalog/resolve";
 
 function newId(): string {
   try {

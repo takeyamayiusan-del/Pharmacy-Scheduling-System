@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedType } from "@/lib/applications/statusMaps";
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
-import { getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, todayDateStr, type PunchSlot } from "@/lib/attendance/punchSchedule";
+import { getPunchSlotsForRanges, getPunchSlotsForShift, calcLateMinutes, timeToMinutes, minutesDiff, todayDateStr, type PunchSlot } from "@/lib/attendance/punchSchedule";
 import { resolveLateAfterLeaveApproval } from "@/lib/attendance/punchLeaveAdjust";
 import {
   checkManagerLeaveAssignment,
@@ -80,6 +80,7 @@ import {
   writeActiveSiteToStorage,
   type SiteId,
 } from "@/lib/sites";
+import { assertWritableShiftCode, isLegacyShiftCode, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -99,7 +100,10 @@ export type Employee = {
 };
 
 export type ShiftType = "A" | "B" | "C" | "D" | "E" | "X";
-export type ShiftTimeConfig = Record<ShiftType, string[]>;
+/** 班表覆寫碼：竹山 A–E／X，集集可為目錄短碼 */
+export type ScheduleShiftCode = string;
+/** 竹山 A–E／X 時段；索引也允許字串以便讀取（集集目錄碼請走 resolveShiftTimeRanges） */
+export type ShiftTimeConfig = Record<string, string[]>;
 export type ShiftDisplayStyle = {
   label: string;
   displayText: string;
@@ -109,9 +113,11 @@ export type ShiftDisplayStyle = {
 };
 export type ShiftDisplayConfig = Record<ShiftType, ShiftDisplayStyle>;
 
+export { LEGACY_SHIFT_CODES, isLegacyShiftCode } from "@/lib/shift-catalog/resolve";
+
 export type ScheduleData = {
   [date: string]: {
-    [employeeId: string]: ShiftType;
+    [employeeId: string]: ScheduleShiftCode;
   };
 };
 
@@ -145,7 +151,7 @@ export type LeaveRequest = {
   startTime: string;
   endTime: string;
   period: LeavePeriodMode;
-  shiftMode: "schedule" | ShiftType;
+  shiftMode: "schedule" | ScheduleShiftCode;
   leaveHours: number;
   type: LeaveType;
   reason: string;
@@ -310,7 +316,7 @@ export type PunchRecord = {
   action: "work_in" | "work_out";
   segmentIndex: number;
   time: string;
-  shift: ShiftType;
+  shift: ScheduleShiftCode;
   lateMinutes: number;
   reason?: string;
   latitude: number;
@@ -424,8 +430,8 @@ interface AppContextType {
   updateEmployee: (id: string, employee: Partial<Employee>) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
   schedule: ScheduleData;
-  updateShift: (date: string, employeeId: string, shift: ShiftType) => Promise<void>;
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  updateShift: (date: string, employeeId: string, shift: ScheduleShiftCode) => Promise<void>;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   getBaseShiftForDate: (date: string, employeeId: string) => ShiftType;
   /** 國定假日一鍵設為上班／休假；已排休或全日請假者維持休假。不寫入排休選擇。 */
   applyNationalHolidayOneClick: (
@@ -627,7 +633,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const result: ScheduleData = {};
     (data ?? []).forEach((r) => {
       if (!result[r.date]) result[r.date] = {};
-      result[r.date][r.user_id] = r.shift_code as ShiftType;
+      result[r.date][r.user_id] = r.shift_code as ScheduleShiftCode;
     });
     setSchedule(result);
   }, [supabase]);
@@ -664,7 +670,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .from("shift_time_config")
       .select("shift_code, time_ranges, display_label, display_text, bg_color, text_color, border_color");
     if (data && data.length > 0) {
-      const config: Partial<ShiftTimeConfig> = {};
+      const config: ShiftTimeConfig = {};
       const displayConfig: Partial<ShiftDisplayConfig> = {};
       data.forEach((r) => {
         const code = r.shift_code as ShiftType;
@@ -1702,7 +1708,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return getWorkShiftIgnoringLeave(date, employeeId);
   };
 
-  const getShiftForDate = (date: string, employeeId: string): ShiftType => {
+  const getShiftForDate = (date: string, employeeId: string): ScheduleShiftCode => {
     // 禮拜日固定公休：覆寫（含錯誤換班）不可蓋過
     if (isSunday(date)) return "X";
     // 入職日前／到期日後一律休假（X），舊覆寫不可蓋過
@@ -1721,10 +1727,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return getBaseShiftForDate(date, employeeId);
   };
 
-  const updateShift = async (date: string, employeeId: string, shift: ShiftType) => {
+  const updateShift = async (date: string, employeeId: string, shift: ScheduleShiftCode) => {
     const sundayCheck = assertSundayShiftAllowed(date, shift);
     if (!sundayCheck.ok) {
       throw new Error(sundayCheck.message);
+    }
+
+    const codeCheck = assertWritableShiftCode(shift, storeConfig);
+    if (!codeCheck.ok) {
+      throw new Error(codeCheck.message);
     }
 
     const empForActive = employees.find((e) => e.id === employeeId);
@@ -1738,7 +1749,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const y = new Date(date).getFullYear();
     const m = new Date(date).getMonth() + 1;
-    const monthLocked = leaveMonthLocks.some((l) => l.year === y && l.month === m);
+    const monthLocked = isLeaveMonthLocked(y, m);
     const canOverrideLocked = currentUser?.role === "owner" || currentUser?.role === "manager";
     if (monthLocked && !canOverrideLocked) {
       throw new Error("本月份班表已鎖定，僅店長/老闆可修改");
@@ -1956,6 +1967,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         "班別時段為竹山共用設定。請切回竹山店再調整，或至集集「店家設定」編輯進階班別目錄。"
       );
     }
+    if (!isLegacyShiftCode(shift)) {
+      throw new Error("時段設定僅支援 A–E／X");
+    }
     setShiftTimeConfig((prev) => ({ ...prev, [shift]: ranges }));
     await supabase.from("shift_time_config").upsert(
       { shift_code: shift, time_ranges: ranges },
@@ -1968,6 +1982,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error(
         "班別顯示為竹山共用設定。請切回竹山店再調整，或至集集「店家設定」編輯進階班別目錄。"
       );
+    }
+    if (!isLegacyShiftCode(shift)) {
+      throw new Error("顯示設定僅支援 A–E／X");
     }
     const next = { ...shiftDisplayConfig[shift], ...style };
     setShiftDisplayConfig((prev) => ({ ...prev, [shift]: next }));
@@ -2155,7 +2172,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
     if (activeEmployees.length === 0) return;
     const daysInMonth = new Date(year, month, 0).getDate();
-    const rows: Array<{ user_id: string; date: string; shift_code: ShiftType; updated_by?: string }> = [];
+    const rows: Array<{ user_id: string; date: string; shift_code: ScheduleShiftCode; updated_by?: string }> = [];
 
     for (let day = 1; day <= daysInMonth; day += 1) {
       const date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -2405,7 +2422,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (p.lateMinutes !== 0 || p.reason !== null) continue;
         // 若班別已是休假，不恢復遲到
         if (p.shift === "X") continue;
-        const slot = getPunchSlotsForShift(p.shift, shiftTimeConfig).find(
+        const slot = getPunchSlotsForRanges(
+          resolveShiftTimeRanges(p.shift, storeConfig, shiftTimeConfig)
+        ).find(
           (s: PunchSlot) => s.action === "work_in" && s.segmentIndex === p.segmentIndex
         );
         if (!slot) continue;
@@ -3188,7 +3207,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         for (const p of punchesToRestore) {
           if (p.lateMinutes === 0 && p.reason === null) {
             // 重新計算遲到分鐘
-            const slot = getPunchSlotsForShift(p.shift, shiftTimeConfig).find(
+            const slot = getPunchSlotsForRanges(
+              resolveShiftTimeRanges(p.shift, storeConfig, shiftTimeConfig)
+            ).find(
               (s: PunchSlot) => s.action === "work_in" && s.segmentIndex === p.segmentIndex
             );
             if (slot) {

@@ -1,4 +1,4 @@
-import type { ShiftType, SwapRequest } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, SwapRequest } from "@/lib/context/AppContext";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
 import {
   assertNoSundayInSwapDates,
@@ -8,7 +8,7 @@ import {
 export type SwapScheduleChange = {
   userId: string;
   date: string;
-  shift: ShiftType;
+  shift: ScheduleShiftCode;
 };
 
 export type SwapRequestCore = Pick<
@@ -62,10 +62,10 @@ function dedupeChanges(changes: SwapScheduleChange[]): SwapScheduleChange[] {
  */
 export function computeSwapScheduleChanges(
   request: SwapRequestCore,
-  reqShift: ShiftType,
-  targetShift: ShiftType,
-  requesterOnTargetDate: ShiftType,
-  targetOnRequesterDate: ShiftType
+  reqShift: ScheduleShiftCode,
+  targetShift: ScheduleShiftCode,
+  requesterOnTargetDate: ScheduleShiftCode,
+  targetOnRequesterDate: ScheduleShiftCode
 ): SwapScheduleChange[] {
   const isSelfSwap = request.requesterId === request.targetEmployeeId;
 
@@ -91,8 +91,8 @@ export function buildSwapShiftsAndChanges(
   snapshot: ScheduleSnapshotEntry[]
 ): {
   isSelfSwap: boolean;
-  reqShift: ShiftType;
-  targetShift: ShiftType;
+  reqShift: ScheduleShiftCode;
+  targetShift: ScheduleShiftCode;
   changes: SwapScheduleChange[];
 } {
   const isSelfSwap = request.requesterId === request.targetEmployeeId;
@@ -151,8 +151,8 @@ export function getShiftFromSnapshot(
   snapshot: ScheduleSnapshotEntry[],
   userId: string,
   date: string,
-  fallback: ShiftType
-): ShiftType {
+  fallback: ScheduleShiftCode
+): ScheduleShiftCode {
   const item = snapshot.find((s) => s.userId === userId && s.date === date);
-  return (item?.shift ?? fallback) as ShiftType;
+  return item?.shift ?? fallback;
 }

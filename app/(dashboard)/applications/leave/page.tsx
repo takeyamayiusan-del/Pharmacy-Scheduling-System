@@ -51,6 +51,7 @@ export default function LeaveApplicationPage() {
     getShiftForDate,
     getCompLeaveBalance,
     getAnnualLeaveBalance,
+    storeConfig,
   } = useApp();
 
   const [showForm, setShowForm] = useState(false);
@@ -96,7 +97,7 @@ export default function LeaveApplicationPage() {
     let startTime = formData.startTime;
     let endTime = formData.endTime;
     if (formData.period !== 'custom') {
-      const times = periodToTimes(formData.period, previewShiftForCalc, shiftTimeConfig);
+      const times = periodToTimes(formData.period, previewShiftForCalc, shiftTimeConfig, storeConfig);
       startTime = times.startTime;
       endTime = times.endTime;
     }
@@ -110,8 +111,9 @@ export default function LeaveApplicationPage() {
       employeeId: formEmployeeId,
       getShiftForDate,
       shiftTimeConfig,
+      storeConfig,
     });
-  }, [formEmployeeId, formData, previewShiftForCalc, getShiftForDate, shiftTimeConfig]);
+  }, [formEmployeeId, formData, previewShiftForCalc, getShiftForDate, shiftTimeConfig, storeConfig]);
 
   const compBalance = formEmployeeId ? getCompLeaveBalance(formEmployeeId) : 0;
   const annualBalance = formEmployeeId
@@ -119,7 +121,7 @@ export default function LeaveApplicationPage() {
     : 0;
 
   const applyPeriodPreset = (period: LeavePeriod) => {
-    const times = periodToTimes(period, previewShiftForCalc, shiftTimeConfig);
+    const times = periodToTimes(period, previewShiftForCalc, shiftTimeConfig, storeConfig);
     setFormData((prev) => ({
       ...prev,
       period,
@@ -164,7 +166,7 @@ export default function LeaveApplicationPage() {
     let startTime = formData.startTime;
     let endTime = formData.endTime;
     if (formData.period !== 'custom') {
-      const times = periodToTimes(formData.period, previewShiftForCalc, shiftTimeConfig);
+      const times = periodToTimes(formData.period, previewShiftForCalc, shiftTimeConfig, storeConfig);
       startTime = times.startTime;
       endTime = times.endTime;
     }
@@ -256,6 +258,7 @@ export default function LeaveApplicationPage() {
           getBaseShiftForDate: getShiftForDate,
         }),
       shiftTimeConfig,
+      storeConfig,
     });
   };
 

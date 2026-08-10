@@ -14,7 +14,9 @@ import {
 import { roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 import { getOriginalShiftForLeaveDay } from "@/lib/schedule/leaveSchedule";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
-import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
+import type { StoreConfig } from "@/lib/store-config";
+import { isOffShiftCode, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 
 export type CanonicalLeaveRequest = {
   employeeId: string;
@@ -23,7 +25,7 @@ export type CanonicalLeaveRequest = {
   startTime: string;
   endTime: string;
   period: LeavePeriod;
-  shiftMode: "schedule" | ShiftType;
+  shiftMode: "schedule" | ScheduleShiftCode;
   status: string;
   type?: string;
   leaveHours?: number;
@@ -57,11 +59,15 @@ function monthBounds(year: number, month: number) {
 
 /** 由班別時段設定加總工時；無設定時退回 SHIFT_HOURS */
 export function getShiftWorkHours(
-  shift: ShiftType,
-  shiftTimeConfig?: ShiftTimeConfig
+  shift: ScheduleShiftCode,
+  shiftTimeConfig?: ShiftTimeConfig,
+  storeConfig?: StoreConfig
 ): number {
-  if (shift === "X") return 0;
-  const ranges = shiftTimeConfig?.[shift];
+  if (storeConfig ? isOffShiftCode(shift, storeConfig) : shift === "X") return 0;
+  const ranges =
+    storeConfig && shiftTimeConfig
+      ? resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig)
+      : shiftTimeConfig?.[shift];
   if (ranges?.length) {
     let minutes = 0;
     for (const seg of ranges) {
@@ -94,10 +100,12 @@ export function getApprovedLeaveHoursInMonth(params: {
   request: CanonicalLeaveRequest;
   year: number;
   month: number;
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   shiftTimeConfig: ShiftTimeConfig;
+  storeConfig?: StoreConfig;
 }): number {
-  const { request, year, month, getShiftForDate, shiftTimeConfig } = params;
+  const { request, year, month, getShiftForDate, shiftTimeConfig, storeConfig } =
+    params;
   if (request.status !== "approved") return 0;
 
   const { monthStart, monthEnd } = monthBounds(year, month);
@@ -112,7 +120,7 @@ export function getApprovedLeaveHoursInMonth(params: {
   const rangeStart = request.startDate < monthStart ? monthStart : request.startDate;
   const rangeEnd = request.endDate > monthEnd ? monthEnd : request.endDate;
 
-  const resolveShift = (date: string, employeeId: string): ShiftType =>
+  const resolveShift = (date: string, employeeId: string): ScheduleShiftCode =>
     getOriginalShiftForLeaveDay({
       employeeId,
       date,
@@ -131,6 +139,7 @@ export function getApprovedLeaveHoursInMonth(params: {
     employeeId: request.employeeId,
     getShiftForDate: resolveShift,
     shiftTimeConfig,
+    storeConfig,
   });
 }
 
@@ -139,8 +148,9 @@ export function sumApprovedLeaveHoursInMonth(params: {
   year: number;
   month: number;
   leaveRequests: CanonicalLeaveRequest[];
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   shiftTimeConfig: ShiftTimeConfig;
+  storeConfig?: StoreConfig;
   /** 若提供，只加總這些假別；預設全部 */
   excludeTypes?: string[];
 }): number {
@@ -161,6 +171,7 @@ export function sumApprovedLeaveHoursInMonth(params: {
           month: params.month,
           getShiftForDate: params.getShiftForDate,
           shiftTimeConfig: params.shiftTimeConfig,
+          storeConfig: params.storeConfig,
         }),
       0
     );
@@ -175,16 +186,24 @@ export function computeMonthWorkHoursFromSchedule(params: {
   employeeId: string;
   year: number;
   month: number;
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   getHolidayInfo: (date: string) => { isHoliday: boolean };
   shiftTimeConfig: ShiftTimeConfig;
+  storeConfig?: StoreConfig;
 }): {
   workDays: number;
   workHours: number;
   holidayOvertimeHours: number;
 } {
-  const { employeeId, year, month, getShiftForDate, getHolidayInfo, shiftTimeConfig } =
-    params;
+  const {
+    employeeId,
+    year,
+    month,
+    getShiftForDate,
+    getHolidayInfo,
+    shiftTimeConfig,
+    storeConfig,
+  } = params;
   const { daysInMonth, monthStr } = monthBounds(year, month);
 
   let workDays = 0;
@@ -194,8 +213,8 @@ export function computeMonthWorkHoursFromSchedule(params: {
   for (let day = 1; day <= daysInMonth; day += 1) {
     const dateStr = `${monthStr}-${String(day).padStart(2, "0")}`;
     const shift = getShiftForDate(dateStr, employeeId);
-    if (shift === "X") continue;
-    const hours = getShiftWorkHours(shift, shiftTimeConfig);
+    if (storeConfig ? isOffShiftCode(shift, storeConfig) : shift === "X") continue;
+    const hours = getShiftWorkHours(shift, shiftTimeConfig, storeConfig);
     workDays += 1;
     workHours += hours;
     if (getHolidayInfo(dateStr).isHoliday) {

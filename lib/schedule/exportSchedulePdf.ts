@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
-import type { ShiftType, ShiftDisplayConfig } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftDisplayConfig } from "@/lib/context/AppContext";
+import type { StoreConfig } from "@/lib/store-config";
+import { resolveShiftDisplay } from "@/lib/shift-catalog/resolve";
 
 export type ExportEmployee = { id: string; name: string };
 export type ExportLayout = "landscape" | "portrait";
@@ -13,10 +15,11 @@ export type DrawScheduleOptions = {
   month: number;
   daysInMonth: number;
   employees: ExportEmployee[];
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   getHolidayInfo: (date: string) => { isHoliday: boolean; name?: string };
   layout: ExportLayout;
   shiftDisplayConfig: ShiftDisplayConfig;
+  storeConfig?: StoreConfig;
   leaveRequests?: Array<{ employeeId: string; startDate: string; endDate: string; status: string }>;
   overtimeRequests?: Array<{ employeeId: string; date: string; status: string }>;
   /** 颱風／彈性出勤日：dateStr → 標題與時段 */
@@ -46,6 +49,7 @@ function drawScheduleSegment(
     tableY,
     sectionTitle,
     typhoonDates,
+    storeConfig,
   } = options;
   const dayCount = dayEnd - dayStart + 1;
   const rowHeight = 42;
@@ -160,14 +164,16 @@ function drawScheduleSegment(
           req.status === "approved"
       );
 
-      // 請假顯示為紫色
+      const style = storeConfig
+        ? resolveShiftDisplay(shift, storeConfig, shiftDisplayConfig)
+        : shiftDisplayConfig[shift as keyof typeof shiftDisplayConfig];
       const palette = hasApprovedLeave
         ? { bg: "#ddd6fe", text: "#5b21b6", border: "#a78bfa", displayText: "假" }
         : {
-            bg: shiftDisplayConfig[shift].bgColor,
-            text: shiftDisplayConfig[shift].textColor,
-            border: shiftDisplayConfig[shift].borderColor,
-            displayText: shiftDisplayConfig[shift].displayText,
+            bg: style?.bgColor ?? "#f3f4f6",
+            text: style?.textColor ?? "#374151",
+            border: style?.borderColor ?? "#9ca3af",
+            displayText: style?.displayText ?? String(shift).slice(0, 4),
           };
 
       ctx.fillStyle = cellBg;

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useApp, type PunchRecord, type ShiftType } from "@/lib/context/AppContext";
+import { useApp, type PunchRecord, type ScheduleShiftCode } from "@/lib/context/AppContext";
 import {
   findMatchingGeofence,
   nearestGeofence,
@@ -12,7 +12,7 @@ import {
   EARLY_PUNCH_MINUTES,
   formatNowTime,
   getBreakCountForShift,
-  getPunchSlotsForShift,
+  getPunchSlotsForRanges,
   minutesDiff,
   nowMinutes,
   OVERTIME_REDIRECT_MINUTES,
@@ -20,6 +20,7 @@ import {
   todayDateStr,
   type PunchSlot,
 } from "@/lib/attendance/punchSchedule";
+import { resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 import {
   adjustPunchSlotsForApprovedLeave,
   resolvePunchLateMinutes,
@@ -54,6 +55,7 @@ export default function PunchPage() {
     leaveRequests,
     geofenceLocations,
     addOvertimeRequest,
+    storeConfig,
   } = useApp();
 
   const [matchedLocationName, setMatchedLocationName] = useState<string | null>(null);
@@ -102,15 +104,16 @@ export default function PunchPage() {
   const [isPunching, setIsPunching] = useState(false);
 
   const today = todayDateStr();
-  const shift: ShiftType = currentUser
+  const shift: ScheduleShiftCode = currentUser
     ? getShiftForDate(today, currentUser.id)
     : "X";
 
   const slots = useMemo(() => {
     if (shift === "X" || !currentUser) return [];
-    const raw = getPunchSlotsForShift(shift, shiftTimeConfig);
+    const ranges = resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig);
+    const raw = getPunchSlotsForRanges(ranges);
     return adjustPunchSlotsForApprovedLeave(raw, currentUser.id, today, leaveRequests);
-  }, [shift, shiftTimeConfig, currentUser, today, leaveRequests]);
+  }, [shift, shiftTimeConfig, storeConfig, currentUser, today, leaveRequests]);
 
   const todayPunches = currentUser ? getTodayPunchRecords(currentUser.id, today) : [];
   const completedKeys = new Set(

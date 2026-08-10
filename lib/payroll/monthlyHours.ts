@@ -4,7 +4,7 @@ import {
   sumApprovedLeaveHoursInMonth,
   type CanonicalLeaveRequest,
 } from "@/lib/attendance/canonicalMonthHours";
-import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
 
 export type PayrollLeaveLike = CanonicalLeaveRequest;
 
@@ -53,7 +53,7 @@ export function computeMonthlyAttendanceHours(params: {
   employeeId: string;
   year: number;
   month: number;
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   getHolidayInfo: (date: string) => { isHoliday: boolean };
   shiftTimeConfig: ShiftTimeConfig;
   leaveRequests: PayrollLeaveLike[];

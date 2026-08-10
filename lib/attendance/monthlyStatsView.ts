@@ -3,7 +3,7 @@ import {
   type CanonicalLeaveRequest,
 } from "@/lib/attendance/canonicalMonthHours";
 import { formatCompLeaveHours, roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
-import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
 
 export type LeaveLikeForStats = CanonicalLeaveRequest & { type: string; id?: string };
 
@@ -112,7 +112,7 @@ export function buildLeaveBreakdownInMonth(params: {
   year: number;
   month: number;
   leaveRequests: LeaveLikeForStats[];
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   shiftTimeConfig: ShiftTimeConfig;
 }): {
   byType: { type: string; hours: number }[];

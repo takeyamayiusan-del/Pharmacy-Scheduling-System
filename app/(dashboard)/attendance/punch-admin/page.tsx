@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useApp, type PunchRecord, type ShiftType } from "@/lib/context/AppContext";
-import { getPunchSlotsForShift, minutesDiff, timeToMinutes } from "@/lib/attendance/punchSchedule";
+import { useApp, type PunchRecord, type ScheduleShiftCode } from "@/lib/context/AppContext";
+import { getPunchSlotsForRanges, minutesDiff, timeToMinutes } from "@/lib/attendance/punchSchedule";
+import { resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 import {
   adjustPunchSlotsForApprovedLeave,
   resolvePunchLateMinutes,
@@ -68,6 +69,7 @@ export default function PunchAdminPage() {
     shiftTimeConfig,
     geofenceLocations,
     saveGeofenceLocations,
+    storeConfig,
   } = useApp();
 
   const isManager =
@@ -147,13 +149,15 @@ export default function PunchAdminPage() {
     .sort((a, b) => a.time.localeCompare(b.time));
 
   const selectedEmployee = employees.find((e) => e.id === selectedEmpId);
-  const shift: ShiftType = selectedEmployee
+  const shift: ScheduleShiftCode = selectedEmployee
     ? getShiftForDate(selectedDate, selectedEmpId)
     : "A";
   const slots =
     shift !== "X" && selectedEmpId
       ? adjustPunchSlotsForApprovedLeave(
-          getPunchSlotsForShift(shift, shiftTimeConfig),
+          getPunchSlotsForRanges(
+            resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig)
+          ),
           selectedEmpId,
           selectedDate,
           leaveRequests

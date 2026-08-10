@@ -1,10 +1,10 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode } from "@/lib/context/AppContext";
 
 export type ScheduleSnapshotEntry = {
   userId: string;
   date: string;
-  shift: ShiftType | null;
+  shift: ScheduleShiftCode | null;
   hadDbEntry: boolean;
 };
 
@@ -12,8 +12,8 @@ export async function fetchDbScheduleShifts(
   supabase: SupabaseClient,
   userIds: string[],
   dates: string[]
-): Promise<Map<string, ShiftType>> {
-  const map = new Map<string, ShiftType>();
+): Promise<Map<string, ScheduleShiftCode>> {
+  const map = new Map<string, ScheduleShiftCode>();
   if (userIds.length === 0 || dates.length === 0) return map;
 
   const { data } = await supabase
@@ -23,7 +23,7 @@ export async function fetchDbScheduleShifts(
     .in("date", dates);
 
   for (const row of data ?? []) {
-    map.set(`${row.user_id}:${row.date}`, row.shift_code as ShiftType);
+    map.set(`${row.user_id}:${row.date}`, String(row.shift_code));
   }
   return map;
 }
@@ -58,7 +58,7 @@ export async function upsertScheduleShift(
   supabase: SupabaseClient,
   userId: string,
   date: string,
-  shift: ShiftType,
+  shift: ScheduleShiftCode,
   updatedBy?: string
 ) {
   const { error } = await supabase.from("schedule_entries").upsert(

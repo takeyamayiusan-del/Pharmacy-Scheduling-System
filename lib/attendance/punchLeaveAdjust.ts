@@ -1,4 +1,4 @@
-import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
 import {
   calcLateMinutes,
   EARLY_PUNCH_MINUTES,
@@ -180,11 +180,11 @@ export function resolveLateAfterLeaveApproval(params: {
   period: LeavePeriodMode;
   leaveStartTime: string;
   leaveEndTime: string;
-  punchShift: ShiftType;
+  punchShift: ScheduleShiftCode;
   segmentIndex: number;
   punchTime: string;
   /** 請假前原班別（用於計算剩餘班） */
-  originalShift: ShiftType;
+  originalShift: ScheduleShiftCode;
   shiftTimeConfig: ShiftTimeConfig;
 }): LateAfterLeaveDecision {
   if (params.period === "full_day") {

@@ -1,5 +1,7 @@
-import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
 import { SHIFT_HOURS } from "@/lib/attendance/calculator";
+import type { StoreConfig } from "@/lib/store-config";
+import { isOffShiftCode, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 
 export type LeaveType =
   | "事假"
@@ -70,16 +72,28 @@ function overlapMinutes(
   return Math.max(0, end - start);
 }
 
+function segmentsForShift(
+  shift: string,
+  shiftTimeConfig: ShiftTimeConfig,
+  storeConfig?: StoreConfig
+): string[] {
+  if (storeConfig) {
+    return resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig);
+  }
+  return shiftTimeConfig[shift] ?? [];
+}
+
 export type CalculateLeaveHoursParams = {
   startDate: string;
   endDate: string;
   startTime: string;
   endTime: string;
   period: LeavePeriod;
-  shiftMode: "schedule" | ShiftType;
+  shiftMode: "schedule" | ScheduleShiftCode;
   employeeId: string;
-  getShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   shiftTimeConfig: ShiftTimeConfig;
+  storeConfig?: StoreConfig;
 };
 
 /**
@@ -96,6 +110,7 @@ export function calculateLeaveWorkHours(params: CalculateLeaveHoursParams): numb
     employeeId,
     getShiftForDate,
     shiftTimeConfig,
+    storeConfig,
   } = params;
 
   if (!startDate || !endDate) return 0;
@@ -106,11 +121,13 @@ export function calculateLeaveWorkHours(params: CalculateLeaveHoursParams): numb
   for (const date of dates) {
     const shift =
       shiftMode === "schedule" ? getShiftForDate(date, employeeId) : shiftMode;
-    if (shift === "X") continue;
+    if (storeConfig ? isOffShiftCode(shift, storeConfig) : shift === "X") continue;
 
-    const segments = parseWorkSegments(shiftTimeConfig[shift] ?? []);
+    const segments = parseWorkSegments(
+      segmentsForShift(shift, shiftTimeConfig, storeConfig)
+    );
     if (segments.length === 0) {
-      totalMinutes += SHIFT_HOURS[shift] * 60;
+      totalMinutes += (SHIFT_HOURS[shift] ?? 0) * 60;
       continue;
     }
 
@@ -148,7 +165,7 @@ export type LeaveRequestHoursInput = {
   startTime: string;
   endTime: string;
   period: LeavePeriod;
-  shiftMode: "schedule" | ShiftType;
+  shiftMode: "schedule" | ScheduleShiftCode;
   status: string;
   leaveHours?: number;
 };
@@ -158,8 +175,9 @@ export function calculateApprovedLeaveHoursOnDate(
   dateStr: string,
   employeeId: string,
   leaveRequests: LeaveRequestHoursInput[],
-  getShiftForDate: (date: string, employeeId: string) => ShiftType,
-  shiftTimeConfig: ShiftTimeConfig
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode,
+  shiftTimeConfig: ShiftTimeConfig,
+  storeConfig?: StoreConfig
 ): number {
   const hours = leaveRequests
     .filter(
@@ -182,6 +200,7 @@ export function calculateApprovedLeaveHoursOnDate(
           employeeId: req.employeeId,
           getShiftForDate,
           shiftTimeConfig,
+          storeConfig,
         }),
       0
     );
@@ -192,8 +211,9 @@ export function calculateApprovedLeaveHoursOnDate(
 /** 計算單筆請假在區間內的總時數 */
 export function calculateApprovedLeaveHoursTotal(
   req: LeaveRequestHoursInput,
-  getShiftForDate: (date: string, employeeId: string) => ShiftType,
-  shiftTimeConfig: ShiftTimeConfig
+  getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode,
+  shiftTimeConfig: ShiftTimeConfig,
+  storeConfig?: StoreConfig
 ): number {
   if (req.leaveHours && req.leaveHours > 0) return req.leaveHours;
   return calculateLeaveWorkHours({
@@ -206,15 +226,19 @@ export function calculateApprovedLeaveHoursTotal(
     employeeId: req.employeeId,
     getShiftForDate,
     shiftTimeConfig,
+    storeConfig,
   });
 }
 
 export function periodToTimes(
   period: LeavePeriod,
-  shift: ShiftType,
-  shiftTimeConfig: ShiftTimeConfig
+  shift: ScheduleShiftCode,
+  shiftTimeConfig: ShiftTimeConfig,
+  storeConfig?: StoreConfig
 ): { startTime: string; endTime: string } {
-  const segments = parseWorkSegments(shiftTimeConfig[shift] ?? []);
+  const segments = parseWorkSegments(
+    segmentsForShift(shift, shiftTimeConfig, storeConfig)
+  );
   if (period === "morning" && segments[0]) {
     const s = segments[0];
     return {
@@ -237,21 +261,8 @@ export function periodToTimes(
       endTime: `${String(Math.floor(last.end / 60)).padStart(2, "0")}:${String(last.end % 60).padStart(2, "0")}`,
     };
   }
+  // 無時段時的後備（與舊行為相近）
+  if (period === "morning") return { startTime: "08:30", endTime: "12:00" };
+  if (period === "afternoon") return { startTime: "13:30", endTime: "18:00" };
   return { startTime: "08:30", endTime: "18:00" };
-}
-
-export function dbPeriodFromLeavePeriod(period: LeavePeriod): string {
-  if (period === "morning") return "morning";
-  if (period === "afternoon") return "afternoon";
-  return "full_day";
-}
-
-export function inferPeriodFromTimes(
-  startTime: string,
-  endTime: string
-): LeavePeriod {
-  if (startTime === "08:30" && endTime === "12:00") return "morning";
-  if (startTime === "13:30" && endTime === "18:00") return "afternoon";
-  if (startTime === "08:30" && (endTime === "18:00" || endTime === "21:00")) return "full_day";
-  return "custom";
 }
