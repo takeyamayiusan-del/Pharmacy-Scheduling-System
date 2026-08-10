@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useApp, type ShiftType } from "@/lib/context/AppContext";
+import { useApp } from "@/lib/context/AppContext";
 import {
   createEmptyCatalogShift,
   formatCatalogShiftSummary,
@@ -13,13 +13,18 @@ import {
 import { SITES } from "@/lib/sites";
 import {
   ALL_SHIFT_CODES,
+  getRotationShiftOptions,
+  getShiftName,
   parseStoreConfig,
   suggestRotationMenuLabel,
   weekdayLabel,
   type StoreConfig,
   type StoreShiftCode,
 } from "@/lib/store-config";
-import { getScheduleShiftOptions } from "@/lib/shift-catalog/resolve";
+import {
+  assertWritableShiftCode,
+  getScheduleShiftOptions,
+} from "@/lib/shift-catalog/resolve";
 
 const WEEKDAY_OPTIONS = [1, 2, 3, 4, 5, 6]; // 不含日：公休
 const CATEGORY_OPTIONS = Object.keys(SHIFT_CATEGORY_LABELS) as ShiftCategory[];
@@ -153,6 +158,15 @@ export default function StoreSettingsPage() {
       const normalized = parseStoreConfig(draft, activeSiteId);
       if (normalized.features.rotationEvening && normalized.rotationEvening.weekdays.length === 0) {
         throw new Error("輪值晚班至少需選擇一個星期");
+      }
+      if (normalized.features.rotationEvening) {
+        for (const code of [
+          normalized.rotationEvening.onDutyShift,
+          normalized.rotationEvening.offDutyShift,
+        ]) {
+          const check = assertWritableShiftCode(code, normalized);
+          if (!check.ok) throw new Error(check.message);
+        }
       }
       await saveStoreConfig(normalized);
       setMessage("已儲存店家設定");
@@ -644,17 +658,27 @@ export default function StoreSettingsPage() {
                   ...p,
                   rotationEvening: {
                     ...p.rotationEvening,
-                    onDutyShift: e.target.value as ShiftType,
+                    onDutyShift: e.target.value,
                   },
                 }))
               }
               className="mt-1 w-full border rounded-lg px-3 py-2"
             >
-              {ALL_SHIFT_CODES.filter((c) => c !== "X").map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {getRotationShiftOptions(draft).map((code) => {
+                const name = getShiftName(draft, code);
+                return (
+                  <option key={code} value={code}>
+                    {useCatalog ? name : `${code}（${name}）`}
+                  </option>
+                );
+              })}
+              {!getRotationShiftOptions(draft).includes(
+                draft.rotationEvening.onDutyShift
+              ) && (
+                <option value={draft.rotationEvening.onDutyShift}>
+                  {draft.rotationEvening.onDutyShift}（目前值）
                 </option>
-              ))}
+              )}
             </select>
           </label>
           <label className="block text-sm">
@@ -667,17 +691,27 @@ export default function StoreSettingsPage() {
                   ...p,
                   rotationEvening: {
                     ...p.rotationEvening,
-                    offDutyShift: e.target.value as ShiftType,
+                    offDutyShift: e.target.value,
                   },
                 }))
               }
               className="mt-1 w-full border rounded-lg px-3 py-2"
             >
-              {ALL_SHIFT_CODES.filter((c) => c !== "X").map((c) => (
-                <option key={c} value={c}>
-                  {c}
+              {getRotationShiftOptions(draft).map((code) => {
+                const name = getShiftName(draft, code);
+                return (
+                  <option key={code} value={code}>
+                    {useCatalog ? name : `${code}（${name}）`}
+                  </option>
+                );
+              })}
+              {!getRotationShiftOptions(draft).includes(
+                draft.rotationEvening.offDutyShift
+              ) && (
+                <option value={draft.rotationEvening.offDutyShift}>
+                  {draft.rotationEvening.offDutyShift}（目前值）
                 </option>
-              ))}
+              )}
             </select>
           </label>
         </div>

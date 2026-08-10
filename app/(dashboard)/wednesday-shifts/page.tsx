@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import {
   formatWeekdaysLabel,
   getMonthRotationDates,
+  getShiftName,
   weekdayLabel,
 } from "@/lib/store-config";
 import { getLocalDayOfWeek } from "@/lib/schedule/sundayRest";
@@ -152,8 +153,11 @@ export default function WednesdayShiftsPage() {
             。
           </p>
           <p>
-            值晚班班別：{storeConfig.rotationEvening.onDutyShift}；其餘輪值員工：
-            {storeConfig.rotationEvening.offDutyShift}。
+            值晚班班別：
+            {getShiftName(storeConfig, storeConfig.rotationEvening.onDutyShift)}
+            ；其餘輪值員工：
+            {getShiftName(storeConfig, storeConfig.rotationEvening.offDutyShift)}
+            。
           </p>
           <p>若與另一位輪值員工衝突，系統會提示換班。</p>
           <p className="text-emerald-800 font-medium">
