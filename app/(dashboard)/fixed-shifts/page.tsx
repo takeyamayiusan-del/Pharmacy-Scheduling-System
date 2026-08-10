@@ -63,7 +63,7 @@ export default function FixedShiftsPage() {
 
   const optionLabel = (code: string) => {
     const style = resolveShiftDisplay(code, storeConfig, shiftDisplayConfig);
-    return useCatalog ? style.label : `${code}（${style.label}）`;
+    return useCatalog ? style.label : `${style.label}（${code}）`;
   };
 
   const [newEmployeeId, setNewEmployeeId] = useState<string>("");
