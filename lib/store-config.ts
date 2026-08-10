@@ -5,7 +5,11 @@
  */
 
 import { getLocalDayOfWeek } from "@/lib/schedule/sundayRest";
-import { parseCatalogShifts, type CatalogShift } from "@/lib/shift-catalog";
+import {
+  getHeadStoreShiftTemplate,
+  parseCatalogShifts,
+  type CatalogShift,
+} from "@/lib/shift-catalog";
 import { SITES, type SiteId } from "@/lib/sites";
 
 export type StoreShiftCode = "A" | "B" | "C" | "D" | "E" | "X";
@@ -131,6 +135,33 @@ export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
     ruleTags: DEFAULT_RULE_TAGS.map((t) => ({ ...t })),
     shiftCatalog: [],
   };
+}
+
+/**
+ * 集集開店用：總店班別範本 + 合理預設班。
+ * 僅供首次落地／seed；不會覆寫竹山設定。
+ */
+export function buildJijiStoreConfigWithTemplate(): StoreConfig {
+  const base = defaultStoreConfigForSite("jiji");
+  const catalog = getHeadStoreShiftTemplate();
+  const pick = (...codes: string[]) =>
+    codes.find((code) => catalog.some((s) => s.code === code && s.enabled)) ??
+    catalog.find((s) => s.enabled && s.category !== "off")?.code ??
+    base.defaultWeekdayShift;
+
+  return {
+    ...base,
+    shiftCatalog: catalog,
+    defaultWeekdayShift: pick("白班5", "白班4", "白班1"),
+    defaultSaturdayShift: pick("白班2", "白班1", "白班3"),
+  };
+}
+
+/** 是否需要為集集寫入範本（無列／目錄仍空） */
+export function shouldSeedJijiShiftCatalog(config: StoreConfig | null | undefined): boolean {
+  if (!config) return true;
+  if (!config.features.customShiftCatalog) return false;
+  return !Array.isArray(config.shiftCatalog) || config.shiftCatalog.length === 0;
 }
 
 function isShiftCode(v: unknown): v is StoreShiftCode {
