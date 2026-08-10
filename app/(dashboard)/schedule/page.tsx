@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { useApp, type ScheduleShiftCode, type ShiftType } from "@/lib/context/AppContext";
+import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
@@ -21,8 +21,6 @@ import {
   resolveShiftDisplay,
   resolveShiftTimeRanges,
 } from "@/lib/shift-catalog/resolve";
-
-const legacyShiftOptions: ShiftType[] = ["A", "B", "C", "D", "E", "X"];
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -126,11 +124,8 @@ export default function SchedulePage() {
   const [typhoonReloadKey, setTyphoonReloadKey] = useState(0);
 
   const useCatalog = storeConfig.features.customShiftCatalog;
-  const shiftOptions = useCatalog
-    ? getScheduleShiftOptions(storeConfig)
-    : legacyShiftOptions.filter((code) =>
-        storeConfig.shifts.some((s) => s.code === code && s.enabled)
-      );
+  // 兩店同一入口：竹山 catalog 關 → 回傳啟用中 A–E；集集 → 目錄碼
+  const shiftOptions = getScheduleShiftOptions(storeConfig);
   const holidayWorkShiftOptions = useMemo(
     () => getHolidayWorkShiftOptions(storeConfig),
     [storeConfig]

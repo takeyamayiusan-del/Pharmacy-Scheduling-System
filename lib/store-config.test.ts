@@ -24,7 +24,8 @@ describe("store-config", () => {
     expect(c.rotationEvening.menuLabel).toBe("禮三晚班");
     expect(c.defaultWeekdayShift).toBe("B");
     expect(c.defaultSaturdayShift).toBe("C");
-    expect(c.shiftCatalog).toEqual([]);
+    // 備援鏡像存在，但不啟用目錄
+    expect(c.shiftCatalog.map((s) => s.code)).toEqual(["A", "B", "C", "D", "E", "X"]);
   });
 
   it("jiji defaults enable catalog and disable zhushan rotation rules", () => {

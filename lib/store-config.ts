@@ -10,6 +10,7 @@ import {
   parseCatalogShifts,
   type CatalogShift,
 } from "@/lib/shift-catalog";
+import { buildZhushanLegacyCatalog } from "@/lib/shift-catalog/zhushan-legacy";
 import { SITES, type SiteId } from "@/lib/sites";
 
 export type StoreShiftCode = "A" | "B" | "C" | "D" | "E" | "X";
@@ -67,14 +68,18 @@ export type StoreConfig = {
     weekdayOffRule: boolean;
     /**
      * 進階班別目錄（自訂名稱／多段休息）。
-     * 竹山預設 false，排班維持 A–E；集集預設 true。
+     * 竹山預設 false（仍走 A–E，行為不變）；集集預設 true。
+     * 兩店程式路徑相同，只差此開關與目錄內容。
      */
     customShiftCatalog: boolean;
   };
   rotationEvening: RotationEveningConfig;
   /** 規則標籤文案（勾選欄位用，非功能開關） */
   ruleTags: StoreRuleTag[];
-  /** 進階班別目錄（僅 customShiftCatalog 開啟時使用） */
+  /**
+   * 班別目錄。
+   * 竹山即使關閉 customShiftCatalog，也會帶 A–E 鏡像備援（不影響現行排班）。
+   */
   shiftCatalog: CatalogShift[];
 };
 
@@ -109,7 +114,7 @@ export function defaultStoreConfig(): StoreConfig {
   return defaultStoreConfigForSite("zhushan");
 }
 
-/** 依店別預設；集集開啟進階班別目錄且關閉竹山禮三規則 */
+/** 依店別預設；兩店共用同一套程式，差在 features／目錄內容 */
 export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
   const site = SITES[siteId];
   const isZhushan = siteId === "zhushan";
@@ -123,6 +128,7 @@ export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
     features: {
       rotationEvening: isZhushan,
       weekdayOffRule: isZhushan,
+      // 竹山維持 false → 行為仍是 A–E；目錄鏡像僅備援，不影響排班
       customShiftCatalog: site.customShiftCatalog,
     },
     rotationEvening: {
@@ -133,7 +139,7 @@ export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
       menuLabel: "禮三晚班",
     },
     ruleTags: DEFAULT_RULE_TAGS.map((t) => ({ ...t })),
-    shiftCatalog: [],
+    shiftCatalog: isZhushan ? buildZhushanLegacyCatalog() : [],
   };
 }
 
@@ -305,7 +311,13 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
         : defaults.features.customShiftCatalog,
   };
 
-  const shiftCatalog = parseCatalogShifts(obj.shiftCatalog);
+  const parsedCatalog = parseCatalogShifts(obj.shiftCatalog);
+  const shiftCatalog =
+    siteId === "zhushan" &&
+    !features.customShiftCatalog &&
+    parsedCatalog.length === 0
+      ? buildZhushanLegacyCatalog()
+      : parsedCatalog;
   const defaultOpts = {
     customShiftCatalog: features.customShiftCatalog,
     shiftCatalog,
