@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
 import {
+  buildCurrentMonthShiftUsage,
   createEmptyCatalogShift,
   defaultColorsForCategory,
   formatCatalogShiftSummary,
   getHeadStoreShiftTemplate,
+  guardCatalogIdentityChange,
   SHIFT_CATEGORY_LABELS,
   type CatalogShift,
   type ShiftCategory,
@@ -31,7 +33,15 @@ const WEEKDAY_OPTIONS = [1, 2, 3, 4, 5, 6]; // 不含日：公休
 const CATEGORY_OPTIONS = Object.keys(SHIFT_CATEGORY_LABELS) as ShiftCategory[];
 
 export default function StoreSettingsPage() {
-  const { currentUser, storeConfig, saveStoreConfig, activeSiteId } = useApp();
+  const {
+    currentUser,
+    storeConfig,
+    saveStoreConfig,
+    activeSiteId,
+    schedule,
+    fixedShifts,
+    employees,
+  } = useApp();
   const [draft, setDraft] = useState<StoreConfig>(storeConfig);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -45,6 +55,21 @@ export default function StoreSettingsPage() {
   const siteMeta = SITES[activeSiteId];
   const useCatalog = draft.features.customShiftCatalog;
 
+  const monthUsage = useMemo(() => {
+    const siteEmployeeIds = new Set(employees.map((e) => e.id));
+    return buildCurrentMonthShiftUsage({
+      schedule,
+      fixedShifts,
+      siteEmployeeIds,
+    });
+  }, [schedule, fixedShifts, employees]);
+
+  const originalCodeById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const s of storeConfig.shiftCatalog) map.set(s.id, s.code);
+    return map;
+  }, [storeConfig.shiftCatalog]);
+
   if (!canManage) {
     return (
       <div className="min-h-full flex items-center justify-center">
@@ -55,6 +80,15 @@ export default function StoreSettingsPage() {
       </div>
     );
   }
+
+  const guardIdentity = (action: "delete" | "rename", code: string) =>
+    guardCatalogIdentityChange({
+      action,
+      code,
+      monthKey: monthUsage.monthKey,
+      usedInCurrentMonth: monthUsage.usedInMonth.has(code),
+      usedInFixedShifts: monthUsage.usedInFixed.has(code),
+    });
 
   const updateShift = (
     code: StoreShiftCode,
@@ -91,6 +125,48 @@ export default function StoreSettingsPage() {
     }));
   };
 
+  const tryUpdateCatalogCode = (shift: CatalogShift, nextCode: string) => {
+    const trimmed = nextCode.slice(0, 24);
+    if (trimmed === shift.code) return;
+    const original = originalCodeById.get(shift.id) ?? shift.code;
+    // 以「原本已存檔的碼」檢查當月是否已使用（避免草稿改一半又改回來）
+    const guard = guardIdentity("rename", original);
+    if (!guard.ok) {
+      setMessage(guard.message);
+      return;
+    }
+    updateCatalogShift(shift.id, { code: trimmed });
+    setMessage(null);
+  };
+
+  const tryDeleteCatalogShift = (shift: CatalogShift) => {
+    const code = originalCodeById.get(shift.id) ?? shift.code;
+    const guard = guardIdentity("delete", code);
+    if (!guard.ok) {
+      setMessage(guard.message);
+      return;
+    }
+    if (!window.confirm(`確定刪除班別「${shift.name}」？`)) return;
+    setDraft((p) => ({
+      ...p,
+      shiftCatalog: p.shiftCatalog.filter((s) => s.id !== shift.id),
+    }));
+    setMessage(null);
+  };
+
+  const tryDisableCatalogShift = (shift: CatalogShift, enabled: boolean) => {
+    if (
+      !enabled &&
+      (monthUsage.usedInMonth.has(shift.code) || monthUsage.usedInFixed.has(shift.code))
+    ) {
+      const ok = window.confirm(
+        `「${shift.name}」本月或固定班仍在使用。取消啟用後，本月已排班不受影響，但之後選單不會再出現此班。確定？`
+      );
+      if (!ok) return;
+    }
+    updateCatalogShift(shift.id, { enabled });
+  };
+
   const updateCatalogRange = (
     id: string,
     field: "workSegments" | "breaks",
@@ -102,9 +178,10 @@ export default function StoreSettingsPage() {
       ...prev,
       shiftCatalog: prev.shiftCatalog.map((s) => {
         if (s.id !== id) return s;
-        const next = [...s[field]];
-        next[index] = { ...next[index], [key]: value };
-        return { ...s, [field]: next };
+        const list = s[field].map((row, i) =>
+          i === index ? { ...row, [key]: value } : row
+        );
+        return { ...s, [field]: list };
       }),
     }));
   };
@@ -140,7 +217,9 @@ export default function StoreSettingsPage() {
   const handleLoadTemplate = () => {
     if (
       draft.shiftCatalog.length > 0 &&
-      !window.confirm("將以總店班別範本覆蓋目前目錄，確定？")
+      !window.confirm(
+        `將以總店班別範本覆蓋目前目錄。\n${monthUsage.monthLabel}已排班的識別碼請勿改動；建議這個月維持現況、下個月再調整。確定？`
+      )
     ) {
       return;
     }
@@ -165,6 +244,22 @@ export default function StoreSettingsPage() {
           "進階班別目錄已啟用，請至少啟用一個班別，或先按「載入總店範本」"
         );
       }
+
+      // 儲存前再擋：刪除或改識別碼若動到本月／固定班
+      const nextById = new Map(normalized.shiftCatalog.map((s) => [s.id, s]));
+      for (const prev of storeConfig.shiftCatalog) {
+        const next = nextById.get(prev.id);
+        if (!next) {
+          const guard = guardIdentity("delete", prev.code);
+          if (!guard.ok) throw new Error(guard.message);
+          continue;
+        }
+        if (next.code !== prev.code) {
+          const guard = guardIdentity("rename", prev.code);
+          if (!guard.ok) throw new Error(guard.message);
+        }
+      }
+
       for (const code of [
         normalized.defaultWeekdayShift,
         normalized.defaultSaturdayShift,
@@ -250,7 +345,8 @@ export default function StoreSettingsPage() {
             <div>
               <h2 className="font-semibold text-gray-900">進階班別目錄</h2>
               <p className="text-sm text-gray-500 mt-1">
-                以各班別名稱為主（不必再記 A–E）。可自訂短碼、時段、休息與班表顏色。
+                以各班別名稱為主。可新增班別；名稱／短碼／時段／顏色可隨時改。
+                {monthUsage.monthLabel}已排班或固定班仍在用的識別碼不可刪除或改碼——這個月維持，下個月再動。
               </p>
             </div>
             <button
@@ -285,7 +381,12 @@ export default function StoreSettingsPage() {
               {draft.shiftCatalog.length === 0 && (
                 <p className="text-sm text-gray-500">尚無班別，請載入總店範本或新增一筆。</p>
               )}
-              {draft.shiftCatalog.map((shift) => (
+              {draft.shiftCatalog.map((shift) => {
+                const identityCode = originalCodeById.get(shift.id) ?? shift.code;
+                const protectedThisMonth =
+                  monthUsage.usedInMonth.has(identityCode) ||
+                  monthUsage.usedInFixed.has(identityCode);
+                return (
                 <div key={shift.id} className="border rounded-lg p-4 space-y-3 bg-gray-50/60">
                   <div className="flex flex-wrap gap-3 items-end">
                     <div
@@ -365,24 +466,33 @@ export default function StoreSettingsPage() {
                         type="checkbox"
                         checked={shift.enabled}
                         onChange={(e) =>
-                          updateCatalogShift(shift.id, { enabled: e.target.checked })
+                          tryDisableCatalogShift(shift, e.target.checked)
                         }
                       />
                       啟用
                     </label>
                     <button
                       type="button"
-                      onClick={() =>
-                        setDraft((p) => ({
-                          ...p,
-                          shiftCatalog: p.shiftCatalog.filter((s) => s.id !== shift.id),
-                        }))
-                      }
+                      onClick={() => tryDeleteCatalogShift(shift)}
                       className="text-sm text-red-700 px-2 py-2 hover:underline"
+                      title={
+                        protectedThisMonth
+                          ? `${monthUsage.monthLabel}或固定班仍在使用，不可刪`
+                          : "刪除班別"
+                      }
                     >
                       刪除
                     </button>
                   </div>
+
+                  {protectedThisMonth && (
+                    <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      {monthUsage.usedInMonth.has(identityCode)
+                        ? `${monthUsage.monthLabel}班表已使用此班`
+                        : "固定班表仍使用此班"}
+                      ：本月請勿刪除或改識別碼；可改名稱／短碼／顏色／時段。下個月再調整。
+                    </p>
+                  )}
 
                   <div className="flex flex-wrap gap-3 items-center">
                     <span className="text-sm text-gray-700">班表顏色</span>
@@ -435,15 +545,16 @@ export default function StoreSettingsPage() {
                       系統識別碼（一般無需修改）
                     </summary>
                     <label className="mt-2 block text-sm max-w-xs">
-                      <span className="text-gray-600">寫入班表用，改動會影響既有班表對應</span>
+                      <span className="text-gray-600">
+                        {protectedThisMonth
+                          ? "本月或固定班仍在使用，識別碼已鎖定"
+                          : "寫入班表用；本月已排班者請勿改，下個月再動"}
+                      </span>
                       <input
                         value={shift.code}
-                        onChange={(e) =>
-                          updateCatalogShift(shift.id, {
-                            code: e.target.value.slice(0, 24),
-                          })
-                        }
-                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white font-mono text-sm"
+                        disabled={protectedThisMonth}
+                        onChange={(e) => tryUpdateCatalogCode(shift, e.target.value)}
+                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white font-mono text-sm disabled:bg-gray-100 disabled:text-gray-500"
                       />
                     </label>
                   </details>
@@ -538,7 +649,8 @@ export default function StoreSettingsPage() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
 
               <button
                 type="button"
