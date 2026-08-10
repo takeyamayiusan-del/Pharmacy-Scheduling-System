@@ -1011,9 +1011,6 @@ export default function SchedulePage() {
                 <tr key={emp.id} className="hover:bg-gray-50">
                   <td className="p-3 text-left font-medium text-gray-900 sticky left-0 bg-white z-10 border-r">
                     {emp.name}
-                    {emp.role === "manager" && (
-                      <span className="text-xs text-blue-600 ml-1">(店長)</span>
-                    )}
                   </td>
                   {Array.from({ length: daysInMonth }, (_, i) => {
                     const day = i + 1;

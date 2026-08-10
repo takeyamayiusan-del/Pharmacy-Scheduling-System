@@ -283,9 +283,14 @@ export default function EmployeesPage() {
                 value={formData.name}
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg"
-                placeholder="請輸入員工姓名"
+                placeholder={formData.role === "manager" ? "請輸入店長真實姓名（班表只顯示此姓名）" : "請輸入員工姓名"}
                 required
               />
+              {formData.role === "manager" && (
+                <p className="mt-1 text-xs text-gray-500">
+                  班表列名只顯示此姓名，不會再加「店長」字樣；請勿把角色寫進姓名。
+                </p>
+              )}
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
