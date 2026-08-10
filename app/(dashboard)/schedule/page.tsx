@@ -533,6 +533,7 @@ export default function SchedulePage() {
     }
 
     const cellStyle = styleOf(displayShift);
+    const cellText = isFullDayLeave ? "假" : cellStyle.displayText;
 
     return (
       <div className="p-1 relative">
@@ -547,15 +548,28 @@ export default function SchedulePage() {
                   borderColor: cellStyle.borderColor,
                 }
           }
-          className={`h-10 flex items-center justify-center rounded font-medium border-2 ${isFullDayLeave ? "bg-violet-500 text-white border-violet-600" : ""} ${editable ? "cursor-pointer hover:opacity-80" : ""} ${isSun && !isFullDayLeave ? "bg-red-50" : ""} ${hasFixedShift ? "ring-2 ring-orange-400" : ""}`}
+          className={`relative h-10 w-full min-w-[2.75rem] max-w-[4.5rem] mx-auto flex items-center justify-center overflow-hidden rounded font-medium border-2 ${isFullDayLeave ? "bg-violet-500 text-white border-violet-600" : ""} ${editable ? "cursor-pointer hover:opacity-80" : ""} ${isSun && !isFullDayLeave ? "bg-red-50" : ""} ${hasFixedShift ? "ring-2 ring-orange-400" : ""}`}
           title={
             isPartialLeave
               ? `半日請假：${shiftInfo.effectiveShiftDetails}`
-              : cellStyle.label
+              : `${cellStyle.label}${cellStyle.displayText !== cellStyle.label ? `（${cellStyle.displayText}）` : ""}`
           }
         >
-          {isFullDayLeave ? "假" : (useCatalog ? cellStyle.displayText : cellStyle.displayText)}
-          {editable && <span className="ml-1 text-[10px]">✏️</span>}
+          <span
+            className={`block max-w-full truncate text-center leading-tight ${
+              useCatalog || cellText.length > 2 ? "text-[10px] px-0.5" : "text-sm"
+            } ${editable ? "pr-2.5" : ""}`}
+          >
+            {cellText}
+          </span>
+          {editable && (
+            <span
+              aria-hidden
+              className="pointer-events-none absolute right-0.5 bottom-0.5 text-[8px] leading-none opacity-70"
+            >
+              ✏️
+            </span>
+          )}
         </div>
         
         {/* 標記 */}
@@ -969,7 +983,7 @@ export default function SchedulePage() {
                   return (
                     <th
                       key={day}
-                      className={`p-2 text-center text-sm font-medium min-w-[48px] ${headerClass} ${isToday ? "bg-red-100 border-x-4 border-red-500" : ""} cursor-pointer hover:brightness-95 transition`}
+                      className={`p-2 text-center text-sm font-medium min-w-[56px] ${headerClass} ${isToday ? "bg-red-100 border-x-4 border-red-500" : ""} cursor-pointer hover:brightness-95 transition`}
                       onClick={() => setSelectedDate(dateStr)}
                       title={typhoon ? `${typhoon.title}（${typhoon.periodLabel}）` : "查看當日上班狀況"}
                     >
@@ -1043,7 +1057,7 @@ export default function SchedulePage() {
                       color: style.textColor,
                       borderColor: style.borderColor,
                     }}
-                    className="min-w-8 h-8 px-1 flex items-center justify-center rounded border-2 font-medium text-xs"
+                    className="min-w-[2.75rem] max-w-[4.5rem] h-8 px-1 flex items-center justify-center overflow-hidden rounded border-2 font-medium text-[10px] leading-tight truncate"
                   >
                     {style.displayText}
                   </span>
