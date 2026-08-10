@@ -479,7 +479,7 @@ export default function PunchPage() {
 
   if (!currentUser) return null;
 
-  const breakCount = shift !== "X" ? getBreakCountForShift(shift) : 0;
+  const breakCount = shift !== "X" ? getBreakCountForShift(shift, storeConfig) : 0;
 
   return (
     <div className="space-y-6 max-w-lg mx-auto">

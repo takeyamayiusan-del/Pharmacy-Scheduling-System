@@ -185,16 +185,18 @@ serve(async (req) => {
           console.error(`查詢 ${user.name} 請假申請失敗：`, leaveError);
         }
 
-        // 計算工時
-        const workDays = scheduleEntries?.filter(e => e.shift_code !== 'X').length || 0;
-        const workHours = scheduleEntries?.reduce((sum, e) => sum + (SHIFT_HOURS[e.shift_code] || 0), 0) || 0;
-        
-        const overtimeHours = overtimeApps?.filter(o => o.compensation === 'pay')
-          .reduce((sum, o) => sum + calculateDuration(o.start_time, o.end_time), 0) || 0;
+    // 計算工時（未知班碼先當 0；前端薪資／工時統計已走目錄 nominalHours）
+    const hoursFor = (code: string) =>
+      SHIFT_HOURS[code] !== undefined ? SHIFT_HOURS[code] : 0;
+    const workDays = scheduleEntries?.filter(e => e.shift_code !== 'X').length || 0;
+    const workHours = scheduleEntries?.reduce((sum, e) => sum + hoursFor(e.shift_code), 0) || 0;
+    
+    const overtimeHours = overtimeApps?.filter(o => o.compensation === 'pay')
+      .reduce((sum, o) => sum + calculateDuration(o.start_time, o.end_time), 0) || 0;
 
-        const holidayOvertimeHours = scheduleEntries
-          ?.filter((entry) => entry.shift_code !== "X" && holidaySet.has(entry.date))
-          .reduce((sum, entry) => sum + (SHIFT_HOURS[entry.shift_code] || 0), 0) || 0;
+    const holidayOvertimeHours = scheduleEntries
+      ?.filter((entry) => entry.shift_code !== "X" && holidaySet.has(entry.date))
+      .reduce((sum, entry) => sum + hoursFor(entry.shift_code), 0) || 0;
         
         const compLeaveHours = overtimeApps?.filter(o => o.compensation === 'comp_leave')
           .reduce((sum, o) => sum + calculateDuration(o.start_time, o.end_time), 0) || 0;

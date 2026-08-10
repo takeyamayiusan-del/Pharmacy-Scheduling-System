@@ -2401,6 +2401,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           punchTime: p.time,
           originalShift,
           shiftTimeConfig,
+          storeConfig,
         });
 
         if (decision.clear) {

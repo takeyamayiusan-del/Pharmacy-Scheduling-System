@@ -3,13 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
-import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
+import {
+  buildScheduleWarnings,
+  isEveningOrFullCoverageShift,
+} from "@/lib/schedule/scheduleWarnings";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastMonth } from "@/lib/schedule/monthAccess";
 import { LeaveOrderGuide } from "@/components/schedule/LeaveOrderGuide";
-
-/** 含晚班的全天班（與班表邏輯一致） */
-const FULL_DAY_EVENING_SHIFT = "A" as const;
 
 type PendingEveningLeave = {
   dateStr: string;
@@ -31,6 +31,8 @@ export default function LeaveSelectionPage() {
     getShiftForDate,
     isLeaveMonthLocked,
     shiftDisplayConfig,
+    shiftTimeConfig,
+    storeConfig,
     addBulletinItem,
   } = useApp();
   const [currentDate, setCurrentDate] = useState(() => {
@@ -138,11 +140,11 @@ export default function LeaveSelectionPage() {
     }
 
     const shiftOnDate = getShiftForDate(dateStr, currentUser.id);
-    if (shiftOnDate === FULL_DAY_EVENING_SHIFT) {
+    if (isEveningOrFullCoverageShift(shiftOnDate, storeConfig, shiftTimeConfig)) {
       setPendingEveningLeave({
         dateStr,
         day,
-        shiftLabel: formatShiftName(shiftDisplayConfig, FULL_DAY_EVENING_SHIFT),
+        shiftLabel: formatShiftName(shiftDisplayConfig, shiftOnDate, storeConfig),
       });
       return;
     }
@@ -171,6 +173,8 @@ export default function LeaveSelectionPage() {
     employees,
     shiftDisplayConfig,
     getShiftForDate,
+    storeConfig,
+    shiftTimeConfig,
   });
 
   return (
@@ -211,9 +215,17 @@ export default function LeaveSelectionPage() {
         <h3 className="font-medium text-blue-800 mb-2">📋 排休規則說明</h3>
         <div className="text-sm text-gray-700 space-y-1">
           <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
-          <p>• 平常大家預設都是 B 班，A 班代表全天＋晚班</p>
+          <p>
+            • 平常大家預設都是{" "}
+            {formatShiftName(
+              shiftDisplayConfig,
+              storeConfig.defaultWeekdayShift || "B",
+              storeConfig
+            )}
+            ；含晚班／全天覆蓋的班別排休時會提醒代班
+          </p>
           <p>• 點選日期後會<strong>立即儲存</strong>，無需另外提交</p>
-          <p>• 若選到您原為全天班（含晚班）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
+          <p>• 若選到您原為含晚班（或全天覆蓋）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
           {saturdayCount >= 5 && (
             <p className="text-purple-600 font-medium">
               • 本月有 5 個禮拜六，但每人仍最多只能排休 2 天禮拜六

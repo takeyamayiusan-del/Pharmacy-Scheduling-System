@@ -9,8 +9,18 @@ import type {
 import {
   resolveTyphoonScheduleShift,
 } from "@/lib/attendance/flexibleAttendance";
-import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
-import { parseSiteId } from "@/lib/sites";
+import type { ScheduleShiftCode, ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import { parseSiteId, storeConfigSettingId, type SiteId } from "@/lib/sites";
+import {
+  defaultStoreConfigForSite,
+  parseStoreConfig,
+  type StoreConfig,
+} from "@/lib/store-config";
+import {
+  assertWritableShiftCode,
+  getScheduleShiftOptions,
+  isOffShiftCode,
+} from "@/lib/shift-catalog/resolve";
 
 type CreateBody = {
   action: "create";
@@ -122,6 +132,19 @@ async function loadShiftTimeConfig(admin: AdminClient): Promise<ShiftTimeConfig>
   return config;
 }
 
+async function loadStoreConfig(admin: AdminClient, siteId: SiteId): Promise<StoreConfig> {
+  const settingId = storeConfigSettingId(siteId);
+  const { data, error } = await admin
+    .from("app_settings")
+    .select("value")
+    .eq("id", settingId)
+    .maybeSingle();
+  if (error || !data) {
+    return defaultStoreConfigForSite(siteId);
+  }
+  return parseStoreConfig(data.value, siteId);
+}
+
 /**
  * 清除「已取消」殘留，以及「上個月以前已結算」紀錄。
  * 補休帳本保留；若該日仍有未結清待補時數則暫不刪。
@@ -191,7 +214,8 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "缺少原班表快照" }, { status: 400 });
       }
 
-      const siteId = parseSiteId(body.site_id);
+      const siteId =
+        auth.role === "manager" ? auth.siteId : parseSiteId(body.site_id);
 
       // 同日若尚有已取消殘留，先刪除以釋放唯一鍵（僅本店）
       await admin
@@ -201,13 +225,16 @@ export async function POST(req: NextRequest) {
         .eq("site_id", siteId)
         .eq("status", "cancelled");
 
+      const storeConfig = await loadStoreConfig(admin, siteId);
       const title = body.title?.trim() || "颱風／彈性出勤日";
       const periodLabel =
         body.periodMode === "full_day"
           ? "全日"
           : `${formatTime(body.fromTime)} 起`;
 
-      const originallyOn = body.originalSchedule.filter((e) => e.shift !== "X");
+      const originallyOn = body.originalSchedule.filter(
+        (e) => !isOffShiftCode(e.shift, storeConfig)
+      );
 
       let bulletinId: string | null = null;
       if (body.publishBulletin !== false) {
@@ -296,8 +323,14 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "僅未結算的颱風日可確認出勤" }, { status: 400 });
       }
 
+      const daySiteId = parseSiteId(day.site_id);
+      if (auth.role === "manager" && daySiteId !== auth.siteId) {
+        return NextResponse.json({ error: "不可操作其他店的彈性出勤日" }, { status: 403 });
+      }
+
+      const storeConfig = await loadStoreConfig(admin, daySiteId);
       const original = (day.original_schedule ?? []) as OriginalScheduleEntry[];
-      const originallyOn = original.filter((e) => e.shift !== "X");
+      const originallyOn = original.filter((e) => !isOffShiftCode(e.shift, storeConfig));
       const originallyOnIds = new Set(originallyOn.map((e) => e.userId));
       const expected = body.expectedAttendeeIds.filter((id) => originallyOnIds.has(id));
       const periodMode = day.period_mode as "full_day" | "from_time";
@@ -305,16 +338,20 @@ export async function POST(req: NextRequest) {
       const shiftTimeConfig = await loadShiftTimeConfig(admin);
       const attendeeChoices = body.attendeeChoices ?? {};
       const attendeeShifts = body.attendeeShifts ?? {};
-      const validShifts = new Set(["A", "B", "C", "D", "E", "X"]);
+      const validShifts = new Set([...getScheduleShiftOptions(storeConfig), "X"]);
 
       // 依班別 × 颱風時段 × 是否出席（可指定班別）更新班表
       for (const entry of originallyOn) {
         const willCome = expected.includes(entry.userId);
         const rawAssigned = attendeeShifts[entry.userId];
-        const assignedShift =
-          willCome && rawAssigned && validShifts.has(rawAssigned)
-            ? (rawAssigned as ShiftType)
-            : undefined;
+        const assignedOk =
+          willCome &&
+          rawAssigned &&
+          (validShifts.has(rawAssigned) ||
+            assertWritableShiftCode(rawAssigned, storeConfig).ok);
+        const assignedShift = assignedOk
+          ? (rawAssigned as ScheduleShiftCode)
+          : undefined;
         const nextShift = resolveTyphoonScheduleShift({
           originalShift: entry.shift,
           willAttend: willCome,
@@ -323,6 +360,7 @@ export async function POST(req: NextRequest) {
           shiftTimeConfig,
           attendeeChoice: attendeeChoices[entry.userId] ?? "keep",
           assignedShift,
+          storeConfig,
         });
 
         const { error: upsertError } = await admin.from("schedule_entries").upsert(
@@ -375,9 +413,15 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: "此日已取消" }, { status: 400 });
       }
 
+      const daySiteId = parseSiteId(day.site_id);
+      if (auth.role === "manager" && daySiteId !== auth.siteId) {
+        return NextResponse.json({ error: "不可操作其他店的彈性出勤日" }, { status: 403 });
+      }
+
+      const storeConfig = await loadStoreConfig(admin, daySiteId);
       const original = (day.original_schedule ?? []) as OriginalScheduleEntry[];
       const allowedIds = new Set(
-        original.filter((e) => e.shift !== "X").map((e) => e.userId)
+        original.filter((e) => !isOffShiftCode(e.shift, storeConfig)).map((e) => e.userId)
       );
 
       // 安全閘：只允許對「原本有排班」的人做核發／待補

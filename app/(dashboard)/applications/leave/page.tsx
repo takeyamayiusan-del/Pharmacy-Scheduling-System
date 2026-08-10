@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useApp, type LeaveType, type ShiftType } from '@/lib/context/AppContext';
+import { useApp, type LeaveType } from '@/lib/context/AppContext';
 import {
   calculateLeaveWorkHours,
   LEAVE_TYPE_OPTIONS,
@@ -20,21 +20,17 @@ import {
   doesRangeOverlapYearMonth,
   getCurrentYearMonth,
 } from '@/components/MonthFilterBar';
+import {
+  getScheduleShiftOptions,
+  isOffShiftCode,
+  resolveShiftDisplay,
+} from '@/lib/shift-catalog/resolve';
 
 const PERIOD_OPTIONS: { label: string; value: LeavePeriod }[] = [
   { label: '全天', value: 'full_day' },
   { label: '上午', value: 'morning' },
   { label: '下午', value: 'afternoon' },
   { label: '自訂時間', value: 'custom' },
-];
-
-const SHIFT_OPTIONS: { label: string; value: 'schedule' | ShiftType }[] = [
-  { label: '依當日班表', value: 'schedule' },
-  { label: 'A 班（全天+晚）', value: 'A' },
-  { label: 'B 班（白班）', value: 'B' },
-  { label: 'C 班（上午）', value: 'C' },
-  { label: 'D 班（下午）', value: 'D' },
-  { label: 'E 班', value: 'E' },
 ];
 
 export default function LeaveApplicationPage() {
@@ -52,7 +48,23 @@ export default function LeaveApplicationPage() {
     getCompLeaveBalance,
     getAnnualLeaveBalance,
     storeConfig,
+    shiftDisplayConfig,
   } = useApp();
+
+  const shiftOptions = useMemo(() => {
+    const opts: { label: string; value: 'schedule' | string }[] = [
+      { label: '依當日班表', value: 'schedule' },
+    ];
+    for (const code of getScheduleShiftOptions(storeConfig)) {
+      if (isOffShiftCode(code, storeConfig)) continue;
+      const display = resolveShiftDisplay(code, storeConfig, shiftDisplayConfig);
+      opts.push({
+        label: `${display.displayText || code}（${display.label}）`,
+        value: code,
+      });
+    }
+    return opts;
+  }, [storeConfig, shiftDisplayConfig]);
 
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -61,7 +73,7 @@ export default function LeaveApplicationPage() {
     startTime: '08:30',
     endTime: '18:00',
     period: 'full_day' as LeavePeriod,
-    shiftMode: 'schedule' as 'schedule' | ShiftType,
+    shiftMode: 'schedule' as 'schedule' | string,
     type: '事假' as LeaveType,
     reason: '',
   });
@@ -88,9 +100,9 @@ export default function LeaveApplicationPage() {
 
   const previewShiftForCalc = useMemo(() => {
     if (formData.shiftMode !== 'schedule') return formData.shiftMode;
-    if (!formEmployeeId || !formData.startDate) return 'B' as ShiftType;
+    if (!formEmployeeId || !formData.startDate) return storeConfig.defaultWeekdayShift || 'B';
     return getShiftForDate(formData.startDate, formEmployeeId);
-  }, [formData.shiftMode, formData.startDate, formEmployeeId, getShiftForDate]);
+  }, [formData.shiftMode, formData.startDate, formEmployeeId, getShiftForDate, storeConfig.defaultWeekdayShift]);
 
   const estimatedHours = useMemo(() => {
     if (!formEmployeeId || !formData.startDate || !formData.endDate) return 0;
@@ -439,12 +451,12 @@ export default function LeaveApplicationPage() {
                 onChange={(e) =>
                   setFormData({
                     ...formData,
-                    shiftMode: e.target.value as 'schedule' | ShiftType,
+                    shiftMode: e.target.value as 'schedule' | string,
                   })
                 }
                 className="w-full px-4 py-2 border rounded-lg"
               >
-                {SHIFT_OPTIONS.map((opt) => (
+                {shiftOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>
                     {opt.label}
                   </option>

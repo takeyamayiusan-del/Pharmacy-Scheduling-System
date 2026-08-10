@@ -1,5 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import {
+  assertManagerAuth,
+  assertManagerCanAccessEmployee,
+} from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
 import { buildSwapShiftsAndChanges } from "@/lib/schedule/swapSchedule";
@@ -47,6 +50,29 @@ export async function POST(req: NextRequest) {
     }
     if (!swapRow) {
       return NextResponse.json({ error: "找不到換班申請" }, { status: 404 });
+    }
+
+    const accessRequester = await assertManagerCanAccessEmployee(
+      auth,
+      swapRow.requester_id
+    );
+    if ("error" in accessRequester) {
+      return NextResponse.json(
+        { error: accessRequester.error },
+        { status: accessRequester.status }
+      );
+    }
+    if (swapRow.target_id) {
+      const accessTarget = await assertManagerCanAccessEmployee(
+        auth,
+        swapRow.target_id
+      );
+      if ("error" in accessTarget) {
+        return NextResponse.json(
+          { error: accessTarget.error },
+          { status: accessTarget.status }
+        );
+      }
     }
 
     if (action === "revert") {

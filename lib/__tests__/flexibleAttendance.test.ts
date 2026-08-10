@@ -4,10 +4,12 @@ import {
   buildSettlementPreview,
   calculateAffectedShiftHours,
   calculateActualPunchHoursInPeriod,
+  getAttendeeShiftOptions,
   resolveShiftAfterTyphoonCutoff,
   resolveTyphoonScheduleShift,
 } from "@/lib/attendance/flexibleAttendance";
 import type { PunchRecord, ShiftTimeConfig } from "@/lib/context/AppContext";
+import { buildJijiStoreConfigWithTemplate } from "@/lib/store-config";
 
 const config: ShiftTimeConfig = {
   A: ["08:30-12:00", "13:30-17:00", "19:00-21:00"],
@@ -243,5 +245,41 @@ describe("typhoon schedule shift resolution", () => {
         assignedShift: "B",
       })
     ).toBe("B");
+  });
+
+  it("集集目錄班：受影響時數與指定班別", () => {
+    const jiji = buildJijiStoreConfigWithTemplate();
+    const hours = calculateAffectedShiftHours(
+      "白班2",
+      config,
+      "from_time",
+      "12:00",
+      jiji
+    );
+    expect(hours).toBeGreaterThan(0);
+
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "白班2",
+        willAttend: true,
+        periodMode: "full_day",
+        shiftTimeConfig: config,
+        assignedShift: "晚班1",
+        storeConfig: jiji,
+      })
+    ).toBe("晚班1");
+
+    expect(
+      resolveTyphoonScheduleShift({
+        originalShift: "白班2",
+        willAttend: false,
+        periodMode: "full_day",
+        shiftTimeConfig: config,
+        storeConfig: jiji,
+      })
+    ).toBe("X");
+
+    expect(getAttendeeShiftOptions(jiji)).toContain("白班2");
+    expect(getAttendeeShiftOptions(jiji)).not.toContain("A");
   });
 });
