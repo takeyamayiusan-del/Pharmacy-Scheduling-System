@@ -26,7 +26,7 @@ const DEFAULT_ACCOUNTS = [
   {
     username: "admin",
     password: "admin123",
-    name: "竹山店長",
+    name: "竹山",
     role: "manager",
     site_id: "zhushan",
   },
@@ -40,7 +40,7 @@ const DEFAULT_ACCOUNTS = [
   {
     username: "jiji",
     password: "jiji123",
-    name: "集集店長",
+    name: "集集",
     role: "manager",
     site_id: "jiji",
   },
@@ -64,17 +64,17 @@ async function seedAccount({ username, password, name, role, site_id }) {
 
   if (existingProfile) {
     await supabase.auth.admin.updateUserById(existingProfile.id, { password });
+    // 不覆寫 name：老闆可能已在員工管理改成真實姓名
     const { error: updateError } = await supabase
       .from("users")
       .update({
-        name,
         role,
         is_active: true,
         site_id: siteId,
       })
       .eq("id", existingProfile.id);
     if (updateError) throw new Error(`${username}：${updateError.message}`);
-    console.log(`  [更新] ${username} / ${password}（${name}，${siteId}）`);
+    console.log(`  [更新] ${username} / ${password}（保留原姓名，${siteId}）`);
     return;
   }
 
