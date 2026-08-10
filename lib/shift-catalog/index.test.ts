@@ -42,6 +42,33 @@ describe("shift-catalog", () => {
     expect(s.enabled).toBe(true);
     expect(s.workSegments[0].start).toBe("09:00");
     expect(s.shortLabel).toBeTruthy();
+    expect(s.bgColor).toMatch(/^#[0-9a-f]{6}$/);
+    expect(s.textColor).toMatch(/^#[0-9a-f]{6}$/);
+    expect(s.borderColor).toMatch(/^#[0-9a-f]{6}$/);
+  });
+
+  it("parses custom colors and fills category defaults when missing", () => {
+    const list = parseCatalogShifts([
+      {
+        name: "有色班",
+        category: "night",
+        workSegments: [{ start: "18:00", end: "22:00" }],
+        breaks: [],
+        nominalHours: 4,
+        bgColor: "#010203",
+        textColor: "#fefefe",
+        borderColor: "#aabbcc",
+      },
+      {
+        name: "無色班",
+        category: "day",
+        workSegments: [{ start: "09:00", end: "18:00" }],
+        breaks: [],
+        nominalHours: 8,
+      },
+    ]);
+    expect(list[0].bgColor).toBe("#010203");
+    expect(list[1].bgColor).toMatch(/^#[0-9a-f]{6}$/);
   });
 
   it("deriveShortLabel shortens common catalog codes", () => {

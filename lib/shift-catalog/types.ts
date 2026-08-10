@@ -27,6 +27,12 @@ export type CatalogShift = {
   breaks: TimeRange[];
   /** 表定工時 */
   nominalHours: number;
+  /** 班表格子／圖例背景色 */
+  bgColor: string;
+  /** 班表格子／圖例文字色 */
+  textColor: string;
+  /** 班表格子／圖例框線色 */
+  borderColor: string;
   enabled: boolean;
   sortOrder: number;
 };

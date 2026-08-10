@@ -44,8 +44,30 @@ describe("shift-catalog/resolve", () => {
     const style = resolveShiftDisplay(code, cfg, legacyDisplay);
     expect(style.label).toBe(cfg.shiftCatalog[0].name);
     expect(style.displayText).toBe(cfg.shiftCatalog[0].shortLabel || code);
+    expect(style.bgColor).toBe(cfg.shiftCatalog[0].bgColor);
     expect(assertWritableShiftCode(code, cfg).ok).toBe(true);
     expect(assertWritableShiftCode("B", cfg).ok).toBe(true);
     expect(assertWritableShiftCode("不存在的班", cfg).ok).toBe(false);
+  });
+
+  it("catalog custom colors override category defaults", () => {
+    const cfg = defaultStoreConfigForSite("jiji");
+    cfg.features.customShiftCatalog = true;
+    cfg.shiftCatalog = [
+      {
+        ...getHeadStoreShiftTemplate()[0],
+        code: "客製班",
+        name: "客製班",
+        shortLabel: "客",
+        bgColor: "#112233",
+        textColor: "#abcdef",
+        borderColor: "#445566",
+      },
+    ];
+    const style = resolveShiftDisplay("客製班", cfg, legacyDisplay);
+    expect(style.bgColor).toBe("#112233");
+    expect(style.textColor).toBe("#abcdef");
+    expect(style.borderColor).toBe("#445566");
+    expect(style.displayText).toBe("客");
   });
 });
