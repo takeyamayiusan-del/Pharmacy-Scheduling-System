@@ -8,6 +8,7 @@ import {
 
 export type { CatalogShift, ShiftCategory, TimeRange } from "@/lib/shift-catalog/types";
 export { SHIFT_CATEGORY_LABELS, deriveShortLabel } from "@/lib/shift-catalog/types";
+export { buildZhushanLegacyCatalog } from "@/lib/shift-catalog/zhushan-legacy";
 export {
   assertWritableShiftCode,
   findCatalogShift,

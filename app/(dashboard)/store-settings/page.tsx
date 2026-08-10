@@ -197,14 +197,14 @@ export default function StoreSettingsPage() {
           <>
             <p className="font-medium">竹山店（現行排班）</p>
             <p className="mt-1 text-amber-900/90">
-              維持 A–E 班別與禮三晚班邏輯；請勿在此店開啟進階班別目錄，以免影響現有排班。
+              與集集已共用同一套程式；本店維持 A–E 與禮三晚班，請勿開啟「進階班別目錄」，以免改到現有排班。
             </p>
           </>
         ) : (
           <>
-            <p className="font-medium">集集／家禾（實驗店）</p>
+            <p className="font-medium">集集／家禾</p>
             <p className="mt-1 text-sky-900/90">
-              可自訂班別目錄、多段休息與兩頭班；此處調整不會改到竹山排班。穩定後再將竹山改為同一套。
+              使用班別目錄（短碼／多段休息）；調整只影響本店，不會改到竹山。
             </p>
           </>
         )}
