@@ -19,6 +19,7 @@ import {
   type StoreConfig,
   type StoreShiftCode,
 } from "@/lib/store-config";
+import { getScheduleShiftOptions } from "@/lib/shift-catalog/resolve";
 
 const WEEKDAY_OPTIONS = [1, 2, 3, 4, 5, 6]; // 不含日：公休
 const CATEGORY_OPTIONS = Object.keys(SHIFT_CATEGORY_LABELS) as ShiftCategory[];
@@ -486,55 +487,74 @@ export default function StoreSettingsPage() {
         </section>
       )}
 
-      {!useCatalog && (
-        <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-          <h2 className="font-semibold text-gray-900">預設班</h2>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <label className="block text-sm">
-              <span className="text-gray-700">平日預設（無固定班時）</span>
-              <select
-                value={draft.defaultWeekdayShift}
-                onChange={(e) =>
-                  setDraft((p) => ({
-                    ...p,
-                    defaultWeekdayShift: e.target.value as StoreShiftCode,
-                  }))
-                }
-                className="mt-1 w-full border rounded-lg px-3 py-2"
-              >
-                {draft.shifts
-                  .filter((s) => s.enabled)
-                  .map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.code}（{s.name}）
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label className="block text-sm">
-              <span className="text-gray-700">週六預設（無固定班時）</span>
-              <select
-                value={draft.defaultSaturdayShift}
-                onChange={(e) =>
-                  setDraft((p) => ({
-                    ...p,
-                    defaultSaturdayShift: e.target.value as StoreShiftCode,
-                  }))
-                }
-                className="mt-1 w-full border rounded-lg px-3 py-2"
-              >
-                {draft.shifts
-                  .filter((s) => s.enabled)
-                  .map((s) => (
-                    <option key={s.code} value={s.code}>
-                      {s.code}（{s.name}）
-                    </option>
-                  ))}
-              </select>
-            </label>
-          </div>
-        </section>
-      )}
+      <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+        <h2 className="font-semibold text-gray-900">預設班</h2>
+        <p className="text-sm text-gray-500">
+          {useCatalog
+            ? "無固定班時套用。請先在上方班別目錄建立／啟用班別，再選擇預設。"
+            : "無固定班時套用啟用中的 A–E 班別。"}
+        </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label className="block text-sm">
+            <span className="text-gray-700">平日預設（無固定班時）</span>
+            <select
+              value={draft.defaultWeekdayShift}
+              onChange={(e) =>
+                setDraft((p) => ({
+                  ...p,
+                  defaultWeekdayShift: e.target.value,
+                }))
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            >
+              {getScheduleShiftOptions(draft).map((code) => {
+                const name = useCatalog
+                  ? draft.shiftCatalog.find((s) => s.code === code)?.name ?? code
+                  : draft.shifts.find((s) => s.code === code)?.name ?? code;
+                return (
+                  <option key={code} value={code}>
+                    {useCatalog ? name : `${code}（${name}）`}
+                  </option>
+                );
+              })}
+              {!getScheduleShiftOptions(draft).includes(draft.defaultWeekdayShift) && (
+                <option value={draft.defaultWeekdayShift}>
+                  {draft.defaultWeekdayShift}（目前值）
+                </option>
+              )}
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">週六預設（無固定班時）</span>
+            <select
+              value={draft.defaultSaturdayShift}
+              onChange={(e) =>
+                setDraft((p) => ({
+                  ...p,
+                  defaultSaturdayShift: e.target.value,
+                }))
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            >
+              {getScheduleShiftOptions(draft).map((code) => {
+                const name = useCatalog
+                  ? draft.shiftCatalog.find((s) => s.code === code)?.name ?? code
+                  : draft.shifts.find((s) => s.code === code)?.name ?? code;
+                return (
+                  <option key={code} value={code}>
+                    {useCatalog ? name : `${code}（${name}）`}
+                  </option>
+                );
+              })}
+              {!getScheduleShiftOptions(draft).includes(draft.defaultSaturdayShift) && (
+                <option value={draft.defaultSaturdayShift}>
+                  {draft.defaultSaturdayShift}（目前值）
+                </option>
+              )}
+            </select>
+          </label>
+        </div>
+      </section>
 
       <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">功能開關</h2>

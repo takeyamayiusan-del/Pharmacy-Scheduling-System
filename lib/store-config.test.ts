@@ -55,12 +55,24 @@ describe("store-config", () => {
         storeName: "家禾藥局",
         features: { customShiftCatalog: true },
         shiftCatalog: template,
+        defaultWeekdayShift: template[0].code,
+        defaultSaturdayShift: template[1].code,
       },
       "jiji"
     );
     expect(c.features.customShiftCatalog).toBe(true);
     expect(c.shiftCatalog).toHaveLength(2);
     expect(c.shiftCatalog[0].name).toBeTruthy();
+    expect(c.defaultWeekdayShift).toBe(template[0].code);
+    expect(c.defaultSaturdayShift).toBe(template[1].code);
+  });
+
+  it("parseStoreConfig rejects unknown catalog default for zhushan", () => {
+    const c = parseStoreConfig({
+      defaultWeekdayShift: "白班1",
+      features: { customShiftCatalog: false },
+    });
+    expect(c.defaultWeekdayShift).toBe("B");
   });
 
   it("isRotationEveningDay respects feature flag and weekdays", () => {

@@ -124,7 +124,7 @@ export type ScheduleData = {
 export type FixedShift = {
   employeeId: string;
   dayOfWeek: number;
-  shift: ShiftType;
+  shift: ScheduleShiftCode;
 };
 
 export type WednesdayNightShift = {
@@ -432,7 +432,7 @@ interface AppContextType {
   schedule: ScheduleData;
   updateShift: (date: string, employeeId: string, shift: ScheduleShiftCode) => Promise<void>;
   getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
-  getBaseShiftForDate: (date: string, employeeId: string) => ShiftType;
+  getBaseShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   /** 國定假日一鍵設為上班／休假；已排休或全日請假者維持休假。不寫入排休選擇。 */
   applyNationalHolidayOneClick: (
     date: string,
@@ -658,7 +658,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           data.map((r) => ({
             employeeId: r.user_id,
             dayOfWeek: r.day_of_week,
-            shift: r.shift_code as ShiftType,
+            shift: String(r.shift_code) as ScheduleShiftCode,
           }))
         )
       );
@@ -1650,7 +1650,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Schedule (localStorage) ─────────────────────────────────────────────────
 
   /** 基準上班班別（忽略排休勾選；禮拜日仍為 X） */
-  const getWorkShiftIgnoringLeave = (date: string, employeeId: string): ShiftType => {
+  const getWorkShiftIgnoringLeave = (date: string, employeeId: string): ScheduleShiftCode => {
     if (isSunday(date)) return "X";
 
     const emp = employees.find((e) => e.id === employeeId);
@@ -1696,7 +1696,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return fixedShift?.shift ?? storeConfig.defaultWeekdayShift;
   };
 
-  const getBaseShiftForDate = (date: string, employeeId: string): ShiftType => {
+  const getBaseShiftForDate = (date: string, employeeId: string): ScheduleShiftCode => {
     if (isSunday(date)) return "X";
 
     const emp = employees.find((e) => e.id === employeeId);
@@ -1916,6 +1916,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addFixedShift = async (shift: FixedShift) => {
+    const codeCheck = assertWritableShiftCode(shift.shift, storeConfig);
+    if (!codeCheck.ok) {
+      throw new Error(codeCheck.message);
+    }
     const { error } = await supabase.from("fixed_shifts").upsert(
       { user_id: shift.employeeId, day_of_week: shift.dayOfWeek, shift_code: shift.shift },
       { onConflict: "user_id,day_of_week" }
@@ -1930,6 +1934,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateFixedShift = async (index: number, shift: FixedShift) => {
     const old = fixedShifts[index];
     if (!old) return;
+    const codeCheck = assertWritableShiftCode(shift.shift, storeConfig);
+    if (!codeCheck.ok) {
+      throw new Error(codeCheck.message);
+    }
     // Delete old and insert new (in case user_id or day_of_week changed)
     await supabase
       .from("fixed_shifts")
