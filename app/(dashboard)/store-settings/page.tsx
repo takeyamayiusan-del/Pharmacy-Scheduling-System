@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
 import {
   createEmptyCatalogShift,
+  defaultColorsForCategory,
   formatCatalogShiftSummary,
   getHeadStoreShiftTemplate,
   SHIFT_CATEGORY_LABELS,
@@ -234,7 +235,7 @@ export default function StoreSettingsPage() {
             <div>
               <h2 className="font-semibold text-gray-900">進階班別目錄</h2>
               <p className="text-sm text-gray-500 mt-1">
-                自訂名稱、多段上班／休息。目前供設定與日後排班接線；尚未寫入竹山 A–E 班表。
+                以各班別名稱為主（不必再記 A–E）。可自訂短碼、時段、休息與班表顏色。
               </p>
             </div>
             <button
@@ -272,6 +273,17 @@ export default function StoreSettingsPage() {
               {draft.shiftCatalog.map((shift) => (
                 <div key={shift.id} className="border rounded-lg p-4 space-y-3 bg-gray-50/60">
                   <div className="flex flex-wrap gap-3 items-end">
+                    <div
+                      className="h-10 w-14 rounded border-2 flex items-center justify-center text-sm font-medium shrink-0"
+                      style={{
+                        backgroundColor: shift.bgColor,
+                        color: shift.textColor,
+                        borderColor: shift.borderColor,
+                      }}
+                      title="班表預覽"
+                    >
+                      {shift.shortLabel || shift.name.slice(0, 2)}
+                    </div>
                     <label className="text-sm flex-1 min-w-[8rem]">
                       <span className="text-gray-700">名稱</span>
                       <input
@@ -298,28 +310,17 @@ export default function StoreSettingsPage() {
                         title="班表格子顯示用"
                       />
                     </label>
-                    <label className="text-sm w-28">
-                      <span className="text-gray-700">識別碼</span>
-                      <input
-                        value={shift.code}
-                        onChange={(e) =>
-                          updateCatalogShift(shift.id, {
-                            code: e.target.value.slice(0, 24),
-                          })
-                        }
-                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white font-mono text-sm"
-                        title="寫入班表用，改動會影響既有班表對應"
-                      />
-                    </label>
                     <label className="text-sm w-32">
                       <span className="text-gray-700">類型</span>
                       <select
                         value={shift.category}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const category = e.target.value as ShiftCategory;
                           updateCatalogShift(shift.id, {
-                            category: e.target.value as ShiftCategory,
-                          })
-                        }
+                            category,
+                            ...defaultColorsForCategory(category),
+                          });
+                        }}
                         className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
                       >
                         {CATEGORY_OPTIONS.map((c) => (
@@ -367,6 +368,70 @@ export default function StoreSettingsPage() {
                       刪除
                     </button>
                   </div>
+
+                  <div className="flex flex-wrap gap-3 items-center">
+                    <span className="text-sm text-gray-700">班表顏色</span>
+                    <label className="text-xs text-gray-500 inline-flex items-center gap-1">
+                      背景
+                      <input
+                        type="color"
+                        value={shift.bgColor}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, { bgColor: e.target.value })
+                        }
+                        className="h-9 w-12 border rounded-lg px-1 py-1 bg-white"
+                      />
+                    </label>
+                    <label className="text-xs text-gray-500 inline-flex items-center gap-1">
+                      框線
+                      <input
+                        type="color"
+                        value={shift.borderColor}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, { borderColor: e.target.value })
+                        }
+                        className="h-9 w-12 border rounded-lg px-1 py-1 bg-white"
+                      />
+                    </label>
+                    <label className="text-xs text-gray-500 inline-flex items-center gap-1">
+                      文字
+                      <input
+                        type="color"
+                        value={shift.textColor}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, { textColor: e.target.value })
+                        }
+                        className="h-9 w-12 border rounded-lg px-1 py-1 bg-white"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className="text-xs text-sky-700 hover:underline"
+                      onClick={() =>
+                        updateCatalogShift(shift.id, defaultColorsForCategory(shift.category))
+                      }
+                    >
+                      還原類型預設色
+                    </button>
+                  </div>
+
+                  <details className="text-sm">
+                    <summary className="cursor-pointer text-gray-500 hover:text-gray-700">
+                      系統識別碼（一般無需修改）
+                    </summary>
+                    <label className="mt-2 block text-sm max-w-xs">
+                      <span className="text-gray-600">寫入班表用，改動會影響既有班表對應</span>
+                      <input
+                        value={shift.code}
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, {
+                            code: e.target.value.slice(0, 24),
+                          })
+                        }
+                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white font-mono text-sm"
+                      />
+                    </label>
+                  </details>
 
                   <p className="text-xs text-gray-500">{formatCatalogShiftSummary(shift)}</p>
 
