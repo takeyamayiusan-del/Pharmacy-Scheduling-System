@@ -16,10 +16,8 @@ import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
 import FlexibleAttendancePanel from "@/components/FlexibleAttendancePanel";
-import { formatCatalogShiftSummary } from "@/lib/shift-catalog";
 import {
   getScheduleShiftOptions,
-  isLegacyShiftCode,
   resolveShiftDisplay,
   resolveShiftTimeRanges,
 } from "@/lib/shift-catalog/resolve";

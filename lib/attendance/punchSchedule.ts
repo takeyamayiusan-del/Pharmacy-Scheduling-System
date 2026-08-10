@@ -1,4 +1,4 @@
-import type { ShiftTimeConfig, ShiftType } from "@/lib/context/AppContext";
+import type { ShiftTimeConfig } from "@/lib/context/AppContext";
 import { isLegacyShiftCode } from "@/lib/shift-catalog/resolve";
 
 export type PunchAction = "work_in" | "work_out";
