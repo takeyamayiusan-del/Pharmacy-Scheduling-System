@@ -157,6 +157,7 @@ export default function PayrollPage() {
     publishPayrollRecord,
     unpublishPayrollRecord,
     loadPayrollRecords,
+    storeConfig,
   } = useApp();
   const supabase = createClient();
 
@@ -303,6 +304,7 @@ export default function PayrollPage() {
         shiftTimeConfig,
         leaveRequests,
         overtimeRequests,
+        storeConfig,
       });
 
       const empLeaves = leaveRequests.filter(
@@ -325,6 +327,7 @@ export default function PayrollPage() {
           month,
           getShiftForDate,
           shiftTimeConfig,
+          storeConfig,
         });
         leaveHours += hours;
         leaveHoursByType[r.type] = (leaveHoursByType[r.type] ?? 0) + hours;
@@ -439,6 +442,7 @@ export default function PayrollPage() {
     getShiftForDate,
     getHolidayInfo,
     shiftTimeConfig,
+    storeConfig,
   ]);
 
   const payrollData = computePayroll();
@@ -1021,6 +1025,7 @@ export default function PayrollPage() {
                         month,
                         getShiftForDate,
                         shiftTimeConfig,
+                        storeConfig,
                       });
                       leaveHoursByType[r.type] = (leaveHoursByType[r.type] ?? 0) + hours;
                     });

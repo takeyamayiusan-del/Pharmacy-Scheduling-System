@@ -85,4 +85,31 @@ describe("computeMonthlyAttendanceHours", () => {
     expect(result.overtimePayHours).toBe(2);
     expect(result.leaveDeductionHours).toBe(3.5);
   });
+
+  it("counts jiji catalog shift hours via storeConfig nominalHours", async () => {
+    const { defaultStoreConfigForSite } = await import("@/lib/store-config");
+    const { getHeadStoreShiftTemplate } = await import("@/lib/shift-catalog");
+    const storeConfig = defaultStoreConfigForSite("jiji");
+    storeConfig.shiftCatalog = getHeadStoreShiftTemplate();
+    const code = storeConfig.shiftCatalog[0].code;
+    const nominal = storeConfig.shiftCatalog[0].nominalHours;
+
+    const getShiftForDate = (date: string) =>
+      date === "2026-07-02" || date === "2026-07-03" ? code : "X";
+
+    const result = computeMonthlyAttendanceHours({
+      employeeId: "e1",
+      year: 2026,
+      month: 7,
+      getShiftForDate,
+      getHolidayInfo: () => ({ isHoliday: false }),
+      shiftTimeConfig,
+      leaveRequests: [],
+      overtimeRequests: [],
+      storeConfig,
+    });
+
+    expect(result.workDays).toBe(2);
+    expect(result.workHours).toBe(nominal * 2);
+  });
 });

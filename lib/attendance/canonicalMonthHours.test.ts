@@ -22,6 +22,23 @@ describe("getShiftWorkHours", () => {
     expect(getShiftWorkHours("E", shiftTimeConfig)).toBe(5.5);
     expect(getShiftWorkHours("B", shiftTimeConfig)).toBe(8);
   });
+
+  it("uses catalog nominalHours for jiji custom shifts", async () => {
+    const { defaultStoreConfigForSite } = await import("@/lib/store-config");
+    const { getHeadStoreShiftTemplate } = await import("@/lib/shift-catalog");
+    const cfg = defaultStoreConfigForSite("jiji");
+    cfg.shiftCatalog = getHeadStoreShiftTemplate();
+    const first = cfg.shiftCatalog[0];
+    expect(getShiftWorkHours(first.code, shiftTimeConfig, cfg)).toBe(first.nominalHours);
+    expect(getShiftWorkHours("不存在", shiftTimeConfig, cfg)).toBe(0);
+  });
+
+  it("zhushan ignores catalog codes and falls back to SHIFT_HOURS", async () => {
+    const { defaultStoreConfigForSite } = await import("@/lib/store-config");
+    const cfg = defaultStoreConfigForSite("zhushan");
+    expect(getShiftWorkHours("白班1", shiftTimeConfig, cfg)).toBe(0);
+    expect(getShiftWorkHours("B", shiftTimeConfig, cfg)).toBe(8);
+  });
 });
 
 describe("getApprovedLeaveHoursInMonth", () => {

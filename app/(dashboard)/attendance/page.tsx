@@ -27,6 +27,7 @@ export default function AttendancePage() {
     punchRecords,
     compLeaveLedger,
     getCompLeaveBalance,
+    storeConfig,
   } = useApp();
 
   const [currentDate, setCurrentDate] = useState(() => {
@@ -72,6 +73,7 @@ export default function AttendancePage() {
         shiftTimeConfig,
         leaveRequests,
         overtimeRequests,
+        storeConfig,
       });
 
       const leaveBreakdown = buildLeaveBreakdownInMonth({
@@ -81,6 +83,7 @@ export default function AttendancePage() {
         leaveRequests,
         getShiftForDate,
         shiftTimeConfig,
+        storeConfig,
       });
 
       const otComp = buildApprovedCompOvertimeInMonth({
@@ -147,6 +150,7 @@ export default function AttendancePage() {
     punchRecords,
     compLeaveLedger,
     getCompLeaveBalance,
+    storeConfig,
   ]);
 
   const monthlyPunchData = useMemo(() => {

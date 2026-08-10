@@ -16,7 +16,7 @@ import { getOriginalShiftForLeaveDay } from "@/lib/schedule/leaveSchedule";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
 import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
 import type { StoreConfig } from "@/lib/store-config";
-import { isOffShiftCode, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
+import { isOffShiftCode, findCatalogShift, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 
 export type CanonicalLeaveRequest = {
   employeeId: string;
@@ -57,28 +57,45 @@ function monthBounds(year: number, month: number) {
   };
 }
 
-/** 由班別時段設定加總工時；無設定時退回 SHIFT_HOURS */
+function sumRangeHours(ranges: string[] | undefined): number {
+  if (!ranges?.length) return 0;
+  let minutes = 0;
+  for (const seg of ranges) {
+    if (seg === "休假" || !seg.includes("-")) continue;
+    const [start, end] = seg.split("-");
+    const [sh, sm] = start.trim().split(":").map(Number);
+    const [eh, em] = end.trim().split(":").map(Number);
+    minutes += eh * 60 + (em || 0) - (sh * 60 + (sm || 0));
+  }
+  return minutes > 0 ? roundCompLeaveHours(minutes / 60) : 0;
+}
+
+/** 由班別時段／目錄加總工時；無設定時退回 SHIFT_HOURS */
 export function getShiftWorkHours(
   shift: ScheduleShiftCode,
   shiftTimeConfig?: ShiftTimeConfig,
   storeConfig?: StoreConfig
 ): number {
   if (storeConfig ? isOffShiftCode(shift, storeConfig) : shift === "X") return 0;
+
+  // 集進階目錄：全日表定工時優先用 nominalHours（與範本一致，避免含休息的大段被加總成毛工時）
+  if (storeConfig?.features.customShiftCatalog) {
+    const cat = findCatalogShift(storeConfig, shift);
+    if (cat) {
+      if (cat.category === "off") return 0;
+      if (Number.isFinite(cat.nominalHours) && cat.nominalHours > 0) {
+        return roundCompLeaveHours(cat.nominalHours);
+      }
+    }
+  }
+
   const ranges =
     storeConfig && shiftTimeConfig
       ? resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig)
       : shiftTimeConfig?.[shift];
-  if (ranges?.length) {
-    let minutes = 0;
-    for (const seg of ranges) {
-      if (seg === "休假" || !seg.includes("-")) continue;
-      const [start, end] = seg.split("-");
-      const [sh, sm] = start.trim().split(":").map(Number);
-      const [eh, em] = end.trim().split(":").map(Number);
-      minutes += eh * 60 + (em || 0) - (sh * 60 + (sm || 0));
-    }
-    if (minutes > 0) return roundCompLeaveHours(minutes / 60);
-  }
+  const fromRanges = sumRangeHours(ranges);
+  if (fromRanges > 0) return fromRanges;
+
   // 後備：與預設時段對齊（E 為 5.5、A 為 9）
   const fallback: Record<string, number> = {
     A: 9,
