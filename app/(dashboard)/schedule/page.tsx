@@ -536,7 +536,7 @@ export default function SchedulePage() {
     const cellText = isFullDayLeave ? "假" : cellStyle.displayText;
 
     return (
-      <div className="p-1 relative">
+      <div className="p-1 relative overflow-visible">
         <div
           onClick={() => editable && startEditing(date, employeeId)}
           style={
@@ -548,7 +548,7 @@ export default function SchedulePage() {
                   borderColor: cellStyle.borderColor,
                 }
           }
-          className={`relative h-10 w-full min-w-[2.75rem] max-w-[4.5rem] mx-auto flex items-center justify-center overflow-hidden rounded font-medium border-2 ${isFullDayLeave ? "bg-violet-500 text-white border-violet-600" : ""} ${editable ? "cursor-pointer hover:opacity-80" : ""} ${isSun && !isFullDayLeave ? "bg-red-50" : ""} ${hasFixedShift ? "ring-2 ring-orange-400" : ""}`}
+          className={`relative z-0 hover:z-20 h-10 w-full min-w-[2.75rem] max-w-[4.5rem] mx-auto flex items-center justify-center overflow-visible rounded font-semibold border-2 ${isFullDayLeave ? "bg-violet-500 text-white border-violet-600" : ""} ${editable ? "cursor-pointer hover:opacity-80" : ""} ${isSun && !isFullDayLeave ? "bg-red-50" : ""} ${hasFixedShift ? "ring-2 ring-orange-400" : ""}`}
           title={
             isPartialLeave
               ? `半日請假：${shiftInfo.effectiveShiftDetails}`
@@ -556,16 +556,16 @@ export default function SchedulePage() {
           }
         >
           <span
-            className={`block max-w-full truncate text-center leading-tight ${
-              useCatalog || cellText.length > 2 ? "text-[10px] px-0.5" : "text-sm"
-            } ${editable ? "pr-2.5" : ""}`}
+            className={`whitespace-nowrap text-center text-sm leading-none ${
+              editable ? "pr-2.5" : ""
+            }`}
           >
             {cellText}
           </span>
           {editable && (
             <span
               aria-hidden
-              className="pointer-events-none absolute right-0.5 bottom-0.5 text-[8px] leading-none opacity-70"
+              className="pointer-events-none absolute right-0.5 bottom-0.5 text-[10px] leading-none opacity-70"
             >
               ✏️
             </span>
@@ -1019,7 +1019,7 @@ export default function SchedulePage() {
                     const isToday = dateStr === todayDateStr;
                     const isTyphoon = Boolean(typhoonDates[dateStr]);
                     return (
-                      <td key={day} className={`${isSunday(dateStr) ? 'bg-red-50/30' : ''} ${isTyphoon ? 'bg-cyan-50/70 ring-1 ring-inset ring-cyan-200' : ''} ${isToday ? "bg-red-50 border-x-4 border-red-500" : ""}`}>
+                      <td key={day} className={`overflow-visible ${isSunday(dateStr) ? 'bg-red-50/30' : ''} ${isTyphoon ? 'bg-cyan-50/70 ring-1 ring-inset ring-cyan-200' : ''} ${isToday ? "bg-red-50 border-x-4 border-red-500" : ""}`}>
                         <ShiftCell date={dateStr} employeeId={emp.id} shift={shift} />
                       </td>
                     );
@@ -1054,7 +1054,7 @@ export default function SchedulePage() {
                       color: style.textColor,
                       borderColor: style.borderColor,
                     }}
-                    className="min-w-[2.75rem] max-w-[4.5rem] h-8 px-1 flex items-center justify-center overflow-hidden rounded border-2 font-medium text-[10px] leading-tight truncate"
+                    className="min-w-[2.75rem] max-w-[4.5rem] h-8 px-1 flex items-center justify-center overflow-visible rounded border-2 font-semibold text-sm leading-none whitespace-nowrap"
                   >
                     {style.displayText}
                   </span>

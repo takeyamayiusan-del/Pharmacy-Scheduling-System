@@ -185,8 +185,17 @@ function drawScheduleSegment(
       ctx.strokeStyle = palette.border;
       ctx.strokeRect(x + 6, rowY + 6, dayColWidth - 12, rowHeight - 12);
       ctx.fillStyle = palette.text;
-      ctx.font = "bold 11px 'Microsoft JhengHei', sans-serif";
-      const displayText = palette.displayText;
+      // PDF 格寬有限：過長班名截短，畫面端允許超出格子
+      const rawText = palette.displayText;
+      ctx.font = "bold 13px 'Microsoft JhengHei', sans-serif";
+      let displayText = rawText;
+      const maxTextWidth = dayColWidth - 16;
+      while (displayText.length > 1 && ctx.measureText(displayText).width > maxTextWidth) {
+        displayText = displayText.slice(0, -1);
+      }
+      if (displayText !== rawText && displayText.length > 0) {
+        displayText = `${displayText.slice(0, Math.max(1, displayText.length - 1))}…`;
+      }
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
       ctx.fillText(displayText, x + dayColWidth / 2, rowY + rowHeight / 2);
