@@ -156,6 +156,21 @@ export default function StoreSettingsPage() {
     setMessage(null);
     try {
       const normalized = parseStoreConfig(draft, activeSiteId);
+      if (
+        normalized.features.customShiftCatalog &&
+        normalized.shiftCatalog.filter((s) => s.enabled).length === 0
+      ) {
+        throw new Error(
+          "進階班別目錄已啟用，請至少啟用一個班別，或先按「載入總店範本」"
+        );
+      }
+      for (const code of [
+        normalized.defaultWeekdayShift,
+        normalized.defaultSaturdayShift,
+      ]) {
+        const check = assertWritableShiftCode(code, normalized);
+        if (!check.ok) throw new Error(`預設班：${check.message}`);
+      }
       if (normalized.features.rotationEvening && normalized.rotationEvening.weekdays.length === 0) {
         throw new Error("輪值晚班至少需選擇一個星期");
       }

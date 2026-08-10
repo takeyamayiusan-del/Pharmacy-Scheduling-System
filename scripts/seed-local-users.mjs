@@ -116,8 +116,8 @@ function buildJijiStoreConfig() {
     },
     rotationEvening: {
       weekdays: [3],
-      onDutyShift: "A",
-      offDutyShift: "B",
+      onDutyShift: pick("晚班1", "晚班2", "白班5"),
+      offDutyShift: pick("白班5", "白班4", "白班1"),
       monthlyOffLimit: null,
       menuLabel: "禮三晚班",
     },
