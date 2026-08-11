@@ -42,12 +42,13 @@
 
 @layer base {
   html {
-    /* 手機略大；桌面再放大，避免粗體小字擠成一團 */
+    /* 手機維持剛好的字級；不要跟桌面一起放大 */
     font-size: 16.5px;
   }
-  @media (min-width: 768px) {
+  @media (min-width: 1024px) {
     html {
-      font-size: 18.5px;
+      /* 電腦端再放大，減少區塊看起來空、字偏小的感覺 */
+      font-size: 20px;
     }
   }
 
@@ -62,6 +63,13 @@
     @apply bg-background text-foreground antialiased font-sans;
     line-height: 1.65;
     letter-spacing: 0.015em;
+  }
+
+  @media (min-width: 1024px) {
+    body {
+      line-height: 1.7;
+      letter-spacing: 0.02em;
+    }
   }
 
   ::selection {
