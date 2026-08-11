@@ -39,6 +39,7 @@ export default function OvertimePage() {
     compLeaveLedger,
     getCompLeaveBalance,
     grantCompLeaveHours,
+    activeSiteId,
   } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
@@ -87,6 +88,7 @@ export default function OvertimePage() {
   const [filterYear, setFilterYear] = useState(initialPeriod.year);
   const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
   const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
   const staffEmployees = useMemo(
@@ -330,7 +332,12 @@ export default function OvertimePage() {
         </button>
       </div>
 
-      <HelpTip title="加班申請說明" hint="時段、加班費／補休" defaultOpen>
+      <HelpTip
+        title="加班申請說明"
+        hint="時段、加班費／補休"
+        defaultOpen
+        storageKey={`help:overtime-apply:${storageScope}`}
+      >
         <p>• 點「新申請」填寫加班日期與起迄時間，送出後由店長／老闆審核。</p>
         <p>• 可依規則選擇「加班費」或「補休」；部分時段可能僅能選其中一種。</p>
         <p>• 下班逾時時，打卡頁也可能引導你快速送出加班申請。</p>

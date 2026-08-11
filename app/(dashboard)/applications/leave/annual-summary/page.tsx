@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useApp } from '@/lib/context/AppContext';
 import { Button } from '@/components/ui/button';
+import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { useRouter } from 'next/navigation';
 import { Settings, Plus, Trash2, Save } from 'lucide-react';
 
@@ -13,7 +14,7 @@ export default function AnnualLeaveSummaryPage() {
     annualLeaveConfigs, setAnnualLeaveConfigs, annualLeaveAdjustments,
     loadAnnualLeaveConfigs, loadAnnualLeaveAdjustments,
     updateAnnualLeaveConfig, addAnnualLeaveAdjustment, deleteAnnualLeaveAdjustment,
-    getTotalAdjustmentDays
+    getTotalAdjustmentDays, activeSiteId
   } = useApp();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showConfigPanel, setShowConfigPanel] = useState(false);
@@ -21,12 +22,31 @@ export default function AnnualLeaveSummaryPage() {
   const [adjustmentDays, setAdjustmentDays] = useState(0);
   const [adjustmentReason, setAdjustmentReason] = useState('');
   const router = useRouter();
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
   const isManager = currentUser?.role === 'owner' || currentUser?.role === 'manager';
 
   useEffect(() => {
     loadAnnualLeaveConfigs(selectedYear);
   }, [selectedYear, loadAnnualLeaveConfigs]);
+
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem(`annual-leave-config-open:${storageScope}`);
+      if (saved === "1") setShowConfigPanel(true);
+      if (saved === "0") setShowConfigPanel(false);
+    } catch {
+      // ignore storage read errors
+    }
+  }, [storageScope]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(`annual-leave-config-open:${storageScope}`, showConfigPanel ? "1" : "0");
+    } catch {
+      // ignore storage write errors
+    }
+  }, [showConfigPanel, storageScope]);
 
   useEffect(() => {
     if (isManager && displayEmployees.length > 0) {
@@ -90,8 +110,19 @@ export default function AnnualLeaveSummaryPage() {
       </div>
 
       {/* 特休規則設定面板（僅管理者可見） */}
-      {isManager && showConfigPanel && (
-        <div className="app-panel p-6">
+      {isManager && (
+        <CollapsibleCard
+          className="app-panel p-6"
+          title={
+            <span className="inline-flex items-center gap-2">
+              <Settings className="h-5 w-5" />
+              特休規則設定
+            </span>
+          }
+          subtitle={`${selectedYear} 年度特休規則與配額`}
+          open={showConfigPanel}
+          onToggle={() => setShowConfigPanel((v) => !v)}
+        >
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Settings className="h-5 w-5" />
             {selectedYear} 年度特休規則設定
@@ -153,7 +184,7 @@ export default function AnnualLeaveSummaryPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </CollapsibleCard>
       )}
 
       {/* 員工特休總表 */}

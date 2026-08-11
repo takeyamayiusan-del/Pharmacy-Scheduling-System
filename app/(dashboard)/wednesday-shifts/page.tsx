@@ -22,6 +22,7 @@ export default function WednesdayShiftsPage() {
     toggleWednesdayOff,
     isWednesdayOff,
     storeConfig,
+    activeSiteId,
   } = useApp();
 
   const [currentDate, setCurrentDate] = useState(() => {
@@ -35,6 +36,7 @@ export default function WednesdayShiftsPage() {
   const canManage = currentUser?.role === "owner" || currentUser?.role === "manager";
   const featureOn = storeConfig.features.rotationEvening;
   const menuLabel = storeConfig.rotationEvening.menuLabel;
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
   const weekdaysLabel = formatWeekdaysLabel(storeConfig.rotationEvening.weekdays);
 
   const rotationEmployees = employees.filter((e) => e.isWednesdayRotation);
@@ -143,7 +145,11 @@ export default function WednesdayShiftsPage() {
         </button>
       </div>
 
-      <HelpTip title="操作說明" hint={`${menuLabel}輪值規則`}>
+      <HelpTip
+        title="操作說明"
+        hint={`${menuLabel}輪值規則`}
+        storageKey={`help:wednesday-shifts:${storageScope}`}
+      >
         <p>
           輪值日：{weekdaysLabel}。每月可選「不輪晚班」上限：{offLimit} 天
           {storeConfig.rotationEvening.monthlyOffLimit == null

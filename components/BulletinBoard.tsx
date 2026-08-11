@@ -75,6 +75,7 @@ export default function BulletinBoard() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [readBulletins, setReadBulletins] = useState<Set<string>>(new Set());
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
   useEffect(() => {
     const readSet = new Set<string>();
@@ -86,20 +87,21 @@ export default function BulletinBoard() {
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem("bulletin-collapsed");
+      const saved = window.localStorage.getItem(`bulletin-collapsed:${storageScope}`);
       if (saved === "1") setIsCollapsed(true);
+      if (saved === "0") setIsCollapsed(false);
     } catch {
       // ignore storage read errors in restricted environments
     }
-  }, []);
+  }, [storageScope]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("bulletin-collapsed", isCollapsed ? "1" : "0");
+      window.localStorage.setItem(`bulletin-collapsed:${storageScope}`, isCollapsed ? "1" : "0");
     } catch {
       // ignore storage write errors in restricted environments
     }
-  }, [isCollapsed]);
+  }, [isCollapsed, storageScope]);
 
   const resetForm = () => {
     setFormData({ ...DEFAULT_FORM, type: defaultType });

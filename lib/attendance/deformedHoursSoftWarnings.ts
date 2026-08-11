@@ -13,6 +13,11 @@ import {
 import { isOffShiftCode } from "@/lib/shift-catalog/resolve";
 import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
 import type { StoreConfig } from "@/lib/store-config";
+import {
+  severityForRule,
+  type ComplianceRuleCode,
+  type ComplianceSeverity,
+} from "@/lib/compliance/complianceSeverity";
 
 export type SoftLimitDefaults = {
   /** 單日表定（正常）工時軟上限（小時） */
@@ -143,6 +148,8 @@ function enumerateDates(start: string, end: string): string[] {
 export type DeformedHoursWarning = {
   message: string;
   kind: "cycle" | "daily" | "regular_leave";
+  ruleCode: ComplianceRuleCode;
+  severity: ComplianceSeverity;
 };
 
 /**
@@ -199,6 +206,8 @@ export function buildDeformedHoursSoftWarnings(options: {
       if (hours > cycle.cycleHoursCap) {
         warnings.push({
           kind: "cycle",
+          ruleCode: "DEFORMED_CYCLE_HOURS",
+          severity: severityForRule("DEFORMED_CYCLE_HOURS"),
           message: `${emp.name}：${meta.label}週期 ${cycle.start}～${cycle.end} 表定正常工時約 ${hours}h，超過 ${cycle.cycleHoursCap}h（${meta.legalRef}，僅提醒）`,
         });
       }
@@ -214,6 +223,8 @@ export function buildDeformedHoursSoftWarnings(options: {
       if (dayHours > soft.dailyHoursCap) {
         warnings.push({
           kind: "daily",
+          ruleCode: "DEFORMED_DAILY_HOURS",
+          severity: severityForRule("DEFORMED_DAILY_HOURS"),
           message: `${emp.name}：${date} 表定約 ${dayHours}h，超過${meta.label}單日正常工時上限 ${soft.dailyHoursCap}h（僅提醒）`,
         });
       }
@@ -235,6 +246,8 @@ export function buildDeformedHoursSoftWarnings(options: {
         ) {
           warnings.push({
             kind: "regular_leave",
+            ruleCode: "L36_REGULAR_REST",
+            severity: severityForRule("L36_REGULAR_REST"),
             message: `${emp.name}：${streakStart}～${date} 連續 7 日無休，可能缺少例假（勞基法第36條每七日一例假，僅提醒）`,
           });
         }
