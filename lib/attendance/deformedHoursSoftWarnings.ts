@@ -1,7 +1,8 @@
 /**
- * 變形工時軟性提醒（只警告、不阻擋儲存）。
- * - 週期工時上限：兩周 80h／八周 320h
- * - 日工時上限、連續上班天數
+ * 變形工時軟性合規提醒（只警告、不阻擋儲存）。
+ * - 週期正常工時：兩周 80h／八周 320h
+ * - 單日正常工時：兩周最多 10h／八周最多 8h
+ * - 例假：每七日至少一日休假（勞基法第36條）
  */
 
 import { getShiftWorkHours } from "@/lib/attendance/canonicalMonthHours";
@@ -14,20 +15,20 @@ import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContex
 import type { StoreConfig } from "@/lib/store-config";
 
 export type SoftLimitDefaults = {
-  /** 單日表定工時軟上限（小時） */
+  /** 單日表定（正常）工時軟上限（小時） */
   dailyHoursCap: number;
-  /** 連續上班天數軟上限（不含休假日） */
+  /** 連續上班天數軟上限（不含休假）；超過即可能違反每七日一例假 */
   consecutiveWorkDaysCap: number;
 };
 
-/** 兩周／八周制度下的日工時、連班預設軟上限 */
+/** 依勞基法變形工時制度給預設軟上限 */
 export function defaultSoftLimitsForRegime(
   regime: WorkHoursRegime
 ): SoftLimitDefaults {
-  // 兩周／八周變形：正常工時單日多以 10 小時為常見上限；連班以 6 日提醒（配合每七日一例假）
-  void regime;
+  const meta = workHoursRegimeMeta(regime);
   return {
-    dailyHoursCap: 10,
+    dailyHoursCap: meta.dailyNormalHoursCap,
+    // 連上 7 天無休 → 該七日無例假
     consecutiveWorkDaysCap: 6,
   };
 }
@@ -55,14 +56,22 @@ function daysBetween(a: string, b: string): number {
   return Math.round(ms / 86400000);
 }
 
-/** 預設週期起算日（星期一），兩店共用；可在店家設定改 */
+/** 預設週期起算日（星期一）；請改成與核備約定一致 */
 export const DEFAULT_WORK_HOURS_CYCLE_ANCHOR = "2026-01-05";
 
-export function normalizeCycleAnchor(raw: unknown, fallback = DEFAULT_WORK_HOURS_CYCLE_ANCHOR): string {
+export function normalizeCycleAnchor(
+  raw: unknown,
+  fallback = DEFAULT_WORK_HOURS_CYCLE_ANCHOR
+): string {
   if (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) {
     return raw.trim();
   }
   return fallback;
+}
+
+export function normalizeAgreementNote(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  return raw.trim().slice(0, 200);
 }
 
 export type CycleBounds = {
@@ -132,15 +141,14 @@ function enumerateDates(start: string, end: string): string[] {
 }
 
 export type DeformedHoursWarning = {
-  /** 顯示用短訊 */
   message: string;
-  kind: "cycle" | "daily" | "consecutive";
+  kind: "cycle" | "daily" | "regular_leave";
 };
 
 /**
- * 建立變形工時軟性提醒（不阻擋）。
- * 只檢查「完全落在當月內」的週期，以及當月內的日工時／連班。
- * （跨月週期不在本月提醒，避免把上月／下月班表算進來）
+ * 建立變形工時軟性合規提醒（不阻擋）。
+ * - 週期：僅檢查完全落在當月內的週期
+ * - 單日／例假：以當月為主；例假檢查會往前多看 6 天，避免月初連班漏判
  */
 export function buildDeformedHoursSoftWarnings(options: {
   year: number;
@@ -171,7 +179,10 @@ export function buildDeformedHoursSoftWarnings(options: {
   const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
   const monthDates = enumerateDates(monthStart, monthEnd);
 
-  // 僅當月完整涵蓋的週期（起迄都在本月）
+  // 例假檢查往前多看 6 天（跨月連班）
+  const leaveScanStart = formatYmd(addDays(parseYmd(monthStart), -6));
+  const leaveScanDates = enumerateDates(leaveScanStart, monthEnd);
+
   const cyclesInMonth = cyclesOverlappingMonth(year, month, regime, anchor).filter(
     (c) => c.start >= monthStart && c.end <= monthEnd
   );
@@ -188,35 +199,44 @@ export function buildDeformedHoursSoftWarnings(options: {
       if (hours > cycle.cycleHoursCap) {
         warnings.push({
           kind: "cycle",
-          message: `${emp.name}：${meta.label}週期 ${cycle.start}～${cycle.end} 班表約 ${hours}h，超過上限 ${cycle.cycleHoursCap}h（僅提醒）`,
+          message: `${emp.name}：${meta.label}週期 ${cycle.start}～${cycle.end} 表定正常工時約 ${hours}h，超過 ${cycle.cycleHoursCap}h（${meta.legalRef}，僅提醒）`,
         });
       }
     }
   }
 
   for (const emp of staff) {
+    // 單日正常工時
+    for (const date of monthDates) {
+      const shift = getShiftForDate(date, emp.id);
+      if (isOffShiftCode(shift, storeConfig)) continue;
+      const dayHours = getShiftWorkHours(shift, shiftTimeConfig, storeConfig);
+      if (dayHours > soft.dailyHoursCap) {
+        warnings.push({
+          kind: "daily",
+          message: `${emp.name}：${date} 表定約 ${dayHours}h，超過${meta.label}單日正常工時上限 ${soft.dailyHoursCap}h（僅提醒）`,
+        });
+      }
+    }
+
+    // 例假：任意連續 7 日至少 1 日休假；只在「違規窗結束日落在本月」時提醒一次
     let streak = 0;
     let streakStart: string | null = null;
-    for (const date of monthDates) {
+    for (const date of leaveScanDates) {
       const shift = getShiftForDate(date, emp.id);
       const off = isOffShiftCode(shift, storeConfig);
       if (!off) {
-        const dayHours = getShiftWorkHours(shift, shiftTimeConfig, storeConfig);
-        if (dayHours > soft.dailyHoursCap) {
-          warnings.push({
-            kind: "daily",
-            message: `${emp.name}：${date} 表定約 ${dayHours}h，超過單日軟上限 ${soft.dailyHoursCap}h（僅提醒）`,
-          });
-        }
         if (streak === 0) streakStart = date;
         streak += 1;
-        if (streak > soft.consecutiveWorkDaysCap) {
-          if (streak === soft.consecutiveWorkDaysCap + 1) {
-            warnings.push({
-              kind: "consecutive",
-              message: `${emp.name}：自 ${streakStart} 起連續上班超過 ${soft.consecutiveWorkDaysCap} 天（${date} 仍上班，僅提醒）`,
-            });
-          }
+        if (
+          streak === soft.consecutiveWorkDaysCap + 1 &&
+          date >= monthStart &&
+          streakStart
+        ) {
+          warnings.push({
+            kind: "regular_leave",
+            message: `${emp.name}：${streakStart}～${date} 連續 7 日無休，可能缺少例假（勞基法第36條每七日一例假，僅提醒）`,
+          });
         }
       } else {
         streak = 0;

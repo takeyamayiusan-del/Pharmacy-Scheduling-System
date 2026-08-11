@@ -790,10 +790,11 @@ export default function StoreSettingsPage() {
       </section>
 
       <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
-        <h2 className="font-semibold text-gray-900">變形工時制度</h2>
+        <h2 className="font-semibold text-gray-900">變形工時制度（勞基法）</h2>
         <p className="text-sm text-gray-500">
-          竹山預設兩周、集集預設八周。班表頁會依週期加總表定工時，並檢查單日／連班，
-          <span className="font-medium text-gray-700">僅跳出提醒、不阻擋存檔</span>。
+          依勞基法兩周／八周變形工時標記本店制度。班表頁檢查週期正常工時、單日上限與例假（每七日一例假），
+          <span className="font-medium text-gray-700">僅提醒、不阻擋存檔</span>
+          ；不取代正式加班申請與勞檢判定。
         </p>
         <label className="block text-sm">
           <span className="text-gray-700">本店制度</span>
@@ -809,13 +810,13 @@ export default function StoreSettingsPage() {
           >
             {WORK_HOURS_REGIME_OPTIONS.map((opt) => (
               <option key={opt.value} value={opt.value}>
-                {opt.label}（{opt.cycleWeeks} 周／上限 {opt.cycleHoursCap} 小時）
+                {opt.label}（{opt.cycleWeeks} 周／{opt.cycleHoursCap}h／單日{opt.dailyNormalHoursCap}h）
               </option>
             ))}
           </select>
         </label>
         <label className="block text-sm">
-          <span className="text-gray-700">週期起算日</span>
+          <span className="text-gray-700">週期起算日（核備／約定）</span>
           <input
             type="date"
             value={draft.workHoursCycleAnchor}
@@ -828,10 +829,25 @@ export default function StoreSettingsPage() {
             className="mt-1 w-full border rounded-lg px-3 py-2"
           />
           <span className="mt-1 block text-xs text-gray-500">
-            自此日對齊兩周／八周區間，建議選星期一。軟上限：單日 10h、連續上班 6 天。
+            非法條規定的「每月1日」。請填與勞檢／核備文件相同的起算日（常見為某一星期一），系統自此對齊兩周或八周。
           </span>
         </label>
+        <label className="block text-sm">
+          <span className="text-gray-700">核備文號／備註（選填）</span>
+          <input
+            value={draft.workHoursAgreementNote}
+            onChange={(e) =>
+              setDraft((p) => ({
+                ...p,
+                workHoursAgreementNote: e.target.value.slice(0, 200),
+              }))
+            }
+            className="mt-1 w-full border rounded-lg px-3 py-2"
+            placeholder="例如：勞資會議日期、核備文號"
+          />
+        </label>
         <p className="text-sm text-gray-600">
+          {workHoursRegimeMeta(draft.workHoursRegime).legalRef}：
           {workHoursRegimeMeta(draft.workHoursRegime).summary}
         </p>
       </section>

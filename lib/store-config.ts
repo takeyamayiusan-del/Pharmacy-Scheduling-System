@@ -19,6 +19,7 @@ import {
 } from "@/lib/attendance/workHoursRegime";
 import {
   DEFAULT_WORK_HOURS_CYCLE_ANCHOR,
+  normalizeAgreementNote,
   normalizeCycleAnchor,
 } from "@/lib/attendance/deformedHoursSoftWarnings";
 
@@ -107,9 +108,11 @@ export type StoreConfig = {
   workHoursRegime: WorkHoursRegime;
   /**
    * 變形工時週期起算日（YYYY-MM-DD）。
-   * 自此日對齊兩周／八周區間；可改，建議選星期一。
+   * 自此日對齊兩周／八周區間；須與核備／勞資約定一致（非法條固定每月1日）。
    */
   workHoursCycleAnchor: string;
+  /** 核備文號或約定備註（選填，方便對外說明） */
+  workHoursAgreementNote: string;
 };
 
 export const STORE_CONFIG_SETTING_ID = "store_config";
@@ -171,6 +174,7 @@ export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
     shiftCatalog: isZhushan ? buildZhushanLegacyCatalog() : [],
     workHoursRegime: defaultWorkHoursRegimeForSite(siteId),
     workHoursCycleAnchor: DEFAULT_WORK_HOURS_CYCLE_ANCHOR,
+    workHoursAgreementNote: "",
   };
 }
 
@@ -399,6 +403,9 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
     workHoursCycleAnchor: normalizeCycleAnchor(
       obj.workHoursCycleAnchor,
       defaults.workHoursCycleAnchor
+    ),
+    workHoursAgreementNote: normalizeAgreementNote(
+      obj.workHoursAgreementNote ?? defaults.workHoursAgreementNote
     ),
   };
 }
