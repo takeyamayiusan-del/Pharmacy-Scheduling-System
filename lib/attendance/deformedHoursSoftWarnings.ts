@@ -139,7 +139,8 @@ export type DeformedHoursWarning = {
 
 /**
  * 建立變形工時軟性提醒（不阻擋）。
- * 只檢查與當月重疊的週期，以及當月內的日工時／連班。
+ * 只檢查「完全落在當月內」的週期，以及當月內的日工時／連班。
+ * （跨月週期不在本月提醒，避免把上月／下月班表算進來）
  */
 export function buildDeformedHoursSoftWarnings(options: {
   year: number;
@@ -165,8 +166,17 @@ export function buildDeformedHoursSoftWarnings(options: {
   const staff = employees.filter((e) => e.role !== "owner");
   const warnings: DeformedHoursWarning[] = [];
 
-  const cycles = cyclesOverlappingMonth(year, month, regime, anchor);
-  for (const cycle of cycles) {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`;
+  const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
+  const monthDates = enumerateDates(monthStart, monthEnd);
+
+  // 僅當月完整涵蓋的週期（起迄都在本月）
+  const cyclesInMonth = cyclesOverlappingMonth(year, month, regime, anchor).filter(
+    (c) => c.start >= monthStart && c.end <= monthEnd
+  );
+
+  for (const cycle of cyclesInMonth) {
     for (const emp of staff) {
       let hours = 0;
       for (const date of enumerateDates(cycle.start, cycle.end)) {
@@ -183,12 +193,6 @@ export function buildDeformedHoursSoftWarnings(options: {
       }
     }
   }
-
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const monthDates = enumerateDates(
-    `${year}-${String(month).padStart(2, "0")}-01`,
-    `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`
-  );
 
   for (const emp of staff) {
     let streak = 0;
@@ -207,7 +211,6 @@ export function buildDeformedHoursSoftWarnings(options: {
         if (streak === 0) streakStart = date;
         streak += 1;
         if (streak > soft.consecutiveWorkDaysCap) {
-          // 只在剛超過時報一次，避免連發
           if (streak === soft.consecutiveWorkDaysCap + 1) {
             warnings.push({
               kind: "consecutive",

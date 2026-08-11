@@ -121,6 +121,7 @@ export default function SchedulePage() {
   const [showOriginalShift, setShowOriginalShift] = useState(false); // 新增：是否顯示原始班表
   const [activeLegendShift, setActiveLegendShift] = useState<ScheduleShiftCode | null>(null);
   const [lockingMonth, setLockingMonth] = useState(false);
+  const [scheduleAlertsOpen, setScheduleAlertsOpen] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [typhoonDates, setTyphoonDates] = useState<Record<string, { title: string; periodLabel: string }>>({});
   const [typhoonReloadKey, setTyphoonReloadKey] = useState(0);
