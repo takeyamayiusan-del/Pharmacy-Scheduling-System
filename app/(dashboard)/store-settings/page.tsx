@@ -330,7 +330,7 @@ export default function StoreSettingsPage() {
         </div>
       )}
 
-      <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+      <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">基本資料</h2>
         <label className="block text-sm">
           <span className="text-gray-700">店名</span>
@@ -343,7 +343,7 @@ export default function StoreSettingsPage() {
       </section>
 
       {activeSiteId === "jiji" && (
-        <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+        <section className="app-panel p-6 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <h2 className="font-semibold text-gray-900">進階班別目錄</h2>
@@ -676,7 +676,7 @@ export default function StoreSettingsPage() {
       )}
 
       {!useCatalog && (
-        <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+        <section className="app-panel p-6 space-y-4">
           <h2 className="font-semibold text-gray-900">班別清單</h2>
           <p className="text-sm text-gray-500">
             請以名稱辨識班別（全天／白班／上午…）。後方代碼 A–E 僅供系統對應，可保持不動。
@@ -724,7 +724,7 @@ export default function StoreSettingsPage() {
         </section>
       )}
 
-      <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+      <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">預設班</h2>
         <p className="text-sm text-gray-500">
           {useCatalog
@@ -789,7 +789,7 @@ export default function StoreSettingsPage() {
         </div>
       </section>
 
-      <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+      <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">變形工時制度（勞基法）</h2>
         <p className="text-sm text-gray-500">
           依勞基法兩周／八周變形工時標記本店制度。班表頁檢查週期正常工時、單日上限與例假（每七日一例假），
@@ -852,7 +852,7 @@ export default function StoreSettingsPage() {
         </p>
       </section>
 
-      <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+      <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">功能開關</h2>
         <label className="flex items-start gap-3 text-sm">
           <input
@@ -896,7 +896,7 @@ export default function StoreSettingsPage() {
       </section>
 
       <section
-        className={`bg-white rounded-xl shadow-sm border p-6 space-y-4 ${
+        className={`app-panel p-6 space-y-4 ${
           draft.features.rotationEvening ? "" : "opacity-60"
         }`}
       >

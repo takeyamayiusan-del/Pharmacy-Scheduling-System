@@ -847,7 +847,7 @@ export default function PayrollPage() {
       {isLoading ? <div className="text-center py-12 text-gray-500">載入中...</div> : (
         <>
           {/* ── 費率設定 ── */}
-          <div className="bg-white rounded-xl shadow-sm border p-6">
+          <div className="app-panel p-6">
             <h2 className="font-semibold text-gray-900 mb-4">計算費率設定</h2>
             <p className="text-sm text-gray-600 mb-3">
               費率可選「小時公式」或「分鐘公式」。請假／加班以小時計算；遲到以分鐘計算；若公式單位不同會自動換算。
@@ -994,7 +994,7 @@ export default function PayrollPage() {
           </div>
 
           {/* ── 員工薪資詳細設定 ── */}
-          <div className="bg-white rounded-xl shadow-sm border p-6">
+          <div className="app-panel p-6">
             <h2 className="font-semibold text-gray-900 mb-1">員工薪資設定</h2>
             <p className="text-xs text-gray-500 mb-4">
               合約項目：底薪＋職位加級（應給）。固定津貼／獎金可新增（全勤、包班等）；全勤依請假規則試算，屬工資並計入加班基數。
@@ -1192,7 +1192,7 @@ export default function PayrollPage() {
           </div>
 
           {/* ── 本月異動項目 ── */}
-          <div className="bg-white rounded-xl shadow-sm border p-6">
+          <div className="app-panel p-6">
             <h2 className="font-semibold text-gray-900 mb-4">本月異動項目（民國{toROC(year)}年{month}月）</h2>
             {adjustments.length > 0 && (
               <div className="space-y-2 mb-4">
@@ -1297,7 +1297,7 @@ export default function PayrollPage() {
           </div>
 
           {/* ── 薪資試算結果 ── */}
-          <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div className="app-panel overflow-hidden">
             <div className="p-6 border-b flex items-center justify-between flex-wrap gap-3">
               <div>
                 <h2 className="font-semibold text-gray-900">

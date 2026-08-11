@@ -72,12 +72,12 @@ export function MonthFilterBar({
   const years = Array.from({ length: 6 }, (_, i) => currentYear - 2 + i);
 
   return (
-    <div className={`flex flex-wrap items-center gap-2 ${className}`}>
-      <span className="text-sm text-gray-600">{label}</span>
+    <div className={`flex flex-wrap items-center gap-2.5 ${className}`}>
+      <span className="text-sm text-slate-600">{label}</span>
       <select
         value={year}
         onChange={(e) => onYearChange(Number(e.target.value))}
-        className="border rounded-lg px-3 py-1.5 text-sm"
+        className="border border-slate-200 rounded-xl px-3 py-1.5 text-sm bg-white/90"
         aria-label="年份"
       >
         {years.map((y) => (
@@ -89,7 +89,7 @@ export function MonthFilterBar({
       <select
         value={month}
         onChange={(e) => onMonthChange(Number(e.target.value))}
-        className="border rounded-lg px-3 py-1.5 text-sm"
+        className="border border-slate-200 rounded-xl px-3 py-1.5 text-sm bg-white/90"
         aria-label="月份"
       >
         {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
@@ -100,13 +100,13 @@ export function MonthFilterBar({
       </select>
       {employeeFilter && (
         <>
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-slate-600">
             {employeeFilter.label ?? "篩選員工"}
           </span>
           <select
             value={employeeFilter.value}
             onChange={(e) => employeeFilter.onChange(e.target.value)}
-            className="border rounded-lg px-3 py-1.5 text-sm min-w-[8rem]"
+            className="border border-slate-200 rounded-xl px-3 py-1.5 text-sm bg-white/90 min-w-[8rem]"
             aria-label="篩選員工"
           >
             <option value="">全部員工</option>
@@ -119,10 +119,10 @@ export function MonthFilterBar({
         </>
       )}
       {typeof count === "number" && (
-        <span className="text-xs text-gray-500">共 {count} 筆</span>
+        <span className="text-xs text-slate-500">共 {count} 筆</span>
       )}
       {summaryText && (
-        <span className="text-xs font-medium text-blue-700 bg-blue-50 border border-blue-100 rounded-lg px-2 py-1">
+        <span className="text-xs font-medium text-sky-800 bg-sky-50 border border-sky-100 rounded-full px-2.5 py-1">
           {summaryText}
         </span>
       )}

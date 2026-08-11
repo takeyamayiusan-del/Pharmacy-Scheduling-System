@@ -753,7 +753,7 @@ export default function SchedulePage() {
 
       {showExportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <h3 className="text-lg font-bold text-gray-900 mb-2">匯出班表 PDF</h3>
             <p className="text-sm text-gray-600 mb-4">請選擇版面。直式為 A4 直向，較適合列印；橫式維持原本寬版檢視。</p>
             <div className="flex flex-col gap-3">

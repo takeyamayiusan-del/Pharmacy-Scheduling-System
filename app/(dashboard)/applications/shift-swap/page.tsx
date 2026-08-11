@@ -175,7 +175,7 @@ export default function ShiftSwapPage() {
       )}
 
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-panel p-6">
           <h3 className="font-medium text-gray-900 mb-4">新換班申請</h3>
           <form onSubmit={handleSubmit} className="space-y-4 max-w-lg">
             <div className="grid grid-cols-2 gap-4">
@@ -225,7 +225,7 @@ export default function ShiftSwapPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="app-panel overflow-hidden">
         <div className="p-4 border-b bg-gray-50 flex flex-wrap items-center justify-between gap-3">
           <h3 className="font-medium text-gray-900">換班申請記錄</h3>
           <MonthFilterBar
@@ -336,7 +336,7 @@ export default function ShiftSwapPage() {
 
       {rejectModal && (
         <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl p-6 w-full max-w-sm shadow-xl">
+          <div className="app-panel p-6 w-full max-w-sm shadow-xl">
             <h3 className="font-semibold text-gray-900 mb-3">填寫拒絕原因</h3>
             <textarea value={rejectModal.reason}
               onChange={e => setRejectModal({ ...rejectModal, reason: e.target.value })}

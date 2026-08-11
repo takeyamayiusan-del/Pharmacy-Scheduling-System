@@ -69,7 +69,7 @@ export function MonthlyStatsTable() {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border">
+    <div className="app-panel">
       <div className="p-4 border-b flex justify-between items-center">
         <div className="flex items-center gap-4">
           <button onClick={prevMonth} className="p-2 hover:bg-gray-100 rounded-lg">

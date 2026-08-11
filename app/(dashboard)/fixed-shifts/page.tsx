@@ -211,7 +211,7 @@ export default function FixedShiftsPage() {
       </div>
 
       {/* ── 特殊規則設定（依店家功能開關動態欄位） ── */}
-      <div className="bg-white rounded-xl shadow-sm border p-6">
+      <div className="app-panel p-6">
         <h3 className="font-semibold text-gray-900 mb-1">特殊排班規則</h3>
         <p className="text-sm text-gray-500 mb-4">
           規則綁定員工身份，換人後只要重新設定即可。欄位依「店家設定」功能開關顯示。
@@ -289,7 +289,7 @@ export default function FixedShiftsPage() {
 
       {/* ── 班別時段設定（竹山共用 A–E；集集改走店家設定目錄） ── */}
       {canEditSharedShiftMeta ? (
-      <div className="bg-white rounded-xl shadow-sm border p-6">
+      <div className="app-panel p-6">
         <h3 className="font-medium text-gray-900 mb-4">班別時段設定（可客製）</h3>
         <div className="space-y-3">
           {legacyShiftOptions.map((shift) => (
@@ -337,7 +337,7 @@ export default function FixedShiftsPage() {
       )}
 
       {canEditSharedShiftMeta && (
-      <div className="bg-white rounded-xl shadow-sm border p-6">
+      <div className="app-panel p-6">
         <h3 className="font-medium text-gray-900 mb-4">班別顯示設定（文字 / 顏色）</h3>
         <div className="space-y-3">
           {legacyShiftOptions.map((shift) => (
@@ -426,7 +426,7 @@ export default function FixedShiftsPage() {
       </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border p-6">
+      <div className="app-panel p-6">
         <h3 className="font-medium text-gray-900 mb-4">新增固定班表</h3>
         <div className="flex flex-wrap gap-3 items-center">
           <select
@@ -473,7 +473,7 @@ export default function FixedShiftsPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border p-6">
+      <div className="app-panel p-6">
         <div>
           <h3 className="font-medium text-gray-900 mb-4">已設定的固定班表</h3>
           {siteFixedEntries.length === 0 ? (

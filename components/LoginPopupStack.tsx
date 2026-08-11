@@ -137,7 +137,7 @@ export default function LoginPopupStack() {
   return (
     <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm">
       {current.kind === "bulletin" && (
-        <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full relative">
+        <div className="app-panel shadow-2xl p-6 max-w-sm w-full relative">
           <button
             type="button"
             onClick={closeSessionOnly}
@@ -200,7 +200,7 @@ export default function LoginPopupStack() {
       )}
 
       {current.kind === "payroll" && (
-        <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full relative">
+        <div className="app-panel shadow-2xl p-6 max-w-sm w-full relative">
           <button
             type="button"
             onClick={closeSessionOnly}
@@ -247,7 +247,7 @@ export default function LoginPopupStack() {
       )}
 
       {current.kind === "leave_reminder" && (
-        <div className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full relative">
+        <div className="app-panel shadow-2xl p-6 max-w-sm w-full relative">
           <button
             type="button"
             onClick={closeSessionOnly}

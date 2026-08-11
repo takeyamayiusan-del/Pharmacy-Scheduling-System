@@ -73,7 +73,7 @@ export function TardinessTable() {
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border">
+    <div className="app-panel">
       <div className="p-4 border-b flex justify-between items-center">
         <h2 className="text-xl font-bold text-gray-900">遲到紀錄</h2>
         <Button onClick={() => setShowForm(!showForm)}>
