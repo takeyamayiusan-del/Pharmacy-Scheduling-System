@@ -84,6 +84,23 @@ export default function BulletinBoard() {
     setReadBulletins(readSet);
   }, [bulletinItems, isBulletinRead]);
 
+  useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("bulletin-collapsed");
+      if (saved === "1") setIsCollapsed(true);
+    } catch {
+      // ignore storage read errors in restricted environments
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("bulletin-collapsed", isCollapsed ? "1" : "0");
+    } catch {
+      // ignore storage write errors in restricted environments
+    }
+  }, [isCollapsed]);
+
   const resetForm = () => {
     setFormData({ ...DEFAULT_FORM, type: defaultType });
   };
