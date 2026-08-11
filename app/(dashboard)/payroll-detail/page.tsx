@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { DollarSign, Download, Calendar, CheckCircle, Clock, AlertCircle, FileSpreadsheet } from "lucide-react";
 import { exportPayslipPdf } from "@/lib/payroll/exportPayslipPdf";
 import { exportPersonalPayslipExcel } from "@/lib/payroll/exportPersonalPayslipExcel";
-import { getDefaultPayrollPeriod } from "@/lib/payroll/monthlyHours";
+import { computeMonthlyAttendanceHours, getDefaultPayrollPeriod } from "@/lib/payroll/monthlyHours";
 
 type SalaryMeta = {
   position: string;
@@ -44,7 +44,18 @@ function mapRecord(r: Record<string, unknown>): PayrollRecord {
 }
 
 export default function PayrollDetailPage() {
-  const { currentUser, payrollRecords, setPayrollRecords } = useApp();
+  const {
+    currentUser,
+    payrollRecords,
+    setPayrollRecords,
+    overtimeRequests,
+    leaveRequests,
+    tardinessRecords,
+    getShiftForDate,
+    getHolidayInfo,
+    shiftTimeConfig,
+    storeConfig,
+  } = useApp();
   const supabase = createClient();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -161,6 +172,66 @@ export default function PayrollDetailPage() {
     const rawBonus = Number(r.bonusTotal ?? 0);
     const otherBonus = Math.max(0, rawBonus - fixed);
     return { grade, fixed, fa, otherBonus };
+  };
+
+  const buildFormulaMeta = (record: PayrollRecord) => {
+    if (!currentUser) {
+      return {
+        overtimeHours: 0,
+        leaveDeductionHours: 0,
+        tardinessMinutes: 0,
+        leaveTypes: [] as string[],
+      };
+    }
+    const monthStart = `${record.year}-${String(record.month).padStart(2, "0")}-01`;
+    const monthEnd = `${record.year}-${String(record.month).padStart(2, "0")}-${String(
+      new Date(record.year, record.month, 0).getDate()
+    ).padStart(2, "0")}`;
+
+    const attendance = computeMonthlyAttendanceHours({
+      employeeId: currentUser.id,
+      year: record.year,
+      month: record.month,
+      getShiftForDate,
+      getHolidayInfo,
+      shiftTimeConfig,
+      leaveRequests,
+      overtimeRequests,
+      storeConfig,
+    });
+    const overtimeHours = Math.round(
+      (attendance.overtimePayHours + attendance.holidayOvertimeHours) * 100
+    ) / 100;
+
+    const tardinessMinutes = tardinessRecords
+      .filter(
+        (t) =>
+          t.userId === currentUser.id &&
+          t.recordDate >= monthStart &&
+          t.recordDate <= monthEnd
+      )
+      .reduce((sum, t) => sum + (t.minutesLate || 0), 0);
+
+    const leaveTypes = Array.from(
+      new Set(
+        leaveRequests
+          .filter(
+            (req) =>
+              req.employeeId === currentUser.id &&
+              req.status === "approved" &&
+              req.startDate <= monthEnd &&
+              req.endDate >= monthStart
+          )
+          .map((req) => req.type)
+      )
+    );
+
+    return {
+      overtimeHours,
+      leaveDeductionHours: Math.round(attendance.leaveDeductionHours * 100) / 100,
+      tardinessMinutes,
+      leaveTypes,
+    };
   };
 
   if (isLoading) {
@@ -473,6 +544,77 @@ export default function PayrollDetailPage() {
                       </span>
                     </div>
                   </div>
+
+                  {(() => {
+                    const formula = buildFormulaMeta(selectedRecord);
+                    const overtimeUnit =
+                      formula.overtimeHours > 0
+                        ? selectedRecord.overtimePay / formula.overtimeHours
+                        : 0;
+                    const leaveUnit =
+                      formula.leaveDeductionHours > 0
+                        ? selectedRecord.leaveDeduction / formula.leaveDeductionHours
+                        : 0;
+                    const tardinessUnit =
+                      formula.tardinessMinutes > 0
+                        ? selectedRecord.tardinessDeduction / formula.tardinessMinutes
+                        : 0;
+                    const overtimeMultiplier =
+                      salaryMeta?.hourlyRate && salaryMeta.hourlyRate > 0 && overtimeUnit > 0
+                        ? overtimeUnit / salaryMeta.hourlyRate
+                        : 0;
+
+                    return (
+                      <div className="rounded-lg bg-sky-50 border border-sky-200 p-3 space-y-2">
+                        <p className="text-sm font-semibold text-sky-900">換算過程（供核對）</p>
+                        {selectedRecord.overtimePay > 0 && (
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            加班費：
+                            {formula.overtimeHours.toFixed(2)} 小時 ×
+                            {overtimeUnit.toFixed(2)} 元/小時 =
+                            <span className="font-semibold text-emerald-700">
+                              {" "}
+                              {formatCurrency(selectedRecord.overtimePay)} 元
+                            </span>
+                            {overtimeMultiplier > 0 && (
+                              <span className="text-slate-500">
+                                {" "}
+                                （約 時薪 {salaryMeta?.hourlyRate ?? 0} × {overtimeMultiplier.toFixed(2)} 倍）
+                              </span>
+                            )}
+                          </p>
+                        )}
+                        {selectedRecord.leaveDeduction > 0 && (
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            請假扣款：
+                            {formula.leaveDeductionHours.toFixed(2)} 小時 ×
+                            {leaveUnit.toFixed(2)} 元/小時 =
+                            <span className="font-semibold text-rose-700">
+                              {" "}
+                              {formatCurrency(selectedRecord.leaveDeduction)} 元
+                            </span>
+                            {formula.leaveTypes.length > 0 && (
+                              <span className="text-slate-500">
+                                {" "}
+                                （本月假別：{formula.leaveTypes.join("、")}）
+                              </span>
+                            )}
+                          </p>
+                        )}
+                        {selectedRecord.tardinessDeduction > 0 && (
+                          <p className="text-xs text-slate-700 leading-relaxed">
+                            遲到扣款：
+                            {formula.tardinessMinutes} 分鐘 ×
+                            {tardinessUnit.toFixed(2)} 元/分鐘 =
+                            <span className="font-semibold text-rose-700">
+                              {" "}
+                              {formatCurrency(selectedRecord.tardinessDeduction)} 元
+                            </span>
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {selectedRecord.note ? (
                     <div className="text-xs text-gray-600 bg-slate-50 rounded p-2 border">
