@@ -210,6 +210,10 @@ export default function SchedulePage() {
     setHolidayRefreshYear(year);
   }, [year]);
 
+  useEffect(() => {
+    setScheduleAlertsOpen(false);
+  }, [year, month]);
+
   const refreshHolidays = async () => {
     setIsRefreshingHolidays(true);
     setHolidayRefreshMessage(null);
@@ -954,37 +958,53 @@ export default function SchedulePage() {
             : "bg-green-50/80 border-green-200"
         }`}
       >
-        <h3
-          className={`font-medium mb-3 ${
-            hasAnyScheduleAlert ? "text-amber-800" : "text-green-800"
-          }`}
-        >
-          {hasAnyScheduleAlert ? "⚠️ 班表提醒" : "✅ 班表提醒"}
-        </h3>
         {hasAnyScheduleAlert ? (
-          <div className="space-y-2 text-sm text-amber-900">
-            {scheduleWarnings.map((warning) => (
-              <div key={warning.dateStr}>
-                <span className="font-medium">{month}/{warning.day}</span>：
-                {warning.messages.join("；")}
-              </div>
-            ))}
-            {deformedHoursWarnings.length > 0 && (
-              <div className="pt-2 mt-2 border-t border-amber-200/80 space-y-1">
-                <p className="font-medium text-amber-900">
-                  變形工時（{workHoursRegimeMeta(storeConfig.workHoursRegime).label}，僅提醒不阻擋）
-                </p>
-                {deformedHoursWarnings.map((w, i) => (
-                  <div key={`${w.kind}-${i}`}>{w.message}</div>
+          <>
+            <button
+              type="button"
+              onClick={() => setScheduleAlertsOpen((o) => !o)}
+              className="w-full flex items-center justify-between gap-3 text-left"
+              aria-expanded={scheduleAlertsOpen}
+            >
+              <h3 className="font-medium text-amber-800">
+                ⚠️ 班表提醒
+                <span className="ml-2 font-normal text-amber-800/80">
+                  （{scheduleWarnings.length + deformedHoursWarnings.length} 則，僅提醒不阻擋）
+                </span>
+              </h3>
+              <span className="text-sm text-amber-800 shrink-0">
+                {scheduleAlertsOpen ? "收合 ▲" : "展開 ▼"}
+              </span>
+            </button>
+            {scheduleAlertsOpen && (
+              <div className="mt-3 space-y-2 text-sm text-amber-900">
+                {scheduleWarnings.map((warning) => (
+                  <div key={warning.dateStr}>
+                    <span className="font-medium">{month}/{warning.day}</span>：
+                    {warning.messages.join("；")}
+                  </div>
                 ))}
+                {deformedHoursWarnings.length > 0 && (
+                  <div className="pt-2 mt-2 border-t border-amber-200/80 space-y-1">
+                    <p className="font-medium text-amber-900">
+                      變形工時（{workHoursRegimeMeta(storeConfig.workHoursRegime).label}，只算本月完整週期）
+                    </p>
+                    {deformedHoursWarnings.map((w, i) => (
+                      <div key={`${w.kind}-${i}`}>{w.message}</div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </>
         ) : (
-          <p className="text-sm text-green-800">
-            本月排班檢查無異常：人力覆蓋與{workHoursRegimeMeta(storeConfig.workHoursRegime).label}
-            週期／單日／連班軟上限皆未超標。
-          </p>
+          <>
+            <h3 className="font-medium mb-3 text-green-800">✅ 班表提醒</h3>
+            <p className="text-sm text-green-800">
+              本月排班檢查無異常：人力覆蓋與{workHoursRegimeMeta(storeConfig.workHoursRegime).label}
+              本月完整週期／單日／連班軟上限皆未超標。
+            </p>
+          </>
         )}
       </div>
 
