@@ -122,6 +122,7 @@ export default function SchedulePage() {
   const [activeLegendShift, setActiveLegendShift] = useState<ScheduleShiftCode | null>(null);
   const [lockingMonth, setLockingMonth] = useState(false);
   const [deformedHoursOpen, setDeformedHoursOpen] = useState(false);
+  const [fixedShiftsOpen, setFixedShiftsOpen] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
   const [typhoonDates, setTyphoonDates] = useState<Record<string, { title: string; periodLabel: string }>>({});
   const [typhoonReloadKey, setTyphoonReloadKey] = useState(0);
@@ -879,23 +880,40 @@ export default function SchedulePage() {
 
       {/* 員工固定班表說明 */}
       <div className="app-card p-4">
-        <h3 className="font-medium text-gray-900 mb-3">📅 固定班表</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
-          {fixedShifts.map((fs, idx) => {
-            const emp = employees.find(e => e.id === fs.employeeId);
-            return (
-              <div key={idx} className="border rounded-lg p-2">
-                <span className="font-medium text-gray-800">{emp?.name}</span>
-                <p className="text-gray-600 text-xs mt-1">
-                  每個 {dayLabels[fs.dayOfWeek]} - {styleOf(fs.shift).label}
-                </p>
-              </div>
-            );
-          })}
-          {fixedShifts.length === 0 && (
-            <p className="text-gray-500">尚無固定班表設定</p>
-          )}
-        </div>
+        <button
+          type="button"
+          onClick={() => setFixedShiftsOpen((o) => !o)}
+          className="w-full flex items-center justify-between gap-3 text-left"
+          aria-expanded={fixedShiftsOpen}
+        >
+          <h3 className="font-medium text-gray-900">
+            📅 固定班表
+            <span className="ml-2 font-normal text-gray-500 text-sm">
+              {fixedShifts.length > 0 ? `${fixedShifts.length} 筆` : "尚無設定"}
+            </span>
+          </h3>
+          <span className="text-sm text-gray-600 shrink-0">
+            {fixedShiftsOpen ? "收合 ▲" : "展開 ▼"}
+          </span>
+        </button>
+        {fixedShiftsOpen && (
+          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+            {fixedShifts.map((fs, idx) => {
+              const emp = employees.find(e => e.id === fs.employeeId);
+              return (
+                <div key={idx} className="border rounded-lg p-2">
+                  <span className="font-medium text-gray-800">{emp?.name}</span>
+                  <p className="text-gray-600 text-xs mt-1">
+                    每個 {dayLabels[fs.dayOfWeek]} - {styleOf(fs.shift).label}
+                  </p>
+                </div>
+              );
+            })}
+            {fixedShifts.length === 0 && (
+              <p className="text-gray-500">尚無固定班表設定</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 週期輪值晚班 */}
