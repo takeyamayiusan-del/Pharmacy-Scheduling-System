@@ -38,6 +38,16 @@
 }
 
 @layer base {
+  html {
+    /* 手機維持 16px；桌面略放大，整體 rem 跟著變大一點 */
+    font-size: 16px;
+  }
+  @media (min-width: 768px) {
+    html {
+      font-size: 17.5px;
+    }
+  }
+
   html,
   body {
     @apply overflow-x-hidden;
@@ -46,7 +56,9 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased font-sans;
+    line-height: 1.6;
+    letter-spacing: 0.01em;
   }
 }
 
