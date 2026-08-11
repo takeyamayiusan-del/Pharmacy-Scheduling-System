@@ -18,9 +18,10 @@ export function LeaveOrderGuide({
   /** 排休／三大申請頁請設 true，讓新人看得到步驟 */
   defaultOpen?: boolean;
 }) {
-  const { storeConfig } = useApp();
+  const { storeConfig, currentUser, activeSiteId } = useApp();
   const rotationOn = storeConfig.features.rotationEvening;
   const menuLabel = storeConfig.rotationEvening.menuLabel;
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
   const body = (
     <>
@@ -82,7 +83,7 @@ export function LeaveOrderGuide({
         className={className}
         hint="先換班再排休較不易撞晚班"
         defaultOpen={defaultOpen}
-        storageKey="help:leave-order-guide:compact"
+        storageKey={`help:leave-order-guide:compact:${storageScope}`}
       >
         {body}
       </HelpTip>
@@ -95,7 +96,7 @@ export function LeaveOrderGuide({
       className={className}
       hint="先換班再排休較不易撞晚班"
       defaultOpen={defaultOpen}
-      storageKey="help:leave-order-guide:full"
+      storageKey={`help:leave-order-guide:full:${storageScope}`}
     >
       {body}
     </HelpTip>

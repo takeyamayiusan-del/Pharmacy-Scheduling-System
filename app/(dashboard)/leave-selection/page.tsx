@@ -35,6 +35,7 @@ export default function LeaveSelectionPage() {
     shiftTimeConfig,
     storeConfig,
     addBulletinItem,
+    activeSiteId,
   } = useApp();
   const [currentDate, setCurrentDate] = useState(() => {
     const now = new Date();
@@ -53,6 +54,7 @@ export default function LeaveSelectionPage() {
   const monthLocked = isLeaveMonthLocked(year, month);
   const viewingPastMonth = isPastMonth(year, month);
   const weekdayOffOnly = currentUser?.isWeekdayOffRule ?? false;
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
   const remaining = {
     weekend: Math.max(0, 2 - (leaveSummary?.saturdayUsed ?? 0)),
@@ -216,7 +218,7 @@ export default function LeaveSelectionPage() {
         title="排休規則說明"
         hint="點選日期即時儲存，無需確認"
         defaultOpen
-        storageKey="help:leave-selection-rules"
+        storageKey={`help:leave-selection-rules:${storageScope}`}
       >
         <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
         <p>

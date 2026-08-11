@@ -19,6 +19,7 @@ import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
 import FlexibleAttendancePanel from "@/components/FlexibleAttendancePanel";
 import { HelpTip } from "@/components/ui/HelpTip";
+import { CollapsibleCard } from "@/components/ui/CollapsibleCard";
 import {
   getScheduleShiftOptions,
   resolveShiftDisplay,
@@ -97,7 +98,7 @@ export default function SchedulePage() {
       cancelled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSiteId]);
+  }, [storageScope]);
 
   const saveNotes = async () => {
     if (notesId) {
@@ -205,6 +206,9 @@ export default function SchedulePage() {
   );
   const hasStaffingAlerts = scheduleWarnings.length > 0;
   const hasDeformedHoursAlerts = deformedHoursWarnings.length > 0;
+  const hardComplianceWarnings = deformedHoursWarnings.filter((w) => w.severity === "hard");
+  const softComplianceWarnings = deformedHoursWarnings.filter((w) => w.severity === "soft");
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
   const today = new Date();
   const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
@@ -214,8 +218,8 @@ export default function SchedulePage() {
 
   useEffect(() => {
     try {
-      const fixedSaved = window.localStorage.getItem(`schedule-fixed-open:${activeSiteId}`);
-      const deformedSaved = window.localStorage.getItem(`schedule-deformed-open:${activeSiteId}`);
+      const fixedSaved = window.localStorage.getItem(`schedule-fixed-open:${storageScope}`);
+      const deformedSaved = window.localStorage.getItem(`schedule-deformed-open:${storageScope}`);
       if (fixedSaved === "1") setFixedShiftsOpen(true);
       if (fixedSaved === "0") setFixedShiftsOpen(false);
       if (deformedSaved === "1") setDeformedHoursOpen(true);
@@ -223,23 +227,23 @@ export default function SchedulePage() {
     } catch {
       // ignore storage read errors
     }
-  }, [activeSiteId]);
+  }, [storageScope]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(`schedule-fixed-open:${activeSiteId}`, fixedShiftsOpen ? "1" : "0");
+      window.localStorage.setItem(`schedule-fixed-open:${storageScope}`, fixedShiftsOpen ? "1" : "0");
     } catch {
       // ignore storage write errors
     }
-  }, [activeSiteId, fixedShiftsOpen]);
+  }, [storageScope, fixedShiftsOpen]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(`schedule-deformed-open:${activeSiteId}`, deformedHoursOpen ? "1" : "0");
+      window.localStorage.setItem(`schedule-deformed-open:${storageScope}`, deformedHoursOpen ? "1" : "0");
     } catch {
       // ignore storage write errors
     }
-  }, [activeSiteId, deformedHoursOpen]);
+  }, [storageScope, deformedHoursOpen]);
 
   const refreshHolidays = async () => {
     setIsRefreshingHolidays(true);
@@ -662,7 +666,7 @@ export default function SchedulePage() {
           <HelpTip
             title="班表圖例說明"
             hint="固定班／假日／颱風等標記"
-            storageKey={`help:schedule-legend:${activeSiteId}`}
+            storageKey={`help:schedule-legend:${storageScope}`}
           >
             <div className="space-y-2.5">
               <div className="flex items-center gap-2.5">
@@ -908,25 +912,13 @@ export default function SchedulePage() {
       </div>
 
       {/* 員工固定班表說明 */}
-      <div className="app-card p-4">
-        <button
-          type="button"
-          onClick={() => setFixedShiftsOpen((o) => !o)}
-          className="w-full flex items-center justify-between gap-3 text-left rounded-xl hover:bg-sky-50/50 -m-1 p-1 transition-colors"
-          aria-expanded={fixedShiftsOpen}
-        >
-          <h3 className="app-section-title">
-            固定班表
-            <span className="ml-2 font-normal text-slate-500 text-sm">
-              {fixedShifts.length > 0 ? `${fixedShifts.length} 筆` : "尚無設定"}
-            </span>
-          </h3>
-          <span className="text-sm text-slate-500 shrink-0">
-            {fixedShiftsOpen ? "收合 ▲" : "展開 ▼"}
-          </span>
-        </button>
-        {fixedShiftsOpen && (
-          <div className="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
+      <CollapsibleCard
+        title="固定班表"
+        subtitle={fixedShifts.length > 0 ? `${fixedShifts.length} 筆` : "尚無設定"}
+        open={fixedShiftsOpen}
+        onToggle={() => setFixedShiftsOpen((o) => !o)}
+      >
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
             {fixedShifts.map((fs, idx) => {
               const emp = employees.find(e => e.id === fs.employeeId);
               return (
@@ -941,9 +933,8 @@ export default function SchedulePage() {
             {fixedShifts.length === 0 && (
               <p className="text-slate-500">尚無固定班表設定</p>
             )}
-          </div>
-        )}
-      </div>
+        </div>
+      </CollapsibleCard>
 
       {/* 週期輪值晚班 */}
       {storeConfig.features.rotationEvening && (
@@ -1041,46 +1032,52 @@ export default function SchedulePage() {
 
       {/* 變形工時（獨立區塊，預設折疊） */}
       <div
-        className={`app-card p-4 ${
+        className={`${
           hasDeformedHoursAlerts
             ? "bg-amber-50/80 border-amber-200"
             : "bg-green-50/80 border-green-200"
-        }`}
+        } app-card`}
       >
         {hasDeformedHoursAlerts ? (
-          <>
-            <button
-              type="button"
-              onClick={() => setDeformedHoursOpen((o) => !o)}
-              className="w-full flex items-center justify-between gap-3 text-left"
-              aria-expanded={deformedHoursOpen}
-            >
+          <CollapsibleCard
+            className="p-4"
+            contentClassName="mt-2 space-y-2"
+            open={deformedHoursOpen}
+            onToggle={() => setDeformedHoursOpen((o) => !o)}
+            title={
               <div className="flex items-center gap-2 min-w-0">
-                <span
-                  className="inline-block h-3 w-3 rounded-full shrink-0 bg-amber-500"
-                  aria-hidden
-                />
+                <span className="inline-block h-3 w-3 rounded-full shrink-0 bg-amber-500" aria-hidden />
                 <span className="font-medium text-amber-900 text-sm">
                   變形工時（{workHoursRegimeMeta(storeConfig.workHoursRegime).label}，只算本月完整週期）
-                  <span className="ml-2 font-normal text-amber-800/80">
-                    {deformedHoursWarnings.length} 則，僅提醒不阻擋
-                  </span>
                 </span>
               </div>
-              <span className="text-sm text-amber-800 shrink-0">
-                {deformedHoursOpen ? "收合 ▲" : "展開 ▼"}
-              </span>
-            </button>
-            {deformedHoursOpen && (
-              <div className="mt-2 space-y-1 text-sm text-amber-900">
-                {deformedHoursWarnings.map((w, i) => (
-                  <div key={`${w.kind}-${i}`}>{w.message}</div>
-                ))}
+            }
+            subtitle={`硬性風險 ${hardComplianceWarnings.length} 則／軟警示 ${softComplianceWarnings.length} 則（目前僅提醒不阻擋）`}
+            buttonClassName="hover:bg-amber-100/50"
+          >
+            {hardComplianceWarnings.length > 0 && (
+              <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                <p className="text-sm font-semibold text-rose-800 mb-1">硬性風險（優先處理）</p>
+                <div className="space-y-1 text-sm text-rose-900">
+                  {hardComplianceWarnings.map((w, i) => (
+                    <div key={`${w.kind}-${i}`}>{w.message}</div>
+                  ))}
+                </div>
               </div>
             )}
-          </>
+            {softComplianceWarnings.length > 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                <p className="text-sm font-semibold text-amber-800 mb-1">軟性提醒</p>
+                <div className="space-y-1 text-sm text-amber-900">
+                  {softComplianceWarnings.map((w, i) => (
+                    <div key={`${w.kind}-${i}`}>{w.message}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </CollapsibleCard>
         ) : (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 p-4">
             <span
               className="inline-block h-3 w-3 rounded-full shrink-0 bg-emerald-500"
               aria-hidden

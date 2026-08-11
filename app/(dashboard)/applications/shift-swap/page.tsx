@@ -21,6 +21,7 @@ export default function ShiftSwapPage() {
   const {
     currentUser, employees, swapRequests,
     addSwapRequest, updateSwapRequestStatus, deleteSwapRequest, getShiftForDate,
+    activeSiteId,
   } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
@@ -45,6 +46,7 @@ export default function ShiftSwapPage() {
 
   const source = searchParams.get("source");
   const sourceNote = searchParams.get("source_note");
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
   const swapTargets = useMemo(() => employees.filter(e => e.role !== "owner"), [employees]);
 
   useEffect(() => {
@@ -156,7 +158,7 @@ export default function ShiftSwapPage() {
         title="換班流程說明"
         hint="發起 → 對方確認 → 審核"
         defaultOpen
-        storageKey="help:shift-swap-flow"
+        storageKey={`help:shift-swap-flow:${storageScope}`}
       >
         <p><span className="font-medium text-sky-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
         <p>與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>

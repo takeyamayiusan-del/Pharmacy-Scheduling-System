@@ -53,6 +53,7 @@ export default function DashboardLayout({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [switchingSite, setSwitchingSite] = useState(false);
+  const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
   useEffect(() => {
     setIsMounted(true);
@@ -60,21 +61,21 @@ export default function DashboardLayout({
 
   useEffect(() => {
     try {
-      const saved = window.localStorage.getItem("dashboard-sidebar-collapsed");
+      const saved = window.localStorage.getItem(`dashboard-sidebar-collapsed:${storageScope}`);
       if (saved === "1") setIsSidebarCollapsed(true);
       if (saved === "0") setIsSidebarCollapsed(false);
     } catch {
       // ignore storage read errors
     }
-  }, []);
+  }, [storageScope]);
 
   useEffect(() => {
     try {
-      window.localStorage.setItem("dashboard-sidebar-collapsed", isSidebarCollapsed ? "1" : "0");
+      window.localStorage.setItem(`dashboard-sidebar-collapsed:${storageScope}`, isSidebarCollapsed ? "1" : "0");
     } catch {
       // ignore storage write errors
     }
-  }, [isSidebarCollapsed]);
+  }, [isSidebarCollapsed, storageScope]);
 
   useEffect(() => {
     if (!currentUser?.id) return;
