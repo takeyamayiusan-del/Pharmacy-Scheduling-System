@@ -482,56 +482,59 @@ export default function PunchPage() {
   const breakCount = shift !== "X" ? getBreakCountForShift(shift, storeConfig) : 0;
 
   return (
-    <div className="space-y-6 max-w-lg mx-auto">
-      <h2 className="text-2xl font-bold text-gray-900">上下班打卡</h2>
+    <div className="space-y-5 max-w-lg mx-auto">
+      <div>
+        <h2 className="app-page-title">上下班打卡</h2>
+        <p className="app-meta mt-1">請在店點範圍內完成打卡</p>
+      </div>
 
       {!punchRecordsReady && (
-        <div className="app-card p-4 text-sm text-amber-800 bg-amber-50 border border-amber-200">
+        <div className="app-card p-4 text-sm text-amber-800 bg-amber-50/90 border-amber-200">
           正在載入今日打卡資料，請稍候再打卡，避免重複打卡。
         </div>
       )}
 
       {isPunching && (
-        <div className="app-card p-4 text-sm text-blue-800 bg-blue-50 border border-blue-200">
+        <div className="app-card p-4 text-sm text-sky-800 bg-sky-50/90 border-sky-200">
           打卡處理中，請勿重複點擊…
         </div>
       )}
 
       {/* GPS 狀態 */}
       <div
-        className={`rounded-xl border p-4 ${
+        className={`rounded-2xl border p-4 shadow-sm ${
           gpsState === "inside"
-            ? "bg-emerald-50 border-emerald-200"
+            ? "bg-emerald-50/90 border-emerald-200"
             : gpsState === "loading"
-              ? "bg-gray-50 border-gray-200"
-              : "bg-red-50 border-red-200"
+              ? "bg-slate-50 border-slate-200"
+              : "bg-rose-50/90 border-rose-200"
         }`}
       >
         <div className="flex items-start gap-3">
           <MapPin
-            className={`h-5 w-5 shrink-0 ${
-              gpsState === "inside" ? "text-emerald-600" : "text-red-500"
+            className={`h-5 w-5 shrink-0 mt-0.5 ${
+              gpsState === "inside" ? "text-emerald-600" : "text-rose-500"
             }`}
           />
           <div className="text-sm">
-            <p className="font-medium text-gray-900">
+            <p className="font-semibold text-slate-900">
               GPS 打卡範圍（{geofenceLocations.length} 個店點）
             </p>
-            <ul className="mt-1 space-y-0.5 text-gray-600">
+            <ul className="mt-1 space-y-0.5 text-slate-600">
               {geofenceLocations.map((loc) => (
                 <li key={loc.id}>
                   {loc.name}
                   {loc.address ? ` · ${loc.address}` : ""}
-                  <span className="text-gray-400">（{loc.radiusMeters} 公尺）</span>
+                  <span className="text-slate-400">（{loc.radiusMeters} 公尺）</span>
                 </li>
               ))}
             </ul>
-            {gpsState === "loading" && <p className="text-gray-500 mt-1">定位中…</p>}
+            {gpsState === "loading" && <p className="text-slate-500 mt-1">定位中…</p>}
             {gpsState === "denied" && (
-              <p className="text-red-700 mt-1">無法取得定位，請允許瀏覽器使用 GPS</p>
+              <p className="text-rose-700 mt-1">無法取得定位，請允許瀏覽器使用 GPS</p>
             )}
             {gpsState === "outside" && (
-              <p className="text-red-700 mt-1">
+              <p className="text-rose-700 mt-1">
                 目前不在任何打卡範圍內
                 {matchedLocationName && distance !== null
                   ? `（距「${matchedLocationName}」約 ${distance} 公尺）`
@@ -541,7 +544,7 @@ export default function PunchPage() {
               </p>
             )}
             {gpsState === "inside" && (
-              <p className="text-emerald-700 mt-1 flex items-center gap-1">
+              <p className="text-emerald-700 mt-1 flex items-center gap-1 font-medium">
                 <CheckCircle2 className="h-4 w-4" />
                 已在打卡範圍內
                 {matchedLocationName ? `：${matchedLocationName}` : ""}
@@ -555,22 +558,22 @@ export default function PunchPage() {
       {/* 今日資訊 */}
       <div className="app-card p-4">
         <div className="flex items-center justify-between mb-3">
-          <span className="text-gray-600">今日 {today}</span>
-          <span className="flex items-center gap-1 text-lg font-mono font-bold text-gray-900">
-            <Clock className="h-5 w-5" />
+          <span className="text-slate-600">今日 {today}</span>
+          <span className="flex items-center gap-1.5 text-xl font-mono font-semibold tabular-nums text-slate-900">
+            <Clock className="h-5 w-5 text-sky-600" />
             {nowLabel}
           </span>
         </div>
-        <p className="text-sm text-gray-600">
-          班別：<span className="font-bold text-gray-900">{shift === "X" ? "休假" : shift}</span>
+        <p className="text-sm text-slate-600">
+          班別：<span className="font-semibold text-slate-900">{shift === "X" ? "休假" : shift}</span>
           {shift !== "X" && (
-            <span className="ml-2 text-gray-500">
+            <span className="ml-2 text-slate-500">
               （{breakCount === 2 ? "全天班，2 次休息" : breakCount === 1 ? "白天班，1 次休息" : "單段班"}）
             </span>
           )}
         </p>
         {shift !== "X" && (
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-slate-500 mt-2 leading-relaxed">
             可提早 10 分鐘打卡；遲到第 6 分鐘起算；遲到 30 分鐘仍可打卡但建議請假；下班後第 10 分鐘起建議申請加班
           </p>
         )}
@@ -578,15 +581,15 @@ export default function PunchPage() {
 
       {shift === "X" ? (
         <div className="space-y-4">
-          <div className="app-card p-6 text-center text-gray-600">今日為休假，無需打卡</div>
+          <div className="app-card p-6 text-center text-slate-600">今日為休假，無需打卡</div>
           <div className="app-card p-4">
-            <p className="text-sm text-gray-600 mb-3">如需上班打卡（加班），請使用下方按鈕：</p>
+            <p className="text-sm text-slate-600 mb-3">如需上班打卡（加班），請使用下方按鈕：</p>
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => handleNoShiftPunch("work_in")}
                 disabled={!canPunch}
-                className="flex-1 py-3 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isPunching ? "打卡中..." : "上班打卡（加班）"}
               </button>
@@ -594,7 +597,7 @@ export default function PunchPage() {
                 type="button"
                 onClick={() => handleNoShiftPunch("work_out")}
                 disabled={!canPunch}
-                className="flex-1 py-3 rounded-lg bg-blue-600 text-white font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="flex-1 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isPunching ? "打卡中..." : "下班打卡（加班）"}
               </button>
@@ -612,7 +615,7 @@ export default function PunchPage() {
                   type="button"
                   onClick={() => void validateAndPunch(nextSlot)}
                   disabled={!canPunch}
-                  className="w-full py-6 rounded-xl bg-blue-600 text-white text-lg font-bold hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="app-punch-cta"
                 >
                   {isPunching ? "打卡中..." : nextSlot.label}
                   <span className="block text-sm font-normal opacity-90 mt-1">
@@ -628,7 +631,7 @@ export default function PunchPage() {
 
             {/* 右：今日打卡進度 */}
             <div className="flex-1 app-card p-3">
-              <h3 className="font-medium text-gray-900 mb-2 text-sm">今日進度</h3>
+              <h3 className="app-section-title mb-2 text-sm">今日進度</h3>
               <ul className="space-y-1">
                 {slots.map((slot) => {
                   const done = completedKeys.has(punchKey(slot));
@@ -638,19 +641,19 @@ export default function PunchPage() {
                   return (
                     <li
                       key={punchKey(slot)}
-                      className={`text-xs rounded-lg px-2 py-1.5 ${
-                        done ? "bg-emerald-50 text-emerald-800" : "bg-gray-50 text-gray-500"
+                      className={`text-xs rounded-xl px-2.5 py-1.5 ${
+                        done ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
                       }`}
                     >
-                      <div className="flex justify-between">
+                      <div className="flex justify-between gap-2">
                         <span>{slot.label}</span>
-                        <span>{done && punch ? punch.time : slot.scheduledTime}</span>
+                        <span className="font-mono tabular-nums">{done && punch ? punch.time : slot.scheduledTime}</span>
                       </div>
                       {done && punch && punch.action === "work_in" && punch.lateMinutes > 0 && (
                         <div className="text-amber-600 mt-0.5">遲到 {punch.lateMinutes} 分</div>
                       )}
                       {done && punch && punch.action === "work_out" && punch.reason?.includes("加班") && (
-                        <div className="text-blue-600 mt-0.5">逾時（建議加班）</div>
+                        <div className="text-sky-600 mt-0.5">逾時（建議加班）</div>
                       )}
                     </li>
                   );
@@ -662,23 +665,23 @@ export default function PunchPage() {
           {/* 今日打卡紀錄（詳細） */}
           {todayPunches.length > 0 && (
             <div className="app-card p-4">
-              <h3 className="font-medium text-gray-900 mb-2">打卡紀錄</h3>
-              <ul className="space-y-2 text-sm text-gray-700">
+              <h3 className="app-section-title mb-2">打卡紀錄</h3>
+              <ul className="space-y-2 text-sm text-slate-700">
                 {todayPunches.map((p: PunchRecord) => (
-                  <li key={p.id} className="flex items-start justify-between border-b pb-2 last:border-0">
+                  <li key={p.id} className="flex items-start justify-between border-b border-slate-100 pb-2 last:border-0">
                     <div>
                       <span className="font-medium">
-                        {p.action === "work_in" ? "🟢 上班" : "🔵 下班"}
+                        {p.action === "work_in" ? "上班" : "下班"}
                       </span>
-                      <span className="ml-2 text-gray-500">段 {p.segmentIndex + 1}</span>
+                      <span className="ml-2 text-slate-500">段 {p.segmentIndex + 1}</span>
                       {p.action === "work_in" && p.lateMinutes > 0 && (
                         <div className="text-amber-600 text-xs mt-0.5">遲到 {p.lateMinutes} 分鐘</div>
                       )}
                       {p.action === "work_out" && p.reason?.includes("加班") && (
-                        <div className="text-blue-600 text-xs mt-0.5">逾時（建議加班）</div>
+                        <div className="text-sky-600 text-xs mt-0.5">逾時（建議加班）</div>
                       )}
                     </div>
-                    <span className="font-mono text-gray-900">{p.time}</span>
+                    <span className="font-mono tabular-nums text-slate-900">{p.time}</span>
                   </li>
                 ))}
               </ul>
@@ -689,7 +692,7 @@ export default function PunchPage() {
 
       {/* 遲到原因 Modal（遲到5分鐘以上、未達30分鐘） */}
       {lateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="app-modal-backdrop">
           <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 text-amber-800 mb-3">
               <AlertCircle className="h-5 w-5 shrink-0" />
@@ -734,7 +737,7 @@ export default function PunchPage() {
 
       {/* 打卡成功 Modal（含請假/加班提示） */}
       {successModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="app-modal-backdrop">
           <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 mb-4">
               <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0 mt-0.5" />
@@ -785,7 +788,7 @@ export default function PunchPage() {
 
       {/* 超時下班一鍵加班申請：時間已帶入，只需選補休／加班費 */}
       {quickOvertime && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="app-modal-backdrop">
           <div className="app-panel shadow-xl p-6 max-w-md w-full space-y-4">
             <div className="flex items-start gap-2">
               <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0 mt-0.5" />
@@ -887,7 +890,7 @@ export default function PunchPage() {
 
       {/* 提早下班 Modal - 第一層：是否申請早退 */}
       {earlyLeaveModal?.step === 1 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="app-modal-backdrop">
           <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 text-amber-800 mb-4">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -931,7 +934,7 @@ export default function PunchPage() {
 
       {/* 無班表打卡的加班詢問 Modal */}
       {noShiftOvertimeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="app-modal-backdrop">
           <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 text-blue-800 mb-4">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -965,7 +968,7 @@ export default function PunchPage() {
 
       {/* 提早下班 Modal - 第二層：確認是否仍要提早打卡 */}
       {earlyLeaveModal?.step === 2 && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+        <div className="app-modal-backdrop">
           <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 text-amber-800 mb-4">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />

@@ -176,6 +176,34 @@
     box-shadow: var(--surface-shadow);
   }
 
+  .app-toolbar {
+    @apply app-panel flex flex-wrap items-center gap-3 p-3 sm:p-4;
+  }
+
+  .app-section-title {
+    @apply text-base font-semibold tracking-tight text-slate-900;
+  }
+
+  .app-meta {
+    @apply text-sm text-slate-500;
+  }
+
+  .app-chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-slate-200/80 bg-white/80 px-2.5 py-1 text-xs font-medium text-slate-600;
+  }
+
+  .app-modal-backdrop {
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-[2px] p-4;
+  }
+
+  .app-legend-dot {
+    @apply h-2.5 w-2.5 shrink-0 rounded-full;
+  }
+
+  .app-punch-cta {
+    @apply w-full rounded-2xl bg-gradient-to-br from-sky-500 via-sky-600 to-cyan-600 py-6 text-lg font-semibold text-white shadow-[0_12px_28px_rgba(14,165,233,0.35)] transition-all duration-150 hover:from-sky-600 hover:to-cyan-700 hover:shadow-[0_16px_32px_rgba(14,165,233,0.4)] hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-[0_12px_28px_rgba(14,165,233,0.35)];
+  }
+
   .app-fade-in {
     animation: app-fade-in 0.35s ease-out both;
   }

@@ -192,17 +192,17 @@ export default function FixedShiftsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-2xl font-bold text-gray-900">固定班表管理</h1>
+      <div className="app-toolbar justify-between">
+        <h1 className="app-page-title">固定班表管理</h1>
         <a
           href="/store-settings"
-          className="text-sm text-blue-700 hover:underline"
+          className="text-sm text-sky-700 hover:underline font-medium"
         >
           班別清單／功能開關 → 店家設定
         </a>
       </div>
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-900">
+      <div className="bg-amber-50/90 border border-amber-200 rounded-2xl px-4 py-3 text-sm text-amber-900">
         可為個別員工設定「禮拜六 → 休假（X）」。儲存後未來週六班表會顯示休假；未設定時禮拜六預設為「
         {getShiftName(storeConfig, storeConfig.defaultSaturdayShift)}
         」。平日預設為「{getShiftName(storeConfig, storeConfig.defaultWeekdayShift)}」。
@@ -212,8 +212,8 @@ export default function FixedShiftsPage() {
 
       {/* ── 特殊規則設定（依店家功能開關動態欄位） ── */}
       <div className="app-panel p-6">
-        <h3 className="font-semibold text-gray-900 mb-1">特殊排班規則</h3>
-        <p className="text-sm text-gray-500 mb-4">
+        <h3 className="app-section-title mb-1">特殊排班規則</h3>
+        <p className="text-sm text-slate-500 mb-4">
           規則綁定員工身份，換人後只要重新設定即可。欄位依「店家設定」功能開關顯示。
         </p>
 

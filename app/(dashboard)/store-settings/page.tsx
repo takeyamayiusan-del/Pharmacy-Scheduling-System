@@ -293,11 +293,13 @@ export default function StoreSettingsPage() {
 
   return (
     <div className="space-y-6 max-w-3xl">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">店家設定</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          目前編輯：{siteMeta.displayName}。各店設定分開儲存，互不影響。
-        </p>
+      <div className="app-toolbar">
+        <div>
+          <h1 className="app-page-title">店家設定</h1>
+          <p className="app-meta mt-1">
+            目前編輯：{siteMeta.displayName}。各店設定分開儲存，互不影響。
+          </p>
+        </div>
       </div>
 
       <div

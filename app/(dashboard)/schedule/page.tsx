@@ -633,32 +633,32 @@ export default function SchedulePage() {
           <PersonalPayslip />
           
           {/* 原有的說明區移至此處 */}
-          <div className="app-card bg-blue-50/80 border-blue-200 p-4">
-            <h3 className="font-medium text-blue-800 mb-3">📋 說明</h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-orange-400"></div>
-                <span className="text-gray-600">橘色框 - 固定班表（鎖定月份已快照，不受後續固定班調整影響）</span>
+          <div className="app-card bg-sky-50/70 border-sky-200/80 p-4">
+            <h3 className="app-section-title text-sky-900 mb-3">說明</h3>
+            <div className="space-y-2.5 text-sm">
+              <div className="flex items-center gap-2.5">
+                <div className="app-legend-dot bg-orange-400"></div>
+                <span className="text-slate-600">橘色框 - 固定班表（鎖定月份已快照，不受後續固定班調整影響）</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-red-500"></div>
-                <span className="text-gray-600">禮拜日 - 不可編輯</span>
+              <div className="flex items-center gap-2.5">
+                <div className="app-legend-dot bg-red-500"></div>
+                <span className="text-slate-600">禮拜日 - 不可編輯</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-                <span className="text-gray-600">國定假日 - 可編輯／可一鍵設定</span>
+              <div className="flex items-center gap-2.5">
+                <div className="app-legend-dot bg-amber-400"></div>
+                <span className="text-slate-600">國定假日 - 可編輯／可一鍵設定</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-cyan-500"></div>
-                <span className="text-gray-600">青色「颱」- 颱風／彈性出勤日</span>
+              <div className="flex items-center gap-2.5">
+                <div className="app-legend-dot bg-cyan-500"></div>
+                <span className="text-slate-600">青色「颱」- 颱風／彈性出勤日</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-violet-500"></div>
-                <span className="text-gray-600">紫色 - 當日請假</span>
+              <div className="flex items-center gap-2.5">
+                <div className="app-legend-dot bg-violet-500"></div>
+                <span className="text-slate-600">紫色 - 當日請假</span>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full bg-pink-500"></div>
-                <span className="text-gray-600">
+              <div className="flex items-center gap-2.5">
+                <div className="app-legend-dot bg-pink-500"></div>
+                <span className="text-slate-600">
                   {storeConfig.features.rotationEvening
                     ? `${storeConfig.rotationEvening.menuLabel}輪流${
                         rotationEmployees.length > 0 ? `（${rotationLabel}）` : ""
@@ -682,7 +682,7 @@ export default function SchedulePage() {
 
       {isManager && monthNationalHolidays.length > 0 && (
         <div className="app-card p-4 border-amber-200 bg-amber-50/40">
-          <h3 className="font-medium text-amber-900 mb-1">國定假日一鍵設定</h3>
+          <h3 className="app-section-title text-amber-900 mb-1">國定假日一鍵設定</h3>
           <p className="text-sm text-amber-800/80 mb-3">
             設為上班前可先選班別
             {useCatalog ? "（目錄班或依固定班）" : "（A–E，或依固定班）"}
@@ -696,15 +696,15 @@ export default function SchedulePage() {
               return (
                 <div
                   key={h.date}
-                  className="flex flex-wrap items-center gap-2 justify-between rounded-lg bg-white/80 border border-amber-100 px-3 py-2"
+                  className="flex flex-wrap items-center gap-2 justify-between rounded-xl bg-white/90 border border-amber-100 px-3 py-2.5"
                 >
-                  <div className="text-sm text-gray-800">
+                  <div className="text-sm text-slate-800">
                     <span className="font-medium">{month}/{h.day}</span>
                     <span className="ml-2 text-amber-800">{h.name}</span>
-                    {h.isPast && <span className="ml-2 text-xs text-gray-400">已過</span>}
+                    {h.isPast && <span className="ml-2 text-xs text-slate-400">已過</span>}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <label className="text-xs text-gray-600 flex items-center gap-1">
+                    <label className="text-xs text-slate-600 flex items-center gap-1">
                       上班班別
                       <select
                         value={workShiftChoice}
@@ -715,7 +715,7 @@ export default function SchedulePage() {
                             [h.date]: e.target.value as HolidayWorkShiftChoice,
                           }))
                         }
-                        className="border rounded-lg px-2 py-1.5 text-xs bg-white disabled:opacity-50"
+                        className="border border-slate-200 rounded-xl px-2 py-1.5 text-xs bg-white disabled:opacity-50"
                       >
                         {holidayWorkShiftOptions.map((opt) => (
                           <option key={opt.value} value={opt.value}>
@@ -728,7 +728,7 @@ export default function SchedulePage() {
                       type="button"
                       disabled={h.isPast || Boolean(holidayOneClickBusy)}
                       onClick={() => void handleHolidayOneClick(h.date, "work", workShiftChoice)}
-                      className="text-xs px-3 py-1.5 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                      className="text-xs px-3 py-1.5 rounded-xl bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
                     >
                       {busyWork ? "處理中…" : "一鍵設為上班"}
                     </button>
@@ -736,7 +736,7 @@ export default function SchedulePage() {
                       type="button"
                       disabled={h.isPast || Boolean(holidayOneClickBusy)}
                       onClick={() => void handleHolidayOneClick(h.date, "off")}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                      className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-50"
                     >
                       {busyOff ? "處理中…" : "一鍵設為休假"}
                     </button>
@@ -752,28 +752,28 @@ export default function SchedulePage() {
       )}
 
       {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="app-panel shadow-xl p-6 max-w-md w-full">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">匯出班表 PDF</h3>
-            <p className="text-sm text-gray-600 mb-4">請選擇版面。直式為 A4 直向，較適合列印；橫式維持原本寬版檢視。</p>
+        <div className="app-modal-backdrop">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full app-rise-in">
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">匯出班表 PDF</h3>
+            <p className="text-sm text-slate-600 mb-4">請選擇版面。直式為 A4 直向，較適合列印；橫式維持原本寬版檢視。</p>
             <div className="flex flex-col gap-3">
               <button
                 onClick={() => handleExportPdf("landscape")}
-                className="w-full px-4 py-3 border-2 border-blue-200 rounded-lg hover:bg-blue-50 text-left"
+                className="w-full px-4 py-3 border border-sky-200 rounded-xl hover:bg-sky-50 text-left transition-colors"
               >
-                <span className="font-medium text-gray-900">橫式（寬版）</span>
-                <span className="block text-xs text-gray-500 mt-1">員工為列、日期為欄，適合螢幕檢視</span>
+                <span className="font-medium text-slate-900">橫式（寬版）</span>
+                <span className="block text-xs text-slate-500 mt-1">員工為列、日期為欄，適合螢幕檢視</span>
               </button>
               <button
                 onClick={() => handleExportPdf("portrait")}
-                className="w-full px-4 py-3 border-2 border-emerald-200 rounded-lg hover:bg-emerald-50 text-left"
+                className="w-full px-4 py-3 border border-emerald-200 rounded-xl hover:bg-emerald-50 text-left transition-colors"
               >
-                <span className="font-medium text-gray-900">直式（A4 列印用）</span>
-                <span className="block text-xs text-gray-500 mt-1">上半月 1–15、下半月 16–月底，適合 A4 直向列印</span>
+                <span className="font-medium text-slate-900">直式（A4 列印用）</span>
+                <span className="block text-xs text-slate-500 mt-1">上半月 1–15、下半月 16–月底，適合 A4 直向列印</span>
               </button>
               <button
                 onClick={() => setShowExportModal(false)}
-                className="w-full px-4 py-2 border rounded-lg hover:bg-gray-50"
+                className="w-full px-4 py-2.5 app-btn-outline"
               >
                 取消
               </button>
@@ -783,13 +783,13 @@ export default function SchedulePage() {
       )}
 
       {/* 頁頭 */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div className="flex items-center gap-4">
-          <button onClick={prevMonth} className="app-btn-outline">
+      <div className="app-toolbar">
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap min-w-0 flex-1">
+          <button onClick={prevMonth} className="app-btn-outline" aria-label="上個月">
             ◀
           </button>
-          <h2 className="text-2xl app-title">{year}年{month}月 班表</h2>
-          <button onClick={nextMonth} className="app-btn-outline">
+          <h2 className="text-xl sm:text-2xl app-title whitespace-nowrap">{year}年{month}月 班表</h2>
+          <button onClick={nextMonth} className="app-btn-outline" aria-label="下個月">
             ▶
           </button>
           <button onClick={() => setShowExportModal(true)} className="app-btn-primary">
@@ -799,7 +799,7 @@ export default function SchedulePage() {
             <button
               onClick={toggleMonthLock}
               disabled={lockingMonth}
-              className={monthLocked ? "app-btn-outline border-red-300 text-red-700 disabled:opacity-60" : "app-btn-outline disabled:opacity-60"}
+              className={monthLocked ? "app-btn-outline border-rose-300 text-rose-700 disabled:opacity-60" : "app-btn-outline disabled:opacity-60"}
             >
               {lockingMonth ? "處理中..." : monthLocked ? "解除本月班表鎖定" : "鎖定本月班表"}
             </button>
@@ -812,7 +812,7 @@ export default function SchedulePage() {
                 max={2100}
                 value={holidayRefreshYear}
                 onChange={(e) => setHolidayRefreshYear(Number(e.target.value) || year)}
-                className="w-20 px-2 py-1 border rounded-lg text-sm"
+                className="w-20 px-2 py-1.5 border border-slate-200 rounded-xl text-sm bg-white/90"
               />
               <button
                 onClick={refreshHolidays}
@@ -824,15 +824,15 @@ export default function SchedulePage() {
             </div>
           )}
         </div>
-        <div className="text-sm text-gray-600">
-          {currentUser?.role === "owner" && <span className="text-blue-600">👑 您可以編輯所有人的班表</span>}
-          {currentUser?.role === "manager" && <span className="text-green-600">👔 您可以編輯所有人的班表與審核申請</span>}
-          {currentUser?.role === "staff" && <span className="text-gray-500">👤 僅檢視班表</span>}
-          {monthLocked && <span className="ml-3 text-red-600 font-medium">🔒 本月班表已鎖定（員工無法改排休；店長可調班表；請假／換班／加班仍可申請）</span>}
-          {viewingPastMonth && <span className="ml-3 text-gray-600 font-medium">📅 已過去的月份僅供查閱，無法修改班表或申請</span>}
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {currentUser?.role === "owner" && <span className="app-chip text-sky-800 border-sky-100 bg-sky-50">可編輯所有人班表</span>}
+          {currentUser?.role === "manager" && <span className="app-chip text-emerald-800 border-emerald-100 bg-emerald-50">可編輯班表與審核</span>}
+          {currentUser?.role === "staff" && <span className="app-chip">僅檢視班表</span>}
+          {monthLocked && <span className="app-chip text-rose-700 border-rose-100 bg-rose-50">本月已鎖定</span>}
+          {viewingPastMonth && <span className="app-chip">過去月份僅供查閱</span>}
         </div>
         {holidayRefreshMessage && (
-          <div className="mt-2 text-sm text-emerald-700">
+          <div className="w-full text-sm text-emerald-700">
             {holidayRefreshMessage}
           </div>
         )}
@@ -842,11 +842,11 @@ export default function SchedulePage() {
 
       <div className="app-card p-4">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-medium text-gray-900">📌 班表規則總覽</h3>
+          <h3 className="app-section-title">班表規則總覽</h3>
           {isManager && !isEditingNotes && (
             <button
               onClick={() => { setNotesDraft(schedulingNotes); setIsEditingNotes(true); }}
-              className="text-xs px-3 py-1 border rounded-lg text-gray-600 hover:bg-gray-50"
+              className="app-btn-outline text-xs px-3 py-1.5"
             >
               編輯
             </button>
@@ -858,21 +858,21 @@ export default function SchedulePage() {
               value={notesDraft}
               onChange={(e) => setNotesDraft(e.target.value)}
               rows={6}
-              className="w-full border rounded-lg px-3 py-2 text-sm text-gray-700 resize-y"
+              className="w-full border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-700 resize-y bg-white/90"
               placeholder="每行一條規則說明..."
             />
             <div className="flex gap-2">
-              <button onClick={saveNotes} className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700">儲存</button>
-              <button onClick={() => setIsEditingNotes(false)} className="px-4 py-1.5 border text-sm rounded-lg">取消</button>
+              <button onClick={saveNotes} className="app-btn-primary px-4 py-1.5 text-sm">儲存</button>
+              <button onClick={() => setIsEditingNotes(false)} className="app-btn-outline px-4 py-1.5 text-sm">取消</button>
             </div>
           </div>
         ) : (
-          <div className="space-y-1 text-sm text-gray-700">
+          <div className="space-y-1 text-sm text-slate-700">
             {schedulingNotes
               ? schedulingNotes.split("\n").filter(Boolean).map((line, i) => (
                   <p key={i}>• {line}</p>
                 ))
-              : <p className="text-gray-400 italic">尚未設定規則說明</p>
+              : <p className="text-slate-400 italic">尚未設定規則說明</p>
             }
           </div>
         )}
@@ -883,16 +883,16 @@ export default function SchedulePage() {
         <button
           type="button"
           onClick={() => setFixedShiftsOpen((o) => !o)}
-          className="w-full flex items-center justify-between gap-3 text-left"
+          className="w-full flex items-center justify-between gap-3 text-left rounded-xl hover:bg-sky-50/50 -m-1 p-1 transition-colors"
           aria-expanded={fixedShiftsOpen}
         >
-          <h3 className="font-medium text-gray-900">
-            📅 固定班表
-            <span className="ml-2 font-normal text-gray-500 text-sm">
+          <h3 className="app-section-title">
+            固定班表
+            <span className="ml-2 font-normal text-slate-500 text-sm">
               {fixedShifts.length > 0 ? `${fixedShifts.length} 筆` : "尚無設定"}
             </span>
           </h3>
-          <span className="text-sm text-gray-600 shrink-0">
+          <span className="text-sm text-slate-500 shrink-0">
             {fixedShiftsOpen ? "收合 ▲" : "展開 ▼"}
           </span>
         </button>
@@ -901,16 +901,16 @@ export default function SchedulePage() {
             {fixedShifts.map((fs, idx) => {
               const emp = employees.find(e => e.id === fs.employeeId);
               return (
-                <div key={idx} className="border rounded-lg p-2">
-                  <span className="font-medium text-gray-800">{emp?.name}</span>
-                  <p className="text-gray-600 text-xs mt-1">
+                <div key={idx} className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
+                  <span className="font-medium text-slate-800">{emp?.name}</span>
+                  <p className="text-slate-600 text-xs mt-1">
                     每個 {dayLabels[fs.dayOfWeek]} - {styleOf(fs.shift).label}
                   </p>
                 </div>
               );
             })}
             {fixedShifts.length === 0 && (
-              <p className="text-gray-500">尚無固定班表設定</p>
+              <p className="text-slate-500">尚無固定班表設定</p>
             )}
           </div>
         )}
@@ -919,8 +919,8 @@ export default function SchedulePage() {
       {/* 週期輪值晚班 */}
       {storeConfig.features.rotationEvening && (
       <div className="app-card p-4">
-        <h3 className="font-medium text-gray-900 mb-3">
-          🌙 {storeConfig.rotationEvening.menuLabel}
+        <h3 className="app-section-title mb-3">
+          {storeConfig.rotationEvening.menuLabel}
           {rotationEmployees.length > 0 ? `（${rotationLabel}）` : "（尚未設定輪值人員）"}
         </h3>
         <div className="flex flex-wrap gap-2">
@@ -930,11 +930,11 @@ export default function SchedulePage() {
               const emp = employees.find(e => e.id === s.employeeId);
               const date = new Date(s.date);
               return (
-                <div key={s.date} className="border rounded-lg p-2 bg-pink-50">
-                  <div className="text-sm font-medium">{date.getMonth() + 1}/{date.getDate()}</div>
-                  <div className="text-xs text-gray-600">{emp?.name}</div>
+                <div key={s.date} className="rounded-xl border border-pink-100 bg-pink-50/80 p-2.5 min-w-[5.5rem]">
+                  <div className="text-sm font-medium text-slate-900">{date.getMonth() + 1}/{date.getDate()}</div>
+                  <div className="text-xs text-slate-600">{emp?.name}</div>
                   {rotationEmployees.length > 0 && (
-                    <div className="text-[11px] text-gray-500 mt-1">
+                    <div className="text-[11px] text-slate-500 mt-1">
                       {rotationEmployees.map((rotationEmp, index) => (
                         <span key={rotationEmp.id}>
                           {index > 0 && " ・ "}
@@ -948,7 +948,7 @@ export default function SchedulePage() {
               );
             })}
           {rotationEmployees.length === 0 && (
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-slate-500">
               請至「固定班表」啟用員工的{storeConfig.rotationEvening.menuLabel}輪值
             </p>
           )}
@@ -958,12 +958,12 @@ export default function SchedulePage() {
 
       {/* 本月資訊 */}
       <div className="app-card p-4">
-        <h3 className="font-medium text-gray-900 mb-3">📊 本月資訊</h3>
-        <div className="text-sm text-gray-600">
+        <h3 className="app-section-title mb-3">本月資訊</h3>
+        <div className="text-sm text-slate-600">
           <p>本月有 {saturdayCount} 個禮拜六</p>
           {saturdayCount >= 5 && (
-            <p className="text-purple-600 font-medium mt-1">
-              ⚠️ 第5個禮拜六 - 員工可選擇是否排休
+            <p className="text-violet-700 font-medium mt-1">
+              第5個禮拜六 - 員工可選擇是否排休
             </p>
           )}
         </div>
@@ -1074,8 +1074,8 @@ export default function SchedulePage() {
         <div className="overflow-x-auto">
           <table className="w-full app-table">
             <thead>
-              <tr className="bg-gray-50 border-b">
-                <th className="p-3 text-left text-sm font-medium text-gray-700 sticky left-0 bg-gray-50 z-10 w-24">
+              <tr className="bg-slate-50/90 border-b border-slate-200/80">
+                <th className="p-3 text-left text-sm font-semibold text-slate-700 sticky left-0 bg-slate-50 z-10 w-24">
                   員工
                 </th>
                 {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
@@ -1090,26 +1090,26 @@ export default function SchedulePage() {
                   if (typhoon) headerClass = "text-cyan-800 bg-cyan-100";
                   else if (dayOfWeek === 0) headerClass = "text-red-600 bg-red-50";
                   else if (dayOfWeek === 6) headerClass = "text-orange-600 bg-orange-50";
-                  else if (holidayInfo.isHoliday) headerClass = "text-yellow-700 bg-yellow-50";
+                  else if (holidayInfo.isHoliday) headerClass = "text-amber-800 bg-amber-50";
                   
                   return (
                     <th
                       key={day}
-                      className={`p-2 text-center text-sm font-medium min-w-[56px] ${headerClass} ${isToday ? "bg-red-100 border-x-4 border-red-500" : ""} cursor-pointer hover:brightness-95 transition`}
+                      className={`p-2 text-center text-sm font-medium min-w-[56px] ${headerClass} ${isToday ? "bg-rose-100 border-x-2 border-rose-400" : ""} cursor-pointer hover:brightness-95 transition`}
                       onClick={() => setSelectedDate(dateStr)}
                       title={typhoon ? `${typhoon.title}（${typhoon.periodLabel}）` : "查看當日上班狀況"}
                     >
-                      {isToday && <div className="text-[10px] font-bold text-red-700">今</div>}
+                      {isToday && <div className="text-[10px] font-bold text-rose-700">今</div>}
                       {typhoon && <div className="text-[10px] font-bold text-cyan-800">颱</div>}
                       <div>{day}</div>
-                      <div className="text-xs text-gray-500">{dayLabels[dayOfWeek]}</div>
+                      <div className="text-xs text-slate-500">{dayLabels[dayOfWeek]}</div>
                       {typhoon && (
                         <div className="text-[10px] text-cyan-700 whitespace-pre-line">
                           {typhoon.periodLabel}
                         </div>
                       )}
                       {holidayInfo.isHoliday && !isSunday(dateStr) && !typhoon && (
-                        <div className="text-[10px] text-yellow-700 whitespace-pre-line">
+                        <div className="text-[10px] text-amber-700 whitespace-pre-line">
                           {holidayInfo.name}
                         </div>
                       )}
@@ -1118,10 +1118,10 @@ export default function SchedulePage() {
                 })}
               </tr>
             </thead>
-            <tbody className="divide-y">
+            <tbody className="divide-y divide-slate-100">
               {displayEmployees.map((emp) => (
-                <tr key={emp.id} className="hover:bg-gray-50">
-                  <td className="p-3 text-left font-medium text-gray-900 sticky left-0 bg-white z-10 border-r">
+                <tr key={emp.id} className="hover:bg-sky-50/40">
+                  <td className="p-3 text-left font-medium text-slate-900 sticky left-0 bg-white/95 z-10 border-r border-slate-100">
                     {emp.name}
                   </td>
                   {Array.from({ length: daysInMonth }, (_, i) => {
@@ -1131,7 +1131,7 @@ export default function SchedulePage() {
                     const isToday = dateStr === todayDateStr;
                     const isTyphoon = Boolean(typhoonDates[dateStr]);
                     return (
-                      <td key={day} className={`overflow-visible ${isSunday(dateStr) ? 'bg-red-50/30' : ''} ${isTyphoon ? 'bg-cyan-50/70 ring-1 ring-inset ring-cyan-200' : ''} ${isToday ? "bg-red-50 border-x-4 border-red-500" : ""}`}>
+                      <td key={day} className={`overflow-visible ${isSunday(dateStr) ? 'bg-red-50/30' : ''} ${isTyphoon ? 'bg-cyan-50/70 ring-1 ring-inset ring-cyan-200' : ''} ${isToday ? "bg-rose-50/80 border-x-2 border-rose-400" : ""}`}>
                         <ShiftCell date={dateStr} employeeId={emp.id} shift={shift} />
                       </td>
                     );
@@ -1143,9 +1143,9 @@ export default function SchedulePage() {
         </div>
 
         {/* 圖例 */}
-        <div className="p-4 border-t bg-gray-50 space-y-3">
+        <div className="p-4 border-t border-slate-100 bg-slate-50/70 space-y-3">
           <div className="flex flex-wrap items-center gap-4">
-            <span className="text-sm font-medium text-gray-700">圖例：</span>
+            <span className="text-sm font-medium text-slate-700">圖例：</span>
             {shiftOptions.map((shiftCode) => {
               const s = shiftCode;
               const style = styleOf(s);
@@ -1166,19 +1166,19 @@ export default function SchedulePage() {
                       color: style.textColor,
                       borderColor: style.borderColor,
                     }}
-                    className="min-w-[2.75rem] max-w-[4.5rem] h-8 px-1 flex items-center justify-center overflow-visible rounded border-2 font-semibold text-sm leading-none whitespace-nowrap"
+                    className="min-w-[2.75rem] max-w-[4.5rem] h-8 px-1 flex items-center justify-center overflow-visible rounded-lg border-2 font-semibold text-sm leading-none whitespace-nowrap shadow-sm"
                   >
                     {style.displayText}
                   </span>
-                  <span className="text-gray-600">{style.label}</span>
+                  <span className="text-slate-600">{style.label}</span>
 
                   {isActive && (
-                    <span className="absolute left-0 bottom-10 z-30 min-w-[170px] rounded-lg border bg-white px-3 py-2 text-left text-xs shadow-xl">
-                      <span className="block font-semibold text-gray-800 mb-1">
+                    <span className="absolute left-0 bottom-10 z-30 min-w-[170px] rounded-xl border border-slate-200 bg-white px-3 py-2 text-left text-xs shadow-xl">
+                      <span className="block font-semibold text-slate-800 mb-1">
                         {style.label}時段
                       </span>
                       {ranges.map((range) => (
-                        <span key={range} className="block text-gray-600">
+                        <span key={range} className="block text-slate-600">
                           {range}
                         </span>
                       ))}
@@ -1197,10 +1197,10 @@ export default function SchedulePage() {
       </div>
 
       {selectedDate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-lg rounded-2xl bg-white shadow-2xl border">
-            <div className="flex items-center justify-between border-b px-5 py-4">
-              <h3 className="text-lg font-semibold text-gray-900">
+        <div className="app-modal-backdrop">
+          <div className="w-full max-w-lg app-panel shadow-2xl app-rise-in overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 bg-gradient-to-r from-sky-50/80 to-white">
+              <h3 className="text-lg font-semibold text-slate-900">
                 {selectedDate} 當日上班狀況
               </h3>
               <button
@@ -1209,21 +1209,21 @@ export default function SchedulePage() {
                   setSelectedDate(null);
                   setShowOriginalShift(false);
                 }}
-                className="rounded-lg px-2 py-1 text-gray-500 hover:bg-gray-100 hover:text-gray-800"
+                className="rounded-xl px-2.5 py-1.5 text-slate-500 hover:bg-sky-50 hover:text-slate-800"
               >
                 關閉
               </button>
             </div>
             
             {/* 視圖切換按鈕 */}
-            <div className="flex items-center justify-center gap-2 border-b px-5 py-3 bg-gray-50">
+            <div className="flex items-center justify-center gap-2 border-b border-slate-100 px-5 py-3 bg-slate-50/80">
               <button
                 type="button"
                 onClick={() => setShowOriginalShift(false)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                   !showOriginalShift
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                    ? "bg-sky-600 text-white shadow-sm"
+                    : "bg-white text-slate-700 border border-slate-200 hover:bg-sky-50"
                 }`}
               >
                 顯示異動班表
@@ -1231,10 +1231,10 @@ export default function SchedulePage() {
               <button
                 type="button"
                 onClick={() => setShowOriginalShift(true)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-colors ${
                   showOriginalShift
-                    ? "bg-blue-600 text-white"
-                    : "bg-white text-gray-700 border border-gray-300 hover:bg-gray-50"
+                    ? "bg-sky-600 text-white shadow-sm"
+                    : "bg-white text-slate-700 border border-slate-200 hover:bg-sky-50"
                 }`}
               >
                 查看原始班表
@@ -1243,7 +1243,7 @@ export default function SchedulePage() {
             
             <div className="max-h-[60vh] overflow-y-auto px-5 py-4 space-y-2">
               {selectedDateWarnings.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 mb-2">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 mb-2">
                   <p className="text-sm font-semibold text-amber-800 mb-1">人力警示</p>
                   <ul className="text-sm text-amber-900 space-y-1">
                     {selectedDateWarnings.map((warning) => (
@@ -1267,12 +1267,12 @@ export default function SchedulePage() {
                 return (
                   <div
                     key={worker.id}
-                    className={`flex items-center justify-between rounded-lg border p-3 ${
-                      hasLeave && !showOriginalShift ? "bg-violet-50 border-violet-200" : ""
+                    className={`flex items-center justify-between rounded-xl border border-slate-200/80 p-3 ${
+                      hasLeave && !showOriginalShift ? "bg-violet-50 border-violet-200" : "bg-white/80"
                     }`}
                   >
                     <div className="flex flex-col gap-1">
-                      <span className="font-medium text-gray-800">{worker.name}</span>
+                      <span className="font-medium text-slate-800">{worker.name}</span>
                       {!showOriginalShift && hasLeave && (
                         <span className="text-xs text-violet-600">
                           請假：{worker.shiftInfo.leaveStartTime}-{worker.shiftInfo.leaveEndTime}
@@ -1287,11 +1287,11 @@ export default function SchedulePage() {
                     </div>
                     <div className="flex items-center gap-2">
                       {!showOriginalShift && hasLeave && (
-                        <span className="text-xs px-2 py-1 rounded bg-violet-100 text-violet-700 font-medium">
+                        <span className="text-xs px-2 py-1 rounded-full bg-violet-100 text-violet-700 font-medium">
                           假
                         </span>
                       )}
-                      <span className="text-sm text-gray-600">
+                      <span className="text-sm text-slate-600">
                         {showOriginalShift
                           ? formatShiftLabel(originalShift)
                           : hasLeave && effectiveShiftDetails === "全日請假"

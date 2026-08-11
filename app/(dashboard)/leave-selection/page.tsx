@@ -195,15 +195,15 @@ export default function LeaveSelectionPage() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 sm:gap-4 min-w-0">
-          <button onClick={prevMonth} className="p-2 border rounded hover:bg-gray-100 shrink-0">
+      <div className="app-toolbar">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <button onClick={prevMonth} className="app-btn-outline shrink-0" aria-label="上個月">
             ◀
           </button>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">
+          <h2 className="text-xl sm:text-2xl app-title truncate">
             {year}年{month}月 排休選擇
           </h2>
-          <button onClick={nextMonth} className="p-2 border rounded hover:bg-gray-100 shrink-0">
+          <button onClick={nextMonth} className="app-btn-outline shrink-0" aria-label="下個月">
             ▶
           </button>
         </div>
@@ -211,9 +211,9 @@ export default function LeaveSelectionPage() {
 
       <LeaveOrderGuide />
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4">
-        <h3 className="font-medium text-blue-800 mb-2">📋 排休規則說明</h3>
-        <div className="text-sm text-gray-700 space-y-1">
+      <div className="app-card bg-sky-50/70 border-sky-200/80 p-4">
+        <h3 className="app-section-title text-sky-900 mb-2">排休規則說明</h3>
+        <div className="text-sm text-slate-700 space-y-1">
           <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
           <p>
             • 平常大家預設都是{" "}
@@ -227,12 +227,12 @@ export default function LeaveSelectionPage() {
           <p>• 點選日期後會<strong>立即儲存</strong>，無需另外提交</p>
           <p>• 若選到您原為含晚班（或全天覆蓋）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
           {saturdayCount >= 5 && (
-            <p className="text-purple-600 font-medium">
+            <p className="text-violet-700 font-medium">
               • 本月有 5 個禮拜六，但每人仍最多只能排休 2 天禮拜六
             </p>
           )}
           {weekdayOffOnly && (
-            <p className="text-purple-600 font-medium">
+            <p className="text-violet-700 font-medium">
               • 您套用「平日不排休」規則，排休只能選擇禮拜六（請至固定班表由店長設定）
             </p>
           )}
@@ -240,7 +240,7 @@ export default function LeaveSelectionPage() {
       </div>
 
       <div className="app-panel p-4">
-        <h3 className="font-medium text-gray-900 mb-3">剩餘可選天數</h3>
+        <h3 className="app-section-title mb-3">剩餘可選天數</h3>
         <div className="flex flex-wrap gap-4">
           <div className="flex items-center gap-2">
             <span className="px-3 py-1 bg-orange-100 text-orange-800 rounded-full font-medium">
@@ -249,13 +249,13 @@ export default function LeaveSelectionPage() {
           </div>
           {!weekdayOffOnly && (
             <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full font-medium">
+              <span className="px-3 py-1 bg-sky-100 text-sky-800 rounded-full font-medium">
                 平日：{remaining.weekday}天
               </span>
             </div>
           )}
         </div>
-        <p className="text-sm text-gray-500 mt-3">
+        <p className="text-sm text-slate-500 mt-3">
           目前已選 {selectedDates.length} 天
           {monthLocked ? "（本月已鎖定）" : ""}
         </p>

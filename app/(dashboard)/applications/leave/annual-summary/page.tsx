@@ -60,12 +60,12 @@ export default function AnnualLeaveSummaryPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="app-toolbar justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">年度特休總表</h1>
-          <p className="text-gray-600 mt-1">查看員工年度特休使用狀況與剩餘天數</p>
+          <h1 className="app-page-title">年度特休總表</h1>
+          <p className="app-meta mt-1">查看員工年度特休使用狀況與剩餘天數</p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           {isManager && (
             <Button 
               variant="outline" 
@@ -79,7 +79,7 @@ export default function AnnualLeaveSummaryPage() {
           <select 
             value={selectedYear} 
             onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="border rounded-lg px-3 py-2 text-sm bg-white shadow-sm"
+            className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white/90"
           >
             {[2025, 2026, 2027, 2028].map((y) => (
               <option key={y} value={y}>{y}年（民國{toROC(y)}年）</option>
