@@ -59,6 +59,24 @@ export default function DashboardLayout({
   }, []);
 
   useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("dashboard-sidebar-collapsed");
+      if (saved === "1") setIsSidebarCollapsed(true);
+      if (saved === "0") setIsSidebarCollapsed(false);
+    } catch {
+      // ignore storage read errors
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("dashboard-sidebar-collapsed", isSidebarCollapsed ? "1" : "0");
+    } catch {
+      // ignore storage write errors
+    }
+  }, [isSidebarCollapsed]);
+
+  useEffect(() => {
     if (!currentUser?.id) return;
     const timer = setInterval(() => {
       refreshNotifications();

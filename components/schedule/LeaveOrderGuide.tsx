@@ -82,6 +82,7 @@ export function LeaveOrderGuide({
         className={className}
         hint="先換班再排休較不易撞晚班"
         defaultOpen={defaultOpen}
+        storageKey="help:leave-order-guide:compact"
       >
         {body}
       </HelpTip>
@@ -94,6 +95,7 @@ export function LeaveOrderGuide({
       className={className}
       hint="先換班再排休較不易撞晚班"
       defaultOpen={defaultOpen}
+      storageKey="help:leave-order-guide:full"
     >
       {body}
     </HelpTip>

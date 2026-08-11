@@ -213,8 +213,33 @@ export default function SchedulePage() {
   }, [year]);
 
   useEffect(() => {
-    setDeformedHoursOpen(false);
-  }, [year, month]);
+    try {
+      const fixedSaved = window.localStorage.getItem(`schedule-fixed-open:${activeSiteId}`);
+      const deformedSaved = window.localStorage.getItem(`schedule-deformed-open:${activeSiteId}`);
+      if (fixedSaved === "1") setFixedShiftsOpen(true);
+      if (fixedSaved === "0") setFixedShiftsOpen(false);
+      if (deformedSaved === "1") setDeformedHoursOpen(true);
+      if (deformedSaved === "0") setDeformedHoursOpen(false);
+    } catch {
+      // ignore storage read errors
+    }
+  }, [activeSiteId]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(`schedule-fixed-open:${activeSiteId}`, fixedShiftsOpen ? "1" : "0");
+    } catch {
+      // ignore storage write errors
+    }
+  }, [activeSiteId, fixedShiftsOpen]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(`schedule-deformed-open:${activeSiteId}`, deformedHoursOpen ? "1" : "0");
+    } catch {
+      // ignore storage write errors
+    }
+  }, [activeSiteId, deformedHoursOpen]);
 
   const refreshHolidays = async () => {
     setIsRefreshingHolidays(true);
@@ -634,7 +659,11 @@ export default function SchedulePage() {
           <PersonalPayslip />
           
           {/* 原有的說明區移至此處 */}
-          <HelpTip title="班表圖例說明" hint="固定班／假日／颱風等標記">
+          <HelpTip
+            title="班表圖例說明"
+            hint="固定班／假日／颱風等標記"
+            storageKey={`help:schedule-legend:${activeSiteId}`}
+          >
             <div className="space-y-2.5">
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-orange-400"></div>

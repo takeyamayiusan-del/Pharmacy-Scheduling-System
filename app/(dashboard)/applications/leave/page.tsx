@@ -363,7 +363,12 @@ export default function LeaveApplicationPage() {
         </div>
       </div>
 
-      <HelpTip title="請假申請說明" hint="如何送出與審核" defaultOpen>
+      <HelpTip
+        title="請假申請說明"
+        hint="如何送出與審核"
+        defaultOpen
+        storageKey="help:leave-apply"
+      >
         <p>• 點「新增申請」填寫日期、時段與假別後送出，店長／老闆審核後才會生效。</p>
         <p>• 可選全天／上午／下午／自訂時間；特休與補休會依餘額與規則計算。</p>
         <p>• 跨月後員工無法自行申請過去月份；店長可代為補登。</p>

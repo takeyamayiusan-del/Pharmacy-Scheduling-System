@@ -29,6 +29,24 @@ export default function AnnualLeaveSummaryPage() {
   }, [selectedYear, loadAnnualLeaveConfigs]);
 
   useEffect(() => {
+    try {
+      const saved = window.localStorage.getItem("annual-leave-config-open");
+      if (saved === "1") setShowConfigPanel(true);
+      if (saved === "0") setShowConfigPanel(false);
+    } catch {
+      // ignore storage read errors
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("annual-leave-config-open", showConfigPanel ? "1" : "0");
+    } catch {
+      // ignore storage write errors
+    }
+  }, [showConfigPanel]);
+
+  useEffect(() => {
     if (isManager && displayEmployees.length > 0) {
       // 載入所有員工的調整記錄
       displayEmployees.forEach(emp => {

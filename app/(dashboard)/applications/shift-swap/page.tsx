@@ -152,7 +152,12 @@ export default function ShiftSwapPage() {
         )}
       </div>
 
-      <HelpTip title="換班流程說明" hint="發起 → 對方確認 → 審核" defaultOpen>
+      <HelpTip
+        title="換班流程說明"
+        hint="發起 → 對方確認 → 審核"
+        defaultOpen
+        storageKey="help:shift-swap-flow"
+      >
         <p><span className="font-medium text-sky-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
         <p>與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
         <p className="text-rose-700 font-medium">禮拜日為全店固定公休，不可列入換班。</p>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useState, type ReactNode } from "react";
 import { CircleHelp, ChevronDown } from "lucide-react";
 
 type HelpTipProps = {
@@ -11,6 +11,8 @@ type HelpTipProps = {
   defaultOpen?: boolean;
   /** 收合時按鈕旁的簡短提示（可選） */
   hint?: string;
+  /** 若提供則記住收合狀態（localStorage key） */
+  storageKey?: string;
 };
 
 /** 說明區塊：重要流程可預設展開，其餘可預設收合 */
@@ -20,9 +22,30 @@ export function HelpTip({
   className = "",
   defaultOpen = false,
   hint,
+  storageKey,
 }: HelpTipProps) {
   const [open, setOpen] = useState(defaultOpen);
   const panelId = useId();
+
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      const saved = window.localStorage.getItem(storageKey);
+      if (saved === "1") setOpen(true);
+      if (saved === "0") setOpen(false);
+    } catch {
+      // ignore storage read errors
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (!storageKey) return;
+    try {
+      window.localStorage.setItem(storageKey, open ? "1" : "0");
+    } catch {
+      // ignore storage write errors
+    }
+  }, [open, storageKey]);
 
   return (
     <div className={className}>

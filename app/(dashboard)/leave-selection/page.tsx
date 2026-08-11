@@ -212,7 +212,12 @@ export default function LeaveSelectionPage() {
 
       <LeaveOrderGuide defaultOpen />
 
-      <HelpTip title="排休規則說明" hint="點選日期即時儲存，無需確認" defaultOpen>
+      <HelpTip
+        title="排休規則說明"
+        hint="點選日期即時儲存，無需確認"
+        defaultOpen
+        storageKey="help:leave-selection-rules"
+      >
         <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
         <p>
           • 平常預設班別為{" "}
