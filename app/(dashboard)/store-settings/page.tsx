@@ -792,8 +792,8 @@ export default function StoreSettingsPage() {
       <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">變形工時制度</h2>
         <p className="text-sm text-gray-500">
-          依各店勞動契約／核備制度標記。竹山預設兩周、集集預設八周。
-          目前供店家辨識與日後週期工時檢查；尚未自動計算週期加班上限。
+          竹山預設兩周、集集預設八周。班表頁會依週期加總表定工時，並檢查單日／連班，
+          <span className="font-medium text-gray-700">僅跳出提醒、不阻擋存檔</span>。
         </p>
         <label className="block text-sm">
           <span className="text-gray-700">本店制度</span>
@@ -813,6 +813,23 @@ export default function StoreSettingsPage() {
               </option>
             ))}
           </select>
+        </label>
+        <label className="block text-sm">
+          <span className="text-gray-700">週期起算日</span>
+          <input
+            type="date"
+            value={draft.workHoursCycleAnchor}
+            onChange={(e) =>
+              setDraft((p) => ({
+                ...p,
+                workHoursCycleAnchor: e.target.value,
+              }))
+            }
+            className="mt-1 w-full border rounded-lg px-3 py-2"
+          />
+          <span className="mt-1 block text-xs text-gray-500">
+            自此日對齊兩周／八周區間，建議選星期一。軟上限：單日 10h、連續上班 6 天。
+          </span>
         </label>
         <p className="text-sm text-gray-600">
           {workHoursRegimeMeta(draft.workHoursRegime).summary}

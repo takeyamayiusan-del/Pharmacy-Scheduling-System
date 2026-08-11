@@ -135,6 +135,7 @@ function buildJijiStoreConfig() {
     ],
     shiftCatalog: catalog,
     workHoursRegime: "eight_week",
+    workHoursCycleAnchor: "2026-01-05",
   };
 }
 

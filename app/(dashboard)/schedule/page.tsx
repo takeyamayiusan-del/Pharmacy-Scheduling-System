@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from "react";
 import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
+import { buildDeformedHoursSoftWarnings } from "@/lib/attendance/deformedHoursSoftWarnings";
+import { workHoursRegimeMeta } from "@/lib/attendance/workHoursRegime";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import { isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
@@ -172,16 +174,34 @@ export default function SchedulePage() {
   const saturdayCount = countSaturdaysInMonth(year, month);
   const monthLocked = isLeaveMonthLocked(year, month);
   const viewingPastMonth = isPastMonth(year, month);
+  // 過濾老闆，以及尚未到職／已過到期日的員工（依當月）
+  const displayEmployees = employees.filter(
+    (e) => e.role !== "owner" && isEmployeeActiveInMonth(e, year, month)
+  );
   const scheduleWarnings = buildScheduleWarnings({
     year,
     month,
     daysInMonth,
-    employees,
+    employees: displayEmployees,
     shiftDisplayConfig,
     getShiftForDate,
     storeConfig,
     shiftTimeConfig,
   });
+  const deformedHoursWarnings = useMemo(
+    () =>
+      buildDeformedHoursSoftWarnings({
+        year,
+        month,
+        employees: displayEmployees,
+        storeConfig,
+        shiftTimeConfig,
+        getShiftForDate,
+      }),
+    [year, month, displayEmployees, storeConfig, shiftTimeConfig, getShiftForDate]
+  );
+  const hasAnyScheduleAlert =
+    scheduleWarnings.length > 0 || deformedHoursWarnings.length > 0;
   const today = new Date();
   const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
 
@@ -204,10 +224,6 @@ export default function SchedulePage() {
     }
   };
 
-  // 過濾老闆，以及尚未到職／已過到期日的員工（依當月）
-  const displayEmployees = employees.filter(
-    (e) => e.role !== "owner" && isEmployeeActiveInMonth(e, year, month)
-  );
   const rotationEmployees = employees.filter((e) => e.isWednesdayRotation);
   const rotationLabel =
     rotationEmployees.length > 0
@@ -932,19 +948,19 @@ export default function SchedulePage() {
 
       <div
         className={`app-card p-4 ${
-          scheduleWarnings.length > 0
+          hasAnyScheduleAlert
             ? "bg-amber-50/80 border-amber-200"
             : "bg-green-50/80 border-green-200"
         }`}
       >
         <h3
           className={`font-medium mb-3 ${
-            scheduleWarnings.length > 0 ? "text-amber-800" : "text-green-800"
+            hasAnyScheduleAlert ? "text-amber-800" : "text-green-800"
           }`}
         >
-          {scheduleWarnings.length > 0 ? "⚠️ 班表提醒" : "✅ 班表提醒"}
+          {hasAnyScheduleAlert ? "⚠️ 班表提醒" : "✅ 班表提醒"}
         </h3>
-        {scheduleWarnings.length > 0 ? (
+        {hasAnyScheduleAlert ? (
           <div className="space-y-2 text-sm text-amber-900">
             {scheduleWarnings.map((warning) => (
               <div key={warning.dateStr}>
@@ -952,10 +968,21 @@ export default function SchedulePage() {
                 {warning.messages.join("；")}
               </div>
             ))}
+            {deformedHoursWarnings.length > 0 && (
+              <div className="pt-2 mt-2 border-t border-amber-200/80 space-y-1">
+                <p className="font-medium text-amber-900">
+                  變形工時（{workHoursRegimeMeta(storeConfig.workHoursRegime).label}，僅提醒不阻擋）
+                </p>
+                {deformedHoursWarnings.map((w, i) => (
+                  <div key={`${w.kind}-${i}`}>{w.message}</div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
           <p className="text-sm text-green-800">
-            本月排班檢查無異常：全天班有人值班、禮拜六至少 2 人上班，目前沒有衝突。
+            本月排班檢查無異常：人力覆蓋與{workHoursRegimeMeta(storeConfig.workHoursRegime).label}
+            週期／單日／連班軟上限皆未超標。
           </p>
         )}
       </div>
