@@ -11,19 +11,13 @@ const config: Config = {
       fontFamily: {
         sans: [
           "var(--font-sans)",
-          '"Noto Serif TC"',
-          '"Source Han Serif TC"',
-          "ui-serif",
-          "Georgia",
-          "serif",
-        ],
-        serif: [
-          "var(--font-sans)",
-          '"Noto Serif TC"',
-          '"Source Han Serif TC"',
-          "ui-serif",
-          "Georgia",
-          "serif",
+          '"jf open 粉圓"',
+          '"jf openhuninn"',
+          "Huninn",
+          "ui-rounded",
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
         ],
       },
       colors: {
