@@ -18,6 +18,7 @@ import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
 import FlexibleAttendancePanel from "@/components/FlexibleAttendancePanel";
+import { HelpTip } from "@/components/ui/HelpTip";
 import {
   getScheduleShiftOptions,
   resolveShiftDisplay,
@@ -633,32 +634,31 @@ export default function SchedulePage() {
           <PersonalPayslip />
           
           {/* 原有的說明區移至此處 */}
-          <div className="app-card bg-sky-50/70 border-sky-200/80 p-4">
-            <h3 className="app-section-title text-sky-900 mb-3">說明</h3>
-            <div className="space-y-2.5 text-sm">
+          <HelpTip title="班表圖例說明" hint="固定班／假日／颱風等標記">
+            <div className="space-y-2.5">
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-orange-400"></div>
-                <span className="text-slate-600">橘色框 - 固定班表（鎖定月份已快照，不受後續固定班調整影響）</span>
+                <span>橘色框 - 固定班表（鎖定月份已快照，不受後續固定班調整影響）</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-red-500"></div>
-                <span className="text-slate-600">禮拜日 - 不可編輯</span>
+                <span>禮拜日 - 不可編輯</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-amber-400"></div>
-                <span className="text-slate-600">國定假日 - 可編輯／可一鍵設定</span>
+                <span>國定假日 - 可編輯／可一鍵設定</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-cyan-500"></div>
-                <span className="text-slate-600">青色「颱」- 颱風／彈性出勤日</span>
+                <span>青色「颱」- 颱風／彈性出勤日</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-violet-500"></div>
-                <span className="text-slate-600">紫色 - 當日請假</span>
+                <span>紫色 - 當日請假</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-pink-500"></div>
-                <span className="text-slate-600">
+                <span>
                   {storeConfig.features.rotationEvening
                     ? `${storeConfig.rotationEvening.menuLabel}輪流${
                         rotationEmployees.length > 0 ? `（${rotationLabel}）` : ""
@@ -667,7 +667,7 @@ export default function SchedulePage() {
                 </span>
               </div>
             </div>
-          </div>
+          </HelpTip>
         </div>
       </div>
 

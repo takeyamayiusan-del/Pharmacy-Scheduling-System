@@ -17,6 +17,7 @@ import {
   getCurrentYearMonth,
   isDateInYearMonth,
 } from "@/components/MonthFilterBar";
+import { HelpTip } from "@/components/ui/HelpTip";
 
 function formatCompLeaveAmount(hours: number): string {
   const rounded = Math.round(hours * 100) / 100;
@@ -328,6 +329,13 @@ export default function OvertimePage() {
           {isManager ? "新增／補登" : "新申請"}
         </button>
       </div>
+
+      <HelpTip title="加班申請說明" hint="時段、加班費／補休" defaultOpen>
+        <p>• 點「新申請」填寫加班日期與起迄時間，送出後由店長／老闆審核。</p>
+        <p>• 可依規則選擇「加班費」或「補休」；部分時段可能僅能選其中一種。</p>
+        <p>• 下班逾時時，打卡頁也可能引導你快速送出加班申請。</p>
+        <p>• 跨月後員工無法自行申請過去月份；店長可代為補登。</p>
+      </HelpTip>
 
       {isManager && (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">

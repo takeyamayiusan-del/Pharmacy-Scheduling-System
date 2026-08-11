@@ -20,6 +20,7 @@ import {
   doesRangeOverlapYearMonth,
   getCurrentYearMonth,
 } from '@/components/MonthFilterBar';
+import { HelpTip } from '@/components/ui/HelpTip';
 import {
   getScheduleShiftOptions,
   isOffShiftCode,
@@ -361,6 +362,13 @@ export default function LeaveApplicationPage() {
           </button>
         </div>
       </div>
+
+      <HelpTip title="請假申請說明" hint="如何送出與審核" defaultOpen>
+        <p>• 點「新增申請」填寫日期、時段與假別後送出，店長／老闆審核後才會生效。</p>
+        <p>• 可選全天／上午／下午／自訂時間；特休與補休會依餘額與規則計算。</p>
+        <p>• 跨月後員工無法自行申請過去月份；店長可代為補登。</p>
+        <p>• 若請假日與班表晚班衝突，建議先完成換班或確認代班，再送請假。</p>
+      </HelpTip>
 
       {isManager && (
         <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2">

@@ -10,6 +10,7 @@ import {
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastMonth } from "@/lib/schedule/monthAccess";
 import { LeaveOrderGuide } from "@/components/schedule/LeaveOrderGuide";
+import { HelpTip } from "@/components/ui/HelpTip";
 
 type PendingEveningLeave = {
   dateStr: string;
@@ -209,35 +210,34 @@ export default function LeaveSelectionPage() {
         </div>
       </div>
 
-      <LeaveOrderGuide />
+      <LeaveOrderGuide defaultOpen />
 
-      <div className="app-card bg-sky-50/70 border-sky-200/80 p-4">
-        <h3 className="app-section-title text-sky-900 mb-2">排休規則說明</h3>
-        <div className="text-sm text-slate-700 space-y-1">
-          <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
-          <p>
-            • 平常大家預設都是{" "}
-            {formatShiftName(
-              shiftDisplayConfig,
-              storeConfig.defaultWeekdayShift || "B",
-              storeConfig
-            )}
-            ；含晚班／全天覆蓋的班別排休時會提醒代班
+      <HelpTip title="排休規則說明" hint="點選日期即時儲存，無需確認" defaultOpen>
+        <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
+        <p>
+          • 平常預設班別為{" "}
+          {formatShiftName(
+            shiftDisplayConfig,
+            storeConfig.defaultWeekdayShift || "B",
+            storeConfig
+          )}
+          ；含晚班／全天覆蓋的班別排休時會提醒代班
+        </p>
+        <p>
+          • <strong>點選日期即會儲存或取消</strong>，沒有確認鍵，也無需另外提交
+        </p>
+        <p>• 若選到您原為含晚班（或全天覆蓋）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
+        {saturdayCount >= 5 && (
+          <p className="text-violet-700 font-medium">
+            • 本月有 5 個禮拜六，但每人仍最多只能排休 2 天禮拜六
           </p>
-          <p>• 點選日期後會<strong>立即儲存</strong>，無需另外提交</p>
-          <p>• 若選到您原為含晚班（或全天覆蓋）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
-          {saturdayCount >= 5 && (
-            <p className="text-violet-700 font-medium">
-              • 本月有 5 個禮拜六，但每人仍最多只能排休 2 天禮拜六
-            </p>
-          )}
-          {weekdayOffOnly && (
-            <p className="text-violet-700 font-medium">
-              • 您套用「平日不排休」規則，排休只能選擇禮拜六（請至固定班表由店長設定）
-            </p>
-          )}
-        </div>
-      </div>
+        )}
+        {weekdayOffOnly && (
+          <p className="text-violet-700 font-medium">
+            • 您套用「平日不排休」規則，排休只能選擇禮拜六（請至固定班表由店長設定）
+          </p>
+        )}
+      </HelpTip>
 
       <div className="app-panel p-4">
         <h3 className="app-section-title mb-3">剩餘可選天數</h3>

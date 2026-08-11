@@ -361,15 +361,17 @@ export default function DashboardLayout({
           />
         )}
 
-        {/* 側邊欄 */}
+        {/* 側邊欄：桌面固定整片（頂欄下方撐滿），捲動內容時不跟著消失 */}
         <aside
-          className={`fixed lg:sticky top-0 z-50 lg:z-30 h-screen app-sidebar transition-all duration-300
+          className={`fixed z-50 app-sidebar transition-all duration-300
+            top-0 lg:top-16 left-0 bottom-0
+            h-dvh lg:h-[calc(100dvh-4rem)]
             ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
             ${isMobileSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full w-72 lg:translate-x-0'}
           `}
         >
           <div className="flex items-center justify-between p-4 border-b border-slate-100 lg:hidden">
-            <span className="font-semibold text-slate-900">功能選單</span>
+            <span className="font-semibold text-slate-900 text-base">功能選單</span>
             <button
               onClick={closeMobileSidebar}
               className="p-2 text-slate-600 hover:bg-sky-50 rounded-xl"
@@ -378,7 +380,7 @@ export default function DashboardLayout({
               <X className="h-5 w-5" />
             </button>
           </div>
-          <nav className="p-3 space-y-1 h-[calc(100vh-64px)] overflow-y-auto scrollbar-hide">
+          <nav className="p-3 space-y-1.5 h-[calc(100%-3.5rem)] lg:h-full overflow-y-auto scrollbar-hide">
             {(() => {
               const visibleNav = navItems.filter((item) => item.allowed);
               // 只亮「路徑最長／最精確」的那一項，避免 /attendance/punch-admin 連工時統計一起亮
@@ -402,16 +404,16 @@ export default function DashboardLayout({
                     title={isSidebarCollapsed ? item.label : undefined}
                   >
                     <span
-                      className={`inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${
+                      className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                         isActive
                           ? 'bg-sky-100 text-sky-700'
                           : 'bg-slate-100/80 text-slate-500'
                       }`}
                     >
-                      <Icon className="h-[1.125rem] w-[1.125rem]" />
+                      <Icon className="h-5 w-5" />
                     </span>
                     <span
-                      className={`text-sm font-medium transition-opacity duration-200 ${
+                      className={`app-nav-label transition-opacity duration-200 ${
                         isSidebarCollapsed ? 'lg:hidden' : ''
                       }`}
                     >
@@ -423,6 +425,14 @@ export default function DashboardLayout({
             })()}
           </nav>
         </aside>
+
+        {/* 桌面側欄佔位，避免 fixed 後內容被蓋住 */}
+        <div
+          className={`hidden lg:block shrink-0 transition-all duration-300 ${
+            isSidebarCollapsed ? 'w-20' : 'w-64'
+          }`}
+          aria-hidden
+        />
 
         {/* 主要內容：min-w-0 + overflow 避免手機左右被撐破 */}
         <main className="flex-1 min-w-0 overflow-x-hidden">
