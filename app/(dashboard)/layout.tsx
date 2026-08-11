@@ -165,7 +165,6 @@ export default function DashboardLayout({
 
   return (
     <div className="h-dvh flex flex-col app-shell relative overflow-hidden">
-      <div className="pointer-events-none absolute inset-0 app-shell-mesh opacity-70" aria-hidden />
       {/* 頂部導航欄 */}
       <header className="app-glass shrink-0 z-40 relative">
         <div className="px-4 sm:px-6 lg:px-8">
@@ -357,15 +356,16 @@ export default function DashboardLayout({
         {isMobileSidebarOpen && (
           <button
             onClick={closeMobileSidebar}
-            className="lg:hidden fixed inset-0 bg-slate-900/35 backdrop-blur-[2px] z-40"
+            className="lg:hidden fixed inset-0 bg-slate-900/40 z-40"
             aria-label="關閉側邊欄遮罩"
           />
         )}
 
         <aside
-          className={`app-sidebar z-50 flex flex-col transition-[width,transform] duration-300 ease-out
+          className={`app-sidebar z-50 flex flex-col
             fixed inset-y-0 left-0 w-72
-            lg:static lg:inset-auto lg:h-full lg:shrink-0
+            lg:static lg:inset-auto lg:h-full lg:shrink-0 lg:transform-none
+            transition-[width] duration-300 ease-out max-lg:transition-transform
             ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
             ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           `}
@@ -380,7 +380,7 @@ export default function DashboardLayout({
               <X className="h-5 w-5" />
             </button>
           </div>
-          <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-1.5 scrollbar-hide">
+          <nav className="flex-1 min-h-0 app-scroll-pane p-3 space-y-1.5 scrollbar-hide">
             {(() => {
               const visibleNav = navItems.filter((item) => item.allowed);
               // 只亮「路徑最長／最精確」的那一項，避免 /attendance/punch-admin 連工時統計一起亮
@@ -407,13 +407,13 @@ export default function DashboardLayout({
                       className={`inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
                         isActive
                           ? 'bg-sky-100 text-sky-700'
-                          : 'bg-slate-100/80 text-slate-500'
+                          : 'bg-slate-100 text-slate-500'
                       }`}
                     >
                       <Icon className="h-5 w-5" />
                     </span>
                     <span
-                      className={`app-nav-label transition-opacity duration-200 ${
+                      className={`app-nav-label ${
                         isSidebarCollapsed ? 'lg:hidden' : ''
                       }`}
                     >
@@ -427,8 +427,8 @@ export default function DashboardLayout({
         </aside>
 
         {/* 右邊頁面獨立捲動；左邊目錄保持固定可見、隨時可點 */}
-        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain">
-          <div className="p-3 sm:p-6 lg:p-8 max-w-full app-fade-in">
+        <main className="flex-1 min-w-0 min-h-0 app-scroll-pane bg-transparent">
+          <div className="p-3 sm:p-6 lg:p-8 max-w-full">
             {children}
           </div>
         </main>

@@ -1121,7 +1121,7 @@ export default function SchedulePage() {
             <tbody className="divide-y divide-slate-100">
               {displayEmployees.map((emp) => (
                 <tr key={emp.id} className="hover:bg-sky-50/40">
-                  <td className="p-3 text-left font-medium text-slate-900 sticky left-0 bg-white/95 z-10 border-r border-slate-100">
+                  <td className="p-3 text-left font-medium text-slate-900 sticky left-0 bg-white z-10 border-r border-slate-100">
                     {emp.name}
                   </td>
                   {Array.from({ length: daysInMonth }, (_, i) => {

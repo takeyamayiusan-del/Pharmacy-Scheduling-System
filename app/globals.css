@@ -111,9 +111,9 @@
   }
 
   .app-card {
-    @apply bg-white/90 rounded-2xl border border-slate-200/80 backdrop-blur-sm;
+    @apply bg-white rounded-2xl border border-slate-200;
     box-shadow: var(--surface-shadow);
-    transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+    transition: box-shadow 0.2s ease, border-color 0.2s ease;
   }
 
   .app-card:hover {
@@ -182,8 +182,8 @@
   }
 
   .app-glass {
-    @apply bg-white/80 backdrop-blur-xl border-b border-white/60;
-    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7), 0 8px 24px rgba(14, 116, 144, 0.05);
+    @apply bg-white border-b border-slate-200;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7), 0 4px 16px rgba(14, 116, 144, 0.04);
   }
 
   .app-sidebar {
@@ -192,7 +192,7 @@
   }
 
   .app-panel {
-    @apply bg-white/95 rounded-2xl border border-slate-200/80;
+    @apply bg-white rounded-2xl border border-slate-200;
     box-shadow: var(--surface-shadow);
   }
 
@@ -205,7 +205,7 @@
   }
 
   .app-modal-backdrop {
-    @apply fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-[2px] p-4;
+    @apply fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4;
   }
 
   .app-legend-dot {
@@ -216,12 +216,21 @@
     @apply w-full rounded-2xl bg-gradient-to-br from-sky-500 via-sky-600 to-cyan-600 py-6 text-lg font-semibold text-white shadow-[0_12px_28px_rgba(14,165,233,0.35)] transition-all duration-150 hover:from-sky-600 hover:to-cyan-700 hover:shadow-[0_16px_32px_rgba(14,165,233,0.4)] hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0 disabled:hover:shadow-[0_12px_28px_rgba(14,165,233,0.35)];
   }
 
+  /* 僅用於初次進入／彈窗，勿掛在會捲動的主內容上，避免滾動破圖 */
   .app-fade-in {
     animation: app-fade-in 0.35s ease-out both;
   }
 
   .app-rise-in {
     animation: app-rise-in 0.4s ease-out both;
+  }
+
+  .app-scroll-pane {
+    overflow-y: auto;
+    overflow-x: hidden;
+    overscroll-behavior: contain;
+    -webkit-overflow-scrolling: touch;
+    /* 不要加 transform：會弄壞內部 sticky，滾動時更容易破圖 */
   }
 }
 
