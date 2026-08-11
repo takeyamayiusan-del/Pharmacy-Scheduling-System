@@ -1062,7 +1062,7 @@ export default function SchedulePage() {
               </h3>
               <p className="text-sm text-green-800 mt-0.5">
                 綠燈：{workHoursRegimeMeta(storeConfig.workHoursRegime).label}
-                本月完整週期／單日／連班軟上限皆未超標。
+                本月完整週期正常工時／單日上限／例假（每七日一例假）軟性檢查皆未超標。
               </p>
             </div>
           </div>

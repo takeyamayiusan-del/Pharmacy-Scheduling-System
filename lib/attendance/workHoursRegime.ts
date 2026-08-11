@@ -1,31 +1,50 @@
 /**
- * 勞基法變形工時制度（店家標記用）。
- * 班表頁依制度做週期／日工時／連班「軟性提醒」（不阻擋）。
+ * 勞基法變形工時制度（店家設定＋班表軟性合規提醒）。
+ *
+ * 對照重點（正常工時，不含延長工時／加班）：
+ * - 兩周變形（§30Ⅱ）：週期 2 周、上限 80h；單日正常工時最多 10h
+ * - 八周變形（§30Ⅲ）：週期 8 周、上限 320h；單日正常工時最多 8h
+ * - 例假（§36）：每七日至少應有一日例假
+ *
+ * 起算日依事業單位核備／約定，非法條固定「每月1日」。
+ * 系統目前為軟性提醒，不取代正式勞檢或加班計算。
  */
 
 export type WorkHoursRegime = "two_week" | "eight_week";
 
-export const WORK_HOURS_REGIME_OPTIONS: Array<{
+export type WorkHoursRegimeMeta = {
   value: WorkHoursRegime;
   label: string;
+  /** 勞基法條次簡稱（顯示用） */
+  legalRef: string;
   cycleWeeks: number;
   /** 週期內正常工時上限（小時） */
   cycleHoursCap: number;
+  /** 單日正常工時上限（小時） */
+  dailyNormalHoursCap: number;
   summary: string;
-}> = [
+};
+
+export const WORK_HOURS_REGIME_OPTIONS: WorkHoursRegimeMeta[] = [
   {
     value: "two_week",
     label: "兩周變形工時",
+    legalRef: "勞基法第30條第2項",
     cycleWeeks: 2,
     cycleHoursCap: 80,
-    summary: "以兩周為一週期，正常工時上限 80 小時（竹山現況）。",
+    dailyNormalHoursCap: 10,
+    summary:
+      "兩周為一週期，正常工時合計不得超過 80 小時；單日正常工時最多 10 小時。起算日依核備／約定，非每月1日。",
   },
   {
     value: "eight_week",
     label: "八周變形工時",
+    legalRef: "勞基法第30條第3項",
     cycleWeeks: 8,
     cycleHoursCap: 320,
-    summary: "以八周為一週期，正常工時上限 320 小時（集集現況）。",
+    dailyNormalHoursCap: 8,
+    summary:
+      "八周為一週期，正常工時合計不得超過 320 小時；單日正常工時最多 8 小時。起算日依核備／約定，非每月1日。",
   },
 ];
 
@@ -39,7 +58,7 @@ export function defaultWorkHoursRegimeForSite(
   return siteId === "jiji" ? "eight_week" : "two_week";
 }
 
-export function workHoursRegimeMeta(regime: WorkHoursRegime) {
+export function workHoursRegimeMeta(regime: WorkHoursRegime): WorkHoursRegimeMeta {
   return (
     WORK_HOURS_REGIME_OPTIONS.find((o) => o.value === regime) ??
     WORK_HOURS_REGIME_OPTIONS[0]
