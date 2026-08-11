@@ -1,15 +1,15 @@
 import type { Metadata } from "next";
-import { Noto_Serif_TC } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { AppProvider } from "@/lib/context/AppContext";
 import { SYSTEM_DESCRIPTION, SYSTEM_NAME } from "@/lib/sites";
 
-const notoSerifTC = Noto_Serif_TC({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+/** jf open 粉圓（SIL OFL）— justfont 開源圓體 */
+const jfOpenHuninn = localFont({
+  src: "./fonts/jf-openhuninn-2.1.ttf",
   display: "swap",
   variable: "--font-sans",
-  // CJK fallback metrics differ; avoid mismatched Latin fallback sizing
+  weight: "400",
   adjustFontFallback: false,
 });
 
@@ -24,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-TW" className={notoSerifTC.variable}>
-      <body className={`${notoSerifTC.className} font-sans`}>
+    <html lang="zh-TW" className={jfOpenHuninn.variable}>
+      <body className={`${jfOpenHuninn.className} font-sans`}>
         <AppProvider>{children}</AppProvider>
       </body>
     </html>

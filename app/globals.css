@@ -62,13 +62,13 @@
   body {
     @apply bg-background text-foreground antialiased font-sans;
     line-height: 1.7;
-    letter-spacing: 0.02em;
+    letter-spacing: 0.03em;
   }
 
   @media (min-width: 1024px) {
     body {
       line-height: 1.75;
-      letter-spacing: 0.025em;
+      letter-spacing: 0.035em;
     }
   }
 
