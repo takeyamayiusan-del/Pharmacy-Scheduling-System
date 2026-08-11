@@ -68,40 +68,43 @@ export default function LoginPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100">
-        <div className="text-gray-500">載入中...</div>
+      <div className="min-h-screen flex items-center justify-center app-shell">
+        <div className="app-panel px-8 py-6 text-slate-500 app-fade-in">載入中...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 to-indigo-100 p-4">
-      <div className="w-full max-w-md">
+    <div className="min-h-screen flex items-center justify-center app-shell p-4 relative overflow-hidden">
+      <div className="pointer-events-none absolute inset-0 app-shell-mesh opacity-80" aria-hidden />
+      <div className="w-full max-w-md relative app-rise-in">
         <div className="text-center mb-8">
-          <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 mb-2">
-            {SYSTEM_NAME}
+          <h1 className="text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900 mb-2">
+            <span className="bg-gradient-to-r from-sky-700 via-cyan-600 to-sky-600 bg-clip-text text-transparent">
+              {SYSTEM_NAME}
+            </span>
           </h1>
-          <p className="text-base text-gray-600">竹山／集集多分店排班</p>
+          <p className="text-base text-slate-600">竹山／集集多分店排班</p>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl p-8">
-          <div className="flex mb-6 bg-gray-100 rounded-lg p-1">
+        <div className="app-panel p-7 sm:p-8">
+          <div className="flex mb-6 bg-slate-100/90 rounded-xl p-1">
             <button
               onClick={() => { setActiveTab("employee"); setError(""); }}
-              className={`flex-1 py-3 rounded-md font-medium transition-colors ${
+              className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${
                 activeTab === "employee"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
+                  ? "bg-white text-sky-700 shadow-sm ring-1 ring-slate-200/80"
+                  : "text-slate-500 hover:text-slate-700"
               }`}
             >
               員工登入
             </button>
             <button
               onClick={() => { setActiveTab("manager"); setError(""); }}
-              className={`flex-1 py-3 rounded-md font-medium transition-colors ${
+              className={`flex-1 py-2.5 rounded-lg font-medium transition-all ${
                 activeTab === "manager"
-                  ? "bg-white text-blue-600 shadow-sm"
-                  : "text-gray-500 hover:text-gray-700"
+                  ? "bg-white text-sky-700 shadow-sm ring-1 ring-slate-200/80"
+                  : "text-slate-500 hover:text-slate-700"
               }`}
             >
               店長/老闆登入
@@ -113,36 +116,36 @@ export default function LoginPage() {
             className="space-y-4"
           >
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">帳號</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">帳號</label>
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-white/90 outline-none"
                 placeholder="請輸入帳號"
                 required
                 autoComplete="username"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">密碼</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">密碼</label>
               <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                className="w-full px-4 py-3 border border-slate-200 rounded-xl bg-white/90 outline-none"
                 placeholder="請輸入密碼"
                 required
                 autoComplete="current-password"
               />
             </div>
             {error && (
-              <div className="p-3 bg-red-50 text-red-700 rounded-lg text-sm">{error}</div>
+              <div className="p-3 bg-rose-50 text-rose-700 rounded-xl text-sm border border-rose-100">{error}</div>
             )}
             <button
               type="submit"
               disabled={loading}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full app-btn-primary py-3 rounded-xl font-medium disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:translate-y-0"
             >
               {loading ? "登入中…" : "登入"}
             </button>

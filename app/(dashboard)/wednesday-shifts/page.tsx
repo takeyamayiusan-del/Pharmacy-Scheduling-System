@@ -92,7 +92,7 @@ export default function WednesdayShiftsPage() {
   if (!featureOn) {
     return (
       <div className="space-y-4">
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-panel p-6">
           <h1 className="text-2xl font-bold text-gray-900">{menuLabel}</h1>
           <p className="text-gray-500 mt-2">
             本店未開放週期輪班功能。店長可至「店家設定」開啟。
@@ -105,7 +105,7 @@ export default function WednesdayShiftsPage() {
   if (!canManage && !isParticipant) {
     return (
       <div className="space-y-4">
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-panel p-6">
           <h1 className="text-2xl font-bold text-gray-900">{menuLabel}</h1>
           <p className="text-gray-500 mt-2">
             此功能僅開放輪值晚班員工使用（店長/老闆可檢視）。
@@ -118,7 +118,7 @@ export default function WednesdayShiftsPage() {
   if (rotationEmployees.length === 0) {
     return (
       <div className="space-y-4">
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-panel p-6">
           <h1 className="text-2xl font-bold text-gray-900">{menuLabel}</h1>
           <p className="text-gray-500 mt-2">
             目前尚未設定輪值員工，請前往「固定班表管理」→「特殊排班規則」啟用。
@@ -194,7 +194,7 @@ export default function WednesdayShiftsPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="app-panel overflow-hidden">
         <div className="p-6">
           <h3 className="font-medium text-gray-900 mb-4">本月輪值日（{weekdaysLabel}）</h3>
           <div className="grid gap-3">

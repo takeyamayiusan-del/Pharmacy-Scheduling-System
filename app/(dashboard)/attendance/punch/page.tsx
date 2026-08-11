@@ -690,7 +690,7 @@ export default function PunchPage() {
       {/* 遲到原因 Modal（遲到5分鐘以上、未達30分鐘） */}
       {lateModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 text-amber-800 mb-3">
               <AlertCircle className="h-5 w-5 shrink-0" />
               <div>
@@ -735,7 +735,7 @@ export default function PunchPage() {
       {/* 打卡成功 Modal（含請假/加班提示） */}
       {successModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 mb-4">
               <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0 mt-0.5" />
               <div>
@@ -786,7 +786,7 @@ export default function PunchPage() {
       {/* 超時下班一鍵加班申請：時間已帶入，只需選補休／加班費 */}
       {quickOvertime && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full space-y-4">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full space-y-4">
             <div className="flex items-start gap-2">
               <CheckCircle2 className="h-6 w-6 text-emerald-600 shrink-0 mt-0.5" />
               <div>
@@ -888,7 +888,7 @@ export default function PunchPage() {
       {/* 提早下班 Modal - 第一層：是否申請早退 */}
       {earlyLeaveModal?.step === 1 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 text-amber-800 mb-4">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
               <div>
@@ -932,7 +932,7 @@ export default function PunchPage() {
       {/* 無班表打卡的加班詢問 Modal */}
       {noShiftOvertimeModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 text-blue-800 mb-4">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
               <div>
@@ -966,7 +966,7 @@ export default function PunchPage() {
       {/* 提早下班 Modal - 第二層：確認是否仍要提早打卡 */}
       {earlyLeaveModal?.step === 2 && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl p-6 max-w-md w-full">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full">
             <div className="flex items-start gap-2 text-amber-800 mb-4">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
               <div>

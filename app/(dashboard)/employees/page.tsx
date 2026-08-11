@@ -202,19 +202,19 @@ export default function EmployeesPage() {
       
       {/* 員工統計 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="app-panel p-4">
           <h3 className="font-medium text-gray-900 mb-2">總員工數</h3>
           <p className="text-2xl font-bold text-blue-600">
             {employees.filter(e => e.role !== "owner").length}人
           </p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="app-panel p-4">
           <h3 className="font-medium text-gray-900 mb-2">店長</h3>
           <p className="text-2xl font-bold text-purple-600">
             {employees.filter(e => e.role === "manager").length}人
           </p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="app-panel p-4">
           <h3 className="font-medium text-gray-900 mb-2">一般員工</h3>
           <p className="text-2xl font-bold text-green-600">
             {employees.filter(e => e.role === "staff").length}人
@@ -224,7 +224,7 @@ export default function EmployeesPage() {
       
       {/* 變更自己的密碼 */}
       {currentUser && (
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-panel p-6">
           <h3 className="font-medium text-gray-900 mb-1">變更我的密碼</h3>
           <p className="text-sm text-gray-500 mb-4">
             目前登入：{currentUser.name}（{getRoleLabel(currentUser.role as Role)}）
@@ -269,7 +269,7 @@ export default function EmployeesPage() {
       
       {/* 員工表單 */}
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-panel p-6">
           <h3 className="font-medium text-gray-900 mb-4">
             {editingId ? "編輯員工" : "新增員工"}
           </h3>
@@ -409,7 +409,7 @@ export default function EmployeesPage() {
       )}
       
       {/* 員工列表 */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="app-panel overflow-hidden">
         <div className="p-4 border-b bg-gray-50">
           <h3 className="font-medium text-gray-900">員工列表</h3>
         </div>

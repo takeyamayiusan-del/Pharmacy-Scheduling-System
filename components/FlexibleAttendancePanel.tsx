@@ -371,7 +371,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
     confirmTarget?.originalSchedule.filter((e) => isOff(e.shift)) ?? [];
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+    <div className="app-panel overflow-hidden">
       <div className="p-4 border-b bg-cyan-50 flex items-center justify-between gap-3">
         <div>
           <h3 className="font-medium text-gray-900">颱風／彈性出勤日</h3>
@@ -565,7 +565,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
 
       {showCreate && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg p-5 space-y-4">
+          <div className="app-panel shadow-xl w-full max-w-lg p-5 space-y-4">
             <h3 className="font-semibold text-gray-900">設定颱風／彈性出勤日</h3>
             <p className="text-xs text-gray-500">
               發布後請詢問誰願意來，再用「確認預計出勤」更新班表。獎勵要等當天打卡後再結算。
@@ -660,7 +660,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
 
       {confirmTarget && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
+          <div className="app-panel shadow-xl w-full max-w-lg max-h-[85vh] flex flex-col">
             <div className="p-4 border-b">
               <h3 className="font-semibold text-gray-900">
                 確認預計出勤 · {confirmTarget.date}
@@ -819,7 +819,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
 
       {settleTarget && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
+          <div className="app-panel shadow-xl w-full max-w-2xl max-h-[85vh] flex flex-col">
             <div className="p-4 border-b">
               <h3 className="font-semibold text-gray-900">
                 結算預覽 · {settleTarget.date}（{periodLabel(settleTarget)}）

@@ -172,17 +172,17 @@ export default function TardinessPage() {
 
       {/* 統計卡片 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="app-panel p-4">
           <h3 className="font-medium text-gray-900 mb-2">本月總遲到次數</h3>
           <p className="text-2xl font-bold text-blue-600">{monthRecords.length}次</p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="app-panel p-4">
           <h3 className="font-medium text-gray-900 mb-2">本月總遲到分鐘</h3>
           <p className="text-2xl font-bold text-orange-600">
             {monthRecords.reduce((sum, r) => sum + r.minutes, 0)}分鐘
           </p>
         </div>
-        <div className="bg-white rounded-xl shadow-sm border p-4">
+        <div className="app-panel p-4">
           <h3 className="font-medium text-gray-900 mb-2">本月平均每次遲到</h3>
           <p className="text-2xl font-bold text-green-600">
             {monthRecords.length > 0
@@ -196,7 +196,7 @@ export default function TardinessPage() {
       </div>
 
       {/* 員工統計 */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="app-panel overflow-hidden">
         <div className="p-4 border-b bg-gray-50">
           <h3 className="font-medium text-gray-900">員工遲到統計（{filterYear}/{filterMonth}）</h3>
         </div>
@@ -226,7 +226,7 @@ export default function TardinessPage() {
 
       {/* 新增表單 */}
       {showForm && (
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-panel p-6">
           <h3 className="font-medium text-gray-900 mb-4">新增遲到記錄</h3>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -300,7 +300,7 @@ export default function TardinessPage() {
       )}
 
       {/* 遲到記錄列表 */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="app-panel overflow-hidden">
         <div className="p-4 border-b bg-gray-50">
           <h3 className="font-medium text-gray-900">遲到記錄（{filterYear}/{filterMonth}）</h3>
         </div>

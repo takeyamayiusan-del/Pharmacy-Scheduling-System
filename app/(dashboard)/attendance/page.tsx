@@ -343,7 +343,7 @@ export default function AttendancePage() {
       )}
 
       {showMonthlyDetail && canExport && (
-        <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+        <div className="app-panel overflow-hidden">
           <div className="p-4 border-b bg-gray-50">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
               <FileText className="h-5 w-5" />
@@ -421,7 +421,7 @@ export default function AttendancePage() {
           const isExpanded = expandedEmployeeId === stat.id;
 
           return (
-          <div key={stat.id} className="bg-white rounded-xl shadow-sm border overflow-hidden">
+          <div key={stat.id} className="app-panel overflow-hidden">
             <button
               type="button"
               onClick={() => toggleEmployeeDetails(stat.id)}

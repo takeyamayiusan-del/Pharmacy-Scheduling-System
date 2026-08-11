@@ -342,7 +342,7 @@ export default function PunchAdminPage() {
         </p>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border p-4 space-y-4">
+      <div className="app-panel p-4 space-y-4">
         <div className="flex items-start justify-between gap-3">
           <div>
             <h3 className="font-medium text-gray-900">打卡圍籬（本店）</h3>

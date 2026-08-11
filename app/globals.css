@@ -4,20 +4,23 @@
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: 210 40% 98%;
+    --foreground: 222.2 47% 11%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+    --card-foreground: 222.2 47% 11%;
+    --primary: 199 89% 48%;
     --primary-foreground: 210 40% 98%;
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
+    --muted: 210 30% 96%;
+    --muted-foreground: 215.4 16.3% 42%;
+    --border: 210 30% 90%;
+    --input: 210 30% 90%;
+    --ring: 199 89% 48%;
+    --radius: 0.85rem;
+    --brand-rose: 340 82% 92%;
+    --brand-sky: 199 95% 90%;
+    --surface-shadow: 0 10px 30px rgba(14, 116, 144, 0.07);
   }
 
   .dark {
@@ -25,7 +28,7 @@
     --foreground: 210 40% 98%;
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
+    --primary: 199 89% 48%;
     --primary-foreground: 222.2 47.4% 11.2%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
@@ -33,7 +36,7 @@
     --muted-foreground: 215 20.2% 65.1%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --ring: 199 89% 48%;
   }
 }
 
@@ -60,15 +63,58 @@
     line-height: 1.6;
     letter-spacing: 0.01em;
   }
+
+  ::selection {
+    background: hsl(199 89% 48% / 0.18);
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]),
+  select,
+  textarea {
+    @apply transition-[border-color,box-shadow,background-color] duration-150;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not([type="file"]):focus,
+  select:focus,
+  textarea:focus {
+    @apply outline-none ring-2 ring-sky-300/60 border-sky-300;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible {
+    @apply outline-none ring-2 ring-sky-300/70 ring-offset-2 ring-offset-white;
+  }
 }
 
 @layer components {
+  .app-shell {
+    background:
+      radial-gradient(ellipse 80% 50% at 0% -10%, hsl(340 90% 94% / 0.85), transparent 55%),
+      radial-gradient(ellipse 70% 45% at 100% 0%, hsl(199 95% 92% / 0.9), transparent 50%),
+      radial-gradient(ellipse 60% 40% at 50% 100%, hsl(190 80% 94% / 0.55), transparent 55%),
+      linear-gradient(165deg, #f8fafc 0%, #f0f9ff 45%, #fff7fb 100%);
+  }
+
+  .app-shell-mesh {
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(14, 116, 144, 0.045) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+
   .app-card {
-    @apply bg-white/90 rounded-3xl border border-pink-100/90 shadow-[0_8px_24px_rgba(236,72,153,0.08)] transition-all duration-200 hover:shadow-[0_12px_28px_rgba(56,189,248,0.14)] hover:border-sky-200;
+    @apply bg-white/90 rounded-2xl border border-slate-200/80 backdrop-blur-sm;
+    box-shadow: var(--surface-shadow);
+    transition: box-shadow 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+  }
+
+  .app-card:hover {
+    border-color: hsl(199 80% 80% / 0.7);
+    box-shadow: 0 14px 34px rgba(14, 116, 144, 0.1);
   }
 
   .app-soft-card {
-    @apply rounded-2xl border border-pink-100 bg-gradient-to-r from-pink-50/70 to-sky-50/70;
+    @apply rounded-2xl border border-pink-100/80 bg-gradient-to-r from-pink-50/80 to-sky-50/80;
   }
 
   .app-title {
@@ -79,24 +125,93 @@
     @apply text-sm text-slate-600;
   }
 
+  .app-page-title {
+    @apply text-2xl font-semibold tracking-tight text-slate-900;
+  }
+
   .app-btn {
-    @apply inline-flex items-center justify-center rounded-full px-3.5 py-2 text-sm font-medium transition-all duration-150 hover:-translate-y-[1px] active:translate-y-0;
+    @apply inline-flex items-center justify-center rounded-xl px-3.5 py-2 text-sm font-medium transition-all duration-150 hover:-translate-y-px active:translate-y-0;
   }
 
   .app-btn-outline {
-    @apply app-btn border border-pink-200 bg-white text-slate-700 hover:bg-pink-50;
+    @apply app-btn border border-slate-200 bg-white/90 text-slate-700 hover:bg-sky-50 hover:border-sky-200;
   }
 
   .app-btn-primary {
-    @apply app-btn bg-gradient-to-r from-sky-500 to-cyan-500 text-white hover:from-sky-600 hover:to-cyan-600 shadow-sm hover:shadow;
+    @apply app-btn bg-gradient-to-r from-sky-500 to-cyan-500 text-white hover:from-sky-600 hover:to-cyan-600 shadow-sm hover:shadow-md;
   }
 
   .app-table th {
-    @apply text-xs font-semibold uppercase tracking-wide text-slate-500;
+    @apply text-xs font-semibold tracking-wide text-slate-500;
   }
 
   .app-table tbody tr {
-    @apply transition-colors duration-150 hover:bg-sky-50/40;
+    @apply transition-colors duration-150 hover:bg-sky-50/50;
+  }
+
+  .app-nav-link {
+    @apply flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-slate-600 transition-all duration-150;
+  }
+
+  .app-nav-link:hover {
+    @apply bg-sky-50/80 text-slate-900;
+  }
+
+  .app-nav-link-active {
+    @apply bg-gradient-to-r from-sky-50 to-cyan-50 text-sky-800 shadow-sm ring-1 ring-sky-100;
+  }
+
+  .app-glass {
+    @apply bg-white/80 backdrop-blur-xl border-b border-white/60;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7), 0 8px 24px rgba(14, 116, 144, 0.05);
+  }
+
+  .app-sidebar {
+    @apply bg-white/90 backdrop-blur-xl border-r border-slate-200/70;
+    box-shadow: 4px 0 24px rgba(14, 116, 144, 0.04);
+  }
+
+  .app-panel {
+    @apply bg-white/95 rounded-2xl border border-slate-200/80;
+    box-shadow: var(--surface-shadow);
+  }
+
+  .app-fade-in {
+    animation: app-fade-in 0.35s ease-out both;
+  }
+
+  .app-rise-in {
+    animation: app-rise-in 0.4s ease-out both;
+  }
+}
+
+@keyframes app-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes app-rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-fade-in,
+  .app-rise-in,
+  .app-btn,
+  .app-card {
+    animation: none !important;
+    transition: none !important;
   }
 }
 

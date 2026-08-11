@@ -200,7 +200,7 @@ export function LeaveSelectionGrid() {
   const displayUsers = isManager ? users : (currentUser ? [currentUser] : []);
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border">
+    <div className="app-panel">
       {/* 標題與導航 */}
       <div className="p-4 border-b flex justify-between items-center">
         <div className="flex items-center gap-4">

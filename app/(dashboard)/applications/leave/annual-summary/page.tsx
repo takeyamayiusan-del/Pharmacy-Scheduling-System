@@ -91,7 +91,7 @@ export default function AnnualLeaveSummaryPage() {
 
       {/* 特休規則設定面板（僅管理者可見） */}
       {isManager && showConfigPanel && (
-        <div className="bg-white rounded-xl shadow-sm border p-6">
+        <div className="app-panel p-6">
           <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
             <Settings className="h-5 w-5" />
             {selectedYear} 年度特休規則設定
@@ -157,7 +157,7 @@ export default function AnnualLeaveSummaryPage() {
       )}
 
       {/* 員工特休總表 */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
+      <div className="app-panel overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="bg-gray-50 border-b">
@@ -248,7 +248,7 @@ export default function AnnualLeaveSummaryPage() {
       {/* 調整特休 Modal */}
       {showAdjustmentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+          <div className="app-panel shadow-xl w-full max-w-md">
             <div className="p-4 border-b flex items-center justify-between">
               <h3 className="font-bold">調整特休天數</h3>
               <button onClick={() => setShowAdjustmentModal(null)} className="text-gray-400 hover:text-gray-600">

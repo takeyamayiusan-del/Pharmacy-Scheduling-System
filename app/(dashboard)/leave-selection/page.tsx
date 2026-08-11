@@ -239,7 +239,7 @@ export default function LeaveSelectionPage() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border p-4">
+      <div className="app-panel p-4">
         <h3 className="font-medium text-gray-900 mb-3">剩餘可選天數</h3>
         <div className="flex flex-wrap gap-4">
           <div className="flex items-center gap-2">
@@ -292,7 +292,7 @@ export default function LeaveSelectionPage() {
       </div>
 
       {/* 桌面端適中寬度：比 max-w-2xl 寬一些，仍避免全寬過大 */}
-      <div className="bg-white rounded-xl shadow-sm border overflow-hidden max-w-4xl">
+      <div className="app-panel overflow-hidden max-w-4xl">
         <div className="p-3 sm:p-5">
           <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
             {["一", "二", "三", "四", "五", "六", "日"].map((d, i) => (
@@ -360,7 +360,7 @@ export default function LeaveSelectionPage() {
 
       {pendingEveningLeave && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6">
+          <div className="app-panel shadow-xl max-w-md w-full p-6">
             <h3 className="text-lg font-bold text-gray-900 mb-2">需代晚班提醒</h3>
             <p className="text-sm text-gray-600 mb-4">
               <span className="font-medium text-amber-800">
