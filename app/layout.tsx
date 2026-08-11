@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Noto_Sans_TC } from "next/font/google";
+import { Noto_Serif_TC } from "next/font/google";
 import "./globals.css";
 import { AppProvider } from "@/lib/context/AppContext";
 import { SYSTEM_DESCRIPTION, SYSTEM_NAME } from "@/lib/sites";
 
-const notoSansTC = Noto_Sans_TC({
+const notoSerifTC = Noto_Serif_TC({
   subsets: ["latin"],
-  weight: ["400", "500", "700"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
   variable: "--font-sans",
   // CJK fallback metrics differ; avoid mismatched Latin fallback sizing
@@ -24,8 +24,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-TW" className={notoSansTC.variable}>
-      <body className={`${notoSansTC.className} font-sans`}>
+    <html lang="zh-TW" className={notoSerifTC.variable}>
+      <body className={`${notoSerifTC.className} font-sans`}>
         <AppProvider>{children}</AppProvider>
       </body>
     </html>
