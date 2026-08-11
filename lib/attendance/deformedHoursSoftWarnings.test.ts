@@ -37,7 +37,7 @@ describe("deformedHoursSoftWarnings", () => {
 
   it("soft-warns cycle overage without blocking semantics", () => {
     const cfg = defaultStoreConfigForSite("zhushan");
-    // 兩周每天排 A(9h) → 14*9=126 > 80
+    // 兩周每天排 A(9h) → 14*9=126 > 80；1 月完整週期僅 01-05～01-18
     const warnings = buildDeformedHoursSoftWarnings({
       year: 2026,
       month: 1,
@@ -46,7 +46,29 @@ describe("deformedHoursSoftWarnings", () => {
       getShiftForDate: () => "A",
     });
     expect(warnings.some((w) => w.kind === "cycle" && w.message.includes("小明"))).toBe(true);
+    expect(warnings.some((w) => w.message.includes("2026-01-05") && w.message.includes("2026-01-18"))).toBe(
+      true
+    );
+    // 跨月週期不在本月提醒
+    expect(warnings.some((w) => w.message.includes("2025-12-22"))).toBe(false);
+    expect(warnings.some((w) => w.message.includes("2026-02-01"))).toBe(false);
     expect(warnings.some((w) => w.kind === "daily")).toBe(false); // A=9 <= 10
     expect(warnings.some((w) => w.kind === "consecutive")).toBe(true);
+  });
+
+  it("skips cross-month cycles when viewing August", () => {
+    const cfg = defaultStoreConfigForSite("zhushan");
+    const warnings = buildDeformedHoursSoftWarnings({
+      year: 2026,
+      month: 8,
+      employees: [{ id: "e1", name: "小明", role: "employee" }],
+      storeConfig: cfg,
+      getShiftForDate: () => "A",
+    });
+    const cycleMsgs = warnings.filter((w) => w.kind === "cycle").map((w) => w.message);
+    expect(cycleMsgs.some((m) => m.includes("2026-07-20"))).toBe(false);
+    expect(cycleMsgs.some((m) => m.includes("2026-08-31"))).toBe(false);
+    expect(cycleMsgs.some((m) => m.includes("2026-08-03") && m.includes("2026-08-16"))).toBe(true);
+    expect(cycleMsgs.some((m) => m.includes("2026-08-17") && m.includes("2026-08-30"))).toBe(true);
   });
 });
