@@ -164,10 +164,10 @@ export default function DashboardLayout({
     storeConfig.storeName?.trim() || SITES[activeSiteId].displayName;
 
   return (
-    <div className="min-h-screen app-shell relative">
+    <div className="h-dvh flex flex-col app-shell relative overflow-hidden">
       <div className="pointer-events-none absolute inset-0 app-shell-mesh opacity-70" aria-hidden />
       {/* 頂部導航欄 */}
-      <header className="app-glass sticky top-0 z-40 relative">
+      <header className="app-glass shrink-0 z-40 relative">
         <div className="px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div className="flex items-center gap-3 sm:gap-4 min-w-0">
@@ -351,7 +351,8 @@ export default function DashboardLayout({
         </div>
       </header>
 
-      <div className="flex relative">
+      {/* 左目錄／右內容雙欄獨立：目錄固定貫穿，只有右邊頁面捲動 */}
+      <div className="flex flex-1 min-h-0 relative z-10">
         {/* 手機側邊欄遮罩 */}
         {isMobileSidebarOpen && (
           <button
@@ -361,16 +362,15 @@ export default function DashboardLayout({
           />
         )}
 
-        {/* 側邊欄：桌面固定整片（頂欄下方撐滿），捲動內容時不跟著消失 */}
         <aside
-          className={`fixed z-50 app-sidebar transition-all duration-300
-            top-0 lg:top-16 left-0 bottom-0
-            h-dvh lg:h-[calc(100dvh-4rem)]
+          className={`app-sidebar z-50 flex flex-col transition-[width,transform] duration-300 ease-out
+            fixed inset-y-0 left-0 w-72
+            lg:static lg:inset-auto lg:h-full lg:shrink-0
             ${isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'}
-            ${isMobileSidebarOpen ? 'translate-x-0 w-72' : '-translate-x-full w-72 lg:translate-x-0'}
+            ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
           `}
         >
-          <div className="flex items-center justify-between p-4 border-b border-slate-100 lg:hidden">
+          <div className="flex items-center justify-between p-4 border-b border-slate-100 lg:hidden shrink-0">
             <span className="font-semibold text-slate-900 text-base">功能選單</span>
             <button
               onClick={closeMobileSidebar}
@@ -380,7 +380,7 @@ export default function DashboardLayout({
               <X className="h-5 w-5" />
             </button>
           </div>
-          <nav className="p-3 space-y-1.5 h-[calc(100%-3.5rem)] lg:h-full overflow-y-auto scrollbar-hide">
+          <nav className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 space-y-1.5 scrollbar-hide">
             {(() => {
               const visibleNav = navItems.filter((item) => item.allowed);
               // 只亮「路徑最長／最精確」的那一項，避免 /attendance/punch-admin 連工時統計一起亮
@@ -426,17 +426,9 @@ export default function DashboardLayout({
           </nav>
         </aside>
 
-        {/* 桌面側欄佔位，避免 fixed 後內容被蓋住 */}
-        <div
-          className={`hidden lg:block shrink-0 transition-all duration-300 ${
-            isSidebarCollapsed ? 'w-20' : 'w-64'
-          }`}
-          aria-hidden
-        />
-
-        {/* 主要內容：min-w-0 + overflow 避免手機左右被撐破 */}
-        <main className="flex-1 min-w-0 overflow-x-hidden">
-          <div className="p-3 sm:p-6 lg:p-8 max-w-full overflow-x-hidden app-fade-in">
+        {/* 右邊頁面獨立捲動；左邊目錄保持固定可見、隨時可點 */}
+        <main className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden overscroll-contain">
+          <div className="p-3 sm:p-6 lg:p-8 max-w-full app-fade-in">
             {children}
           </div>
         </main>
