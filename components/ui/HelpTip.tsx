@@ -7,13 +7,13 @@ type HelpTipProps = {
   title?: string;
   children: ReactNode;
   className?: string;
-  /** 預設收合；設 true 則初次展開 */
+  /** 預設收合；三大申請／排休等重要操作請設 true */
   defaultOpen?: boolean;
-  /** 按鈕旁的簡短提示（可選） */
+  /** 收合時按鈕旁的簡短提示（可選） */
   hint?: string;
 };
 
-/** 長說明預設收合，點「說明」再展開，避免佔版面 */
+/** 說明區塊：重要流程可預設展開，其餘可預設收合 */
 export function HelpTip({
   title = "說明",
   children,

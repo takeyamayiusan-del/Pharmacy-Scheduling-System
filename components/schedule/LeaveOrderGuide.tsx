@@ -11,9 +11,12 @@ import { HelpTip } from "@/components/ui/HelpTip";
 export function LeaveOrderGuide({
   compact = false,
   className = "",
+  defaultOpen = false,
 }: {
   compact?: boolean;
   className?: string;
+  /** 排休／三大申請頁請設 true，讓新人看得到步驟 */
+  defaultOpen?: boolean;
 }) {
   const { storeConfig } = useApp();
   const rotationOn = storeConfig.features.rotationEvening;
@@ -74,14 +77,24 @@ export function LeaveOrderGuide({
 
   if (compact) {
     return (
-      <HelpTip title="建議排休順序" className={className} hint="先換班再排休較不易撞晚班">
+      <HelpTip
+        title="建議排休順序"
+        className={className}
+        hint="先換班再排休較不易撞晚班"
+        defaultOpen={defaultOpen}
+      >
         {body}
       </HelpTip>
     );
   }
 
   return (
-    <HelpTip title="建議排休順序" className={className} hint="先換班再排休較不易撞晚班">
+    <HelpTip
+      title="建議排休順序"
+      className={className}
+      hint="先換班再排休較不易撞晚班"
+      defaultOpen={defaultOpen}
+    >
       {body}
     </HelpTip>
   );
