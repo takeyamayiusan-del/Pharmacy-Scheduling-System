@@ -1,15 +1,30 @@
 import type { Metadata } from "next";
-import { Noto_Serif_TC } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { AppProvider } from "@/lib/context/AppContext";
 import { SYSTEM_DESCRIPTION, SYSTEM_NAME } from "@/lib/sites";
 
-const notoSerifTC = Noto_Serif_TC({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700"],
+/** IBM Plex Sans TC（OFL）— 適合 UI／後台的繁中無襯線體 */
+const ibmPlexSansTC = localFont({
+  src: [
+    {
+      path: "./fonts/IBMPlexSansTC-Regular.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/IBMPlexSansTC-Medium.woff2",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "./fonts/IBMPlexSansTC-Bold.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
   display: "swap",
   variable: "--font-sans",
-  // CJK fallback metrics differ; avoid mismatched Latin fallback sizing
   adjustFontFallback: false,
 });
 
@@ -24,8 +39,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-TW" className={notoSerifTC.variable}>
-      <body className={`${notoSerifTC.className} font-sans`}>
+    <html lang="zh-TW" className={ibmPlexSansTC.variable}>
+      <body className={`${ibmPlexSansTC.className} font-sans`}>
         <AppProvider>{children}</AppProvider>
       </body>
     </html>

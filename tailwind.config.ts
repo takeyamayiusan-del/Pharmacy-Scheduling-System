@@ -11,19 +11,10 @@ const config: Config = {
       fontFamily: {
         sans: [
           "var(--font-sans)",
-          '"Noto Serif TC"',
-          '"Source Han Serif TC"',
-          "ui-serif",
-          "Georgia",
-          "serif",
-        ],
-        serif: [
-          "var(--font-sans)",
-          '"Noto Serif TC"',
-          '"Source Han Serif TC"',
-          "ui-serif",
-          "Georgia",
-          "serif",
+          '"IBM Plex Sans TC"',
+          "ui-sans-serif",
+          "system-ui",
+          "sans-serif",
         ],
       },
       colors: {
