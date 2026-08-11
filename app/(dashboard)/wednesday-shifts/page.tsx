@@ -10,6 +10,7 @@ import {
   weekdayLabel,
 } from "@/lib/store-config";
 import { getLocalDayOfWeek } from "@/lib/schedule/sundayRest";
+import { HelpTip } from "@/components/ui/HelpTip";
 
 export default function WednesdayShiftsPage() {
   const router = useRouter();
@@ -142,33 +143,30 @@ export default function WednesdayShiftsPage() {
         </button>
       </div>
 
-      <div className="bg-sky-50 border border-sky-200 rounded-xl p-4">
-        <h3 className="font-medium text-sky-800 mb-1">🧭 操作說明</h3>
-        <div className="text-sm text-slate-700 space-y-1">
-          <p>
-            輪值日：{weekdaysLabel}。每月可選「不輪晚班」上限：{offLimit} 天
-            {storeConfig.rotationEvening.monthlyOffLimit == null
-              ? "（依本月輪值日數量自動調整）"
-              : "（店家設定固定上限）"}
-            。
-          </p>
-          <p>
-            值晚班班別：
-            {getShiftName(storeConfig, storeConfig.rotationEvening.onDutyShift)}
-            ；其餘輪值員工：
-            {getShiftName(storeConfig, storeConfig.rotationEvening.offDutyShift)}
-            。
-          </p>
-          <p>若與另一位輪值員工衝突，系統會提示換班。</p>
-          <p className="text-emerald-800 font-medium">
-            建議：{menuLabel}有衝突時，先完成換班，再去「排休選擇」勾休假日。
-          </p>
-          <p>
-            目前輪值員工：
-            <strong> {rotationEmployees.map((e) => e.name).join("、")}</strong>
-          </p>
-        </div>
-      </div>
+      <HelpTip title="操作說明" hint={`${menuLabel}輪值規則`}>
+        <p>
+          輪值日：{weekdaysLabel}。每月可選「不輪晚班」上限：{offLimit} 天
+          {storeConfig.rotationEvening.monthlyOffLimit == null
+            ? "（依本月輪值日數量自動調整）"
+            : "（店家設定固定上限）"}
+          。
+        </p>
+        <p>
+          值晚班班別：
+          {getShiftName(storeConfig, storeConfig.rotationEvening.onDutyShift)}
+          ；其餘輪值員工：
+          {getShiftName(storeConfig, storeConfig.rotationEvening.offDutyShift)}
+          。
+        </p>
+        <p>若與另一位輪值員工衝突，系統會提示換班。</p>
+        <p className="text-emerald-800 font-medium">
+          建議：{menuLabel}有衝突時，先完成換班，再去「排休選擇」點選休假日（即時儲存、無確認鍵）。
+        </p>
+        <p>
+          目前輪值員工：
+          <strong> {rotationEmployees.map((e) => e.name).join("、")}</strong>
+        </p>
+      </HelpTip>
 
       {isParticipant && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

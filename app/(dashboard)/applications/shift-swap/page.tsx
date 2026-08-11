@@ -5,6 +5,7 @@ import { useApp } from "@/lib/context/AppContext";
 import { useSearchParams } from "next/navigation";
 import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
 import { LeaveOrderGuide } from "@/components/schedule/LeaveOrderGuide";
+import { HelpTip } from "@/components/ui/HelpTip";
 import {
   assertNoSundayInSwapDates,
   isFixedSundayRest,
@@ -151,16 +152,16 @@ export default function ShiftSwapPage() {
         )}
       </div>
 
-      <div className="app-card bg-sky-50/70 border-sky-200/80 p-4 text-sm text-slate-700 space-y-1">
+      <HelpTip title="換班流程說明" hint="發起 → 對方確認 → 審核">
         <p><span className="font-medium text-sky-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
-        <p className="text-sky-900/80">與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
-        <p className="text-rose-700/90 font-medium">禮拜日為全店固定公休，不可列入換班。</p>
-        <p className="text-emerald-800 pt-1">
-          建議：若是為了排休／晚班衝突，請<strong>先完成換班</strong>，再到「排休選擇」勾日期。
+        <p>與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
+        <p className="text-rose-700 font-medium">禮拜日為全店固定公休，不可列入換班。</p>
+        <p className="text-emerald-800">
+          建議：若是為了排休／晚班衝突，請<strong>先完成換班</strong>，再到「排休選擇」點選日期（即時儲存、無確認鍵）。
         </p>
-      </div>
+      </HelpTip>
 
-      <LeaveOrderGuide compact className="bg-emerald-50 border border-emerald-200 rounded-xl p-4" />
+      <LeaveOrderGuide compact />
 
       {source === "wednesday_conflict" && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">
