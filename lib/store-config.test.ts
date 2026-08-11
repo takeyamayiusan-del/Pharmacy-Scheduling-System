@@ -35,6 +35,8 @@ describe("store-config", () => {
     expect(c.features.customShiftCatalog).toBe(true);
     expect(c.features.rotationEvening).toBe(false);
     expect(c.features.weekdayOffRule).toBe(false);
+    expect(c.workHoursRegime).toBe("eight_week");
+    expect(defaultStoreConfigForSite("zhushan").workHoursRegime).toBe("two_week");
   });
 
   it("buildJijiStoreConfigWithTemplate loads head-store catalog and defaults", () => {
