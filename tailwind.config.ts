@@ -11,10 +11,7 @@ const config: Config = {
       fontFamily: {
         sans: [
           "var(--font-sans)",
-          '"jf open 粉圓"',
-          '"jf openhuninn"',
-          "Huninn",
-          "ui-rounded",
+          '"IBM Plex Sans TC"',
           "ui-sans-serif",
           "system-ui",
           "sans-serif",

@@ -4,12 +4,27 @@ import "./globals.css";
 import { AppProvider } from "@/lib/context/AppContext";
 import { SYSTEM_DESCRIPTION, SYSTEM_NAME } from "@/lib/sites";
 
-/** jf open 粉圓（SIL OFL）— justfont 開源圓體 */
-const jfOpenHuninn = localFont({
-  src: "./fonts/jf-openhuninn-2.1.ttf",
+/** IBM Plex Sans TC（OFL）— 適合 UI／後台的繁中無襯線體 */
+const ibmPlexSansTC = localFont({
+  src: [
+    {
+      path: "./fonts/IBMPlexSansTC-Regular.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/IBMPlexSansTC-Medium.woff2",
+      weight: "500",
+      style: "normal",
+    },
+    {
+      path: "./fonts/IBMPlexSansTC-Bold.woff2",
+      weight: "700",
+      style: "normal",
+    },
+  ],
   display: "swap",
   variable: "--font-sans",
-  weight: "400",
   adjustFontFallback: false,
 });
 
@@ -24,8 +39,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-TW" className={jfOpenHuninn.variable}>
-      <body className={`${jfOpenHuninn.className} font-sans`}>
+    <html lang="zh-TW" className={ibmPlexSansTC.variable}>
+      <body className={`${ibmPlexSansTC.className} font-sans`}>
         <AppProvider>{children}</AppProvider>
       </body>
     </html>
