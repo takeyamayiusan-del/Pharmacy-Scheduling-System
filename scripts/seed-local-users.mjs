@@ -134,6 +134,7 @@ function buildJijiStoreConfig() {
       },
     ],
     shiftCatalog: catalog,
+    workHoursRegime: "eight_week",
   };
 }
 

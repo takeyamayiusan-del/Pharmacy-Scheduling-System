@@ -21,8 +21,11 @@ import {
   parseStoreConfig,
   suggestRotationMenuLabel,
   weekdayLabel,
+  WORK_HOURS_REGIME_OPTIONS,
+  workHoursRegimeMeta,
   type StoreConfig,
   type StoreShiftCode,
+  type WorkHoursRegime,
 } from "@/lib/store-config";
 import {
   assertWritableShiftCode,
@@ -784,6 +787,36 @@ export default function StoreSettingsPage() {
             </select>
           </label>
         </div>
+      </section>
+
+      <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
+        <h2 className="font-semibold text-gray-900">變形工時制度</h2>
+        <p className="text-sm text-gray-500">
+          依各店勞動契約／核備制度標記。竹山預設兩周、集集預設八周。
+          目前供店家辨識與日後週期工時檢查；尚未自動計算週期加班上限。
+        </p>
+        <label className="block text-sm">
+          <span className="text-gray-700">本店制度</span>
+          <select
+            value={draft.workHoursRegime}
+            onChange={(e) =>
+              setDraft((p) => ({
+                ...p,
+                workHoursRegime: e.target.value as WorkHoursRegime,
+              }))
+            }
+            className="mt-1 w-full border rounded-lg px-3 py-2"
+          >
+            {WORK_HOURS_REGIME_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}（{opt.cycleWeeks} 周／上限 {opt.cycleHoursCap} 小時）
+              </option>
+            ))}
+          </select>
+        </label>
+        <p className="text-sm text-gray-600">
+          {workHoursRegimeMeta(draft.workHoursRegime).summary}
+        </p>
       </section>
 
       <section className="bg-white rounded-xl shadow-sm border p-6 space-y-4">
