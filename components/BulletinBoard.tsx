@@ -66,6 +66,7 @@ export default function BulletinBoard() {
     storeConfig,
   } = useApp();
   const [showAddForm, setShowAddForm] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(false);
   const [formData, setFormData] = useState(DEFAULT_FORM);
 
   const isManager = ["owner", "manager"].includes(currentUser?.role ?? "");
@@ -172,13 +173,13 @@ export default function BulletinBoard() {
   const placeholders = getPlaceholder(formData.type);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 app-card p-4 border-sky-200/80 bg-gradient-to-br from-sky-50 to-cyan-50/70">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            <Megaphone className="h-5 w-5 text-blue-600" />
+          <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+            <Megaphone className="h-5 w-5 text-sky-700" />
             店內佈告欄
-            <span className="text-xs font-medium text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-2 py-0.5">
+            <span className="text-xs font-semibold text-sky-900 bg-sky-100 border border-sky-300 rounded-lg px-2 py-0.5">
               {storeConfig.storeName?.trim() || (activeSiteId === "jiji" ? "集集" : "竹山")}
             </span>
           </h3>
@@ -188,22 +189,31 @@ export default function BulletinBoard() {
             </span>
           )}
         </div>
-        <button
-          onClick={() => {
-            setShowAddForm(!showAddForm);
-            resetForm();
-          }}
-          className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          {showAddForm ? "取消" : "發布公告"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setIsCollapsed((v) => !v)}
+            className="text-sm px-3 py-1.5 rounded-lg border border-sky-300 bg-white text-sky-800 hover:bg-sky-50 transition-colors"
+          >
+            {isCollapsed ? "展開公告" : "收起公告"}
+          </button>
+          <button
+            onClick={() => {
+              setShowAddForm(!showAddForm);
+              resetForm();
+            }}
+            className="text-sm px-3 py-1.5 bg-sky-600 text-white rounded-lg hover:bg-sky-700 transition-colors"
+          >
+            {showAddForm ? "取消" : "發布公告"}
+          </button>
+        </div>
       </div>
 
-      <p className="text-xs text-gray-500 -mt-2">
+      <p className="text-xs text-slate-600 -mt-2">
         僅手動發布才會出現在佈告欄。平常換班若已指定對象，請走換班申請、不會自動公告；只有公開徵求代班時才發「代班需求」。
       </p>
 
-      {showAddForm && (
+      {!isCollapsed && showAddForm && (
         <form onSubmit={handleSubmit} className="app-card p-4 space-y-3 bg-white border-blue-100 shadow-sm">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">公告類型</label>
@@ -356,9 +366,9 @@ export default function BulletinBoard() {
         </form>
       )}
 
-      <div className="grid grid-cols-1 gap-4">
+      {!isCollapsed && <div className="grid grid-cols-1 gap-4">
         {visibleItems.length === 0 ? (
-          <div className="py-8 text-center text-gray-500 bg-gray-50 rounded-xl border-2 border-dashed">
+          <div className="py-8 text-center text-slate-500 bg-white/85 rounded-xl border-2 border-dashed border-sky-200">
             目前沒有新公告
           </div>
         ) : (
@@ -375,11 +385,11 @@ export default function BulletinBoard() {
                 key={item.id}
                 className={`app-card p-4 relative group transition-all ${
                   item.isPinned
-                    ? "border-2 border-blue-300 bg-blue-50/30"
+                    ? "border-2 border-sky-300 bg-sky-100/80"
                     : item.isUrgent
-                      ? "border-amber-200 bg-amber-50/30"
-                      : "border-gray-100"
-                } ${!isRead ? "ring-2 ring-blue-200" : ""}`}
+                      ? "border-amber-300 bg-amber-50/80"
+                      : "border-sky-100 bg-white/95"
+                } ${!isRead ? "ring-2 ring-sky-200" : ""}`}
               >
                 {item.isPinned && (
                   <div className="absolute -top-2 -right-2 bg-blue-500 text-white text-xs px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -478,7 +488,7 @@ export default function BulletinBoard() {
             );
           })
         )}
-      </div>
+      </div>}
     </div>
   );
 }
