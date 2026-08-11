@@ -17,12 +17,20 @@ import {
   isWorkHoursRegime,
   type WorkHoursRegime,
 } from "@/lib/attendance/workHoursRegime";
+import {
+  DEFAULT_WORK_HOURS_CYCLE_ANCHOR,
+  normalizeCycleAnchor,
+} from "@/lib/attendance/deformedHoursSoftWarnings";
 
 export type { WorkHoursRegime } from "@/lib/attendance/workHoursRegime";
 export {
   WORK_HOURS_REGIME_OPTIONS,
   workHoursRegimeMeta,
 } from "@/lib/attendance/workHoursRegime";
+export {
+  DEFAULT_WORK_HOURS_CYCLE_ANCHOR,
+  defaultSoftLimitsForRegime,
+} from "@/lib/attendance/deformedHoursSoftWarnings";
 
 export type StoreShiftCode = "A" | "B" | "C" | "D" | "E" | "X";
 
@@ -94,9 +102,14 @@ export type StoreConfig = {
   shiftCatalog: CatalogShift[];
   /**
    * 變形工時制度（店家標記）。
-   * 竹山預設兩周、集集預設八周；目前供設定顯示，尚未自動核對週期工時上限。
+   * 竹山預設兩周、集集預設八周；班表頁會依此做週期工時軟性提醒。
    */
   workHoursRegime: WorkHoursRegime;
+  /**
+   * 變形工時週期起算日（YYYY-MM-DD）。
+   * 自此日對齊兩周／八周區間；可改，建議選星期一。
+   */
+  workHoursCycleAnchor: string;
 };
 
 export const STORE_CONFIG_SETTING_ID = "store_config";
@@ -157,6 +170,7 @@ export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
     ruleTags: DEFAULT_RULE_TAGS.map((t) => ({ ...t })),
     shiftCatalog: isZhushan ? buildZhushanLegacyCatalog() : [],
     workHoursRegime: defaultWorkHoursRegimeForSite(siteId),
+    workHoursCycleAnchor: DEFAULT_WORK_HOURS_CYCLE_ANCHOR,
   };
 }
 
@@ -382,6 +396,10 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
     workHoursRegime: isWorkHoursRegime(obj.workHoursRegime)
       ? obj.workHoursRegime
       : defaults.workHoursRegime,
+    workHoursCycleAnchor: normalizeCycleAnchor(
+      obj.workHoursCycleAnchor,
+      defaults.workHoursCycleAnchor
+    ),
   };
 }
 
