@@ -30,7 +30,7 @@ export function HelpTip({
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className="inline-flex items-center gap-1.5 rounded-lg border border-blue-300 bg-white px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 transition-colors shadow-sm"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-sky-400 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-900 hover:bg-sky-100 transition-colors shadow-sm"
           aria-expanded={open}
           aria-controls={panelId}
         >
@@ -46,7 +46,7 @@ export function HelpTip({
       {open && (
         <div
           id={panelId}
-          className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-base text-gray-700 leading-relaxed space-y-2 shadow-sm"
+          className="mt-3 rounded-xl border border-sky-300 bg-sky-100 p-4 text-base text-slate-900 leading-relaxed space-y-2 shadow-sm"
         >
           {children}
         </div>

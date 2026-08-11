@@ -60,15 +60,14 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased font-sans;
+    @apply bg-background text-foreground font-sans;
     line-height: 1.65;
-    letter-spacing: 0.01em;
+    font-weight: 500;
   }
 
   @media (min-width: 1024px) {
     body {
       line-height: 1.7;
-      letter-spacing: 0.015em;
     }
   }
 

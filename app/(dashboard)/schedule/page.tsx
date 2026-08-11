@@ -1099,7 +1099,7 @@ export default function SchedulePage() {
                       onClick={() => setSelectedDate(dateStr)}
                       title={typhoon ? `${typhoon.title}（${typhoon.periodLabel}）` : "查看當日上班狀況"}
                     >
-                      {isToday && <div className="text-[10px] font-bold text-rose-700">今</div>}
+                      {isToday && <div className="text-xs font-extrabold text-rose-700">今</div>}
                       {typhoon && <div className="text-[10px] font-bold text-cyan-800">颱</div>}
                       <div>{day}</div>
                       <div className="text-xs text-slate-500">{dayLabels[dayOfWeek]}</div>
