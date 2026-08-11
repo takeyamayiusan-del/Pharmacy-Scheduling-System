@@ -319,11 +319,11 @@ export default function OvertimePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">加班申請</h2>
+      <div className="app-toolbar justify-between">
+        <h2 className="app-page-title">加班申請</h2>
         <button
           onClick={() => setShowForm(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="app-btn-primary"
         >
           {isManager ? "新增／補登" : "新申請"}
         </button>

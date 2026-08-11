@@ -173,25 +173,25 @@ export default function PayrollDetailPage() {
 
   return (
     <div className="space-y-6 max-w-2xl">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+      <div className="app-toolbar">
+        <h1 className="app-page-title flex items-center gap-2">
           <DollarSign className="h-6 w-6 text-emerald-600" />
           薪資查詢
         </h1>
       </div>
 
       {featuredRecord ? (
-        <div className="app-card p-6 bg-gradient-to-br from-emerald-50 to-blue-50 border-emerald-200">
+        <div className="app-card p-6 bg-gradient-to-br from-emerald-50/90 to-sky-50/80 border-emerald-200/80">
           <div className="flex flex-wrap items-center gap-2 mb-2">
-            <span className="bg-emerald-500 text-white text-xs px-2 py-1 rounded-full">
+            <span className="bg-emerald-500 text-white text-xs px-2.5 py-1 rounded-full font-medium">
               {featuredIsLastMonth ? "上個月薪水" : "最近一期薪水"}
             </span>
-            <span className="text-sm text-gray-600">
+            <span className="text-sm text-slate-600">
               {featuredRecord.year}年{featuredRecord.month}月
             </span>
             <span className="text-xs text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full">已發布</span>
           </div>
-          <p className="text-xs text-gray-500 mb-4">
+          <p className="text-xs text-slate-500 mb-4">
             隔月發薪（通常次月 5 日）· 上方顯示上個月所屬薪資
             {!featuredIsLastMonth
               ? ` · ${payrollPeriod.year}年${payrollPeriod.month}月尚未發布，改顯示最近一期`
@@ -199,8 +199,8 @@ export default function PayrollDetailPage() {
           </p>
 
           <div className="text-center mb-4">
-            <p className="text-sm text-gray-600 mb-1">總薪資</p>
-            <p className="text-4xl font-bold text-emerald-600">
+            <p className="text-sm text-slate-600 mb-1">總薪資</p>
+            <p className="text-4xl font-semibold tracking-tight text-emerald-600">
               ${formatCurrency(featuredRecord.finalPay)}
             </p>
           </div>

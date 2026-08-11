@@ -815,20 +815,20 @@ export default function PayrollPage() {
   return (
     <div className="space-y-6">
       {/* 頁頭 */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
+      <div className="app-toolbar justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">月底薪資結算</h1>
-          <p className="text-sm text-gray-500 mt-1">
+          <h1 className="app-page-title">月底薪資結算</h1>
+          <p className="app-meta mt-1">
             預設為上個月（本月結上月薪）。可先「試算」確認出勤時數與金額，再發布薪資單。
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
-          <select value={year} onChange={(e) => { setYear(Number(e.target.value)); setShowTrial(false); }} className="border rounded-lg px-3 py-2 text-sm">
+          <select value={year} onChange={(e) => { setYear(Number(e.target.value)); setShowTrial(false); }} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white/90">
             {Array.from({ length: 5 }, (_, i) => defaultPeriod.year - 2 + i).map((y) => (
               <option key={y} value={y}>{y}年（民國{toROC(y)}年）</option>
             ))}
           </select>
-          <select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setShowTrial(false); }} className="border rounded-lg px-3 py-2 text-sm">
+          <select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setShowTrial(false); }} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white/90">
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
           <button

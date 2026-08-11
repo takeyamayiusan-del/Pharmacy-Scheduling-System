@@ -344,18 +344,18 @@ export default function LeaveApplicationPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="text-2xl font-bold text-gray-900">請假申請</h2>
-        <div className="flex items-center gap-3">
+      <div className="app-toolbar justify-between">
+        <h2 className="app-page-title">請假申請</h2>
+        <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
           <button
             onClick={() => router.push('/applications/leave/annual-summary')}
-            className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+            className="app-btn-outline"
           >
-            📅 年度特休總表
+            年度特休總表
           </button>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+            className="app-btn-primary"
           >
             {isManager ? '+ 新增／補登' : '+ 新增申請'}
           </button>

@@ -63,14 +63,14 @@ export function NotificationList() {
 
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">通知</h1>
+      <div className="app-toolbar justify-between mb-6">
+        <h1 className="app-page-title">通知</h1>
         <div className="flex flex-wrap items-center gap-2">
           {notifications.some((n) => !n.read) && (
             <button
               type="button"
               onClick={() => void markAllAsRead()}
-              className="min-h-11 px-4 py-2 text-sm text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100"
+              className="min-h-11 px-4 py-2 text-sm text-sky-800 bg-sky-50 rounded-xl hover:bg-sky-100"
             >
               全部標示為已讀
             </button>
@@ -79,7 +79,7 @@ export function NotificationList() {
             <button
               type="button"
               onClick={() => void handleDeleteAll()}
-              className="min-h-11 px-4 py-2 text-sm text-red-700 bg-red-50 rounded-lg hover:bg-red-100 inline-flex items-center gap-1.5"
+              className="min-h-11 px-4 py-2 text-sm text-rose-700 bg-rose-50 rounded-xl hover:bg-rose-100 inline-flex items-center gap-1.5"
             >
               <Trash2 className="h-4 w-4" />
               一鍵刪除

@@ -144,17 +144,17 @@ export default function ShiftSwapPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">換班申請</h2>
+      <div className="app-toolbar justify-between">
+        <h2 className="app-page-title">換班申請</h2>
         {currentUser?.role !== "owner" && (
-          <button onClick={() => setShowForm(true)} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">新申請</button>
+          <button onClick={() => setShowForm(true)} className="app-btn-primary">新申請</button>
         )}
       </div>
 
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-gray-700 space-y-1">
-        <p><span className="font-medium text-blue-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
-        <p className="text-blue-900/80">與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
-        <p className="text-red-700/90 font-medium">禮拜日為全店固定公休，不可列入換班。</p>
+      <div className="app-card bg-sky-50/70 border-sky-200/80 p-4 text-sm text-slate-700 space-y-1">
+        <p><span className="font-medium text-sky-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
+        <p className="text-sky-900/80">與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
+        <p className="text-rose-700/90 font-medium">禮拜日為全店固定公休，不可列入換班。</p>
         <p className="text-emerald-800 pt-1">
           建議：若是為了排休／晚班衝突，請<strong>先完成換班</strong>，再到「排休選擇」勾日期。
         </p>

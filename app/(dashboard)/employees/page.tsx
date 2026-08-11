@@ -182,10 +182,10 @@ export default function EmployeesPage() {
   return (
     <div className="space-y-6">
       {/* 頁頭 */}
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+      <div className="app-toolbar justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">員工管理</h2>
-          <p className="text-sm text-gray-500 mt-1">
+          <h2 className="app-page-title">員工管理</h2>
+          <p className="app-meta mt-1">
             目前店別：{SITES[activeSiteId].displayName}（僅顯示此店人員）
           </p>
         </div>
@@ -194,7 +194,7 @@ export default function EmployeesPage() {
             setFormData((prev) => ({ ...prev, siteId: activeSiteId }));
             setShowForm(true);
           }}
-          className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          className="app-btn-primary"
         >
           新增員工
         </button>
@@ -203,20 +203,20 @@ export default function EmployeesPage() {
       {/* 員工統計 */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="app-panel p-4">
-          <h3 className="font-medium text-gray-900 mb-2">總員工數</h3>
-          <p className="text-2xl font-bold text-blue-600">
+          <h3 className="app-meta mb-2">總員工數</h3>
+          <p className="text-2xl font-semibold text-sky-600">
             {employees.filter(e => e.role !== "owner").length}人
           </p>
         </div>
         <div className="app-panel p-4">
-          <h3 className="font-medium text-gray-900 mb-2">店長</h3>
-          <p className="text-2xl font-bold text-purple-600">
+          <h3 className="app-meta mb-2">店長</h3>
+          <p className="text-2xl font-semibold text-violet-600">
             {employees.filter(e => e.role === "manager").length}人
           </p>
         </div>
         <div className="app-panel p-4">
-          <h3 className="font-medium text-gray-900 mb-2">一般員工</h3>
-          <p className="text-2xl font-bold text-green-600">
+          <h3 className="app-meta mb-2">一般員工</h3>
+          <p className="text-2xl font-semibold text-emerald-600">
             {employees.filter(e => e.role === "staff").length}人
           </p>
         </div>
