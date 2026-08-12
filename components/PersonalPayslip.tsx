@@ -5,7 +5,7 @@ import { CreditCard, Download, FileText } from "lucide-react";
 import { exportPayslipPdf } from "@/lib/payroll/exportPayslipPdf";
 
 export default function PersonalPayslip() {
-  const { currentUser, payrollRecords } = useApp();
+  const { currentUser, payrollRecords, storeConfig } = useApp();
 
   if (!currentUser) return null;
 
@@ -20,7 +20,9 @@ export default function PersonalPayslip() {
   if (!latestPublished) return null;
 
   const handleDownload = (): void => {
-    exportPayslipPdf(latestPublished, currentUser.name);
+    exportPayslipPdf(latestPublished, currentUser.name, {
+      storeName: storeConfig.storeName,
+    });
   };
 
   return (

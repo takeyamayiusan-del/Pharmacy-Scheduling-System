@@ -4,14 +4,18 @@ import { buildPayslipWorksheet } from "@/lib/payroll/payslipExcelLayout";
 
 export type PersonalPayslipExcelMeta = {
   employeeName: string;
+  storeName?: string;
   position?: string;
   bankAccount?: string;
   payDate?: string;
   hourlyRate?: number;
   normalHours?: number;
   leaveHours?: number;
+  leaveDeductionHours?: number;
   overtimeHours?: number;
   holidayOvertimeHours?: number;
+  tardinessMinutes?: number;
+  leaveTypes?: string[];
   companyPensionRate?: number;
   companyPensionBase?: number;
   unionFee?: number;
@@ -35,11 +39,46 @@ export function exportPersonalPayslipExcel(
   meta: PersonalPayslipExcelMeta
 ): void {
   const rocYear = toROC(record.year);
+  const storeName = meta.storeName?.trim() || "本店";
   const positionGrade = Number(record.positionGradeTotal ?? 0);
   const fixedAllowance = Number(record.fixedAllowanceTotal ?? 0);
   const fullAttendance = Number(record.fullAttendancePay ?? 0);
   const rawBonus = Number(record.bonusTotal ?? 0);
   const otherBonus = Math.max(0, rawBonus - fixedAllowance);
+  const formulaNotes: string[] = [];
+
+  const overtimeHours = Number(meta.overtimeHours ?? 0);
+  if ((Number(record.overtimePay) || 0) > 0 && overtimeHours > 0) {
+    formulaNotes.push(
+      `加班費 = ${overtimeHours.toFixed(2)} 小時 × ${(Number(record.overtimePay) / overtimeHours).toFixed(
+        2
+      )} 元/小時 = ${Number(record.overtimePay).toFixed(0)} 元`
+    );
+  }
+  const leaveDeductionHours = Number(meta.leaveDeductionHours ?? 0);
+  if ((Number(record.leaveDeduction) || 0) > 0 && leaveDeductionHours > 0) {
+    formulaNotes.push(
+      `請假扣款 = ${leaveDeductionHours.toFixed(2)} 小時 × ${(
+        Number(record.leaveDeduction) / leaveDeductionHours
+      ).toFixed(2)} 元/小時 = ${Number(record.leaveDeduction).toFixed(0)} 元${
+        meta.leaveTypes?.length ? `（假別：${meta.leaveTypes.join("、")}）` : ""
+      }`
+    );
+  }
+  const tardinessMinutes = Number(meta.tardinessMinutes ?? 0);
+  if ((Number(record.tardinessDeduction) || 0) > 0 && tardinessMinutes > 0) {
+    formulaNotes.push(
+      `遲到扣款 = ${tardinessMinutes} 分鐘 × ${(
+        Number(record.tardinessDeduction) / tardinessMinutes
+      ).toFixed(2)} 元/分鐘 = ${Number(record.tardinessDeduction).toFixed(0)} 元`
+    );
+  }
+  if (otherBonus !== 0) {
+    formulaNotes.push(`其他加項／異動淨額 = ${otherBonus.toFixed(0)} 元（依本月異動項目加總）`);
+  }
+  const composedNote = [record.note ? String(record.note) : "", ...formulaNotes]
+    .filter(Boolean)
+    .join("\n");
 
   const colA: [string, number][] = [];
   pushIfNonZero(colA, "薪資", Number(record.baseSalary) || 0);
@@ -63,7 +102,7 @@ export function exportPersonalPayslipExcel(
   pushIfNonZero(colC, "員工自提", Number(record.pensionDeduction) || 0);
 
   const ws = buildPayslipWorksheet({
-    title: `耀聖藥局　${rocYear}年${record.month}月　薪資明細表`,
+    title: `${storeName}　${rocYear}年${record.month}月　薪資明細表`,
     employeeName: meta.employeeName,
     position: meta.position,
     bankAccount: meta.bankAccount,
@@ -80,7 +119,7 @@ export function exportPersonalPayslipExcel(
     companyPensionRate: meta.companyPensionRate,
     companyPensionBase: meta.companyPensionBase,
     unionFee: meta.unionFee,
-    note: record.note ? String(record.note) : undefined,
+    note: composedNote || undefined,
     finalPay: Number(record.finalPay) || 0,
   });
 
@@ -89,6 +128,6 @@ export function exportPersonalPayslipExcel(
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
   XLSX.writeFile(
     wb,
-    `耀聖藥局_${rocYear}年${record.month}月_薪資明細_${meta.employeeName}.xlsx`
+    `${storeName}_${rocYear}年${record.month}月_薪資明細_${meta.employeeName}.xlsx`
   );
 }
