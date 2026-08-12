@@ -136,12 +136,18 @@ export default function PayrollDetailPage() {
   const downloadExcel = (record: PayrollRecord) => {
     if (!currentUser) return;
     try {
+      const formula = buildFormulaMeta(record);
       exportPersonalPayslipExcel(record, {
         employeeName: currentUser.name,
+        storeName: storeConfig.storeName,
         position: salaryMeta?.position,
         bankAccount: salaryMeta?.bankAccount,
         payDate: salaryMeta?.payDate || "隔月5日",
         hourlyRate: salaryMeta?.hourlyRate,
+        leaveDeductionHours: formula.leaveDeductionHours,
+        tardinessMinutes: formula.tardinessMinutes,
+        leaveTypes: formula.leaveTypes,
+        overtimeHours: formula.overtimeHours,
         companyPensionRate: salaryMeta?.companyPensionRate,
         companyPensionBase: salaryMeta?.companyPensionBase,
         unionFee: salaryMeta?.unionFee,
@@ -155,7 +161,33 @@ export default function PayrollDetailPage() {
   const downloadPdf = async (record: PayrollRecord) => {
     if (!currentUser) return;
     try {
-      await exportPayslipPdf(record, currentUser.name);
+      const formula = buildFormulaMeta(record);
+      const formulaLines: string[] = [];
+      if (record.overtimePay > 0 && formula.overtimeHours > 0) {
+        formulaLines.push(
+          `加班費 = ${formula.overtimeHours.toFixed(2)} 小時 × ${(record.overtimePay / formula.overtimeHours).toFixed(
+            2
+          )} 元/小時 = ${formatCurrency(record.overtimePay)} 元`
+        );
+      }
+      if (record.leaveDeduction > 0 && formula.leaveDeductionHours > 0) {
+        formulaLines.push(
+          `請假扣款 = ${formula.leaveDeductionHours.toFixed(2)} 小時 × ${(
+            record.leaveDeduction / formula.leaveDeductionHours
+          ).toFixed(2)} 元/小時 = ${formatCurrency(record.leaveDeduction)} 元`
+        );
+      }
+      if (record.tardinessDeduction > 0 && formula.tardinessMinutes > 0) {
+        formulaLines.push(
+          `遲到扣款 = ${formula.tardinessMinutes} 分鐘 × ${(record.tardinessDeduction / formula.tardinessMinutes).toFixed(
+            2
+          )} 元/分鐘 = ${formatCurrency(record.tardinessDeduction)} 元`
+        );
+      }
+      await exportPayslipPdf(record, currentUser.name, {
+        storeName: storeConfig.storeName,
+        formulaNote: formulaLines.join("\n"),
+      });
     } catch (err) {
       console.error(err);
       alert("PDF 生成失敗");

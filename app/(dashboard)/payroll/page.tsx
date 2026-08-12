@@ -454,6 +454,7 @@ export default function PayrollPage() {
       return [] as EmployeePayroll[];
     }
   }, [computePayroll]);
+  const storeName = storeConfig.storeName?.trim() || "本店";
 
   const runTrial = () => {
     setShowTrial(true);
@@ -705,7 +706,7 @@ export default function PayrollPage() {
     const rocYear = toROC(year);
     const wb = XLSX.utils.book_new();
     const rows: (string | number)[][] = [
-      [`耀聖藥局 ${rocYear} 年 ${month} 月 薪資結算總表`],
+      [`${storeName} ${rocYear} 年 ${month} 月 薪資結算總表`],
       [
         "姓名",
         "職位",
@@ -724,10 +725,30 @@ export default function PayrollPage() {
         "異動加減",
         "實領金額",
         "入帳帳號",
+        "換算說明",
       ]
     ];
 
     payrollData.forEach(p => {
+      const formulaNotes: string[] = [];
+      if (p.overtimePay > 0 && p.overtimeHours > 0) {
+        formulaNotes.push(
+          `加班費=${p.overtimeHours.toFixed(2)}h×${(p.overtimePay / p.overtimeHours).toFixed(2)}元/h`
+        );
+      }
+      if (p.leaveDeduction > 0 && p.leaveHours > 0) {
+        formulaNotes.push(
+          `請假扣款=${p.leaveHours.toFixed(2)}h×${(p.leaveDeduction / p.leaveHours).toFixed(2)}元/h`
+        );
+      }
+      if (p.tardinessDeduction > 0 && p.tardinessMinutes > 0) {
+        formulaNotes.push(
+          `遲到扣款=${p.tardinessMinutes}m×${(p.tardinessDeduction / p.tardinessMinutes).toFixed(2)}元/m`
+        );
+      }
+      if (p.bonusTotal !== 0) {
+        formulaNotes.push(`異動淨額=${p.bonusTotal > 0 ? "+" : ""}${p.bonusTotal.toFixed(0)}元`);
+      }
       rows.push([
         p.name,
         p.position || "—",
@@ -745,13 +766,14 @@ export default function PayrollPage() {
         p.tardinessDeduction > 0 ? -p.tardinessDeduction : 0,
         p.bonusTotal,
         p.finalPay,
-        p.bankAccount || "—"
+        p.bankAccount || "—",
+        formulaNotes.join("；"),
       ]);
     });
 
     const ws = XLSX.utils.aoa_to_sheet(rows);
     XLSX.utils.book_append_sheet(wb, ws, "薪資總表");
-    XLSX.writeFile(wb, `耀聖藥局_${rocYear}年${month}月_全體薪資總表.xlsx`);
+    XLSX.writeFile(wb, `${storeName}_${rocYear}年${month}月_全體薪資總表.xlsx`);
   };
 
   const exportExcel = () => {
@@ -788,7 +810,7 @@ export default function PayrollPage() {
       if (p.pensionDeduction > 0) colC.push(["員工自提", p.pensionDeduction]);
 
       const ws = buildPayslipWorksheet({
-        title: `耀聖藥局　${rocYear}年${month}月　薪資明細表`,
+        title: `${storeName}　${rocYear}年${month}月　薪資明細表`,
         employeeName: p.name,
         position: p.position,
         bankAccount: p.bankAccount,
@@ -805,6 +827,28 @@ export default function PayrollPage() {
         companyPensionRate: p.companyPensionRate,
         companyPensionBase: p.companyPensionBase,
         unionFee: p.unionFee,
+        note: [
+          p.overtimePay > 0 && p.overtimeHours > 0
+            ? `加班費 = ${p.overtimeHours.toFixed(2)} 小時 × ${(p.overtimePay / p.overtimeHours).toFixed(
+                2
+              )} 元/小時 = ${p.overtimePay.toFixed(0)} 元`
+            : "",
+          p.leaveDeduction > 0 && p.leaveHours > 0
+            ? `請假扣款 = ${p.leaveHours.toFixed(2)} 小時 × ${(p.leaveDeduction / p.leaveHours).toFixed(
+                2
+              )} 元/小時 = ${p.leaveDeduction.toFixed(0)} 元`
+            : "",
+          p.tardinessDeduction > 0 && p.tardinessMinutes > 0
+            ? `遲到扣款 = ${p.tardinessMinutes} 分鐘 × ${(
+                p.tardinessDeduction / p.tardinessMinutes
+              ).toFixed(2)} 元/分鐘 = ${p.tardinessDeduction.toFixed(0)} 元`
+            : "",
+          p.bonusTotal !== 0
+            ? `其他加扣項淨額 = ${p.bonusTotal > 0 ? "+" : ""}${p.bonusTotal.toFixed(0)} 元（依本月異動項目）`
+            : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
         finalPay: p.finalPay,
       });
 
@@ -812,7 +856,7 @@ export default function PayrollPage() {
       XLSX.utils.book_append_sheet(wb, ws, sheetName);
     });
 
-    XLSX.writeFile(wb, `耀聖藥局_${rocYear}年${month}月薪資明細.xlsx`);
+    XLSX.writeFile(wb, `${storeName}_${rocYear}年${month}月薪資明細.xlsx`);
   };
 
   // ─── Guard ──────────────────────────────────────────────────────────────────

@@ -14,7 +14,14 @@ function esc(s: string): string {
     .replace(/"/g, "&quot;");
 }
 
-export const exportPayslipPdf = async (record: PayrollRecord, employeeName: string) => {
+export const exportPayslipPdf = async (
+  record: PayrollRecord,
+  employeeName: string,
+  options?: {
+    storeName?: string;
+    formulaNote?: string;
+  }
+) => {
   const base = record.baseSalary ?? 0;
   const positionGrade = record.positionGradeTotal ?? 0;
   const fixedAllowance = record.fixedAllowanceTotal ?? 0;
@@ -39,11 +46,18 @@ export const exportPayslipPdf = async (record: PayrollRecord, employeeName: stri
     ? new Date(record.publishedAt).toLocaleDateString("zh-TW")
     : "—";
   const printedLabel = new Date().toLocaleString("zh-TW");
+  const storeName = options?.storeName?.trim() || "本店";
   const name = esc(employeeName);
   const noteHtml = record.note
     ? `<div style="margin-top:14px;padding:10px 12px;background:#f8fafc;border-left:3px solid #94a3b8;font-size:12px;color:#475569;line-height:1.6;">
         <div style="font-weight:700;margin-bottom:4px;color:#334155;">備註</div>
         <div>${esc(String(record.note))}</div>
+      </div>`
+    : "";
+  const formulaHtml = options?.formulaNote?.trim()
+    ? `<div style="margin-top:10px;padding:10px 12px;background:#f0f9ff;border-left:3px solid #0ea5e9;font-size:12px;color:#0f172a;line-height:1.6;">
+        <div style="font-weight:700;margin-bottom:4px;color:#0c4a6e;">換算說明（供核對）</div>
+        <div>${esc(options.formulaNote.trim()).replace(/\n/g, "<br />")}</div>
       </div>`
     : "";
 
@@ -75,7 +89,9 @@ export const exportPayslipPdf = async (record: PayrollRecord, employeeName: stri
       <!-- 頁首 -->
       <div style="display:flex;justify-content:space-between;align-items:flex-end;border-bottom:2px solid #0f766e;padding-bottom:18px;">
         <div>
-          <div style="font-size:13px;letter-spacing:0.28em;color:#0f766e;font-weight:700;margin-bottom:6px;">耀聖藥局</div>
+          <div style="font-size:13px;letter-spacing:0.12em;color:#0f766e;font-weight:700;margin-bottom:6px;">${esc(
+            storeName
+          )}</div>
           <h1 style="margin:0;font-size:28px;font-weight:800;letter-spacing:0.12em;color:#0f172a;">員工薪資單</h1>
           <div style="margin-top:6px;font-size:12px;color:#64748b;">Employee Payslip</div>
         </div>
@@ -160,6 +176,7 @@ export const exportPayslipPdf = async (record: PayrollRecord, employeeName: stri
       </div>
 
       ${noteHtml}
+      ${formulaHtml}
 
       <div style="margin-top:22px;padding-top:12px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#94a3b8;">
         <span>家禾體系排班系統 · 薪資單僅供本人核對</span>
