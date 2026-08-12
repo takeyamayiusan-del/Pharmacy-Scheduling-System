@@ -205,7 +205,7 @@ export default function MealOrderPage() {
           setBusy={setBusy}
           onChanged={async () => {
             await refresh();
-            await loadBulletinItems(activeSiteId);
+            await loadBulletinItems();
           }}
         />
       )}

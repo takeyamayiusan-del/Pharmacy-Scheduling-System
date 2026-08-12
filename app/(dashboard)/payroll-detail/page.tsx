@@ -206,11 +206,11 @@ export default function PayrollDetailPage() {
     const tardinessMinutes = tardinessRecords
       .filter(
         (t) =>
-          t.userId === currentUser.id &&
-          t.recordDate >= monthStart &&
-          t.recordDate <= monthEnd
+          t.employeeId === currentUser.id &&
+          t.date >= monthStart &&
+          t.date <= monthEnd
       )
-      .reduce((sum, t) => sum + (t.minutesLate || 0), 0);
+      .reduce((sum, t) => sum + (t.minutes || 0), 0);
 
     const leaveTypes = Array.from(
       new Set(
