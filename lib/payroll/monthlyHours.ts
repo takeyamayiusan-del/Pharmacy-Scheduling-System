@@ -25,8 +25,10 @@ export function getDefaultPayrollPeriod(now = new Date()): { year: number; month
 }
 
 function overtimeHoursBetween(startTime: string, endTime: string): number {
-  const [sh, sm] = startTime.split(":").map(Number);
-  const [eh, em] = endTime.split(":").map(Number);
+  if (!startTime || !endTime) return 0;
+  const [sh, sm] = String(startTime).split(":").map(Number);
+  const [eh, em] = String(endTime).split(":").map(Number);
+  if (![sh, sm, eh, em].every((n) => Number.isFinite(n))) return 0;
   const mins = eh * 60 + (em || 0) - (sh * 60 + (sm || 0));
   return Math.max(0, mins) / 60;
 }
