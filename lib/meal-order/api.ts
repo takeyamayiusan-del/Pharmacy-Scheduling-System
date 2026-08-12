@@ -2,11 +2,14 @@ import { createClient } from "@/lib/supabase/client";
 import type { SiteId } from "@/lib/sites";
 import {
   buildMealOrderBulletinContent,
+  normalizeTaxId,
   type MealItemCategory,
   type MealMenuItem,
   type MealOrder,
+  type MealOrderCategory,
   type MealOrderLine,
   type MealOrderStatus,
+  type MealTaxProfile,
   type MealVendor,
   type MealVendorCategory,
 } from "@/lib/meal-order/types";
@@ -38,6 +41,17 @@ function mapItem(r: Record<string, unknown>): MealMenuItem {
   };
 }
 
+function mapTaxProfile(r: Record<string, unknown>): MealTaxProfile {
+  return {
+    id: String(r.id),
+    siteId: r.site_id as SiteId,
+    companyName: String(r.company_name ?? ""),
+    taxId: String(r.tax_id ?? ""),
+    note: String(r.note ?? ""),
+    isActive: Boolean(r.is_active ?? true),
+  };
+}
+
 function mapOrder(r: Record<string, unknown>): MealOrder {
   return {
     id: String(r.id),
@@ -45,8 +59,12 @@ function mapOrder(r: Record<string, unknown>): MealOrder {
     vendorId: String(r.vendor_id),
     title: String(r.title ?? ""),
     orderDate: String(r.order_date).slice(0, 10),
+    orderCategory: (r.order_category as MealOrderCategory) || "drink",
     budgetNote: String(r.budget_note ?? ""),
     note: String(r.note ?? ""),
+    taxProfileId: r.tax_profile_id ? String(r.tax_profile_id) : null,
+    taxCompanyName: String(r.tax_company_name ?? ""),
+    taxId: String(r.tax_id ?? ""),
     status: r.status as MealOrderStatus,
     createdBy: String(r.created_by),
     bulletinId: r.bulletin_id ? String(r.bulletin_id) : null,
@@ -115,6 +133,15 @@ export async function createMealVendor(input: {
   return mapVendor(data as Record<string, unknown>);
 }
 
+export async function deactivateMealVendor(vendorId: string): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("meal_vendors")
+    .update({ is_active: false })
+    .eq("id", vendorId);
+  if (error) throw error;
+}
+
 export async function loadMenuItems(
   siteId: SiteId,
   vendorId: string
@@ -164,6 +191,51 @@ export async function deactivateMenuItem(itemId: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function loadTaxProfiles(siteId: SiteId): Promise<MealTaxProfile[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("meal_tax_profiles")
+    .select("*")
+    .eq("site_id", siteId)
+    .eq("is_active", true)
+    .order("company_name");
+  if (error) throw error;
+  return (data ?? []).map((r) => mapTaxProfile(r as Record<string, unknown>));
+}
+
+export async function createTaxProfile(input: {
+  siteId: SiteId;
+  companyName: string;
+  taxId: string;
+  note?: string;
+  createdBy: string;
+}): Promise<MealTaxProfile> {
+  const supabase = createClient();
+  const taxId = normalizeTaxId(input.taxId);
+  const { data, error } = await supabase
+    .from("meal_tax_profiles")
+    .insert({
+      site_id: input.siteId,
+      company_name: input.companyName.trim(),
+      tax_id: taxId,
+      note: input.note?.trim() ?? "",
+      created_by: input.createdBy,
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapTaxProfile(data as Record<string, unknown>);
+}
+
+export async function deactivateTaxProfile(profileId: string): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("meal_tax_profiles")
+    .update({ is_active: false })
+    .eq("id", profileId);
+  if (error) throw error;
+}
+
 export async function loadMealOrders(siteId: SiteId): Promise<MealOrder[]> {
   const supabase = createClient();
   const { data, error } = await supabase
@@ -198,12 +270,18 @@ export async function createMealOrderActivity(input: {
   vendorName: string;
   title: string;
   orderDate: string;
+  orderCategory: MealOrderCategory;
   budgetNote?: string;
   note?: string;
+  taxProfileId?: string | null;
+  taxCompanyName?: string;
+  taxId?: string;
   createdBy: string;
   publishBulletin: boolean;
 }): Promise<MealOrder> {
   const supabase = createClient();
+  const taxId = normalizeTaxId(input.taxId ?? "");
+  const taxCompanyName = input.taxCompanyName?.trim() ?? "";
   const { data: orderRow, error: orderError } = await supabase
     .from("meal_orders")
     .insert({
@@ -211,8 +289,12 @@ export async function createMealOrderActivity(input: {
       vendor_id: input.vendorId,
       title: input.title.trim(),
       order_date: input.orderDate,
+      order_category: input.orderCategory,
       budget_note: input.budgetNote?.trim() ?? "",
       note: input.note?.trim() ?? "",
+      tax_profile_id: input.taxProfileId || null,
+      tax_company_name: taxCompanyName,
+      tax_id: taxId,
       status: "open",
       created_by: input.createdBy,
     })
@@ -225,8 +307,11 @@ export async function createMealOrderActivity(input: {
     const content = buildMealOrderBulletinContent({
       orderDate: input.orderDate,
       vendorName: input.vendorName,
+      orderCategory: input.orderCategory,
       budgetNote: input.budgetNote,
       note: input.note,
+      taxCompanyName,
+      taxId,
     });
     const { data: bulletin, error: bulletinError } = await supabase
       .from("bulletin_board")

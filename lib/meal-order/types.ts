@@ -2,6 +2,7 @@ import type { SiteId } from "@/lib/sites";
 
 export type MealVendorCategory = "drink" | "bento" | "both";
 export type MealItemCategory = "drink" | "bento";
+export type MealOrderCategory = "drink" | "bento" | "both";
 export type MealOrderStatus = "open" | "ordered" | "closed";
 
 export type MealVendor = {
@@ -27,14 +28,27 @@ export type MealMenuItem = {
   sortOrder: number;
 };
 
+export type MealTaxProfile = {
+  id: string;
+  siteId: SiteId;
+  companyName: string;
+  taxId: string;
+  note: string;
+  isActive: boolean;
+};
+
 export type MealOrder = {
   id: string;
   siteId: SiteId;
   vendorId: string;
   title: string;
   orderDate: string;
+  orderCategory: MealOrderCategory;
   budgetNote: string;
   note: string;
+  taxProfileId: string | null;
+  taxCompanyName: string;
+  taxId: string;
   status: MealOrderStatus;
   createdBy: string;
   bulletinId: string | null;
@@ -81,6 +95,12 @@ export const VENDOR_CATEGORY_LABELS: Record<MealVendorCategory, string> = {
   both: "飲料＋便當",
 };
 
+export const ORDER_CATEGORY_LABELS: Record<MealOrderCategory, string> = {
+  drink: "飲料",
+  bento: "便當",
+  both: "飲料＋便當",
+};
+
 export const ITEM_CATEGORY_LABELS: Record<MealItemCategory, string> = {
   drink: "飲料",
   bento: "便當",
@@ -97,6 +117,15 @@ export function todayYmd(now = new Date()): string {
   const m = String(now.getMonth() + 1).padStart(2, "0");
   const d = String(now.getDate()).padStart(2, "0");
   return `${y}-${m}-${d}`;
+}
+
+export function vendorMatchesOrderCategory(
+  vendorCategory: MealVendorCategory,
+  orderCategory: MealOrderCategory
+): boolean {
+  if (orderCategory === "both") return true;
+  if (vendorCategory === "both") return true;
+  return vendorCategory === orderCategory;
 }
 
 export function formatOrderLineSummary(line: MealOrderLine): string {
@@ -135,15 +164,36 @@ export function aggregateOrderLines(lines: MealOrderLine[]): Array<{
 export function buildMealOrderBulletinContent(input: {
   orderDate: string;
   vendorName: string;
+  orderCategory?: MealOrderCategory;
   budgetNote?: string;
   note?: string;
+  taxCompanyName?: string;
+  taxId?: string;
 }): string {
   const lines = [
     `訂餐日期：${input.orderDate.replace(/-/g, "/")}`,
     `店家：${input.vendorName}`,
   ];
+  if (input.orderCategory) {
+    lines.push(`類別：${ORDER_CATEGORY_LABELS[input.orderCategory]}`);
+  }
+  if (input.taxCompanyName?.trim() || input.taxId?.trim()) {
+    lines.push(
+      `統編／抬頭：${[input.taxCompanyName?.trim(), input.taxId?.trim()].filter(Boolean).join(" ")}`
+    );
+  }
   if (input.budgetNote?.trim()) lines.push(`金額上限：${input.budgetNote.trim()}`);
   if (input.note?.trim()) lines.push(input.note.trim());
   lines.push("請至「訂餐」頁點選品項（可幫同事代點、可點多杯）。");
   return lines.join("\n");
+}
+
+/** 台灣統編：8 碼數字（寬鬆檢查，允許先存再說） */
+export function normalizeTaxId(raw: string): string {
+  return raw.replace(/\s+/g, "").trim();
+}
+
+export function isPlausibleTaxId(raw: string): boolean {
+  const v = normalizeTaxId(raw);
+  return /^\d{8}$/.test(v);
 }

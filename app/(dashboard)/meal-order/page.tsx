@@ -10,31 +10,40 @@ import {
   createMealOrderActivity,
   createMealVendor,
   createMenuItem,
+  createTaxProfile,
+  deactivateMealVendor,
   deactivateMenuItem,
+  deactivateTaxProfile,
   deleteMealOrderLine,
   loadMealOrders,
   loadMealVendors,
   loadMenuItems,
   loadOrderLines,
+  loadTaxProfiles,
   markMealOrderOrdered,
 } from "@/lib/meal-order/api";
 import {
   aggregateOrderLines,
   DRINK_ICE_OPTIONS,
   DRINK_SWEETNESS_OPTIONS,
+  isPlausibleTaxId,
   ITEM_CATEGORY_LABELS,
+  ORDER_CATEGORY_LABELS,
   ORDER_STATUS_LABELS,
   todayYmd,
+  vendorMatchesOrderCategory,
   VENDOR_CATEGORY_LABELS,
   type MealItemCategory,
   type MealMenuItem,
   type MealOrder,
+  type MealOrderCategory,
   type MealOrderLine,
+  type MealTaxProfile,
   type MealVendor,
   type MealVendorCategory,
 } from "@/lib/meal-order/types";
 
-type TabKey = "today" | "vendors" | "history";
+type TabKey = "today" | "vendors" | "tax" | "history";
 
 type VendorFormState = {
   name: string;
@@ -77,9 +86,11 @@ export default function MealOrderPage() {
   const [orders, setOrders] = useState<MealOrder[]>([]);
   const [lines, setLines] = useState<MealOrderLine[]>([]);
   const [menuByVendor, setMenuByVendor] = useState<Record<string, MealMenuItem[]>>({});
+  const [taxProfiles, setTaxProfiles] = useState<MealTaxProfile[]>([]);
   // 表單狀態放在頁面層：切換分頁／背景刷新時不要被清掉
   const [vendorForm, setVendorForm] = useState<VendorFormState>(EMPTY_VENDOR_FORM);
   const [itemForms, setItemForms] = useState<Record<string, ItemFormState>>({});
+  const [taxForm, setTaxForm] = useState({ companyName: "", taxId: "", note: "" });
 
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
   const userId = currentUser?.id;
@@ -89,12 +100,14 @@ export default function MealOrderPage() {
     const silent = Boolean(opts?.silent);
     if (!silent) setLoading(true);
     try {
-      const [vendorList, orderList] = await Promise.all([
+      const [vendorList, orderList, taxList] = await Promise.all([
         loadMealVendors(activeSiteId),
         loadMealOrders(activeSiteId),
+        loadTaxProfiles(activeSiteId),
       ]);
       setVendors(vendorList);
       setOrders(orderList);
+      setTaxProfiles(taxList);
       const openIds = orderList.filter((o) => o.status === "open").map((o) => o.id);
       const recentIds = orderList.slice(0, 8).map((o) => o.id);
       const lineIds = Array.from(new Set([...openIds, ...recentIds]));
@@ -171,9 +184,10 @@ export default function MealOrderPage() {
         storageKey={`help:meal-order:${storageScope}`}
       >
         <p>1. 先在「店家與菜單」新增店家與品項（飲料可選甜度冰塊；便當用備註寫加飯／加蛋）。</p>
-        <p>2. 任何人可發起訂餐活動（選日期、店家、金額上限說明），並發公告提醒。</p>
-        <p>3. 同日若要又訂飲料又訂便當：請開兩場活動（各選一家店）。</p>
-        <p>4. 大家可自點或多點，也可幫同事代點；負責人看總表下單後按「已訂購」結束，公告會自動收起。</p>
+        <p>2. 任何人可發起訂餐活動：選<strong>類別</strong>、店家、日期、統編（可選）、金額上限說明，並發公告。</p>
+        <p>3. 同日若要又訂飲料又訂便當：請開兩場活動（各選一家店），或類別選「飲料＋便當」。</p>
+        <p>4. 廠商統編可在「統編」分頁自行新增／刪除；發布時直接選用。</p>
+        <p>5. 大家可自點或多點，也可幫同事代點；負責人看總表下單後按「已訂購」結束，公告會自動收起。</p>
       </HelpTip>
 
       <div className="flex flex-wrap gap-2">
@@ -181,6 +195,7 @@ export default function MealOrderPage() {
           [
             ["today", "今日／進行中"],
             ["vendors", "店家與菜單"],
+            ["tax", "廠商統編"],
             ["history", "歷史訂單"],
           ] as const
         ).map(([key, label]) => (
@@ -217,6 +232,19 @@ export default function MealOrderPage() {
           siteId={activeSiteId}
           userId={currentUser.id}
         />
+      ) : tab === "tax" ? (
+        <TaxProfilesPanel
+          profiles={taxProfiles}
+          busy={busy}
+          setBusy={setBusy}
+          taxForm={taxForm}
+          setTaxForm={setTaxForm}
+          onChanged={async () => {
+            await refresh({ silent: true });
+          }}
+          siteId={activeSiteId}
+          userId={currentUser.id}
+        />
       ) : tab === "history" ? (
         <HistoryPanel
           orders={historyOrders}
@@ -231,6 +259,7 @@ export default function MealOrderPage() {
           vendors={vendors}
           menuByVendor={menuByVendor}
           vendorMap={vendorMap}
+          taxProfiles={taxProfiles}
           staff={staff}
           currentUserId={currentUser.id}
           currentUserName={currentUser.name}
@@ -412,6 +441,26 @@ function VendorsPanel({
                     </a>
                   )}
                 </div>
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-rose-600 inline-flex items-center gap-1 text-sm"
+                  title="刪除店家"
+                  onClick={async () => {
+                    if (!window.confirm(`刪除店家「${vendor.name}」？`)) return;
+                    setBusy(true);
+                    try {
+                      await deactivateMealVendor(vendor.id);
+                      await onChanged();
+                    } catch (err) {
+                      alert(err instanceof Error ? err.message : "刪除失敗");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  刪除
+                </button>
               </div>
 
               <div className="space-y-1">
@@ -515,6 +564,131 @@ function VendorsPanel({
   );
 }
 
+function TaxProfilesPanel({
+  profiles,
+  busy,
+  setBusy,
+  taxForm,
+  setTaxForm,
+  onChanged,
+  siteId,
+  userId,
+}: {
+  profiles: MealTaxProfile[];
+  busy: boolean;
+  setBusy: (v: boolean) => void;
+  taxForm: { companyName: string; taxId: string; note: string };
+  setTaxForm: Dispatch<SetStateAction<{ companyName: string; taxId: string; note: string }>>;
+  onChanged: () => Promise<void>;
+  siteId: import("@/lib/sites").SiteId;
+  userId: string;
+}) {
+  const addProfile = async () => {
+    if (!taxForm.companyName.trim() || !taxForm.taxId.trim() || busy) return;
+    if (!isPlausibleTaxId(taxForm.taxId)) {
+      alert("統編請輸入 8 碼數字");
+      return;
+    }
+    setBusy(true);
+    try {
+      await createTaxProfile({
+        siteId,
+        companyName: taxForm.companyName,
+        taxId: taxForm.taxId,
+        note: taxForm.note,
+        createdBy: userId,
+      });
+      setTaxForm({ companyName: "", taxId: "", note: "" });
+      await onChanged();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "新增統編失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="app-card p-4 space-y-3">
+        <h2 className="app-section-title">新增廠商統編</h2>
+        <p className="text-sm text-slate-600">
+          依本店獨立管理。發布訂餐活動時可選用；刪除後不會影響已發布活動上的統編快照。
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <input
+            className="border rounded-xl px-3 py-2 text-sm"
+            placeholder="抬頭／公司名稱"
+            value={taxForm.companyName}
+            onChange={(e) => setTaxForm({ ...taxForm, companyName: e.target.value })}
+          />
+          <input
+            className="border rounded-xl px-3 py-2 text-sm"
+            placeholder="統一編號（8 碼）"
+            inputMode="numeric"
+            maxLength={8}
+            value={taxForm.taxId}
+            onChange={(e) => setTaxForm({ ...taxForm, taxId: e.target.value })}
+          />
+          <input
+            className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
+            placeholder="備註（可空）"
+            value={taxForm.note}
+            onChange={(e) => setTaxForm({ ...taxForm, note: e.target.value })}
+          />
+        </div>
+        <button
+          type="button"
+          className="app-btn-primary"
+          disabled={busy || !taxForm.companyName.trim() || !taxForm.taxId.trim()}
+          onClick={() => void addProfile()}
+        >
+          <Plus className="h-4 w-4 mr-1" />
+          新增統編
+        </button>
+      </div>
+
+      {profiles.length === 0 ? (
+        <div className="app-card p-6 text-center text-slate-500">尚未建立廠商統編</div>
+      ) : (
+        <div className="app-card divide-y divide-slate-100">
+          {profiles.map((p) => (
+            <div
+              key={p.id}
+              className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
+            >
+              <div>
+                <p className="font-medium text-slate-900">{p.companyName}</p>
+                <p className="text-sm text-slate-600">統編 {p.taxId}</p>
+                {p.note ? <p className="text-xs text-slate-400 mt-0.5">{p.note}</p> : null}
+              </div>
+              <button
+                type="button"
+                className="text-slate-400 hover:text-rose-600 inline-flex items-center gap-1 text-sm"
+                title="刪除統編"
+                onClick={async () => {
+                  if (!window.confirm(`刪除「${p.companyName}」統編 ${p.taxId}？`)) return;
+                  setBusy(true);
+                  try {
+                    await deactivateTaxProfile(p.id);
+                    await onChanged();
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : "刪除失敗");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                刪除
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TodayPanel({
   openOrders,
   allOrders,
@@ -522,6 +696,7 @@ function TodayPanel({
   vendors,
   menuByVendor,
   vendorMap,
+  taxProfiles,
   staff,
   currentUserId,
   currentUserName,
@@ -537,6 +712,7 @@ function TodayPanel({
   vendors: MealVendor[];
   menuByVendor: Record<string, MealMenuItem[]>;
   vendorMap: Map<string, MealVendor>;
+  taxProfiles: MealTaxProfile[];
   staff: Array<{ id: string; name: string }>;
   currentUserId: string;
   currentUserName: string;
@@ -547,7 +723,9 @@ function TodayPanel({
   onChanged: () => Promise<void>;
 }) {
   const [createForm, setCreateForm] = useState({
-    vendorId: vendors[0]?.id ?? "",
+    orderCategory: "bento" as MealOrderCategory,
+    vendorId: "",
+    taxProfileId: "",
     orderDate: todayYmd(),
     title: "",
     budgetNote: "",
@@ -555,19 +733,38 @@ function TodayPanel({
     publishBulletin: true,
   });
 
+  const filteredVendors = useMemo(
+    () =>
+      vendors.filter((v) =>
+        vendorMatchesOrderCategory(v.category, createForm.orderCategory)
+      ),
+    [vendors, createForm.orderCategory]
+  );
+
   useEffect(() => {
-    if (!createForm.vendorId && vendors[0]?.id) {
-      setCreateForm((prev) => ({ ...prev, vendorId: vendors[0].id }));
+    if (
+      createForm.vendorId &&
+      !filteredVendors.some((v) => v.id === createForm.vendorId)
+    ) {
+      setCreateForm((prev) => ({
+        ...prev,
+        vendorId: filteredVendors[0]?.id ?? "",
+      }));
+      return;
     }
-  }, [vendors, createForm.vendorId]);
+    if (!createForm.vendorId && filteredVendors[0]?.id) {
+      setCreateForm((prev) => ({ ...prev, vendorId: filteredVendors[0].id }));
+    }
+  }, [filteredVendors, createForm.vendorId]);
 
   const createActivity = async () => {
-    const vendor = vendors.find((v) => v.id === createForm.vendorId);
+    const vendor = filteredVendors.find((v) => v.id === createForm.vendorId);
     if (!vendor || busy) return;
     if (!(menuByVendor[vendor.id]?.length > 0)) {
       alert("請先為該店家新增至少一個菜單品項");
       return;
     }
+    const tax = taxProfiles.find((t) => t.id === createForm.taxProfileId) || null;
     setBusy(true);
     try {
       await createMealOrderActivity({
@@ -576,10 +773,14 @@ function TodayPanel({
         vendorName: vendor.name,
         title:
           createForm.title.trim() ||
-          `${createForm.orderDate.replace(/-/g, "/")} 訂餐｜${vendor.name}`,
+          `${createForm.orderDate.replace(/-/g, "/")} ${ORDER_CATEGORY_LABELS[createForm.orderCategory]}｜${vendor.name}`,
         orderDate: createForm.orderDate,
+        orderCategory: createForm.orderCategory,
         budgetNote: createForm.budgetNote,
         note: createForm.note,
+        taxProfileId: tax?.id || null,
+        taxCompanyName: tax?.companyName || "",
+        taxId: tax?.taxId || "",
         createdBy: currentUserId,
         publishBulletin: createForm.publishBulletin,
       });
@@ -588,6 +789,7 @@ function TodayPanel({
         title: "",
         budgetNote: "",
         note: "",
+        taxProfileId: "",
       }));
       await onChanged();
       alert("訂餐活動已建立");
@@ -603,7 +805,7 @@ function TodayPanel({
       <div className="app-card p-4 space-y-3 border-sky-200 bg-sky-50/50">
         <h2 className="app-section-title">發起訂餐活動（任何人）</h2>
         <p className="text-sm text-slate-600">
-          一場活動一家店。若同日要飲料又要便當，請再發起第二場。
+          一場活動一家店。請先選類別再選店家；同日要飲料又要便當可開兩場，或類別選「飲料＋便當」。
         </p>
         {vendors.length === 0 ? (
           <p className="text-sm text-amber-700">請先到「店家與菜單」新增店家。</p>
@@ -611,7 +813,28 @@ function TodayPanel({
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <label className="text-sm space-y-1">
-                <span className="text-slate-600">店家</span>
+                <span className="text-slate-600">訂餐類別</span>
+                <select
+                  className="w-full border rounded-xl px-3 py-2"
+                  value={createForm.orderCategory}
+                  onChange={(e) =>
+                    setCreateForm({
+                      ...createForm,
+                      orderCategory: e.target.value as MealOrderCategory,
+                    })
+                  }
+                >
+                  {(Object.keys(ORDER_CATEGORY_LABELS) as MealOrderCategory[]).map(
+                    (key) => (
+                      <option key={key} value={key}>
+                        {ORDER_CATEGORY_LABELS[key]}
+                      </option>
+                    )
+                  )}
+                </select>
+              </label>
+              <label className="text-sm space-y-1">
+                <span className="text-slate-600">店家（依類別篩選）</span>
                 <select
                   className="w-full border rounded-xl px-3 py-2"
                   value={createForm.vendorId}
@@ -619,11 +842,15 @@ function TodayPanel({
                     setCreateForm({ ...createForm, vendorId: e.target.value })
                   }
                 >
-                  {vendors.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.name}（{VENDOR_CATEGORY_LABELS[v.category]}）
-                    </option>
-                  ))}
+                  {filteredVendors.length === 0 ? (
+                    <option value="">此類別尚無店家</option>
+                  ) : (
+                    filteredVendors.map((v) => (
+                      <option key={v.id} value={v.id}>
+                        {v.name}（{VENDOR_CATEGORY_LABELS[v.category]}）
+                      </option>
+                    ))
+                  )}
                 </select>
               </label>
               <label className="text-sm space-y-1">
@@ -637,6 +864,28 @@ function TodayPanel({
                   }
                 />
               </label>
+              <label className="text-sm space-y-1">
+                <span className="text-slate-600">廠商統編（選填）</span>
+                <select
+                  className="w-full border rounded-xl px-3 py-2"
+                  value={createForm.taxProfileId}
+                  onChange={(e) =>
+                    setCreateForm({ ...createForm, taxProfileId: e.target.value })
+                  }
+                >
+                  <option value="">不帶統編</option>
+                  {taxProfiles.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.companyName}（{t.taxId}）
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {taxProfiles.length === 0 ? (
+                <p className="text-xs text-slate-500 md:col-span-2">
+                  尚無統編資料，可到「廠商統編」分頁新增後再選。
+                </p>
+              ) : null}
               <input
                 className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
                 placeholder="活動標題（可空，系統會自動帶）"
@@ -806,7 +1055,11 @@ function OrderCard({
   const copySummary = async () => {
     const text = [
       `${order.title}`,
+      `類別：${ORDER_CATEGORY_LABELS[order.orderCategory]}`,
       `店家：${vendor?.name ?? "—"} ${vendor?.phone ? `（${vendor.phone}）` : ""}`,
+      order.taxCompanyName || order.taxId
+        ? `統編／抬頭：${[order.taxCompanyName, order.taxId].filter(Boolean).join(" ")}`
+        : "",
       order.budgetNote ? `金額上限：${order.budgetNote}` : "",
       "",
       ...aggregates.map(
@@ -833,6 +1086,9 @@ function OrderCard({
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h3 className="font-semibold text-slate-900">{order.title}</h3>
+            <span className="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">
+              {ORDER_CATEGORY_LABELS[order.orderCategory]}
+            </span>
             <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
               {ORDER_STATUS_LABELS[order.status]}
             </span>
@@ -841,6 +1097,11 @@ function OrderCard({
             {order.orderDate.replace(/-/g, "/")} · {vendor?.name ?? "店家"}
             {vendor ? `（${VENDOR_CATEGORY_LABELS[vendor.category]}）` : ""}
           </p>
+          {(order.taxCompanyName || order.taxId) && (
+            <p className="text-sm text-slate-600 mt-1">
+              統編／抬頭：{[order.taxCompanyName, order.taxId].filter(Boolean).join(" ")}
+            </p>
+          )}
           {order.budgetNote && (
             <p className="text-sm text-amber-800 mt-1">金額上限：{order.budgetNote}</p>
           )}
@@ -1057,6 +1318,9 @@ function HistoryPanel({
           <div key={order.id} className="app-card p-4">
             <div className="flex flex-wrap items-center gap-2 mb-2">
               <h3 className="font-semibold text-slate-900">{order.title}</h3>
+              <span className="text-xs px-2 py-0.5 rounded-full bg-sky-100 text-sky-800">
+                {ORDER_CATEGORY_LABELS[order.orderCategory]}
+              </span>
               <span className="text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
                 {ORDER_STATUS_LABELS[order.status]}
               </span>
@@ -1064,6 +1328,9 @@ function HistoryPanel({
             <p className="text-sm text-slate-500 mb-2">
               {order.orderDate.replace(/-/g, "/")} · {vendor?.name ?? "店家"} · 共{" "}
               {orderLines.length} 份
+              {order.taxCompanyName || order.taxId
+                ? ` · 統編 ${[order.taxCompanyName, order.taxId].filter(Boolean).join(" ")}`
+                : ""}
             </p>
             <div className="text-sm text-slate-700 space-y-1">
               {aggregates.map((a) => (
