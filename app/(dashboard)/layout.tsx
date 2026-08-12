@@ -22,6 +22,7 @@ import {
   Fingerprint,
   DollarSign,
   Store,
+  Coffee,
 } from 'lucide-react';
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
@@ -114,6 +115,7 @@ export default function DashboardLayout({
   const navItems = [
     { href: '/notifications', label: '通知中心', icon: Bell, allowed: true },
     { href: '/schedule', label: '班表', icon: Calendar, allowed: true },
+    { href: '/meal-order', label: '訂餐', icon: Coffee, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
     { href: '/attendance/punch-admin', label: '打卡管理', icon: Clock, allowed: isManager },

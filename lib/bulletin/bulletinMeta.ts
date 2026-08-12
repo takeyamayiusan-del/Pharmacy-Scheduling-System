@@ -26,6 +26,7 @@ export const BULLETIN_TYPE_LABELS: Record<BulletinType, string> = {
   day_off_notice: "公休公告",
   must_do_today: "今日必辦",
   shift_handoff: "交班留言",
+  meal_order: "訂餐",
 };
 
 export const EMPLOYEE_BULLETIN_TYPES: BulletinType[] = [
