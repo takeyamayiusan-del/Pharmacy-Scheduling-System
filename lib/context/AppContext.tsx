@@ -540,7 +540,7 @@ interface AppContextType {
   addBulletinItem: (item: Omit<BulletinItem, "id" | "authorName" | "createdAt">) => Promise<void>;
   updateBulletinItem: (id: string, updates: Partial<BulletinItem>) => Promise<void>;
   deleteBulletinItem: (id: string) => Promise<void>;
-  loadBulletinItems: () => Promise<void>;
+  loadBulletinItems: (siteId?: SiteId) => Promise<void>;
   readBulletinItem: (bulletinId: string) => Promise<void>;
   isBulletinRead: (bulletinId: string) => boolean;
   payrollRecords: PayrollRecord[];

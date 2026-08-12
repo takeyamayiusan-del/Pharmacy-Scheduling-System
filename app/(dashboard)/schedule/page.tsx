@@ -98,7 +98,7 @@ export default function SchedulePage() {
       cancelled = true;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storageScope]);
+  }, [activeSiteId]);
 
   const saveNotes = async () => {
     if (notesId) {
