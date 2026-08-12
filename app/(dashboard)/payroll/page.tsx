@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useApp } from "@/lib/context/AppContext";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import { createClient } from "@/lib/supabase/client";
@@ -136,8 +136,9 @@ const toROC = (westernYear: number) => westernYear - 1911;
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-function isDateInMonth(dateValue: string, year: number, month: number) {
-  const match = dateValue.match(/^(\d{4})-(\d{2})-(\d{2})/);
+function isDateInMonth(dateValue: string | null | undefined, year: number, month: number) {
+  if (!dateValue) return false;
+  const match = String(dateValue).match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (!match) return false;
   return Number(match[1]) === year && Number(match[2]) === month;
 }
@@ -445,7 +446,14 @@ export default function PayrollPage() {
     storeConfig,
   ]);
 
-  const payrollData = computePayroll();
+  const payrollData = useMemo(() => {
+    try {
+      return computePayroll();
+    } catch (err) {
+      console.error("[payroll] computePayroll failed", err);
+      return [] as EmployeePayroll[];
+    }
+  }, [computePayroll]);
 
   const runTrial = () => {
     setShowTrial(true);
@@ -635,16 +643,22 @@ export default function PayrollPage() {
   // ─── Adjustments ───────────────────────────────────────────────────────────
 
   const addAdjustment = async () => {
-    if (newAdjForm.userIds.length === 0 || !newAdjForm.label.trim()) {
+    const selectedIds = Array.isArray(newAdjForm.userIds) ? newAdjForm.userIds : [];
+    if (selectedIds.length === 0 || !newAdjForm.label.trim()) {
       alert("請至少選擇一位員工，並填寫項目名稱。");
       return;
     }
-    const rows = newAdjForm.userIds.map((userId) => ({
+    const amount = Number(newAdjForm.amount);
+    if (!Number.isFinite(amount)) {
+      alert("請填寫有效金額。");
+      return;
+    }
+    const rows = selectedIds.map((userId) => ({
       user_id: userId,
       year,
       month,
       label: newAdjForm.label.trim(),
-      amount: newAdjForm.amount,
+      amount,
       is_deduction: newAdjForm.isDeduction,
       created_by: currentUser?.id,
     }));
@@ -670,10 +684,11 @@ export default function PayrollPage() {
 
   const toggleAdjEmployee = (userId: string) => {
     setNewAdjForm((prev) => {
-      const exists = prev.userIds.includes(userId);
+      const current = Array.isArray(prev.userIds) ? prev.userIds : [];
+      const exists = current.includes(userId);
       return {
         ...prev,
-        userIds: exists ? prev.userIds.filter((id) => id !== userId) : [...prev.userIds, userId],
+        userIds: exists ? current.filter((id) => id !== userId) : [...current, userId],
       };
     });
   };
@@ -1237,31 +1252,36 @@ export default function PayrollPage() {
                     </button>
                   </div>
                 </div>
-                <div className="flex flex-wrap gap-2 rounded-lg border bg-slate-50 p-2">
+                <div
+                  className="flex flex-wrap gap-2 rounded-lg border bg-slate-50 p-2"
+                  role="group"
+                  aria-label="選擇員工"
+                >
                   {displayEmployees.map((e) => {
-                    const checked = newAdjForm.userIds.includes(e.id);
+                    const selectedIds = Array.isArray(newAdjForm.userIds)
+                      ? newAdjForm.userIds
+                      : [];
+                    const checked = selectedIds.includes(e.id);
                     return (
-                      <label
+                      <button
                         key={e.id}
-                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-sm cursor-pointer ${
+                        type="button"
+                        aria-pressed={checked}
+                        onClick={() => toggleAdjEmployee(e.id)}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-sm ${
                           checked
                             ? "bg-blue-600 text-white border-blue-600"
                             : "bg-white text-gray-700 border-gray-200 hover:border-blue-300"
                         }`}
                       >
-                        <input
-                          type="checkbox"
-                          className="sr-only"
-                          checked={checked}
-                          onChange={() => toggleAdjEmployee(e.id)}
-                        />
                         {e.name}
-                      </label>
+                      </button>
                     );
                   })}
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1">
-                  已選 {newAdjForm.userIds.length} 人；新增後每人各一筆相同項目與金額
+                  已選 {Array.isArray(newAdjForm.userIds) ? newAdjForm.userIds.length : 0}{" "}
+                  人；新增後每人各一筆相同項目與金額
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -1289,7 +1309,11 @@ export default function PayrollPage() {
                   <option value="false">加項（獎金）</option>
                   <option value="true">扣款</option>
                 </select>
-                <button onClick={addAdjustment} className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded">
+                <button
+                  type="button"
+                  onClick={addAdjustment}
+                  className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded"
+                >
                   新增
                 </button>
               </div>
