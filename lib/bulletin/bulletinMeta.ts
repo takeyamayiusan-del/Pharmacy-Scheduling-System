@@ -33,7 +33,6 @@ export const EMPLOYEE_BULLETIN_TYPES: BulletinType[] = [
   "cover_request",
   "task_completed",
   "shift_handoff",
-  "meal_order",
 ];
 
 export const MANAGER_BULLETIN_TYPES: BulletinType[] = [
@@ -41,7 +40,6 @@ export const MANAGER_BULLETIN_TYPES: BulletinType[] = [
   "day_off_notice",
   "must_do_today",
   "shift_handoff",
-  "meal_order",
 ];
 
 export function getBulletinTypeLabel(type: BulletinType, isUrgent?: boolean): string {
