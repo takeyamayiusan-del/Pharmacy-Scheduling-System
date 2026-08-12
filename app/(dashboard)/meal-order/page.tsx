@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useSearchParams } from "next/navigation";
 import { Coffee, Plus, Store, Trash2, UtensilsCrossed } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
@@ -36,6 +36,30 @@ import {
 
 type TabKey = "today" | "vendors" | "history";
 
+type VendorFormState = {
+  name: string;
+  category: MealVendorCategory;
+  phone: string;
+  address: string;
+  menuUrl: string;
+  note: string;
+};
+
+type ItemFormState = {
+  name: string;
+  category: MealItemCategory;
+  price: string;
+};
+
+const EMPTY_VENDOR_FORM: VendorFormState = {
+  name: "",
+  category: "drink",
+  phone: "",
+  address: "",
+  menuUrl: "",
+  note: "",
+};
+
 export default function MealOrderPage() {
   const {
     currentUser,
@@ -53,12 +77,17 @@ export default function MealOrderPage() {
   const [orders, setOrders] = useState<MealOrder[]>([]);
   const [lines, setLines] = useState<MealOrderLine[]>([]);
   const [menuByVendor, setMenuByVendor] = useState<Record<string, MealMenuItem[]>>({});
+  // 表單狀態放在頁面層：切換分頁／背景刷新時不要被清掉
+  const [vendorForm, setVendorForm] = useState<VendorFormState>(EMPTY_VENDOR_FORM);
+  const [itemForms, setItemForms] = useState<Record<string, ItemFormState>>({});
 
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
+  const userId = currentUser?.id;
 
-  const refresh = useCallback(async () => {
-    if (!currentUser) return;
-    setLoading(true);
+  const refresh = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!userId) return;
+    const silent = Boolean(opts?.silent);
+    if (!silent) setLoading(true);
     try {
       const [vendorList, orderList] = await Promise.all([
         loadMealVendors(activeSiteId),
@@ -83,9 +112,9 @@ export default function MealOrderPage() {
       console.error(err);
       alert(err instanceof Error ? err.message : "載入訂餐資料失敗（請確認已套用資料庫 migration）");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }, [activeSiteId, currentUser]);
+  }, [activeSiteId, userId]);
 
   useEffect(() => {
     void refresh();
@@ -178,7 +207,13 @@ export default function MealOrderPage() {
           menuByVendor={menuByVendor}
           busy={busy}
           setBusy={setBusy}
-          onChanged={refresh}
+          vendorForm={vendorForm}
+          setVendorForm={setVendorForm}
+          itemForms={itemForms}
+          setItemForms={setItemForms}
+          onChanged={async () => {
+            await refresh({ silent: true });
+          }}
           siteId={activeSiteId}
           userId={currentUser.id}
         />
@@ -204,7 +239,7 @@ export default function MealOrderPage() {
           busy={busy}
           setBusy={setBusy}
           onChanged={async () => {
-            await refresh();
+            await refresh({ silent: true });
             await loadBulletinItems();
           }}
         />
@@ -218,6 +253,10 @@ function VendorsPanel({
   menuByVendor,
   busy,
   setBusy,
+  vendorForm,
+  setVendorForm,
+  itemForms,
+  setItemForms,
   onChanged,
   siteId,
   userId,
@@ -226,22 +265,14 @@ function VendorsPanel({
   menuByVendor: Record<string, MealMenuItem[]>;
   busy: boolean;
   setBusy: (v: boolean) => void;
+  vendorForm: VendorFormState;
+  setVendorForm: Dispatch<SetStateAction<VendorFormState>>;
+  itemForms: Record<string, ItemFormState>;
+  setItemForms: Dispatch<SetStateAction<Record<string, ItemFormState>>>;
   onChanged: () => Promise<void>;
   siteId: import("@/lib/sites").SiteId;
   userId: string;
 }) {
-  const [vendorForm, setVendorForm] = useState({
-    name: "",
-    category: "drink" as MealVendorCategory,
-    phone: "",
-    address: "",
-    menuUrl: "",
-    note: "",
-  });
-  const [itemForms, setItemForms] = useState<
-    Record<string, { name: string; category: MealItemCategory; price: string }>
-  >({});
-
   const addVendor = async () => {
     if (!vendorForm.name.trim() || busy) return;
     setBusy(true);
@@ -251,14 +282,7 @@ function VendorsPanel({
         createdBy: userId,
         ...vendorForm,
       });
-      setVendorForm({
-        name: "",
-        category: "drink",
-        phone: "",
-        address: "",
-        menuUrl: "",
-        note: "",
-      });
+      setVendorForm(EMPTY_VENDOR_FORM);
       await onChanged();
     } catch (err) {
       alert(err instanceof Error ? err.message : "新增店家失敗");
