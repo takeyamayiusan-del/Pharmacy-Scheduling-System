@@ -26,12 +26,14 @@ export const BULLETIN_TYPE_LABELS: Record<BulletinType, string> = {
   day_off_notice: "公休公告",
   must_do_today: "今日必辦",
   shift_handoff: "交班留言",
+  meal_order: "訂餐",
 };
 
 export const EMPLOYEE_BULLETIN_TYPES: BulletinType[] = [
   "cover_request",
   "task_completed",
   "shift_handoff",
+  "meal_order",
 ];
 
 export const MANAGER_BULLETIN_TYPES: BulletinType[] = [
@@ -39,6 +41,7 @@ export const MANAGER_BULLETIN_TYPES: BulletinType[] = [
   "day_off_notice",
   "must_do_today",
   "shift_handoff",
+  "meal_order",
 ];
 
 export function getBulletinTypeLabel(type: BulletinType, isUrgent?: boolean): string {

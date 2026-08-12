@@ -7,7 +7,8 @@ import {
   type BulletinItem,
   type Notification,
 } from "@/lib/context/AppContext";
-import { Megaphone, Calendar, DollarSign, X } from "lucide-react";
+import { Megaphone, Calendar, DollarSign, X, Coffee } from "lucide-react";
+import { getBulletinTypeLabel, stripMetaLines } from "@/lib/bulletin/bulletinMeta";
 
 type PopupItem =
   | { kind: "bulletin"; id: string; bulletin: BulletinItem }
@@ -149,36 +150,68 @@ export default function LoginPopupStack() {
           <div className="flex flex-col items-center text-center">
             <div
               className={`p-3 rounded-full mb-4 ${
-                current.bulletin.isUrgent ? "bg-amber-100" : "bg-blue-100"
+                current.bulletin.type === "meal_order"
+                  ? "bg-orange-100"
+                  : current.bulletin.isUrgent
+                    ? "bg-amber-100"
+                    : "bg-blue-100"
               }`}
             >
-              <Megaphone
-                className={`h-8 w-8 ${
-                  current.bulletin.isUrgent ? "text-amber-600" : "text-blue-600"
-                }`}
-              />
+              {current.bulletin.type === "meal_order" ? (
+                <Coffee className="h-8 w-8 text-orange-700" />
+              ) : (
+                <Megaphone
+                  className={`h-8 w-8 ${
+                    current.bulletin.isUrgent ? "text-amber-600" : "text-blue-600"
+                  }`}
+                />
+              )}
             </div>
-            <h3 className="text-xl font-bold text-gray-900 mb-2">最新公告消息</h3>
+            <h3 className="text-xl font-bold text-gray-900 mb-2">
+              {current.bulletin.type === "meal_order"
+                ? "今天有訂餐喔！"
+                : "最新公告消息"}
+            </h3>
             <p className="text-sm text-gray-500 mb-4">
-              有新的重要公告，可稍後再說；按「知道了」後才不會再跳出。
+              {current.bulletin.type === "meal_order"
+                ? "請上去點選自己要喝／吃什麼；也可以幫同事代點。"
+                : "有新的重要公告，可稍後再說；按「知道了」後才不會再跳出。"}
             </p>
             <div className="w-full p-4 bg-gray-50 rounded-xl mb-6 text-left border border-gray-100">
               <p className="text-xs font-bold text-blue-600 mb-1">
-                {current.bulletin.isUrgent ? "【重要】" : ""}
+                {getBulletinTypeLabel(current.bulletin.type, current.bulletin.isUrgent)}
+                {current.bulletin.isUrgent && current.bulletin.type !== "meal_order"
+                  ? "【重要】"
+                  : ""}{" "}
                 {current.bulletin.title}
               </p>
-              <p className="text-sm text-gray-700 line-clamp-3">{current.bulletin.content}</p>
+              <p className="text-sm text-gray-700 line-clamp-4 whitespace-pre-wrap">
+                {stripMetaLines(current.bulletin.content)}
+              </p>
             </div>
             <div className="flex flex-col gap-2 w-full">
               <button
                 type="button"
                 onClick={() => {
                   dismissPermanentBulletin(current.bulletin.id);
-                  router.push("/schedule");
+                  if (current.bulletin.type === "meal_order") {
+                    const q = current.bulletin.relatedId
+                      ? `?orderId=${current.bulletin.relatedId}`
+                      : "";
+                    router.push(`/meal-order${q}`);
+                  } else {
+                    router.push("/schedule");
+                  }
                 }}
-                className="w-full py-3 px-4 bg-blue-600 text-white font-medium rounded-xl hover:bg-blue-700"
+                className={`w-full py-3 px-4 text-white font-medium rounded-xl ${
+                  current.bulletin.type === "meal_order"
+                    ? "bg-orange-600 hover:bg-orange-700"
+                    : "bg-blue-600 hover:bg-blue-700"
+                }`}
               >
-                知道了，前往查看
+                {current.bulletin.type === "meal_order"
+                  ? "前往點選飲料／便當"
+                  : "知道了，前往查看"}
               </button>
               <button
                 type="button"

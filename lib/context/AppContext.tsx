@@ -240,7 +240,8 @@ export type BulletinItem = {
     | "task_completed"
     | "day_off_notice"
     | "must_do_today"
-    | "shift_handoff";
+    | "shift_handoff"
+    | "meal_order";
   status: "active" | "archived" | "completed";
   relatedId?: string;
   isUrgent: boolean;
@@ -3751,6 +3752,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         "day_off_notice",
         "must_do_today",
         "shift_handoff",
+        "meal_order",
       ];
       return allowed.includes(rawType as BulletinItem["type"])
         ? (rawType as BulletinItem["type"])

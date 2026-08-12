@@ -26,6 +26,7 @@ import {
   ListChecks,
   CheckCircle2,
   HandHelping,
+  Coffee,
 } from "lucide-react";
 
 const TYPE_STYLES: Record<
@@ -38,6 +39,7 @@ const TYPE_STYLES: Record<
   day_off_notice: { badge: "bg-sky-100 text-sky-700", icon: CalendarOff },
   must_do_today: { badge: "bg-amber-100 text-amber-800", icon: ListChecks },
   shift_handoff: { badge: "bg-green-100 text-green-700", icon: ArrowRightFromLine },
+  meal_order: { badge: "bg-orange-100 text-orange-800", icon: Coffee },
 };
 
 const DEFAULT_FORM = {
@@ -184,6 +186,11 @@ export default function BulletinBoard() {
         return { title: "例如：今日必須完成事項", content: "列出今日務必完成的工作..." };
       case "shift_handoff":
         return { title: "例如：晚班交班重點", content: "交班注意事項、未完成事項..." };
+      case "meal_order":
+        return {
+          title: "建議改走「訂餐」頁發起",
+          content: "請至左側「訂餐」建立活動（會自動發公告並可點選品項）。",
+        };
       default:
         return { title: "例如：颱風天停班通知", content: "請輸入公告詳細內容..." };
     }
@@ -501,6 +508,18 @@ export default function BulletinBoard() {
                   >
                     <HandHelping className="h-3.5 w-3.5" />
                     我能代班 → 前往換班申請
+                  </button>
+                )}
+                {item.type === "meal_order" && (
+                  <button
+                    onClick={() => {
+                      const q = item.relatedId ? `?orderId=${item.relatedId}` : "";
+                      router.push(`/meal-order${q}`);
+                    }}
+                    className="mt-1 w-full py-1.5 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 transition-colors flex items-center justify-center gap-1"
+                  >
+                    <Coffee className="h-3.5 w-3.5" />
+                    前往訂餐點選
                   </button>
                 )}
               </div>
