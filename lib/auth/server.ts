@@ -45,7 +45,7 @@ export async function assertManagerAuth(req: NextRequest): Promise<ManagerAuthRe
     return { error: "找不到使用者資料", status: 403 };
   }
 
-  if (!["boss", "manager", "owner"].includes(profile.role)) {
+  if (!["boss", "manager", "owner", "deputy"].includes(profile.role)) {
     return { error: "此帳號沒有管理權限", status: 403 };
   }
 

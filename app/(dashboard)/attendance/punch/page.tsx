@@ -9,13 +9,11 @@ import {
 } from "@/lib/attendance/geofence";
 import {
   calcLateMinutes,
-  EARLY_PUNCH_MINUTES,
   formatNowTime,
   getBreakCountForShift,
   getPunchSlotsForRanges,
   minutesDiff,
   nowMinutes,
-  OVERTIME_REDIRECT_MINUTES,
   timeToMinutes,
   todayDateStr,
   type PunchSlot,
@@ -25,14 +23,13 @@ import {
   adjustPunchSlotsForApprovedLeave,
   resolvePunchLateMinutes,
 } from "@/lib/attendance/punchLeaveAdjust";
+import { calcOvertimeHours, type OvertimeCompensationType } from "@/lib/attendance/overtimeCompensation";
 import {
-  calcOvertimeHours,
-  canChooseOvertimePay,
-  overtimeCompensationHint,
-  resolveAllowedCompensationType,
-  validateOvertimeCompensation,
-  type OvertimeCompensationType,
-} from "@/lib/attendance/overtimeCompensation";
+  canChooseOvertimePayWithPolicy,
+  overtimePolicyHint,
+  resolveCompensationWithPolicy,
+  validateOvertimeWithPolicy,
+} from "@/lib/attendance/overtimePolicy";
 import { MapPin, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
 
 type GpsState = "loading" | "denied" | "outside" | "inside";
@@ -57,6 +54,8 @@ export default function PunchPage() {
     addOvertimeRequest,
     storeConfig,
   } = useApp();
+  const earlyPunchMinutes = storeConfig.policies.earlyPunchMinutes;
+  const overtimeRedirectMinutes = storeConfig.policies.overtimeRedirectMinutes;
 
   const [matchedLocationName, setMatchedLocationName] = useState<string | null>(null);
 
@@ -317,9 +316,9 @@ export default function PunchPage() {
     const actual = nowMinutes();
 
     if (slot.action === "work_in") {
-      const earliest = scheduled - EARLY_PUNCH_MINUTES;
+      const earliest = scheduled - earlyPunchMinutes;
       if (actual < earliest) {
-        alert(`尚未開放打卡，最早可於 ${slot.scheduledTime} 前 ${EARLY_PUNCH_MINUTES} 分鐘打卡`);
+        alert(`尚未開放打卡，最早可於 ${slot.scheduledTime} 前 ${earlyPunchMinutes} 分鐘打卡`);
         return;
       }
 
@@ -366,7 +365,7 @@ export default function PunchPage() {
 
     if (slot.action === "work_out") {
       const minutesPastEnd = minutesDiff(actual, scheduled);
-      if (minutesPastEnd >= OVERTIME_REDIRECT_MINUTES) {
+      if (minutesPastEnd >= overtimeRedirectMinutes) {
         try {
           const punchTime = formatNowTime();
           await finalizePunch(
@@ -418,7 +417,11 @@ export default function PunchPage() {
   };
 
   const quickOtPayAllowed = quickOvertime
-    ? canChooseOvertimePay(quickOvertime.startTime, quickOvertime.endTime)
+    ? canChooseOvertimePayWithPolicy(
+        quickOvertime.startTime,
+        quickOvertime.endTime,
+        storeConfig.policies
+      )
     : false;
   const quickOtHours = quickOvertime
     ? calcOvertimeHours(quickOvertime.startTime, quickOvertime.endTime)
@@ -436,15 +439,17 @@ export default function PunchPage() {
       alert("請填寫加班起迄時間");
       return;
     }
-    const compensationType = resolveAllowedCompensationType(
+    const compensationType = resolveCompensationWithPolicy(
       quickOvertime.startTime,
       quickOvertime.endTime,
-      quickOtComp
+      quickOtComp,
+      storeConfig.policies
     );
-    const err = validateOvertimeCompensation(
+    const err = validateOvertimeWithPolicy(
       quickOvertime.startTime,
       quickOvertime.endTime,
-      compensationType
+      compensationType,
+      storeConfig.policies
     );
     if (err) {
       alert(err);
@@ -829,7 +834,11 @@ export default function PunchPage() {
               </div>
               <p className="text-xs text-gray-600">
                 加班約 {quickOtHours} 小時。
-                {overtimeCompensationHint(quickOvertime.startTime, quickOvertime.endTime)}
+                {overtimePolicyHint(
+                  quickOvertime.startTime,
+                  quickOvertime.endTime,
+                  storeConfig.policies
+                )}
               </p>
               <div>
                 <p className="text-xs text-gray-500 mb-2">補償方式</p>

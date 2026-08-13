@@ -235,8 +235,8 @@ export function LeaveSelectionGrid() {
               <li>週日為固定休假，無法選擇</li>
               <li>每月可選擇 2 天週六休假</li>
               <li>每月可選擇 2 天平日休假</li>
-              {currentUser?.name === '聖文' && (
-                <li>聖文：僅能選擇週六休假</li>
+              {(currentUser as { is_weekday_off_rule?: boolean } | null)?.is_weekday_off_rule && (
+                <li>平日不排休：僅能選擇週六休假</li>
               )}
             </ul>
           </div>

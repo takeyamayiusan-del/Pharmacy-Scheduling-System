@@ -3,8 +3,13 @@
 import { useState } from "react";
 import { useApp, type Employee } from "@/lib/context/AppContext";
 import { SITE_IDS, SITES, type SiteId } from "@/lib/sites";
-
-type Role = "owner" | "manager" | "staff";
+import { APP_ROLE_LABELS, canManageSite, type AppRole } from "@/lib/auth/roles";
+import {
+  WORK_HOURS_REGIME_OPTIONS,
+  type WorkHoursRegime,
+} from "@/lib/attendance/workHoursRegime";
+import { getScheduleShiftOptions } from "@/lib/shift-catalog/resolve";
+import { getShiftName } from "@/lib/store-config";
 
 export default function EmployeesPage() {
   const {
@@ -15,6 +20,7 @@ export default function EmployeesPage() {
     deleteEmployee,
     activeSiteId,
     canSwitchSite,
+    storeConfig,
   } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -22,12 +28,14 @@ export default function EmployeesPage() {
   const [changingOwnPassword, setChangingOwnPassword] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
-    role: "staff" as Role,
+    role: "staff" as AppRole,
     username: "",
     password: "",
     hireDate: new Date().toISOString().split('T')[0],
     endDate: "",
     siteId: activeSiteId as SiteId,
+    workHoursRegime: "" as "" | WorkHoursRegime,
+    baselineShift: "",
   });
   
   const loadEmployee = (employee: Employee) => {
@@ -40,6 +48,8 @@ export default function EmployeesPage() {
       hireDate: employee.hireDate || new Date().toISOString().split('T')[0],
       endDate: employee.endDate || "",
       siteId: employee.siteId ?? activeSiteId,
+      workHoursRegime: employee.workHoursRegime ?? "",
+      baselineShift: employee.baselineShift ?? "",
     });
     setShowForm(true);
   };
@@ -53,6 +63,8 @@ export default function EmployeesPage() {
       hireDate: new Date().toISOString().split('T')[0],
       endDate: "",
       siteId: activeSiteId,
+      workHoursRegime: "",
+      baselineShift: "",
     });
     setEditingId(null);
     setShowForm(false);
@@ -71,6 +83,8 @@ export default function EmployeesPage() {
           hireDate: formData.hireDate,
           endDate: formData.endDate.trim() || null,
           siteId: formData.siteId,
+          workHoursRegime: formData.workHoursRegime || null,
+          baselineShift: formData.baselineShift.trim() || null,
         };
         if (formData.password) {
           updates.password = formData.password;
@@ -96,6 +110,8 @@ export default function EmployeesPage() {
           hireDate: formData.hireDate,
           endDate: formData.endDate.trim() || null,
           siteId: formData.siteId,
+          workHoursRegime: formData.workHoursRegime || null,
+          baselineShift: formData.baselineShift.trim() || null,
         });
         if (formData.siteId !== activeSiteId) {
           alert(
@@ -127,19 +143,13 @@ export default function EmployeesPage() {
   };
   
   // 取得角色顯示文字
-  const getRoleLabel = (role: Role) => {
-    switch (role) {
-      case "owner": return "老闆";
-      case "manager": return "店長";
-      case "staff": return "員工";
-    }
-  };
+  const getRoleLabel = (role: AppRole) => APP_ROLE_LABELS[role] ?? role;
   
-  // 取得角色顏色
-  const getRoleColor = (role: Role) => {
+  const getRoleColor = (role: AppRole) => {
     switch (role) {
       case "owner": return "bg-purple-100 text-purple-800";
       case "manager": return "bg-blue-100 text-blue-800";
+      case "deputy": return "bg-cyan-100 text-cyan-800";
       case "staff": return "bg-green-100 text-green-800";
     }
   };
@@ -168,12 +178,12 @@ export default function EmployeesPage() {
   };
   
   // 店長與老闆權限一致
-  if (currentUser?.role !== "owner" && currentUser?.role !== "manager") {
+  if (!canManageSite(currentUser?.role)) {
     return (
       <div className="min-h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
-          <p className="text-gray-600">僅店長與老闆可以管理員工</p>
+          <p className="text-gray-600">僅店長、副店與老闆可以管理員工</p>
         </div>
       </div>
     );
@@ -201,7 +211,7 @@ export default function EmployeesPage() {
       </div>
       
       {/* 員工統計 */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="app-panel p-4">
           <h3 className="app-meta mb-2">總員工數</h3>
           <p className="text-2xl font-semibold text-sky-600">
@@ -212,6 +222,12 @@ export default function EmployeesPage() {
           <h3 className="app-meta mb-2">店長</h3>
           <p className="text-2xl font-semibold text-violet-600">
             {employees.filter(e => e.role === "manager").length}人
+          </p>
+        </div>
+        <div className="app-panel p-4">
+          <h3 className="app-meta mb-2">副店</h3>
+          <p className="text-2xl font-semibold text-cyan-600">
+            {employees.filter(e => e.role === "deputy").length}人
           </p>
         </div>
         <div className="app-panel p-4">
@@ -227,7 +243,7 @@ export default function EmployeesPage() {
         <div className="app-panel p-6">
           <h3 className="font-medium text-gray-900 mb-1">變更我的密碼</h3>
           <p className="text-sm text-gray-500 mb-4">
-            目前登入：{currentUser.name}（{getRoleLabel(currentUser.role as Role)}）
+            目前登入：{currentUser.name}（{getRoleLabel(currentUser.role)}）
           </p>
           <form onSubmit={handleChangeOwnPassword} className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
             <div>
@@ -299,10 +315,11 @@ export default function EmployeesPage() {
                 </label>
                 <select
                   value={formData.role}
-                  onChange={e => setFormData({ ...formData, role: e.target.value as Role })}
+                  onChange={e => setFormData({ ...formData, role: e.target.value as AppRole })}
                   className="w-full px-3 py-2 border rounded-lg"
                 >
                   <option value="staff">員工</option>
+                  <option value="deputy">副店（功能同店長）</option>
                   <option value="manager">店長</option>
                 </select>
               </div>
@@ -361,6 +378,52 @@ export default function EmployeesPage() {
                   className="w-full px-3 py-2 border rounded-lg"
                 />
                 <p className="text-xs text-gray-500 mt-1">到期日後不顯示於班表；空白=持續在職</p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  工時制度（個人）
+                </label>
+                <select
+                  value={formData.workHoursRegime}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      workHoursRegime: e.target.value as "" | WorkHoursRegime,
+                    })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="">跟店家（{storeConfig.workHoursRegime === "eight_week" ? "八周" : storeConfig.workHoursRegime === "two_week" ? "兩周" : storeConfig.workHoursRegime === "four_week" ? "四周" : "正常工時"}）</option>
+                  {WORK_HOURS_REGIME_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  每人一套：有人八周、有人兩周、有人正常工時。系統僅警示與播假試算，不硬擋。
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  本月基準班（播假用）
+                </label>
+                <select
+                  value={formData.baselineShift}
+                  onChange={(e) =>
+                    setFormData({ ...formData, baselineShift: e.target.value })
+                  }
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="">跟店家平日預設班</option>
+                  {getScheduleShiftOptions(storeConfig)
+                    .filter((c) => c !== "X")
+                    .map((code) => (
+                      <option key={code} value={code}>
+                        {getShiftName(storeConfig, code)}
+                      </option>
+                    ))}
+                </select>
               </div>
             </div>
             <div>

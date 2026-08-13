@@ -45,6 +45,8 @@ export interface LeaveSelectionContext {
   existingWeekdayLeaves: number;
   targetDate: Date;
   rules: import('@/lib/supabase/types').SchedulingRules;
+  /** 平日不排休（取代姓名硬編碼） */
+  isWeekdayOffRule?: boolean;
 }
 
 /** generateMonthlyEntries 回傳的班表條目（不含 DB 自動產生欄位） */

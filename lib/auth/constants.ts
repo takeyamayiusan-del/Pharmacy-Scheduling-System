@@ -39,9 +39,9 @@ export function toDbRole(role: string): string {
   return role;
 }
 
-/** 資料庫角色 → AppContext 角色 */
-export function fromDbRole(role: string): "owner" | "manager" | "staff" {
+export function fromDbRole(role: string): "owner" | "manager" | "deputy" | "staff" {
   if (role === "boss") return "owner";
   if (role === "manager") return "manager";
+  if (role === "deputy") return "deputy";
   return "staff";
 }

@@ -4,6 +4,17 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedType } from "@/lib/applications/statusMaps";
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
+import { fromDbRole, canManageSite, type AppRole } from "@/lib/auth/roles";
+import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
+import {
+  canActOnApprovalStep,
+  currentApprovalRole,
+  effectiveApprovalChain,
+  resolveApprovalDecision,
+  rolesToNotify,
+} from "@/lib/approvals/chain";
+import { saturdayLeaveQuota, weekdayLeaveQuota } from "@/lib/schedule/leaveQuotas";
+import { isWorkHoursRegime } from "@/lib/attendance/workHoursRegime";
 import { getPunchSlotsForRanges, calcLateMinutes, timeToMinutes, minutesDiff, todayDateStr, type PunchSlot } from "@/lib/attendance/punchSchedule";
 import { resolveLateAfterLeaveApproval } from "@/lib/attendance/punchLeaveAdjust";
 import {
@@ -39,9 +50,9 @@ import {
 } from "@/lib/schedule/effectiveShift";
 import { roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 import {
-  resolveAllowedCompensationType,
-  validateOvertimeCompensation,
-} from "@/lib/attendance/overtimeCompensation";
+  resolveCompensationWithPolicy,
+  validateOvertimeWithPolicy,
+} from "@/lib/attendance/overtimePolicy";
 import { buildSwapShiftsAndChanges, swapSnapshotCells } from "@/lib/schedule/swapSchedule";
 import {
   applyScheduleChangesToState,
@@ -90,7 +101,7 @@ import { filterBySiteEmployeeIds } from "@/lib/attendance/siteScope";
 export type Employee = {
   id: string;
   name: string;
-  role: "owner" | "manager" | "staff";
+  role: AppRole;
   username?: string;
   password?: string;
   hireDate: string;               // 入職日期
@@ -100,6 +111,10 @@ export type Employee = {
   /** 參與週期輪值晚班（DB: is_wednesday_rotation，語意已泛化） */
   isWednesdayRotation?: boolean;
   isWeekdayOffRule?: boolean;     // 平日不排休規則
+  /** 個人變形工時；空=跟店家設定 */
+  workHoursRegime?: import("@/lib/attendance/workHoursRegime").WorkHoursRegime | null;
+  /** 本月基準班（播假用） */
+  baselineShift?: string | null;
 };
 
 export type ShiftType = "A" | "B" | "C" | "D" | "E" | "X";
@@ -141,6 +156,11 @@ export type LeaveType =
   | "特休"
   | "喪假"
   | "補休假"
+  | "生理假"
+  | "產假"
+  | "陪產檢及陪產假"
+  | "家庭照顧事假"
+  | "婚假"
   | "其他";
 
 export type LeavePeriodMode = "full_day" | "morning" | "afternoon" | "custom";
@@ -166,6 +186,7 @@ export type LeaveRequest = {
   reviewedAt?: string;
   scheduleSnapshot?: ScheduleSnapshotEntry[];
   attachments?: LeaveAttachmentItem[];
+  approvalStep?: number;
 };
 
 export type LeaveAttachmentItem = {
@@ -199,6 +220,7 @@ export type SwapRequest = {
   rejectReason?: string;
   createdAt: string;
   scheduleSnapshot?: ScheduleSnapshotEntry[];
+  approvalStep?: number;
 };
 
 export type OvertimeRequest = {
@@ -213,6 +235,7 @@ export type OvertimeRequest = {
   rejectReason?: string;
   status: "pending" | "approved" | "rejected";
   createdAt: string;
+  approvalStep?: number;
 };
 
 export type Notification = {
@@ -416,11 +439,7 @@ const normalizeFixedShifts = (shifts: FixedShift[]) => {
 };
 
 // Map Supabase role to AppContext role
-const mapRole = (dbRole: string): "owner" | "manager" | "staff" => {
-  if (dbRole === "boss" || dbRole === "owner") return "owner";
-  if (dbRole === "manager") return "manager";
-  return "staff";
-};
+const mapRole = (dbRole: string): AppRole => fromDbRole(dbRole);
 
 // ─── Context type ─────────────────────────────────────────────────────────────
 
@@ -750,6 +769,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     is_wednesday_rotation?: boolean | null;
     is_weekday_off_rule?: boolean | null;
     site_id?: string | null;
+    work_hours_regime?: string | null;
+    baseline_shift?: string | null;
   }): Employee => ({
     id: r.id,
     name: r.name,
@@ -760,13 +781,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     siteId: parseSiteId(r.site_id),
     isWednesdayRotation: r.is_wednesday_rotation ?? false,
     isWeekdayOffRule: r.is_weekday_off_rule ?? false,
+    workHoursRegime: isWorkHoursRegime(r.work_hours_regime) ? r.work_hours_regime : null,
+    baselineShift: r.baseline_shift ?? null,
   });
 
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase
       .from("users")
       .select(
-        "id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id"
+        "id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id, work_hours_regime, baseline_shift"
       )
       .eq("is_active", true);
     if (data) {
@@ -1007,6 +1030,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           reason: r.reason,
           rejectReason: r.reject_reason ?? undefined,
           status: r.status as LeaveRequest["status"],
+          approvalStep: Number(r.approval_step ?? 0) || 0,
           reviewedBy: r.reviewed_by ?? undefined,
           reviewedByName: (r.reviewer as { name?: string } | null)?.name ?? undefined,
           reviewedAt: r.reviewed_at ?? undefined,
@@ -1220,6 +1244,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           rejectReason: r.reject_reason ?? undefined,
           scheduleSnapshot: (r.schedule_snapshot as ScheduleSnapshotEntry[] | null) ?? undefined,
           createdAt: r.created_at,
+          approvalStep: Number(r.approval_step ?? 0) || 0,
         }))
       );
     }
@@ -1245,6 +1270,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           rejectReason: r.reject_reason ?? undefined,
           status: r.status as OvertimeRequest["status"],
           createdAt: r.created_at,
+          approvalStep: Number(r.approval_step ?? 0) || 0,
         }))
       );
     }
@@ -1401,7 +1427,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const recipients = allEmployees.filter(
         (e) =>
           e.role === "owner" ||
-          (e.role === "manager" && parseSiteId(e.siteId) === activeSiteId)
+          ((e.role === "manager" || e.role === "deputy") &&
+            parseSiteId(e.siteId) === activeSiteId)
       );
       await Promise.all(
         recipients.map((m) =>
@@ -1436,7 +1463,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const { data: userRow } = await supabase
               .from("users")
               .select(
-                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id"
+                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id, work_hours_regime, baseline_shift"
               )
               .eq("id", session.user.id)
               .maybeSingle();
@@ -1507,7 +1534,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const { data: userRow } = await supabase
               .from("users")
               .select(
-                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id"
+                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id, work_hours_regime, baseline_shift"
               )
               .eq("id", session.user.id)
               .maybeSingle();
@@ -1583,7 +1610,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select(
-          "id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule, site_id"
+          "id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule, site_id, work_hours_regime, baseline_shift"
         )
         .eq("id", data.user.id)
         .single();
@@ -1612,7 +1639,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const loginManager = async (username: string, password: string): Promise<boolean> => {
-    return loginWithRole(username, password, ["manager", "boss"]);
+    return loginWithRole(username, password, ["manager", "boss", "deputy"]);
   };
 
   const logout = async () => {
@@ -1639,6 +1666,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         hire_date: employee.hireDate,
         end_date: employee.endDate || null,
         site_id: employee.siteId ?? activeSiteId,
+        work_hours_regime: employee.workHoursRegime || null,
+        baseline_shift: employee.baselineShift || null,
       }),
     });
     if (!res.ok) {
@@ -1663,6 +1692,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         hire_date: updates.hireDate,
         end_date: updates.endDate === undefined ? undefined : updates.endDate || null,
         site_id: updates.siteId,
+        work_hours_regime:
+          updates.workHoursRegime === undefined ? undefined : updates.workHoursRegime || null,
+        baseline_shift: updates.baselineShift === undefined ? undefined : updates.baselineShift || null,
       }),
     });
     if (!res.ok) {
@@ -1792,23 +1824,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const y = new Date(date).getFullYear();
     const m = new Date(date).getMonth() + 1;
     const monthLocked = isLeaveMonthLocked(y, m);
-    const canOverrideLocked = currentUser?.role === "owner" || currentUser?.role === "manager";
+    const canOverrideLocked = canManageSite(currentUser?.role);
     if (monthLocked && !canOverrideLocked) {
       throw new Error("本月份班表已鎖定，僅店長/老闆可修改");
     }
 
     const isManagerEdit =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
     const emp = employees.find((e) => e.id === employeeId);
     const alreadySelected = (leaveSelections[employeeId] ?? []).includes(date);
     const syncAction = shouldSyncLeaveSelection(date, shift);
 
     if (isManagerEdit && syncAction === "add" && !alreadySelected) {
+      const summary = getLeaveSummary(employeeId, y, m);
       const ruleCheck = checkManagerLeaveAssignment(
         emp,
         emp?.name ?? "員工",
         date,
-        leaveSelections
+        leaveSelections,
+        { saturdayLimit: summary.saturdayLimit, weekdayLimit: summary.weekdayLimit }
       );
       if (ruleCheck.shouldWarn && ruleCheck.message) {
         if (!window.confirm(ruleCheck.message)) return;
@@ -2151,13 +2185,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const emp = employees.find((e) => e.id === employeeId);
     const isWeekdayOffRule = emp?.isWeekdayOffRule ?? false;
+    const satLimit = saturdayLeaveQuota(
+      storeConfig.policies,
+      countSaturdaysInMonth(year, month)
+    );
+    const wdLimit = weekdayLeaveQuota(storeConfig.policies, isWeekdayOffRule);
 
     return {
       selectedDates,
       saturdayUsed: selectedSaturdayDates.length,
-      saturdayLimit: 2,
+      saturdayLimit: satLimit,
       weekdayUsed: isWeekdayOffRule ? 0 : weekdayDates.length,
-      weekdayLimit: isWeekdayOffRule ? 0 : 2,
+      weekdayLimit: wdLimit,
       optionalSaturdayUsed: false,
       optionalSaturdayAvailable: false,
     };
@@ -2202,9 +2241,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (isSaturday(date)) {
       if (summary.saturdayUsed >= summary.saturdayLimit)
-        return { success: false, message: "禮拜六排休已達 2 天上限" };
+        return {
+          success: false,
+          message: `禮拜六排休已達 ${summary.saturdayLimit} 天上限`,
+        };
     } else if (summary.weekdayUsed >= summary.weekdayLimit) {
-      return { success: false, message: "平日排休已達 2 天上限" };
+      return {
+        success: false,
+        message:
+          summary.weekdayLimit <= 0
+            ? "本店平日不可排休"
+            : `平日排休已達 ${summary.weekdayLimit} 天上限`,
+      };
     }
 
     // Optimistic update
@@ -2570,7 +2618,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     files: File[] = []
   ) => {
     const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
     // 員工不可申請過去月份；店長／老闆可手動補登（月底結薪）
     if (hasPastMonthInRange(request.startDate, request.endDate) && !isManagerActor) {
       throw new Error("已過去的月份無法再提出請假申請");
@@ -2621,6 +2669,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         leave_type: request.type,
         reason: request.reason,
         status: "pending",
+        approval_step: 0,
       })
       .select("id")
       .single();
@@ -2672,9 +2721,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const request = leaveRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
     const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
 
-    // 員工不可改過去月份；店長／老闆仍可審核，以便月底結薪
+    // 員工不可改過去月份；店長／副店／老闆仍可審核，以便月底結薪
     if (
       request &&
       status !== prevStatus &&
@@ -2682,6 +2731,63 @@ export function AppProvider({ children }: { children: ReactNode }) {
       !isManagerActor
     ) {
       throw new Error("已過去的月份無法變更請假申請");
+    }
+
+    const chain = effectiveApprovalChain(
+      storeConfig.policies.approvalChain,
+      allEmployees,
+      activeSiteId
+    );
+    if (request && isManagerActor && (status === "approved" || status === "rejected")) {
+      const required = currentApprovalRole(chain, request.approvalStep ?? 0);
+      if (!canActOnApprovalStep(currentUser?.role, required)) {
+        throw new Error(`目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`);
+      }
+      const decision = resolveApprovalDecision(
+        chain,
+        request.approvalStep ?? 0,
+        status
+      );
+      if (decision.kind === "advance") {
+        await supabase
+          .from("leave_applications")
+          .update({
+            status: "pending",
+            approval_step: decision.nextStep,
+            reviewed_by: currentUser?.id,
+            reviewed_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+        const nextRoles = rolesToNotify(decision.nextRole);
+        const recipients = allEmployees.filter((e) => {
+          if (!nextRoles.includes(e.role)) return false;
+          if (e.role === "owner") return true;
+          return parseSiteId(e.siteId) === activeSiteId;
+        });
+        await Promise.all(
+          recipients.map((m) =>
+            insertNotification({
+              recipientId: m.id,
+              type: "leave_submitted",
+              title: `請假待${APPROVAL_STEP_LABELS[decision.nextRole]}審核`,
+              body: `${request.employeeName} 的請假申請已過上一關，請審核。`,
+              relatedId: id,
+              relatedType: "leave",
+            })
+          )
+        );
+        await insertNotification({
+          recipientId: request.employeeId,
+          type: "leave_reviewed",
+          title: "請假申請已過一關",
+          body: `您的請假申請已由${APPROVAL_STEP_LABELS[required]}通過，待${APPROVAL_STEP_LABELS[decision.nextRole]}審核。`,
+          relatedId: id,
+          relatedType: "leave",
+        });
+        await loadLeaveRequests();
+        if (currentUser?.id) await loadNotifications(currentUser.id);
+        return;
+      }
     }
 
     // 補休假允許先請後補：餘額可為負，之後加班轉補休再加回
@@ -2725,6 +2831,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .from("leave_applications")
       .update({
         status,
+        approval_step:
+          status === "approved" ? Math.max(chain.length - 1, 0) : request?.approvalStep ?? 0,
         reviewed_by: currentUser?.id,
         reviewed_at: new Date().toISOString(),
         ...(rejectReason ? { reject_reason: rejectReason } : {}),
@@ -2954,7 +3062,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const prevStatus = request?.status;
     const dbStatus = mapSwapStatusToDb(status);
     const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
 
     if (
       request &&
@@ -3102,25 +3210,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Overtime requests (Supabase) ────────────────────────────────────────────
 
   const addOvertimeRequest = async (request: Omit<OvertimeRequest, "id" | "createdAt">) => {
-    const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
-    // 員工不可申請過去月份；店長／老闆可手動補登（月底結薪）
+    const isManagerActor = canManageSite(currentUser?.role);
+    // 員工不可申請過去月份；店長／副店／老闆可手動補登（月底結薪）
     if (isPastDate(request.date) && !isManagerActor) {
       throw new Error("已過去的月份無法再提出加班申請");
     }
 
-    const compensationError = validateOvertimeCompensation(
+    const compensationError = validateOvertimeWithPolicy(
       request.startTime,
       request.endTime,
-      request.compensationType
+      request.compensationType,
+      storeConfig.policies
     );
     if (compensationError) {
       throw new Error(compensationError);
     }
-    const compensationType = resolveAllowedCompensationType(
+    const compensationType = resolveCompensationWithPolicy(
       request.startTime,
       request.endTime,
-      request.compensationType
+      request.compensationType,
+      storeConfig.policies
     );
 
     const { data: existingRequests, error: existingError } = await supabase
@@ -3155,6 +3264,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       reason: request.reason,
       compensation: compensationType === "time_off" ? "comp_leave" : "pay",
       status: "pending",
+      approval_step: 0,
     });
     await notifyManagers({
       type: "overtime_submitted",
@@ -3174,7 +3284,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const request = overtimeRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
     const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
 
     // 員工不可改過去月份；店長／老闆仍可審核，以便月底結薪
     if (request && status !== prevStatus && isPastDate(request.date) && !isManagerActor) {
@@ -3187,9 +3297,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, status, rejectReason }),
       });
-      const payload = (await res.json()) as { error?: string };
+      const payload = (await res.json()) as {
+        error?: string;
+        advanced?: boolean;
+        finalApproved?: boolean;
+        nextStatus?: string;
+      };
       if (!res.ok) {
         throw new Error(payload.error || "加班審核失敗");
+      }
+      if (payload.advanced) {
+        await loadOvertimeRequests();
+        if (currentUser?.id) await loadNotifications(currentUser.id);
+        return;
       }
     } else {
       const { error } = await supabase
@@ -3319,7 +3439,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     compensationType: "pay" | "time_off"
   ) => {
     const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
     if (!isManagerActor) {
       throw new Error("僅店長或老闆可調整加班補償方式");
     }
@@ -3600,7 +3720,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     }
 
     const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
     const isForOtherEmployee =
       !!currentUser && record.employeeId !== currentUser.id;
 
@@ -3651,10 +3771,32 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
 
   const updatePunchRecord = async (id: string, updates: PunchRecordUpdate) => {
     const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
     const target = punchRecords.find((p) => p.id === id);
     const isForOtherEmployee =
       !!currentUser && !!target && target.employeeId !== currentUser.id;
+
+    if (
+      !isManagerActor &&
+      currentUser &&
+      storeConfig.policies.monthlyPunchCorrectionLimit != null
+    ) {
+      const limit = storeConfig.policies.monthlyPunchCorrectionLimit;
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = now.getMonth() + 1;
+      const used = punchRecords.filter((p) => {
+        if (p.employeeId !== currentUser.id) return false;
+        if (!p.reason) return false;
+        const d = new Date(p.createdAt);
+        return d.getFullYear() === y && d.getMonth() + 1 === m && p.id !== id;
+      }).length;
+      if (used >= limit) {
+        throw new Error(
+          `本月自行更正打卡已達 ${limit} 次上限，請改由店長代改`
+        );
+      }
+    }
 
     if (isManagerActor && isForOtherEmployee) {
       const res = await fetch("/api/attendance/punch-records", {
@@ -3683,7 +3825,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
 
   const deletePunchRecord = async (id: string) => {
     const isManagerActor =
-      currentUser?.role === "owner" || currentUser?.role === "manager";
+      canManageSite(currentUser?.role);
     const target = punchRecords.find((p) => p.id === id);
     const isForOtherEmployee =
       !!currentUser && !!target && target.employeeId !== currentUser.id;

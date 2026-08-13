@@ -4,11 +4,20 @@ import {
   assertManagerCanAccessEmployee,
 } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { calcOvertimeHours } from "@/lib/attendance/overtimeCompensation";
+import { canChooseOvertimePayWithPolicy } from "@/lib/attendance/overtimePolicy";
+import { fromDbRole } from "@/lib/auth/roles";
 import {
-  canChooseOvertimePay,
-  calcOvertimeHours,
-} from "@/lib/attendance/overtimeCompensation";
+  canActOnApprovalStep,
+  currentApprovalRole,
+  effectiveApprovalChain,
+  resolveApprovalDecision,
+  rolesToNotify,
+} from "@/lib/approvals/chain";
 import { isPastDate } from "@/lib/schedule/monthAccess";
+import { parseSiteId, storeConfigSettingId } from "@/lib/sites";
+import { parseStoreConfig } from "@/lib/store-config";
+import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 
 type ReviewStatus = "approved" | "rejected" | "pending";
 
@@ -33,7 +42,9 @@ export async function PATCH(req: NextRequest) {
     const admin = createAdminClient();
     const { data: row, error: loadError } = await admin
       .from("overtime_applications")
-      .select("id, user_id, overtime_date, start_time, end_time, compensation, status")
+      .select(
+        "id, user_id, overtime_date, start_time, end_time, compensation, status, approval_step"
+      )
       .eq("id", id)
       .single();
 
@@ -46,26 +57,70 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
+    const { data: empRow } = await admin
+      .from("users")
+      .select("id, role, site_id, name")
+      .eq("id", row.user_id)
+      .maybeSingle();
+    const siteId = parseSiteId(empRow?.site_id ?? auth.siteId);
+
+    const { data: setting } = await admin
+      .from("app_settings")
+      .select("value")
+      .eq("id", storeConfigSettingId(siteId))
+      .maybeSingle();
+    const storeConfig = parseStoreConfig(setting?.value, siteId);
+    const { data: staffRows } = await admin
+      .from("users")
+      .select("id, role, site_id, name, is_active")
+      .eq("is_active", true);
+    const employees = (staffRows ?? []).map((u) => ({
+      id: u.id,
+      role: fromDbRole(String(u.role)),
+      siteId: parseSiteId(u.site_id),
+      name: u.name as string,
+    }));
+
+    const chain = effectiveApprovalChain(
+      storeConfig.policies.approvalChain,
+      employees,
+      siteId
+    );
+    const actorRole = fromDbRole(auth.role);
+    const currentStep = Number(row.approval_step ?? 0) || 0;
+    const required = currentApprovalRole(chain, currentStep);
+    if (status !== "pending" && !canActOnApprovalStep(actorRole, required)) {
+      return NextResponse.json(
+        { error: `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核` },
+        { status: 403 }
+      );
+    }
+
+    const decision = resolveApprovalDecision(chain, currentStep, status);
     const prevStatus = row.status as ReviewStatus;
     const startTime = String(row.start_time).slice(0, 5);
     const endTime = String(row.end_time).slice(0, 5);
     let compensation = row.compensation === "comp_leave" ? "time_off" : "pay";
 
-    // 超過半小時卻選加班費：核准時自動改為補休
-    // 過去月份維持原選擇（避免月底補審時把已申請的加班費改成補休）
+    const isFinalApprove = decision.kind === "final";
     const forceCompLeave =
-      status === "approved" &&
+      isFinalApprove &&
       compensation === "pay" &&
-      !canChooseOvertimePay(startTime, endTime) &&
+      !canChooseOvertimePayWithPolicy(startTime, endTime, storeConfig.policies) &&
       !isPastDate(String(row.overtime_date).slice(0, 10));
     if (forceCompLeave) {
       compensation = "time_off";
     }
 
+    const nextStatus: ReviewStatus =
+      decision.kind === "advance" ? "pending" : status;
+    const nextStep = decision.kind === "advance" ? decision.nextStep : currentStep;
+
     const { error: updateError } = await admin
       .from("overtime_applications")
       .update({
-        status,
+        status: nextStatus,
+        approval_step: nextStep,
         reviewed_by: auth.callerId,
         reviewed_at: new Date().toISOString(),
         ...(forceCompLeave ? { compensation: "comp_leave" } : {}),
@@ -81,9 +136,31 @@ export async function PATCH(req: NextRequest) {
       return NextResponse.json({ error: updateError.message }, { status: 500 });
     }
 
+    if (decision.kind === "advance") {
+      const nextRoles = rolesToNotify(decision.nextRole);
+      const recipients = employees.filter((e) => {
+        if (!nextRoles.includes(e.role)) return false;
+        if (e.role === "owner") return true;
+        return e.siteId === siteId;
+      });
+      if (recipients.length > 0) {
+        await admin.from("notifications").insert(
+          recipients.map((m) => ({
+            recipient_id: m.id,
+            type: "overtime_submitted",
+            title: `加班待${APPROVAL_STEP_LABELS[decision.nextRole]}審核`,
+            body: `${empRow?.name ?? "員工"} 的加班申請已過上一關，請審核。`,
+            related_id: id,
+            related_type: "overtime",
+            is_read: false,
+          }))
+        );
+      }
+    }
+
     if (compensation === "time_off") {
       const hours = calcOvertimeHours(startTime, endTime);
-      if (status === "approved" && prevStatus !== "approved") {
+      if (isFinalApprove && prevStatus !== "approved") {
         const expiresAt = new Date();
         expiresAt.setMonth(expiresAt.getMonth() + 6);
         const { error: creditError } = await admin.from("comp_leave_ledger").insert({
@@ -93,14 +170,14 @@ export async function PATCH(req: NextRequest) {
           source_id: id,
           expires_at: expiresAt.toISOString(),
           note: forceCompLeave
-            ? `加班逾半小時改補休 ${row.overtime_date}`
+            ? `加班逾門檻改補休 ${row.overtime_date}`
             : `加班轉補休 ${row.overtime_date}`,
         });
         if (creditError) {
           return NextResponse.json({ error: creditError.message }, { status: 500 });
         }
       }
-      if (prevStatus === "approved" && status !== "approved") {
+      if (prevStatus === "approved" && nextStatus !== "approved") {
         const { error: reversalError } = await admin.from("comp_leave_ledger").insert({
           user_id: row.user_id,
           hours: -hours,
@@ -117,6 +194,9 @@ export async function PATCH(req: NextRequest) {
     return NextResponse.json({
       success: true,
       convertedToCompLeave: forceCompLeave,
+      advanced: decision.kind === "advance",
+      finalApproved: isFinalApprove,
+      nextStatus,
     });
   } catch (err) {
     console.error("[applications/overtime/review PATCH]", err);

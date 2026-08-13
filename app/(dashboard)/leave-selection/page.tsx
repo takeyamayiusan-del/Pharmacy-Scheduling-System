@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
+import { leaveQuotaHint } from "@/lib/schedule/leaveQuotas";
 import {
   buildScheduleWarnings,
   isEveningOrFullCoverageShift,
@@ -57,8 +58,8 @@ export default function LeaveSelectionPage() {
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
   const remaining = {
-    weekend: Math.max(0, 2 - (leaveSummary?.saturdayUsed ?? 0)),
-    weekday: Math.max(0, 2 - (leaveSummary?.weekdayUsed ?? 0)),
+    weekend: Math.max(0, (leaveSummary?.saturdayLimit ?? 0) - (leaveSummary?.saturdayUsed ?? 0)),
+    weekday: Math.max(0, (leaveSummary?.weekdayLimit ?? 0) - (leaveSummary?.weekdayUsed ?? 0)),
   };
 
   const prevMonth = () => {
@@ -163,10 +164,10 @@ export default function LeaveSelectionPage() {
     if (selectedDates.includes(dateStr)) return true;
     if (isSunday(dateStr)) return false;
     if (isSaturday(dateStr)) {
-      return (leaveSummary?.saturdayUsed ?? 0) < 2;
+      return (leaveSummary?.saturdayUsed ?? 0) < (leaveSummary?.saturdayLimit ?? 0);
     }
     if (weekdayOffOnly) return false;
-    return (leaveSummary?.weekdayUsed ?? 0) < 2;
+    return (leaveSummary?.weekdayUsed ?? 0) < (leaveSummary?.weekdayLimit ?? 0);
   };
 
   const warnings = buildScheduleWarnings({
@@ -220,7 +221,7 @@ export default function LeaveSelectionPage() {
         defaultOpen
         storageKey={`help:leave-selection-rules:${storageScope}`}
       >
-        <p>• 每月休假 8 天：4 天固定禮拜日，2 天禮拜六，2 天平日</p>
+        <p>• {leaveQuotaHint(storeConfig.policies, saturdayCount, weekdayOffOnly)}</p>
         <p>
           • 平常預設班別為{" "}
           {formatShiftName(
@@ -234,9 +235,9 @@ export default function LeaveSelectionPage() {
           • <strong>點選日期即會儲存或取消</strong>，沒有確認鍵，也無需另外提交
         </p>
         <p>• 若選到您原為含晚班（或全天覆蓋）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
-        {saturdayCount >= 5 && (
+        {saturdayCount >= 5 && storeConfig.policies.saturdayQuotaMode === "fixed" && (
           <p className="text-violet-700 font-medium">
-            • 本月有 5 個禮拜六，但每人仍最多只能排休 2 天禮拜六
+            • 本月有 {saturdayCount} 個禮拜六，週六排休上限仍為 {leaveSummary?.saturdayLimit ?? 2} 天
           </p>
         )}
         {weekdayOffOnly && (

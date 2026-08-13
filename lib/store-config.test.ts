@@ -36,7 +36,13 @@ describe("store-config", () => {
     expect(c.features.rotationEvening).toBe(false);
     expect(c.features.weekdayOffRule).toBe(false);
     expect(c.workHoursRegime).toBe("eight_week");
+    expect(c.policies.overtimeMinApplyMinutes).toBe(30);
+    expect(c.policies.overtimeForceCompLeaveAfterMinutes).toBeNull();
+    expect(c.policies.saturdayQuotaMode).toBe("all_saturdays");
+    expect(c.policies.approvalChain).toEqual(["manager", "deputy", "owner"]);
+    expect(c.policies.autoRestSuggestEnabled).toBe(true);
     expect(defaultStoreConfigForSite("zhushan").workHoursRegime).toBe("two_week");
+    expect(defaultStoreConfigForSite("zhushan").policies.overtimeForceCompLeaveAfterMinutes).toBe(30);
   });
 
   it("buildJijiStoreConfigWithTemplate loads head-store catalog and defaults", () => {

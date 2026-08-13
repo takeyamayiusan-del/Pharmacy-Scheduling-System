@@ -266,18 +266,19 @@ describe('Feature: yaosheng-pharmacy-scheduling, Property 7: 聖文固定班規�
 
     const ctx: LeaveSelectionContext = {
       employeeId: 'test-id',
-      employeeName: '聖文',
+      employeeName: '員工',
       year: 2025,
       month: 1,
       existingSaturdayLeaves: 0,
       existingWeekdayLeaves: 0,
       targetDate: monday,
       rules: defaultRules,
+      isWeekdayOffRule: true,
     };
 
     const result = validateLeaveSelection(ctx);
     expect(result.valid).toBe(false);
-    expect(result.error).toContain('聖文僅能選取週六排休');
+    expect(result.error).toContain('平日不排休');
   });
 
   it('聖文嘗試選取週三排休應被拒絕（週三為固定排休，不可手動選取）', () => {
@@ -287,18 +288,19 @@ describe('Feature: yaosheng-pharmacy-scheduling, Property 7: 聖文固定班規�
 
     const ctx: LeaveSelectionContext = {
       employeeId: 'test-id',
-      employeeName: '聖文',
+      employeeName: '員工',
       year: 2025,
       month: 1,
       existingSaturdayLeaves: 0,
       existingWeekdayLeaves: 0,
       targetDate: wednesday,
       rules: defaultRules,
+      isWeekdayOffRule: true,
     };
 
     const result = validateLeaveSelection(ctx);
     expect(result.valid).toBe(false);
-    expect(result.error).toContain('聖文僅能選取週六排休');
+    expect(result.error).toContain('平日不排休');
   });
 
   it('聖文可以選取週六排休（未達上限）', () => {

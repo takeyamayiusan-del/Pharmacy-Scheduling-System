@@ -22,6 +22,11 @@ import {
   normalizeAgreementNote,
   normalizeCycleAnchor,
 } from "@/lib/attendance/deformedHoursSoftWarnings";
+import {
+  defaultStorePoliciesForSite,
+  parseStorePolicies,
+  type StorePolicies,
+} from "@/lib/store-policies";
 
 export type { WorkHoursRegime } from "@/lib/attendance/workHoursRegime";
 export {
@@ -32,6 +37,7 @@ export {
   DEFAULT_WORK_HOURS_CYCLE_ANCHOR,
   defaultSoftLimitsForRegime,
 } from "@/lib/attendance/deformedHoursSoftWarnings";
+export type { StorePolicies, SaturdayQuotaMode } from "@/lib/store-policies";
 
 export type StoreShiftCode = "A" | "B" | "C" | "D" | "E" | "X";
 
@@ -113,6 +119,8 @@ export type StoreConfig = {
   workHoursCycleAnchor: string;
   /** 核備文號或約定備註（選填，方便對外說明） */
   workHoursAgreementNote: string;
+  /** 打卡／加班／排休／審核等店規 */
+  policies: StorePolicies;
 };
 
 export const STORE_CONFIG_SETTING_ID = "store_config";
@@ -175,6 +183,7 @@ export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
     workHoursRegime: defaultWorkHoursRegimeForSite(siteId),
     workHoursCycleAnchor: DEFAULT_WORK_HOURS_CYCLE_ANCHOR,
     workHoursAgreementNote: "",
+    policies: defaultStorePoliciesForSite(siteId),
   };
 }
 
@@ -407,6 +416,7 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
     workHoursAgreementNote: normalizeAgreementNote(
       obj.workHoursAgreementNote ?? defaults.workHoursAgreementNote
     ),
+    policies: parseStorePolicies(obj.policies, siteId),
   };
 }
 

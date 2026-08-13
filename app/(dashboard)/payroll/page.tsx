@@ -2,9 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useApp } from "@/lib/context/AppContext";
+import { canManageSite } from "@/lib/auth/roles";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import { createClient } from "@/lib/supabase/client";
 import {
+  PAYROLL_LEAVE_RATE_DEFS,
   PAYROLL_LEAVE_RATE_KEYS,
   type LeaveType,
 } from "@/lib/attendance/leaveHours";
@@ -192,7 +194,7 @@ export default function PayrollPage() {
     isDeduction: false,
   });
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const isManager = canManageSite(currentUser?.role);
   const displayEmployees = employees.filter((e) => e.role !== "owner");
 
   // ─── Load data ─────────────────────────────────────────────────────────────
@@ -200,29 +202,37 @@ export default function PayrollPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [salaryRes, rateRes, adjRes, itemRes] = await Promise.all([
+      const [salaryRes, monthlyRes, rateRes, adjRes, itemRes] = await Promise.all([
         supabase.from("employee_salary_config").select("*"),
+        supabase.from("employee_salary_monthly").select("*").eq("year", year).eq("month", month),
         supabase.from("payroll_rate_config").select("*").order("sort_order"),
         supabase.from("payroll_adjustments").select("*").eq("year", year).eq("month", month),
         supabase.from("employee_salary_items").select("*").order("sort_order"),
       ]);
       if (salaryRes.data) {
         const map: Record<string, SalaryConfig> = {};
+        const toConfig = (r: Record<string, unknown>, userId: string): SalaryConfig => ({
+          userId,
+          baseSalary: Number(r.base_salary),
+          laborInsurance: Number(r.labor_insurance),
+          healthInsurance: Number(r.health_insurance),
+          pensionDeduction: Number(r.pension_deduction),
+          position: String(r.position ?? ""),
+          bankAccount: String(r.bank_account ?? ""),
+          hourlyRate: Number(r.hourly_rate ?? 0),
+          normalHours: Number(r.normal_hours ?? 0),
+          companyPensionRate: Number(r.company_pension_rate ?? 6),
+          companyPensionBase: Number(r.company_pension_base ?? 0),
+          payDate: String(r.pay_date ?? ""),
+          unionFee: Number(r.union_fee ?? 0),
+        });
         salaryRes.data.forEach((r) => {
+          map[r.user_id] = toConfig(r as Record<string, unknown>, r.user_id);
+        });
+        (monthlyRes.data ?? []).forEach((r) => {
           map[r.user_id] = {
-            userId: r.user_id,
-            baseSalary: Number(r.base_salary),
-            laborInsurance: Number(r.labor_insurance),
-            healthInsurance: Number(r.health_insurance),
-            pensionDeduction: Number(r.pension_deduction),
-            position: r.position ?? "",
-            bankAccount: r.bank_account ?? "",
-            hourlyRate: Number(r.hourly_rate ?? 0),
-            normalHours: Number(r.normal_hours ?? 0),
-            companyPensionRate: Number(r.company_pension_rate ?? 6),
-            companyPensionBase: Number(r.company_pension_base ?? 0),
-            payDate: r.pay_date ?? "",
-            unionFee: Number(r.union_fee ?? 0),
+            ...toConfig(r as Record<string, unknown>, r.user_id),
+            normalHours: map[r.user_id]?.normalHours ?? Number(r.normal_hours ?? 0),
           };
         });
         setSalaryConfigs(map);
@@ -240,13 +250,47 @@ export default function PayrollPage() {
         setSalaryItemsByUser({});
       }
       if (rateRes.data) {
-        setRateConfigs(rateRes.data.map((r) => ({
+        const mapped = rateRes.data.map((r) => ({
           id: r.id, itemKey: r.item_key, label: r.label,
           amount: Number(r.amount), unit: r.unit,
           isDeduction: r.is_deduction, sortOrder: r.sort_order,
           formulaType: normalizePayrollFormulaType(r.formula_type),
           percentage: Number(r.percentage ?? 0),
-        })));
+        }));
+        const missing = PAYROLL_LEAVE_RATE_DEFS.filter(
+          (d) => !mapped.some((r) => r.itemKey === d.itemKey)
+        );
+        if (missing.length > 0) {
+          await supabase.from("payroll_rate_config").insert(
+            missing.map((d) => ({
+              item_key: d.itemKey,
+              label: d.label,
+              amount: 0,
+              unit: "元/小時",
+              is_deduction: d.isDeduction,
+              sort_order: d.itemKey.length,
+            }))
+          );
+          const { data: refreshed } = await supabase
+            .from("payroll_rate_config")
+            .select("*")
+            .order("sort_order");
+          if (refreshed) {
+            setRateConfigs(
+              refreshed.map((r) => ({
+                id: r.id, itemKey: r.item_key, label: r.label,
+                amount: Number(r.amount), unit: r.unit,
+                isDeduction: r.is_deduction, sortOrder: r.sort_order,
+                formulaType: normalizePayrollFormulaType(r.formula_type),
+                percentage: Number(r.percentage ?? 0),
+              }))
+            );
+          } else {
+            setRateConfigs(mapped);
+          }
+        } else {
+          setRateConfigs(mapped);
+        }
       }
       if (adjRes.data) {
         setAdjustments(adjRes.data.map((r) => ({
@@ -543,6 +587,31 @@ export default function PayrollPage() {
     }, { onConflict: "user_id" });
     if (cfgErr) {
       alert("儲存薪資設定失敗：" + cfgErr.message);
+      return;
+    }
+
+    const { error: snapErr } = await supabase.from("employee_salary_monthly").upsert(
+      {
+        user_id: userId,
+        year,
+        month,
+        base_salary: salaryForm.baseSalary,
+        labor_insurance: salaryForm.laborInsurance,
+        health_insurance: salaryForm.healthInsurance,
+        pension_deduction: salaryForm.pensionDeduction,
+        position: salaryForm.position,
+        bank_account: salaryForm.bankAccount,
+        hourly_rate: salaryForm.hourlyRate,
+        company_pension_rate: salaryForm.companyPensionRate,
+        company_pension_base: salaryForm.companyPensionBase,
+        pay_date: salaryForm.payDate,
+        union_fee: salaryForm.unionFee,
+        updated_by: currentUser?.id,
+      },
+      { onConflict: "user_id,year,month" }
+    );
+    if (snapErr && !/does not exist|schema cache/i.test(String(snapErr.message || ""))) {
+      alert("儲存本月薪資快照失敗：" + snapErr.message);
       return;
     }
 
@@ -1056,7 +1125,8 @@ export default function PayrollPage() {
           <div className="app-panel p-6">
             <h2 className="font-semibold text-gray-900 mb-1">員工薪資設定</h2>
             <p className="text-xs text-gray-500 mb-4">
-              合約項目：底薪＋職位加級（應給）。固定津貼／獎金可新增（全勤、包班等）；全勤依請假規則試算，屬工資並計入加班基數。
+              合約項目：底薪＋職位加級（應給）。固定津貼／獎金可新增（全勤、包班等）。
+              薪資設定依「{year}年{month}月」快照儲存，改這個月的勞健保不會回溯其他月份。
             </p>
             <div className="space-y-3">
               {displayEmployees.map((emp) => {

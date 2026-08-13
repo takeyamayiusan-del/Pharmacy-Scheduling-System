@@ -53,7 +53,12 @@ export const FULL_ATTENDANCE_PROTECTED_LEAVE_TYPES = [
   "喪假",
   "特休",
   "補休假",
-  "其他", // 公假／公傷／生理假等請歸此類或另開假別時不扣
+  "生理假",
+  "產假",
+  "陪產檢及陪產假",
+  "家庭照顧事假",
+  "婚假",
+  "其他",
 ] as const;
 
 export const SALARY_ITEM_PRESETS: Array<{

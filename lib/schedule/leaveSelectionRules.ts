@@ -26,7 +26,8 @@ export function checkManagerLeaveAssignment(
   employee: Employee | undefined,
   employeeName: string,
   date: string,
-  leaveSelections: LeaveSelectionsMap
+  leaveSelections: LeaveSelectionsMap,
+  quotas?: { saturdayLimit: number; weekdayLimit: number }
 ): ManagerLeaveAssignCheck {
   if (isSunday(date)) {
     return { shouldWarn: false };
@@ -58,18 +59,20 @@ export function checkManagerLeaveAssignment(
 
   const saturdayUsed = monthDates.filter(isSaturday).length;
   const weekdayUsed = monthDates.filter((d) => !isSaturday(d) && !isSunday(d)).length;
+  const saturdayLimit = quotas?.saturdayLimit ?? 2;
+  const weekdayLimit = quotas?.weekdayLimit ?? 2;
 
-  if (isSaturday(date) && saturdayUsed >= 2) {
+  if (isSaturday(date) && saturdayUsed >= saturdayLimit) {
     return {
       shouldWarn: true,
-      message: `${employeeName} 本月禮拜六排休已達 ${saturdayUsed}/2 天，再排休將超過規定。是否仍要修改並同步至排休選擇？`,
+      message: `${employeeName} 本月禮拜六排休已達 ${saturdayUsed}/${saturdayLimit} 天，再排休將超過規定。是否仍要修改並同步至排休選擇？`,
     };
   }
 
-  if (!isSaturday(date) && weekdayUsed >= 2) {
+  if (!isSaturday(date) && weekdayUsed >= weekdayLimit) {
     return {
       shouldWarn: true,
-      message: `${employeeName} 本月平日排休已達 ${weekdayUsed}/2 天，再排休將超過規定。是否仍要修改並同步至排休選擇？`,
+      message: `${employeeName} 本月平日排休已達 ${weekdayUsed}/${weekdayLimit} 天，再排休將超過規定。是否仍要修改並同步至排休選擇？`,
     };
   }
 

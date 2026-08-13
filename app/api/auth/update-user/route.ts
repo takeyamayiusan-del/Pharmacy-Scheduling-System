@@ -24,6 +24,8 @@ export async function POST(req: NextRequest) {
       hire_date,
       end_date,
       site_id,
+      work_hours_regime,
+      baseline_shift,
     } = body as {
       userId: string;
       password?: string;
@@ -35,6 +37,8 @@ export async function POST(req: NextRequest) {
       hire_date?: string;
       end_date?: string | null;
       site_id?: string;
+      work_hours_regime?: string | null;
+      baseline_shift?: string | null;
     };
 
     if (!userId) {
@@ -71,6 +75,8 @@ export async function POST(req: NextRequest) {
     if (site_id !== undefined) {
       updates.site_id = site_id === "jiji" ? "jiji" : "zhushan";
     }
+    if (work_hours_regime !== undefined) updates.work_hours_regime = work_hours_regime || null;
+    if (baseline_shift !== undefined) updates.baseline_shift = baseline_shift || null;
 
     if (Object.keys(updates).length > 0) {
       const { error } = await admin.from("users").update(updates).eq("id", userId);

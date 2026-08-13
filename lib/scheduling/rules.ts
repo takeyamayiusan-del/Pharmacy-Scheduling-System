@@ -9,19 +9,14 @@ import type { LeaveSelectionContext, ValidationResult } from '@/lib/types';
  *
  * 規則摘要：
  * - 週日（dayOfWeek === 0）：固定排休，不可手動選取
- * - 聖文：僅能選取週六排休，不可選平日
- * - 週六（dayOfWeek === 6）：檢查 existingSaturdayLeaves < saturday_leave_quota
- * - 平日（dayOfWeek 1-5）：檢查 existingWeekdayLeaves < weekday_leave_quota
- *
- * @param ctx - 排休選擇驗證上下文
- * @returns ValidationResult { valid, error? }
+ * - 平日不排休規則：僅能選取週六
+ * - 週六／平日：檢查配額
  */
 export function validateLeaveSelection(ctx: LeaveSelectionContext): ValidationResult {
   const dayOfWeek = ctx.targetDate.getDay(); // 0=日, 1=一, 2=二, 3=三, 4=四, 5=五, 6=六
 
-  // 聖文特殊規則：僅能選取週六排休（優先於週日檢查）
-  if (ctx.employeeName === '聖文' && dayOfWeek !== 6) {
-    return { valid: false, error: '聖文僅能選取週六排休' };
+  if (ctx.isWeekdayOffRule && dayOfWeek !== 6) {
+    return { valid: false, error: "此員工套用平日不排休規則，僅能選取週六排休" };
   }
 
   // 週日為固定排休，不可手動選取
