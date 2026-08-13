@@ -883,7 +883,7 @@ export default function StoreSettingsPage() {
       <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">店規（打卡／加班／排休／審核／播假）</h2>
         <p className="text-sm text-gray-500">
-          兩店同一套程式，數值可不同。集集預設：未滿 30 分不可加班、不強迫轉補休、週六依本月週六數、審核店長→副店→老闆、播假可開。
+          兩店同一套程式，數值可不同。集集預設：未滿 30 分不可加班、不強迫轉補休、週六依本月週六數、申請關卡店長→副店→老闆、播假可開。
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="block text-sm">
@@ -939,7 +939,7 @@ export default function StoreSettingsPage() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-gray-700">員工每月自行更正打卡次數（空白＝不限）</span>
+          <span className="text-gray-700">員工每月打卡補登申請次數（空白＝不限）</span>
             <input
               type="number"
               min={0}
@@ -1031,7 +1031,7 @@ export default function StoreSettingsPage() {
             onChange={(e) => patchPolicies({ autoRestSuggestEnabled: e.target.checked })}
           />
           <span>
-            超時播假預覽（可關）。班表試算後請店長確認才寫入，不默默改已鎖定月份。
+            超時播假預覽（可關）。班表試算後請店長確認即可寫入，不走申請多關、不默默改已鎖定月份。
           </span>
         </label>
         <label className="flex items-start gap-3 text-sm">
@@ -1047,6 +1047,10 @@ export default function StoreSettingsPage() {
         </label>
         <div>
           <p className="text-sm font-medium text-gray-800 mb-2">審核關卡順序（可客製）</p>
+          <p className="text-xs text-gray-500 mb-2">
+            僅用於申請類：請假、加班、換班、特休／補休遞延、打卡補登。
+            薪資結算、超時播假、打卡管理代改由店長／副店／老闆按即可，不走多關。
+          </p>
           <div className="flex flex-wrap gap-3">
             {(["manager", "deputy", "owner"] as ApprovalStepRole[]).map((role) => {
               const on = draft.policies.approvalChain.includes(role);

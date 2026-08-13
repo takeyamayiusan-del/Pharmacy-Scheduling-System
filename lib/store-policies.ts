@@ -16,7 +16,7 @@ export type StorePolicies = {
    * 竹山 30；集集 null。
    */
   overtimeForceCompLeaveAfterMinutes: number | null;
-  /** 員工每月自行補登上限；null = 不限。超過改由店長代改。 */
+  /** 員工每月打卡補登申請上限；null = 不限。店長打卡管理代改不計入。 */
   monthlyPunchCorrectionLimit: number | null;
   saturdayQuotaMode: SaturdayQuotaMode;
   saturdayLeaveQuota: number;
@@ -24,7 +24,7 @@ export type StorePolicies = {
   sundayFixedRest: boolean;
   /** 排休半天也算一次機會 */
   halfDayLeaveCountsAsOne: boolean;
-  /** 審核關卡順序（可客製） */
+  /** 審核關卡順序（可客製）。僅申請類：請假／加班／換班／遞延／打卡補登 */
   approvalChain: ApprovalStepRole[];
   /** 特休／補休過期可提遞延申請 */
   allowLeaveDeferral: boolean;

@@ -89,7 +89,7 @@ export function AutoRestPreviewPanel(props: {
       <h3 className="app-section-title text-violet-900 mb-1">播假預覽</h3>
       <p className="text-sm text-violet-800/80 mb-3">
         週期表定工時超過上限時，用「超時時數 ÷ 個人基準班時數」算出要播幾天假，把那些上班日改成休假。
-        不是發補休時數。寫入後格子會標「播」並備註原因，比照國定假日標示。店長／副店確認才寫入。
+        不是發補休時數。寫入後格子會標「播」並備註原因，比照國定假日標示。店長／副店確認即可寫入，不走請假／加班那套多關審核。
         {monthLocked ? " 本月已鎖定，不會自動改班。" : ""}
       </p>
       {days <= 0 ? (

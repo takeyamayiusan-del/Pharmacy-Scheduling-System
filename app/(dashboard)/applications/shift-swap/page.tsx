@@ -13,6 +13,12 @@ import {
   SUNDAY_REST_MESSAGE,
 } from "@/lib/schedule/sundayRest";
 import {
+  approvalPendingLabel,
+  canActOnApprovalStep,
+  currentApprovalRole,
+  effectiveApprovalChain,
+} from "@/lib/approvals/chain";
+import {
   MonthFilterBar,
   getCurrentYearMonth,
   isDateInYearMonth,
@@ -22,7 +28,7 @@ export default function ShiftSwapPage() {
   const {
     currentUser, employees, swapRequests,
     addSwapRequest, updateSwapRequestStatus, deleteSwapRequest, getShiftForDate,
-    activeSiteId,
+    activeSiteId, storeConfig,
   } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
@@ -100,13 +106,23 @@ export default function ShiftSwapPage() {
   };
 
   const isManager = canManageSite(currentUser?.role);
+  const approvalChain = effectiveApprovalChain(
+    storeConfig.policies.approvalChain,
+    employees,
+    activeSiteId
+  );
 
-  const getStatusLabel = (status: string) => ({
-    pending_confirmation: "等待對方確認",
-    pending_approval: "等待管理者審核",
-    approved: "已核准",
-    rejected: "已拒絕",
-  }[status] ?? status);
+  const getStatusLabel = (status: string, approvalStep = 0) => {
+    if (status === "pending_approval") {
+      return approvalPendingLabel(approvalChain, approvalStep);
+    }
+    return ({
+      pending_confirmation: "等待對方確認",
+      pending_approval: "等待管理者審核",
+      approved: "已核准",
+      rejected: "已拒絕",
+    }[status] ?? status);
+  };
 
   const getStatusClass = (status: string) => ({
     pending_confirmation: "bg-yellow-100 text-yellow-800",
@@ -161,7 +177,7 @@ export default function ShiftSwapPage() {
         defaultOpen
         storageKey={`help:shift-swap-flow:${storageScope}`}
       >
-        <p><span className="font-medium text-sky-800">換班流程：</span>發起申請 → 對方確認 → 管理者審核 → 班表即時互換</p>
+        <p><span className="font-medium text-sky-800">換班流程：</span>發起申請 → 對方確認 → 依店規關卡審核（預設店長→副店→老闆）→ 最後一關才寫入班表</p>
         <p>與自己換班：兩日班別對調。與他人換班：雙方在「換出日／換入日」出勤整段互換；取消審核或刪除已核准申請會還原班表。</p>
         <p className="text-rose-700 font-medium">禮拜日為全店固定公休，不可列入換班。</p>
         <p className="text-emerald-800">
@@ -256,7 +272,13 @@ export default function ShiftSwapPage() {
             const isTarget = currentUser?.id === req.targetEmployeeId && !isSelfSwap;
             const isRequester = currentUser?.id === req.requesterId;
             const canConfirm = isTarget && req.status === "pending_confirmation";
-            const canManagerAct = isManager && req.status === "pending_approval";
+            const canManagerAct =
+              isManager &&
+              req.status === "pending_approval" &&
+              canActOnApprovalStep(
+                currentUser?.role,
+                currentApprovalRole(approvalChain, req.approvalStep ?? 0)
+              );
             const waitingTarget = isRequester && req.status === "pending_confirmation" && !isSelfSwap;
 
             return (
@@ -270,7 +292,7 @@ export default function ShiftSwapPage() {
                       {requesterName} 的 {req.requesterDate} ↔ {isSelfSwap ? "自己的" : `${targetName} 的`} {req.targetDate}
                     </p>
                     <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium mt-1 ${getStatusClass(req.status)}`}>
-                      {getStatusLabel(req.status)}
+                      {getStatusLabel(req.status, req.approvalStep ?? 0)}
                     </span>
                     {req.status === "rejected" && req.rejectReason && (
                       <p className="text-sm text-red-700 mt-2">駁回／拒絕原因：{req.rejectReason}</p>

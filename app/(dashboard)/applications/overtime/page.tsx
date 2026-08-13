@@ -17,7 +17,7 @@ import {
   getCurrentYearMonth,
   isDateInYearMonth,
 } from "@/components/MonthFilterBar";
-import { approvalPendingLabel, effectiveApprovalChain } from "@/lib/approvals/chain";
+import { approvalPendingLabel, canActOnApprovalStep, currentApprovalRole, effectiveApprovalChain } from "@/lib/approvals/chain";
 import { HelpTip } from "@/components/ui/HelpTip";
 
 function formatCompLeaveAmount(hours: number): string {
@@ -777,7 +777,11 @@ export default function OvertimePage() {
                     {isManager && (
                       <td className="px-4 py-3">
                         <div className="flex gap-1 flex-wrap">
-                          {req.status === "pending" && (
+                          {req.status === "pending" &&
+                            canActOnApprovalStep(
+                              currentUser?.role,
+                              currentApprovalRole(approvalChain, req.approvalStep ?? 0)
+                            ) && (
                             <>
                               <button onClick={() => handleReviewOvertime(req.id, "approved")}
                                 className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">核准</button>

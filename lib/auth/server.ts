@@ -3,13 +3,20 @@ import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { parseSiteId, type SiteId } from "@/lib/sites";
 
-export type UserAuthOk = { callerId: string; role: string; siteId: SiteId };
+export type UserAuthOk = {
+  callerId: string;
+  role: string;
+  siteId: SiteId;
+  name: string;
+};
 export type UserAuthResult = UserAuthOk | { error: string; status: 401 | 403 };
 
 export type ManagerAuthOk = { callerId: string; role: string; siteId: SiteId };
 export type ManagerAuthResult = ManagerAuthOk | { error: string; status: 401 | 403 };
 
-async function readSessionProfile(req: NextRequest): Promise<UserAuthResult> {
+async function readSessionProfile(
+  req: NextRequest
+): Promise<UserAuthOk | { error: string; status: 401 | 403 }> {
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -37,7 +44,7 @@ async function readSessionProfile(req: NextRequest): Promise<UserAuthResult> {
   const admin = createAdminClient();
   const { data: profile, error } = await admin
     .from("users")
-    .select("role, is_active, site_id")
+    .select("role, is_active, site_id, name")
     .eq("id", user.id)
     .single();
 
@@ -49,9 +56,11 @@ async function readSessionProfile(req: NextRequest): Promise<UserAuthResult> {
     callerId: user.id,
     role: profile.role,
     siteId: parseSiteId(profile.site_id),
+    name: String(profile.name ?? ""),
   };
 }
 
+/** 驗證已登入且帳號啟用（員工亦可） */
 export async function assertUserAuth(req: NextRequest): Promise<UserAuthResult> {
   return readSessionProfile(req);
 }
@@ -67,7 +76,11 @@ export async function assertManagerAuth(req: NextRequest): Promise<ManagerAuthRe
     return { error: "此帳號沒有管理權限", status: 403 };
   }
 
-  return auth;
+  return {
+    callerId: auth.callerId,
+    role: auth.role,
+    siteId: auth.siteId,
+  };
 }
 
 /** 老闆可跨店；店長僅能操作本店員工 */
