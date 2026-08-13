@@ -36,6 +36,10 @@ export function notificationRouteFromRelatedType(relatedType: string | null): st
       return "/applications/overtime";
     case "shift_swap":
       return "/applications/shift-swap";
+    case "leave_deferral":
+      return "/applications/leave-deferral";
+    case "punch_correction":
+      return "/applications/punch-correction";
     case "payroll":
       return "/payroll-detail";
     default:

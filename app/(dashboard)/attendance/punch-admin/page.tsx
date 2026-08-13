@@ -338,7 +338,8 @@ export default function PunchAdminPage() {
       <div>
         <h2 className="text-2xl font-bold text-gray-900">打卡紀錄管理</h2>
         <p className="text-sm text-gray-500 mt-1">
-          目前店別：{SITES[activeSiteId].displayName}（僅顯示此店員工打卡）
+          目前店別：{SITES[activeSiteId].displayName}（僅顯示此店員工打卡）。
+          在此直接改打卡不走審核關卡，也不佔員工每月補登次數；員工請走「打卡補登」申請。
         </p>
       </div>
 

@@ -77,7 +77,7 @@ export function AutoRestPreviewPanel(props: {
     <div className="app-card p-4 border-violet-200 bg-violet-50/50">
       <h3 className="app-section-title text-violet-900 mb-1">播假預覽</h3>
       <p className="text-sm text-violet-800/80 mb-3">
-        依個人工時制度（入職日起算可開）試算超時，僅警示與預覽。店長確認後才寫入班表。
+        依個人工時制度（入職日起算可開）試算超時，僅警示與預覽。店長確認即可寫入班表，不走請假／加班那套多關審核。
         {monthLocked ? " 本月已鎖定，不會自動改班。" : ""}
       </p>
       {days <= 0 ? (
