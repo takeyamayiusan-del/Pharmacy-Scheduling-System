@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
+import { canManageSite } from "@/lib/auth/roles";
 import { useSearchParams } from "next/navigation";
 import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
 import { LeaveOrderGuide } from "@/components/schedule/LeaveOrderGuide";
@@ -98,7 +99,7 @@ export default function ShiftSwapPage() {
     }
   };
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const isManager = canManageSite(currentUser?.role);
 
   const getStatusLabel = (status: string) => ({
     pending_confirmation: "等待對方確認",

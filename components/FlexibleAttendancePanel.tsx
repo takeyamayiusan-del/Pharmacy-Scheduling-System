@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
+import { canManageSite } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/client";
 import {
   FLEXIBLE_PERIOD_PRESETS,
@@ -105,7 +106,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
     [storeConfig]
   );
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const isManager = canManageSite(currentUser?.role);
   const supabase = useMemo(() => createClient(), []);
   const siteEmployeeIds = useMemo(
     () => new Set(employees.map((e) => e.id)),

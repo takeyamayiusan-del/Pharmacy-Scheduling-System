@@ -5,18 +5,19 @@ import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 import { currentMonthMinDate } from "@/lib/schedule/monthAccess";
 import { formatCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
+import { calcOvertimeHours } from "@/lib/attendance/overtimeCompensation";
 import {
-  calcOvertimeHours,
-  canChooseOvertimePay,
-  overtimeCompensationHint,
-  resolveAllowedCompensationType,
-  validateOvertimeCompensation,
-} from "@/lib/attendance/overtimeCompensation";
+  canChooseOvertimePayWithPolicy,
+  overtimePolicyHint,
+  resolveCompensationWithPolicy,
+  validateOvertimeWithPolicy,
+} from "@/lib/attendance/overtimePolicy";
 import {
   MonthFilterBar,
   getCurrentYearMonth,
   isDateInYearMonth,
 } from "@/components/MonthFilterBar";
+import { approvalPendingLabel, effectiveApprovalChain } from "@/lib/approvals/chain";
 import { HelpTip } from "@/components/ui/HelpTip";
 
 function formatCompLeaveAmount(hours: number): string {
@@ -40,6 +41,7 @@ export default function OvertimePage() {
     getCompLeaveBalance,
     grantCompLeaveHours,
     activeSiteId,
+    storeConfig,
   } = useApp();
   const searchParams = useSearchParams();
   const [showForm, setShowForm] = useState(false);
@@ -65,15 +67,16 @@ export default function OvertimePage() {
         reason: reason || prev.reason,
         startTime: startTime || prev.startTime,
         endTime: endTime || prev.endTime,
-        compensationType: resolveAllowedCompensationType(
+        compensationType: resolveCompensationWithPolicy(
           startTime || prev.startTime,
           endTime || prev.endTime,
-          prev.compensationType
+          prev.compensationType,
+          storeConfig.policies
         ),
       }));
       setShowForm(true);
     }
-  }, [searchParams]);
+  }, [searchParams, storeConfig.policies]);
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(null);
   const [grantForm, setGrantForm] = useState({
     employeeId: "",
@@ -90,7 +93,7 @@ export default function OvertimePage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager" || currentUser?.role === "deputy";
   const staffEmployees = useMemo(
     () => employees.filter((e) => e.role !== "owner"),
     [employees]
@@ -150,20 +153,22 @@ export default function OvertimePage() {
       return;
     }
 
-    const compensationError = validateOvertimeCompensation(
+    const compensationError = validateOvertimeWithPolicy(
       formData.startTime,
       formData.endTime,
-      formData.compensationType
+      formData.compensationType,
+      storeConfig.policies
     );
     if (compensationError) {
       alert(compensationError);
       return;
     }
 
-    const compensationType = resolveAllowedCompensationType(
+    const compensationType = resolveCompensationWithPolicy(
       formData.startTime,
       formData.endTime,
-      formData.compensationType
+      formData.compensationType,
+      storeConfig.policies
     );
 
     setIsSubmitting(true);
@@ -192,8 +197,17 @@ export default function OvertimePage() {
     formData.startTime && formData.endTime
       ? calcOvertimeHours(formData.startTime, formData.endTime)
       : 0;
-  const payAllowed = canChooseOvertimePay(formData.startTime, formData.endTime);
+  const payAllowed = canChooseOvertimePayWithPolicy(
+    formData.startTime,
+    formData.endTime,
+    storeConfig.policies,
+  );
 
+  const approvalChain = effectiveApprovalChain(
+    storeConfig.policies.approvalChain,
+    employees,
+    activeSiteId
+  );
   const statusLabels: Record<string, { label: string; color: string }> = {
     pending:  { label: "待審核", color: "bg-yellow-100 text-yellow-800" },
     approved: { label: "已核准", color: "bg-green-100 text-green-800" },
@@ -396,10 +410,11 @@ export default function OvertimePage() {
                   value={formData.startTime}
                   onChange={(e) => {
                     const startTime = e.target.value;
-                    const nextComp = resolveAllowedCompensationType(
+                    const nextComp = resolveCompensationWithPolicy(
                       startTime,
                       formData.endTime,
-                      formData.compensationType
+                      formData.compensationType,
+                      storeConfig.policies
                     );
                     setFormData({ ...formData, startTime, compensationType: nextComp });
                   }}
@@ -414,10 +429,11 @@ export default function OvertimePage() {
                   value={formData.endTime}
                   onChange={(e) => {
                     const endTime = e.target.value;
-                    const nextComp = resolveAllowedCompensationType(
+                    const nextComp = resolveCompensationWithPolicy(
                       formData.startTime,
                       endTime,
-                      formData.compensationType
+                      formData.compensationType,
+                      storeConfig.policies
                     );
                     setFormData({ ...formData, endTime, compensationType: nextComp });
                   }}
@@ -430,7 +446,7 @@ export default function OvertimePage() {
               <p className="text-xs text-gray-500">
                 預估加班：{overtimeMinutesPreview} 小時
                 <span className="ml-2 text-amber-700">
-                  {overtimeCompensationHint(formData.startTime, formData.endTime)}
+                  {overtimePolicyHint(formData.startTime, formData.endTime, storeConfig.policies)}
                 </span>
               </p>
             )}
@@ -455,7 +471,7 @@ export default function OvertimePage() {
                       setFormData({ ...formData, compensationType: "pay" })
                     }
                   />
-                  <span>加班費（限半小時內）</span>
+                  <span>加班費</span>
                 </label>
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
@@ -471,7 +487,11 @@ export default function OvertimePage() {
                 </label>
               </div>
               <p className="text-xs text-gray-500 mt-1">
-                {overtimeCompensationHint(formData.startTime, formData.endTime)}
+                {overtimePolicyHint(
+                  formData.startTime,
+                  formData.endTime,
+                  storeConfig.policies,
+                )}
               </p>
             </div>
             <div className="flex gap-3">
@@ -695,6 +715,10 @@ export default function OvertimePage() {
               )}
               {visibleRequests.map(req => {
                 const st = statusLabels[req.status];
+                const statusText =
+                  req.status === "pending"
+                    ? approvalPendingLabel(approvalChain, req.approvalStep ?? 0)
+                    : st.label;
                 const h = calcOvertimeHours(req.startTime, req.endTime);
                 const empName = req.employeeName || getEmpName(req.employeeId);
                 return (
@@ -741,7 +765,7 @@ export default function OvertimePage() {
                       })()}
                     </td>
                     <td className="px-4 py-3">
-                      <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${st.color}`}>{st.label}</span>
+                      <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${st.color}`}>{statusText}</span>
                     </td>
                     <td className="px-4 py-3 text-sm max-w-xs">
                       {req.status === "rejected" && req.rejectReason ? (

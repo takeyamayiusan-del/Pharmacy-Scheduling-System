@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
+import { canManageSite } from "@/lib/auth/roles";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { buildDeformedHoursSoftWarnings } from "@/lib/attendance/deformedHoursSoftWarnings";
@@ -18,6 +19,7 @@ import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
 import FlexibleAttendancePanel from "@/components/FlexibleAttendancePanel";
+import { AutoRestPreviewPanel } from "@/components/schedule/AutoRestPreviewPanel";
 import { HelpTip } from "@/components/ui/HelpTip";
 import { CollapsibleCard } from "@/components/ui/CollapsibleCard";
 import {
@@ -265,7 +267,7 @@ export default function SchedulePage() {
     rotationEmployees.length > 0
       ? rotationEmployees.map((e) => e.name).join("/")
       : "尚未設定";
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const isManager = canManageSite(currentUser?.role);
 
   const monthNationalHolidays = Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
@@ -331,7 +333,7 @@ export default function SchedulePage() {
   };
 
   const toggleMonthLock = async () => {
-    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) return;
+    if (!currentUser || !canManageSite(currentUser.role)) return;
     if (lockingMonth) return;
     setLockingMonth(true);
     try {
@@ -516,8 +518,7 @@ export default function SchedulePage() {
     if (!currentUser) return false;
     if (isPastDate(dateStr)) return false;
     if (isSunday(dateStr)) return false;
-    if (currentUser.role === "owner") return true;
-    if (currentUser.role === "manager") return true;
+    if (canManageSite(currentUser.role)) return true;
     return false;
   };
 
@@ -713,6 +714,10 @@ export default function SchedulePage() {
         />
       )}
 
+      {isManager && (
+        <AutoRestPreviewPanel year={year} month={month} monthLocked={monthLocked} />
+      )}
+
       {isManager && monthNationalHolidays.length > 0 && (
         <div className="app-card p-4 border-amber-200 bg-amber-50/40">
           <h3 className="app-section-title text-amber-900 mb-1">國定假日一鍵設定</h3>
@@ -821,7 +826,7 @@ export default function SchedulePage() {
           <button onClick={prevMonth} className="app-btn-outline" aria-label="上個月">
             ◀
           </button>
-          <h2 className="text-xl sm:text-2xl app-title whitespace-nowrap">{year}年{month}月 班表</h2>
+          <h2 className="text-xl sm:text-2xl app-title whitespace-nowrap">{year}年{month}月 月曆式班表</h2>
           <button onClick={nextMonth} className="app-btn-outline" aria-label="下個月">
             ▶
           </button>
@@ -860,6 +865,7 @@ export default function SchedulePage() {
         <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {currentUser?.role === "owner" && <span className="app-chip text-sky-800 border-sky-100 bg-sky-50">可編輯所有人班表</span>}
           {currentUser?.role === "manager" && <span className="app-chip text-emerald-800 border-emerald-100 bg-emerald-50">可編輯班表與審核</span>}
+          {currentUser?.role === "deputy" && <span className="app-chip text-cyan-800 border-cyan-100 bg-cyan-50">副店：功能同店長</span>}
           {currentUser?.role === "staff" && <span className="app-chip">僅檢視班表</span>}
           {monthLocked && <span className="app-chip text-rose-700 border-rose-100 bg-rose-50">本月已鎖定</span>}
           {viewingPastMonth && <span className="app-chip">過去月份僅供查閱</span>}

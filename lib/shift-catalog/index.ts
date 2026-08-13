@@ -99,6 +99,12 @@ export function parseCatalogShift(raw: unknown, index = 0): CatalogShift | null 
     workSegments,
     breaks,
     nominalHours: Number.isFinite(nominalHours) ? nominalHours : 0,
+    countedHours:
+      o.countedHours === null || o.countedHours === undefined || o.countedHours === ""
+        ? null
+        : Number.isFinite(Number(o.countedHours))
+          ? Number(o.countedHours)
+          : null,
     bgColor: parseHexColor(o.bgColor, defaults.bgColor),
     textColor: parseHexColor(o.textColor, defaults.textColor),
     borderColor: parseHexColor(o.borderColor, defaults.borderColor),
@@ -143,6 +149,7 @@ export function createEmptyCatalogShift(partial?: Partial<CatalogShift>): Catalo
       : [{ start: "09:00", end: "18:00" }],
     breaks: partial?.breaks ?? [{ start: "12:30", end: "13:30" }],
     nominalHours: partial?.nominalHours ?? 8,
+    countedHours: partial?.countedHours ?? null,
     bgColor: partial?.bgColor ?? defaults.bgColor,
     textColor: partial?.textColor ?? defaults.textColor,
     borderColor: partial?.borderColor ?? defaults.borderColor,

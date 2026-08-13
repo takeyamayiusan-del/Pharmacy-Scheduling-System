@@ -27,6 +27,9 @@ import {
   type StoreShiftCode,
   type WorkHoursRegime,
 } from "@/lib/store-config";
+import { canManageSite } from "@/lib/auth/roles";
+import { APPROVAL_STEP_LABELS, type ApprovalStepRole } from "@/lib/auth/roles";
+import type { StorePolicies } from "@/lib/store-policies";
 import {
   assertWritableShiftCode,
   getScheduleShiftOptions,
@@ -54,9 +57,13 @@ export default function StoreSettingsPage() {
     setMessage(null);
   }, [storeConfig, activeSiteId]);
 
-  const canManage = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const canManage = canManageSite(currentUser?.role);
   const siteMeta = SITES[activeSiteId];
   const useCatalog = draft.features.customShiftCatalog;
+
+  const patchPolicies = (patch: Partial<StorePolicies>) => {
+    setDraft((p) => ({ ...p, policies: { ...p.policies, ...patch } }));
+  };
 
   const monthUsage = useMemo(() => {
     const siteEmployeeIds = new Set(employees.map((e) => e.id));
@@ -78,7 +85,7 @@ export default function StoreSettingsPage() {
       <div className="min-h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
-          <p className="text-gray-600">僅店長與老闆可以調整店家設定</p>
+          <p className="text-gray-600">僅店長、副店與老闆可以調整店家設定</p>
         </div>
       </div>
     );
@@ -452,7 +459,7 @@ export default function StoreSettingsPage() {
                       </select>
                     </label>
                     <label className="text-sm w-24">
-                      <span className="text-gray-700">工時</span>
+                      <span className="text-gray-700">表定工時</span>
                       <input
                         type="number"
                         min={0}
@@ -461,6 +468,22 @@ export default function StoreSettingsPage() {
                         onChange={(e) =>
                           updateCatalogShift(shift.id, {
                             nominalHours: Number(e.target.value) || 0,
+                          })
+                        }
+                        className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
+                      />
+                    </label>
+                    <label className="text-sm w-28">
+                      <span className="text-gray-700">計工時</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        value={shift.countedHours ?? ""}
+                        placeholder="同表定"
+                        onChange={(e) =>
+                          updateCatalogShift(shift.id, {
+                            countedHours: e.target.value === "" ? null : Number(e.target.value) || 0,
                           })
                         }
                         className="mt-1 w-full border rounded-lg px-3 py-2 bg-white"
@@ -852,6 +875,207 @@ export default function StoreSettingsPage() {
           {workHoursRegimeMeta(draft.workHoursRegime).legalRef}：
           {workHoursRegimeMeta(draft.workHoursRegime).summary}
         </p>
+        <p className="text-xs text-gray-500">
+          員工可在「員工管理」另設個人制度（八周／兩周／正常工時）。此處為本店預設。
+        </p>
+      </section>
+
+      <section className="app-panel p-6 space-y-4">
+        <h2 className="font-semibold text-gray-900">店規（打卡／加班／排休／審核／播假）</h2>
+        <p className="text-sm text-gray-500">
+          兩店同一套程式，數值可不同。集集預設：未滿 30 分不可加班、不強迫轉補休、週六依本月週六數、審核店長→副店→老闆、播假可開。
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <label className="block text-sm">
+            <span className="text-gray-700">可提早打卡（分鐘）</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.policies.earlyPunchMinutes}
+              onChange={(e) =>
+                patchPolicies({ earlyPunchMinutes: Number(e.target.value) || 0 })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">下班後導向加班申請（分鐘）</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.policies.overtimeRedirectMinutes}
+              onChange={(e) =>
+                patchPolicies({ overtimeRedirectMinutes: Number(e.target.value) || 0 })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">未滿幾分鐘不可申請加班</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.policies.overtimeMinApplyMinutes}
+              onChange={(e) =>
+                patchPolicies({ overtimeMinApplyMinutes: Number(e.target.value) || 0 })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">超過幾分鐘強制補休（空白＝不強迫）</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.policies.overtimeForceCompLeaveAfterMinutes ?? ""}
+              placeholder="不強迫，自選加班費或補休"
+              onChange={(e) =>
+                patchPolicies({
+                  overtimeForceCompLeaveAfterMinutes:
+                    e.target.value === "" ? null : Number(e.target.value) || 0,
+                })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">員工每月自行更正打卡次數（空白＝不限）</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.policies.monthlyPunchCorrectionLimit ?? ""}
+              placeholder="不限"
+              onChange={(e) =>
+                patchPolicies({
+                  monthlyPunchCorrectionLimit:
+                    e.target.value === "" ? null : Number(e.target.value) || 0,
+                })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">週六排休配額</span>
+            <select
+              value={draft.policies.saturdayQuotaMode}
+              onChange={(e) =>
+                patchPolicies({
+                  saturdayQuotaMode: e.target.value as StorePolicies["saturdayQuotaMode"],
+                })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            >
+              <option value="fixed">固定天數</option>
+              <option value="all_saturdays">本月所有週六</option>
+            </select>
+          </label>
+          {draft.policies.saturdayQuotaMode === "fixed" && (
+            <label className="block text-sm">
+              <span className="text-gray-700">週六可排休天數</span>
+              <input
+                type="number"
+                min={0}
+                value={draft.policies.saturdayLeaveQuota}
+                onChange={(e) =>
+                  patchPolicies({ saturdayLeaveQuota: Number(e.target.value) || 0 })
+                }
+                className="mt-1 w-full border rounded-lg px-3 py-2"
+              />
+            </label>
+          )}
+          <label className="block text-sm">
+            <span className="text-gray-700">平日可排休天數</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.policies.weekdayLeaveQuota}
+              onChange={(e) =>
+                patchPolicies({ weekdayLeaveQuota: Number(e.target.value) || 0 })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            />
+          </label>
+        </div>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.policies.sundayFixedRest}
+            onChange={(e) => patchPolicies({ sundayFixedRest: e.target.checked })}
+          />
+          <span>週日固定公休</span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.policies.halfDayLeaveCountsAsOne}
+            onChange={(e) => patchPolicies({ halfDayLeaveCountsAsOne: e.target.checked })}
+          />
+          <span>排休半天也算一次機會</span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.policies.allowLeaveDeferral}
+            onChange={(e) => patchPolicies({ allowLeaveDeferral: e.target.checked })}
+          />
+          <span>特休／補休過期可提遞延申請</span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.policies.autoRestSuggestEnabled}
+            onChange={(e) => patchPolicies({ autoRestSuggestEnabled: e.target.checked })}
+          />
+          <span>
+            超時播假預覽（可關）。班表試算後請店長確認才寫入，不默默改已鎖定月份。
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.policies.workHoursCycleFromHireDate}
+            onChange={(e) =>
+              patchPolicies({ workHoursCycleFromHireDate: e.target.checked })
+            }
+          />
+          <span>變形工時週期從個人入職日起算</span>
+        </label>
+        <div>
+          <p className="text-sm font-medium text-gray-800 mb-2">審核關卡順序（可客製）</p>
+          <div className="flex flex-wrap gap-3">
+            {(["manager", "deputy", "owner"] as ApprovalStepRole[]).map((role) => {
+              const on = draft.policies.approvalChain.includes(role);
+              return (
+                <label key={role} className="inline-flex items-center gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={(e) => {
+                      const next = e.target.checked
+                        ? (["manager", "deputy", "owner"] as ApprovalStepRole[]).filter(
+                            (r) =>
+                              r === role || draft.policies.approvalChain.includes(r)
+                          )
+                        : draft.policies.approvalChain.filter((r) => r !== role);
+                      patchPolicies({
+                        approvalChain: next.length > 0 ? next : ["manager"],
+                      });
+                    }}
+                  />
+                  {APPROVAL_STEP_LABELS[role]}
+                </label>
+              );
+            })}
+          </div>
+          <p className="text-xs text-gray-500 mt-1">
+            目前：{draft.policies.approvalChain.map((r) => APPROVAL_STEP_LABELS[r]).join(" → ")}
+          </p>
+        </div>
       </section>
 
       <section className="app-panel p-6 space-y-4">

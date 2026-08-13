@@ -58,6 +58,8 @@ export async function POST(req: NextRequest) {
         hire_date: hire_date || "2026-04-01",
         end_date: end_date || null,
         site_id: siteId,
+        work_hours_regime: body.work_hours_regime || null,
+        baseline_shift: body.baseline_shift || null,
       })
       .select()
       .single();

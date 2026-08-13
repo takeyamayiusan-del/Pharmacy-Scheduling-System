@@ -10,7 +10,7 @@
  * 系統目前為軟性提醒，不取代正式勞檢或加班計算。
  */
 
-export type WorkHoursRegime = "two_week" | "eight_week";
+export type WorkHoursRegime = "standard" | "two_week" | "four_week" | "eight_week";
 
 export type WorkHoursRegimeMeta = {
   value: WorkHoursRegime;
@@ -27,6 +27,16 @@ export type WorkHoursRegimeMeta = {
 
 export const WORK_HOURS_REGIME_OPTIONS: WorkHoursRegimeMeta[] = [
   {
+    value: "standard",
+    label: "正常工時",
+    legalRef: "勞基法第30條第1項",
+    cycleWeeks: 1,
+    cycleHoursCap: 40,
+    dailyNormalHoursCap: 8,
+    summary:
+      "每日正常工時原則 8 小時、每週 40 小時。未約定變形工時時使用。系統僅警示、不硬擋。",
+  },
+  {
     value: "two_week",
     label: "兩周變形工時",
     legalRef: "勞基法第30條第2項",
@@ -35,6 +45,16 @@ export const WORK_HOURS_REGIME_OPTIONS: WorkHoursRegimeMeta[] = [
     dailyNormalHoursCap: 10,
     summary:
       "兩周為一週期，正常工時合計不得超過 80 小時；單日正常工時最多 10 小時。起算日依核備／約定，非每月1日。",
+  },
+  {
+    value: "four_week",
+    label: "四周變形工時",
+    legalRef: "勞基法第30條之1",
+    cycleWeeks: 4,
+    cycleHoursCap: 168,
+    dailyNormalHoursCap: 10,
+    summary:
+      "四周為一週期，正常工時合計不得超過 168 小時；單日正常工時最多 10 小時。系統僅警示、不硬擋。",
   },
   {
     value: "eight_week",
@@ -49,7 +69,7 @@ export const WORK_HOURS_REGIME_OPTIONS: WorkHoursRegimeMeta[] = [
 ];
 
 export function isWorkHoursRegime(v: unknown): v is WorkHoursRegime {
-  return v === "two_week" || v === "eight_week";
+  return v === "standard" || v === "two_week" || v === "four_week" || v === "eight_week";
 }
 
 export function defaultWorkHoursRegimeForSite(

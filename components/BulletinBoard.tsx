@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp, type BulletinItem } from "@/lib/context/AppContext";
+import { canManageSite } from "@/lib/auth/roles";
 import {
   EMPLOYEE_BULLETIN_TYPES,
   MANAGER_BULLETIN_TYPES,
@@ -71,7 +72,7 @@ export default function BulletinBoard() {
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [formData, setFormData] = useState(DEFAULT_FORM);
 
-  const isManager = ["owner", "manager"].includes(currentUser?.role ?? "");
+  const isManager = canManageSite(currentUser?.role);
   const availableTypes = isManager ? MANAGER_BULLETIN_TYPES : EMPLOYEE_BULLETIN_TYPES;
   const defaultType = isManager ? "announcement" : "cover_request";
 

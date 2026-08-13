@@ -9,6 +9,11 @@ export type LeaveType =
   | "特休"
   | "喪假"
   | "補休假"
+  | "生理假"
+  | "產假"
+  | "陪產檢及陪產假"
+  | "家庭照顧事假"
+  | "婚假"
   | "其他";
 
 export type LeavePeriod = "full_day" | "morning" | "afternoon" | "custom";
@@ -19,6 +24,11 @@ export const LEAVE_TYPE_OPTIONS: LeaveType[] = [
   "特休",
   "喪假",
   "補休假",
+  "生理假",
+  "產假",
+  "陪產檢及陪產假",
+  "家庭照顧事假",
+  "婚假",
   "其他",
 ];
 
@@ -30,8 +40,30 @@ export const PAYROLL_LEAVE_RATE_KEYS: Record<
   病假: "leave_sick",
   喪假: "leave_bereavement",
   特休: "leave_annual",
+  生理假: "leave_menstrual",
+  產假: "leave_maternity",
+  陪產檢及陪產假: "leave_paternity",
+  家庭照顧事假: "leave_family_care",
+  婚假: "leave_marriage",
   其他: "leave_other",
 };
+
+export const PAYROLL_LEAVE_RATE_DEFS: Array<{
+  itemKey: string;
+  label: string;
+  isDeduction: boolean;
+}> = [
+  { itemKey: "leave_personal", label: "事假扣薪（每小時）", isDeduction: true },
+  { itemKey: "leave_sick", label: "病假扣薪（每小時）", isDeduction: true },
+  { itemKey: "leave_bereavement", label: "喪假（每小時）", isDeduction: true },
+  { itemKey: "leave_annual", label: "特休（每小時）", isDeduction: true },
+  { itemKey: "leave_menstrual", label: "生理假（每小時）", isDeduction: true },
+  { itemKey: "leave_maternity", label: "產假（每小時）", isDeduction: true },
+  { itemKey: "leave_paternity", label: "陪產檢及陪產假（每小時）", isDeduction: true },
+  { itemKey: "leave_family_care", label: "家庭照顧事假（每小時）", isDeduction: true },
+  { itemKey: "leave_marriage", label: "婚假（每小時）", isDeduction: true },
+  { itemKey: "leave_other", label: "其他假別（每小時）", isDeduction: true },
+];
 
 function timeToMinutes(time: string): number {
   const [h, m] = time.split(":").map(Number);

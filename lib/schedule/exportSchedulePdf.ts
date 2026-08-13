@@ -55,8 +55,9 @@ function drawScheduleSegment(
   const rowHeight = 42;
   const dayColWidth = 50;
   const nameColWidth = 100;
+  const signColWidth = 72;
   const tableX = 20;
-  const tableWidth = nameColWidth + dayCount * dayColWidth;
+  const tableWidth = nameColWidth + dayCount * dayColWidth + signColWidth;
   const tableHeight = (employees.length + 1) * rowHeight;
 
   if (sectionTitle) {
@@ -128,6 +129,17 @@ function drawScheduleSegment(
     ctx.textAlign = "left";
     ctx.textBaseline = "alphabetic";
   }
+
+  const signX = tableX + nameColWidth + dayCount * dayColWidth;
+  ctx.fillStyle = "#f8fafc";
+  ctx.fillRect(signX, tableY, signColWidth, rowHeight);
+  ctx.strokeStyle = "#e2e8f0";
+  ctx.strokeRect(signX, tableY, signColWidth, rowHeight);
+  ctx.fillStyle = "#334155";
+  ctx.font = "bold 12px 'Microsoft JhengHei', sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("簽名", signX + signColWidth / 2, tableY + 26);
+  ctx.textAlign = "left";
 
   employees.forEach((emp, rowIndex) => {
     const rowY = tableY + rowHeight + rowIndex * rowHeight;
@@ -202,6 +214,9 @@ function drawScheduleSegment(
       ctx.textAlign = "left";
       ctx.textBaseline = "alphabetic";
     }
+
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.strokeRect(signX, rowY, signColWidth, rowHeight);
   });
 
   return tableHeight + (sectionTitle ? 24 : 8);
@@ -217,14 +232,14 @@ function drawHorizontalSchedule(
   const rowHeight = 42;
   const tableHeight = (employees.length + 1) * rowHeight;
   const dayCount = daysInMonth;
-  const width = Math.max(1100, 120 + dayCount * 50 + 40);
+  const width = Math.max(1100, 120 + dayCount * 50 + 72 + 40);
   const height = tableY + tableHeight + 28;
 
   ctx.fillStyle = "#ffffff";
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#0f172a";
   ctx.font = "bold 28px 'Microsoft JhengHei', sans-serif";
-  ctx.fillText(`${year}年${month}月 班表`, 20, 42);
+  ctx.fillText(`${year}年${month}月 月曆式班表`, 20, 42);
   ctx.font = "12px 'Microsoft JhengHei', sans-serif";
   ctx.fillStyle = "#94a3b8";
   ctx.fillText(`匯出日期：${year}/${month}`, 20, 58);
@@ -254,7 +269,7 @@ function drawPortraitSchedule(
   const dayCount2 = hasSecondHalf ? daysInMonth - 15 : 0;
   const width = Math.max(
     720,
-    120 + Math.max(dayCount1, dayCount2) * 50 + 40
+    120 + Math.max(dayCount1, dayCount2) * 50 + 72 + 40
   );
 
   const headerHeight = 64;
@@ -268,7 +283,7 @@ function drawPortraitSchedule(
   ctx.fillRect(0, 0, width, height);
   ctx.fillStyle = "#0f172a";
   ctx.font = "bold 22px 'Microsoft JhengHei', sans-serif";
-  ctx.fillText(`${year}年${month}月 班表（直式・A4列印）`, 20, 32);
+  ctx.fillText(`${year}年${month}月 月曆式班表（直式・A4列印）`, 20, 32);
   ctx.font = "11px 'Microsoft JhengHei', sans-serif";
   ctx.fillStyle = "#94a3b8";
   ctx.fillText("上半月 1–15 日 / 下半月 16–月底　｜　青色欄：颱風／彈性出勤日", 20, 50);

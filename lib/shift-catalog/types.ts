@@ -27,6 +27,8 @@ export type CatalogShift = {
   breaks: TimeRange[];
   /** 表定工時 */
   nominalHours: number;
+  /** 計工時／計薪時數；未填則用表定工時（例如 11.5 記成 12） */
+  countedHours: number | null;
   /** 班表格子／圖例背景色 */
   bgColor: string;
   /** 班表格子／圖例文字色 */

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp } from '@/lib/context/AppContext';
+import { canManageSite } from '@/lib/auth/roles';
 import { SYSTEM_NAME } from '@/lib/sites';
 
 export default function RootPage() {
@@ -15,7 +16,7 @@ export default function RootPage() {
     setHasRedirected(true);
     if (currentUser) {
       const dest =
-        currentUser.role === "owner" || currentUser.role === "manager"
+        currentUser.role === "owner" || canManageSite(currentUser.role)
           ? "/schedule"
           : "/attendance/punch";
       router.replace(dest);

@@ -27,6 +27,7 @@ import {
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
 import { SITE_IDS, SITES, SYSTEM_NAME, type SiteId } from '@/lib/sites';
+import { APP_ROLE_LABELS, canManageSite } from '@/lib/auth/roles';
 
 export default function DashboardLayout({
   children,
@@ -106,7 +107,7 @@ export default function DashboardLayout({
     return null;
   }
 
-  const isManager = currentUser.role === 'owner' || currentUser.role === 'manager';
+  const isManager = canManageSite(currentUser.role);
   
   const unreadCount = notifications.filter(
     (n) => n.userId === currentUser.id && !n.read
@@ -114,7 +115,8 @@ export default function DashboardLayout({
 
   const navItems = [
     { href: '/notifications', label: '通知中心', icon: Bell, allowed: true },
-    { href: '/schedule', label: '班表', icon: Calendar, allowed: true },
+    { href: '/schedule', label: '月曆式班表', icon: Calendar, allowed: true },
+    { href: '/my-schedule', label: '我的班表', icon: Calendar, allowed: true },
     { href: '/meal-order', label: '訂餐', icon: Coffee, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
@@ -127,6 +129,7 @@ export default function DashboardLayout({
       allowed: storeConfig.features.rotationEvening,
     },
     { href: '/applications/leave', label: '請假申請', icon: FileText, allowed: true },
+    { href: '/applications/leave-deferral', label: '假別遞延', icon: FileText, allowed: storeConfig.policies.allowLeaveDeferral },
     { href: '/applications/shift-swap', label: '換班申請', icon: Repeat, allowed: true },
     { href: '/applications/overtime', label: '加班申請', icon: Clock, allowed: true },
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
@@ -177,9 +180,7 @@ export default function DashboardLayout({
     setIsMobileSidebarOpen(false);
   };
 
-  const roleLabel = 
-    currentUser.role === 'owner' ? '老闆' : 
-    currentUser.role === 'manager' ? '店長' : '員工';
+  const roleLabel = APP_ROLE_LABELS[currentUser.role] ?? '員工';
 
   const storeLabel =
     storeConfig.storeName?.trim() || SITES[activeSiteId].displayName;

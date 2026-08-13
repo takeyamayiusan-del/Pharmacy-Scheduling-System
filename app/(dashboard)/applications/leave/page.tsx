@@ -3,6 +3,8 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp, type LeaveType } from '@/lib/context/AppContext';
+import { canManageSite } from '@/lib/auth/roles';
+import { approvalPendingLabel, effectiveApprovalChain } from '@/lib/approvals/chain';
 import {
   calculateLeaveWorkHours,
   LEAVE_TYPE_OPTIONS,
@@ -89,7 +91,7 @@ export default function LeaveApplicationPage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState('');
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
-  const isManager = currentUser?.role === 'owner' || currentUser?.role === 'manager';
+  const isManager = canManageSite(currentUser?.role);
   const staffEmployees = useMemo(
     () => employees.filter((e) => e.role !== 'owner'),
     [employees]
@@ -287,6 +289,11 @@ export default function LeaveApplicationPage() {
     }
   };
 
+  const approvalChain = effectiveApprovalChain(
+    storeConfig.policies.approvalChain,
+    employees,
+    activeSiteId
+  );
   const statusLabels: Record<string, { label: string; color: string }> = {
     pending: { label: '待審核', color: 'bg-yellow-100 text-yellow-800' },
     approved: { label: '已核准', color: 'bg-green-100 text-green-800' },
@@ -657,6 +664,10 @@ export default function LeaveApplicationPage() {
               )}
               {visibleRequests.map((req) => {
                 const status = statusLabels[req.status];
+                const statusText =
+                  req.status === 'pending'
+                    ? approvalPendingLabel(approvalChain, req.approvalStep ?? 0)
+                    : status.label;
                 const empName = req.employeeName || getEmpName(req.employeeId);
                 const displayHours = calcDisplayHours(req);
                 return (
@@ -702,7 +713,7 @@ export default function LeaveApplicationPage() {
                     </td>
                     <td className="p-4">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${status.color}`}>
-                        {status.label}
+                        {statusText}
                       </span>
                     </td>
                     <td className="p-4 text-sm text-gray-600 max-w-xs">

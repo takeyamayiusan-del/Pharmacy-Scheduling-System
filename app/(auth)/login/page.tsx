@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
+import { canManageSite } from "@/lib/auth/roles";
 import { SYSTEM_NAME } from "@/lib/sites";
 
 export default function LoginPage() {
@@ -17,7 +18,7 @@ export default function LoginPage() {
   // 已登入則依角色跳轉
   useEffect(() => {
     if (!isLoading && currentUser) {
-      const dest = currentUser.role === "owner" ? "/schedule" : "/attendance/punch";
+      const dest = canManageSite(currentUser.role) ? "/schedule" : "/attendance/punch";
       router.replace(dest);
     }
   }, [currentUser, isLoading, router]);
@@ -33,7 +34,7 @@ export default function LoginPage() {
       } else {
         setError(
           activeTab === "manager"
-            ? "帳號或密碼錯誤（店長/老闆請確認已選「店長/老闆登入」分頁）"
+            ? "帳號或密碼錯誤（店長／副店／老闆請確認已選「店長／副店／老闆登入」分頁）"
             : "帳號或密碼錯誤（員工請確認已選「員工登入」分頁）"
         );
       }
@@ -55,7 +56,7 @@ export default function LoginPage() {
       } else {
         setError(
           activeTab === "manager"
-            ? "帳號或密碼錯誤（店長/老闆請確認已選「店長/老闆登入」分頁）"
+            ? "帳號或密碼錯誤（店長／副店／老闆請確認已選「店長／副店／老闆登入」分頁）"
             : "帳號或密碼錯誤（員工請確認已選「員工登入」分頁）"
         );
       }
@@ -107,7 +108,7 @@ export default function LoginPage() {
                   : "text-slate-500 hover:text-slate-700"
               }`}
             >
-              店長/老闆登入
+              店長／副店／老闆登入
             </button>
           </div>
 

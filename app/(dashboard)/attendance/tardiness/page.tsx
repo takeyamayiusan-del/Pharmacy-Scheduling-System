@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useApp, type TardinessRecord } from "@/lib/context/AppContext";
+import { canManageSite } from "@/lib/auth/roles";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import {
   MonthFilterBar,
@@ -34,7 +35,7 @@ export default function TardinessPage() {
   const [filterYear, setFilterYear] = useState(initialPeriod.year);
   const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const isManager = canManageSite(currentUser?.role);
 
   // 提交遲到記錄
   const handleSubmit = async (e: React.FormEvent) => {

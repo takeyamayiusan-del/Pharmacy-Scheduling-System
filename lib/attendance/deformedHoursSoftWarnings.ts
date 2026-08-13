@@ -10,6 +10,11 @@ import {
   workHoursRegimeMeta,
   type WorkHoursRegime,
 } from "@/lib/attendance/workHoursRegime";
+import {
+  resolveEmployeeCycleAnchor,
+  resolveEmployeeWorkHoursRegime,
+  type RegimeEmployee,
+} from "@/lib/attendance/employeeRegime";
 import { isOffShiftCode } from "@/lib/shift-catalog/resolve";
 import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
 import type { StoreConfig } from "@/lib/store-config";
@@ -160,7 +165,7 @@ export type DeformedHoursWarning = {
 export function buildDeformedHoursSoftWarnings(options: {
   year: number;
   month: number;
-  employees: Array<{ id: string; name: string; role?: string }>;
+  employees: Array<RegimeEmployee & { id: string; name: string; role?: string }>;
   storeConfig: StoreConfig;
   shiftTimeConfig?: ShiftTimeConfig;
   getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
@@ -174,10 +179,6 @@ export function buildDeformedHoursSoftWarnings(options: {
     getShiftForDate,
   } = options;
 
-  const regime = storeConfig.workHoursRegime;
-  const meta = workHoursRegimeMeta(regime);
-  const soft = defaultSoftLimitsForRegime(regime);
-  const anchor = normalizeCycleAnchor(storeConfig.workHoursCycleAnchor);
   const staff = employees.filter((e) => e.role !== "owner");
   const warnings: DeformedHoursWarning[] = [];
 
@@ -186,16 +187,19 @@ export function buildDeformedHoursSoftWarnings(options: {
   const monthEnd = `${year}-${String(month).padStart(2, "0")}-${String(daysInMonth).padStart(2, "0")}`;
   const monthDates = enumerateDates(monthStart, monthEnd);
 
-  // 例假檢查往前多看 6 天（跨月連班）
   const leaveScanStart = formatYmd(addDays(parseYmd(monthStart), -6));
   const leaveScanDates = enumerateDates(leaveScanStart, monthEnd);
 
-  const cyclesInMonth = cyclesOverlappingMonth(year, month, regime, anchor).filter(
-    (c) => c.start >= monthStart && c.end <= monthEnd
-  );
+  for (const emp of staff) {
+    const regime = resolveEmployeeWorkHoursRegime(emp, storeConfig);
+    const meta = workHoursRegimeMeta(regime);
+    const soft = defaultSoftLimitsForRegime(regime);
+    const anchor = resolveEmployeeCycleAnchor(emp, storeConfig, storeConfig.policies);
+    const cyclesInMonth = cyclesOverlappingMonth(year, month, regime, anchor).filter(
+      (c) => c.start >= monthStart && c.end <= monthEnd
+    );
 
-  for (const cycle of cyclesInMonth) {
-    for (const emp of staff) {
+    for (const cycle of cyclesInMonth) {
       let hours = 0;
       for (const date of enumerateDates(cycle.start, cycle.end)) {
         const shift = getShiftForDate(date, emp.id);
@@ -212,10 +216,7 @@ export function buildDeformedHoursSoftWarnings(options: {
         });
       }
     }
-  }
 
-  for (const emp of staff) {
-    // 單日正常工時
     for (const date of monthDates) {
       const shift = getShiftForDate(date, emp.id);
       if (isOffShiftCode(shift, storeConfig)) continue;
@@ -230,7 +231,6 @@ export function buildDeformedHoursSoftWarnings(options: {
       }
     }
 
-    // 例假：任意連續 7 日至少 1 日休假；只在「違規窗結束日落在本月」時提醒一次
     let streak = 0;
     let streakStart: string | null = null;
     for (const date of leaveScanDates) {
@@ -260,3 +260,4 @@ export function buildDeformedHoursSoftWarnings(options: {
 
   return warnings;
 }
+

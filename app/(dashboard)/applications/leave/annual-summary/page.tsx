@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useApp } from '@/lib/context/AppContext';
+import { canManageSite } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { useRouter } from 'next/navigation';
@@ -24,7 +25,7 @@ export default function AnnualLeaveSummaryPage() {
   const router = useRouter();
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
-  const isManager = currentUser?.role === 'owner' || currentUser?.role === 'manager';
+  const isManager = canManageSite(currentUser?.role);
 
   useEffect(() => {
     loadAnnualLeaveConfigs(selectedYear);

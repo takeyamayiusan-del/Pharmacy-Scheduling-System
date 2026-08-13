@@ -83,6 +83,9 @@ export function getShiftWorkHours(
     const cat = findCatalogShift(storeConfig, shift);
     if (cat) {
       if (cat.category === "off") return 0;
+      if (cat.countedHours != null && Number.isFinite(cat.countedHours) && cat.countedHours > 0) {
+        return roundCompLeaveHours(cat.countedHours);
+      }
       if (Number.isFinite(cat.nominalHours) && cat.nominalHours > 0) {
         return roundCompLeaveHours(cat.nominalHours);
       }
