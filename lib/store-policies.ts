@@ -42,7 +42,7 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
   return {
     earlyPunchMinutes: isJiji ? 15 : 10,
     overtimeRedirectMinutes: isJiji ? 30 : 10,
-    overtimeMinApplyMinutes: isJiji ? 30 : 10,
+    overtimeMinApplyMinutes: isJiji ? 30 : 0,
     overtimeForceCompLeaveAfterMinutes: isJiji ? null : 30,
     monthlyPunchCorrectionLimit: isJiji ? 2 : null,
     saturdayQuotaMode: isJiji ? "all_saturdays" : "fixed",
@@ -51,7 +51,7 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
     sundayFixedRest: true,
     halfDayLeaveCountsAsOne: true,
     approvalChain: isJiji ? ["manager", "deputy", "owner"] : ["manager"],
-    allowLeaveDeferral: true,
+    allowLeaveDeferral: isJiji,
     autoRestSuggestEnabled: isJiji,
     workHoursCycleFromHireDate: isJiji,
   };
@@ -78,6 +78,11 @@ function parseChain(raw: unknown, fallback: ApprovalStepRole[]): ApprovalStepRol
     STEP_ROLES.includes(x as ApprovalStepRole)
   );
   return next.length > 0 ? next : fallback;
+}
+
+function asBool(v: unknown, fallback: boolean): boolean {
+  if (typeof v === "boolean") return v;
+  return fallback;
 }
 
 export function parseStorePolicies(
@@ -109,18 +114,28 @@ export function parseStorePolicies(
       o.monthlyPunchCorrectionLimit,
       defaults.monthlyPunchCorrectionLimit
     ),
-    saturdayQuotaMode: o.saturdayQuotaMode === "all_saturdays" ? "all_saturdays" : "fixed",
+    saturdayQuotaMode:
+      o.saturdayQuotaMode === "all_saturdays"
+        ? "all_saturdays"
+        : o.saturdayQuotaMode === "fixed"
+          ? "fixed"
+          : defaults.saturdayQuotaMode,
     saturdayLeaveQuota: asInt(o.saturdayLeaveQuota, defaults.saturdayLeaveQuota, 0, 10),
     weekdayLeaveQuota: asInt(o.weekdayLeaveQuota, defaults.weekdayLeaveQuota, 0, 20),
-    sundayFixedRest: o.sundayFixedRest !== false,
-    halfDayLeaveCountsAsOne: o.halfDayLeaveCountsAsOne !== false,
-    approvalChain: parseChain(o.approvalChain, defaults.approvalChain),
-    allowLeaveDeferral: o.allowLeaveDeferral !== false,
-    autoRestSuggestEnabled: Boolean(
-      o.autoRestSuggestEnabled ?? defaults.autoRestSuggestEnabled
+    sundayFixedRest: asBool(o.sundayFixedRest, defaults.sundayFixedRest),
+    halfDayLeaveCountsAsOne: asBool(
+      o.halfDayLeaveCountsAsOne,
+      defaults.halfDayLeaveCountsAsOne
     ),
-    workHoursCycleFromHireDate: Boolean(
-      o.workHoursCycleFromHireDate ?? defaults.workHoursCycleFromHireDate
+    approvalChain: parseChain(o.approvalChain, defaults.approvalChain),
+    allowLeaveDeferral: asBool(o.allowLeaveDeferral, defaults.allowLeaveDeferral),
+    autoRestSuggestEnabled: asBool(
+      o.autoRestSuggestEnabled,
+      defaults.autoRestSuggestEnabled
+    ),
+    workHoursCycleFromHireDate: asBool(
+      o.workHoursCycleFromHireDate,
+      defaults.workHoursCycleFromHireDate
     ),
   };
 }

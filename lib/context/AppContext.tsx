@@ -1131,8 +1131,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [supabase, activeSiteId]);
 
   const saveStoreConfig = async (next: StoreConfig) => {
-    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
-      throw new Error("僅店長或老闆可調整店家設定");
+    if (!currentUser || !canManageSite(currentUser.role)) {
+      throw new Error("僅店長、副店或老闆可調整店家設定");
     }
     const siteId = activeSiteId;
     const normalized = parseStoreConfig({ ...next, siteId }, siteId);
@@ -1198,8 +1198,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const saveGeofenceLocations = async (locations: GeofenceLocation[]) => {
-    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
-      throw new Error("僅店長或老闆可調整打卡圍籬");
+    if (!currentUser || !canManageSite(currentUser.role)) {
+      throw new Error("僅店長、副店或老闆可調整打卡圍籬");
     }
     const normalized = parseGeofenceSettings({ locations });
     if (normalized.length === 0) {
@@ -1904,8 +1904,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     mode: HolidayOneClickMode,
     options?: { workShiftChoice?: HolidayWorkShiftChoice }
   ): Promise<{ updated: number; preservedLeave: number }> => {
-    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
-      throw new Error("僅店長或老闆可一鍵設定國定假日班表");
+    if (!currentUser || !canManageSite(currentUser.role)) {
+      throw new Error("僅店長、副店或老闆可一鍵設定國定假日班表");
     }
     if (isPastDate(date)) {
       throw new Error("已過去的日期無法修改班表");
@@ -3441,7 +3441,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const isManagerActor =
       canManageSite(currentUser?.role);
     if (!isManagerActor) {
-      throw new Error("僅店長或老闆可調整加班補償方式");
+      throw new Error("僅店長、副店或老闆可調整加班補償方式");
     }
 
     const res = await fetch("/api/applications/overtime/compensation", {
@@ -3610,8 +3610,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const grantCompLeaveHours = async (employeeId: string, hours: number, note?: string) => {
     if (!currentUser) throw new Error("請先登入");
-    if (currentUser.role !== "owner" && currentUser.role !== "manager") {
-      throw new Error("僅店長或老闆可調整補休時數");
+    if (!canManageSite(currentUser.role)) {
+      throw new Error("僅店長、副店或老闆可調整補休時數");
     }
     if (!Number.isFinite(hours) || hours === 0) {
       throw new Error("請輸入有效的時數");
