@@ -8,6 +8,7 @@ import {
   getShiftName,
   type StoreRuleTagId,
 } from "@/lib/store-config";
+import { canManageSite } from "@/lib/auth/roles";
 import {
   getScheduleShiftOptions,
   resolveShiftDisplay,
@@ -107,7 +108,7 @@ export default function FixedShiftsPage() {
   }, [shiftOptions, newShift]);
 
   const displayEmployees = employees.filter((e) => e.role !== "owner");
-  const canManage = currentUser?.role === "owner" || currentUser?.role === "manager";
+  const canManage = canManageSite(currentUser?.role);
 
   const handleAdd = async () => {
     if (!newEmployeeId) return;
@@ -184,7 +185,7 @@ export default function FixedShiftsPage() {
       <div className="min-h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
-          <p className="text-gray-600">僅店長與老闆可以管理固定班表</p>
+          <p className="text-gray-600">僅店長、副店與老闆可以管理固定班表</p>
         </div>
       </div>
     );

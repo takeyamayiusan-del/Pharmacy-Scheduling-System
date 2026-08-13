@@ -883,7 +883,7 @@ export default function StoreSettingsPage() {
       <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">店規（打卡／加班／排休／審核／播假）</h2>
         <p className="text-sm text-gray-500">
-          兩店同一套程式，數值可不同。集集預設：未滿 30 分不可加班、不強迫轉補休、週六依本月週六數、審核店長→副店→老闆、播假可開。
+          兩店同一套程式，這裡改的是「目前這家店」。竹山預設維持原規則（半小時內可選加班費、週六／平日各 2 天、僅店長一關、不開播假），但每一項都能改，沒有綁死店別。
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="block text-sm">

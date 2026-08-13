@@ -1,0 +1,53 @@
+import { describe, expect, it } from "vitest";
+import {
+  defaultStorePoliciesForSite,
+  parseStorePolicies,
+} from "@/lib/store-policies";
+
+describe("store-policies", () => {
+  it("竹山預設維持原行為，但不綁死店別", () => {
+    const z = defaultStorePoliciesForSite("zhushan");
+    expect(z.earlyPunchMinutes).toBe(10);
+    expect(z.overtimeRedirectMinutes).toBe(10);
+    expect(z.overtimeMinApplyMinutes).toBe(0);
+    expect(z.overtimeForceCompLeaveAfterMinutes).toBe(30);
+    expect(z.saturdayQuotaMode).toBe("fixed");
+    expect(z.saturdayLeaveQuota).toBe(2);
+    expect(z.weekdayLeaveQuota).toBe(2);
+    expect(z.approvalChain).toEqual(["manager"]);
+    expect(z.autoRestSuggestEnabled).toBe(false);
+    expect(z.allowLeaveDeferral).toBe(false);
+  });
+
+  it("竹山可改成集集那套規則（客製化）", () => {
+    const next = parseStorePolicies(
+      {
+        overtimeMinApplyMinutes: 30,
+        overtimeForceCompLeaveAfterMinutes: null,
+        saturdayQuotaMode: "all_saturdays",
+        weekdayLeaveQuota: 0,
+        approvalChain: ["manager", "deputy", "owner"],
+        autoRestSuggestEnabled: true,
+        allowLeaveDeferral: true,
+      },
+      "zhushan"
+    );
+    expect(next.overtimeMinApplyMinutes).toBe(30);
+    expect(next.overtimeForceCompLeaveAfterMinutes).toBeNull();
+    expect(next.saturdayQuotaMode).toBe("all_saturdays");
+    expect(next.weekdayLeaveQuota).toBe(0);
+    expect(next.approvalChain).toEqual(["manager", "deputy", "owner"]);
+    expect(next.autoRestSuggestEnabled).toBe(true);
+    expect(next.earlyPunchMinutes).toBe(10);
+  });
+
+  it("未寫入的欄位沿用該店預設，不因缺欄而改成 true", () => {
+    const z = parseStorePolicies({}, "zhushan");
+    expect(z.autoRestSuggestEnabled).toBe(false);
+    expect(z.allowLeaveDeferral).toBe(false);
+    expect(z.saturdayQuotaMode).toBe("fixed");
+    const j = parseStorePolicies({}, "jiji");
+    expect(j.autoRestSuggestEnabled).toBe(true);
+    expect(j.saturdayQuotaMode).toBe("all_saturdays");
+  });
+});
