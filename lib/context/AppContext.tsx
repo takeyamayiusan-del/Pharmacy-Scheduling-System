@@ -30,6 +30,7 @@ import {
   isLocalTuesday,
   isLocalWednesday,
 } from "@/lib/schedule/sundayRest";
+import { resolveDefaultWorkShift } from "@/lib/schedule/defaultWorkShift";
 import { isEmployeeActiveOnDate, isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
 import { hasPastMonthInRange, isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import {
@@ -335,6 +336,11 @@ export type Holiday = {
   createdAt: string;
 };
 
+export type ScheduleCellNote = {
+  note: string;
+  kind: string;
+};
+
 export type PunchRecord = {
   id: string;
   employeeId: string;
@@ -453,8 +459,14 @@ interface AppContextType {
   updateEmployee: (id: string, employee: Partial<Employee>) => Promise<void>;
   deleteEmployee: (id: string) => Promise<void>;
   schedule: ScheduleData;
-  updateShift: (date: string, employeeId: string, shift: ScheduleShiftCode) => Promise<void>;
+  updateShift: (
+    date: string,
+    employeeId: string,
+    shift: ScheduleShiftCode,
+    options?: { note?: string | null; noteKind?: string | null }
+  ) => Promise<void>;
   getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
+  getScheduleNote: (date: string, employeeId: string) => ScheduleCellNote | null;
   getBaseShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   /** 國定假日一鍵設為上班／休假；已排休或全日請假者維持休假。不寫入排休選擇。 */
   applyNationalHolidayOneClick: (
@@ -616,6 +628,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // Supabase-backed state (previously in localStorage)
   const [schedule, setSchedule] = useState<ScheduleData>({});
+  const [scheduleNotes, setScheduleNotes] = useState<
+    Record<string, Record<string, ScheduleCellNote>>
+  >({});
   const [fixedShifts, setFixedShifts] = useState<FixedShift[]>([]);
   const [shiftTimeConfig, setShiftTimeConfig] = useState<ShiftTimeConfig>({
     A: ["08:30-12:00", "13:30-17:00", "19:00-21:00"],
@@ -663,17 +678,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Load data from Supabase ────────────────────────────────────────────────
 
   const loadScheduleOverrides = useCallback(async () => {
-    const { data, error } = await supabase.from("schedule_entries").select("user_id, date, shift_code");
-    if (error) {
-      console.error("loadScheduleOverrides:", error);
-      return;
+    let data: Array<{
+      user_id: string;
+      date: string;
+      shift_code: string;
+      note?: string | null;
+      note_kind?: string | null;
+    }> | null = null;
+    const withNotes = await supabase
+      .from("schedule_entries")
+      .select("user_id, date, shift_code, note, note_kind");
+    if (withNotes.error) {
+      const fallback = await supabase
+        .from("schedule_entries")
+        .select("user_id, date, shift_code");
+      if (fallback.error) {
+        console.error("loadScheduleOverrides:", fallback.error);
+        return;
+      }
+      data = fallback.data;
+    } else {
+      data = withNotes.data;
     }
     const result: ScheduleData = {};
+    const notes: Record<string, Record<string, ScheduleCellNote>> = {};
     (data ?? []).forEach((r) => {
       if (!result[r.date]) result[r.date] = {};
       result[r.date][r.user_id] = r.shift_code as ScheduleShiftCode;
+      const note = typeof r.note === "string" ? r.note.trim() : "";
+      if (note) {
+        if (!notes[r.date]) notes[r.date] = {};
+        notes[r.date][r.user_id] = {
+          note,
+          kind: String(r.note_kind ?? ""),
+        };
+      }
     });
     setSchedule(result);
+    setScheduleNotes(notes);
   }, [supabase]);
 
   const loadLeaveSelections = useCallback(async () => {
@@ -1767,7 +1809,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return isOnDuty ? onDuty : offDuty;
     }
 
-    return fixedShift?.shift ?? storeConfig.defaultWeekdayShift;
+    return resolveDefaultWorkShift({
+      isSunday: false,
+      isSaturday: false,
+      fixedShift: fixedShift?.shift,
+      baselineShift: emp?.baselineShift,
+      defaultSaturdayShift: storeConfig.defaultSaturdayShift,
+      defaultWeekdayShift: storeConfig.defaultWeekdayShift,
+    });
   };
 
   const getBaseShiftForDate = (date: string, employeeId: string): ScheduleShiftCode => {
@@ -1801,7 +1850,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return getBaseShiftForDate(date, employeeId);
   };
 
-  const updateShift = async (date: string, employeeId: string, shift: ScheduleShiftCode) => {
+  const getScheduleNote = (date: string, employeeId: string): ScheduleCellNote | null => {
+    return scheduleNotes[date]?.[employeeId] ?? null;
+  };
+
+  const updateShift = async (
+    date: string,
+    employeeId: string,
+    shift: ScheduleShiftCode,
+    options?: { note?: string | null; noteKind?: string | null }
+  ) => {
     const sundayCheck = assertSundayShiftAllowed(date, shift);
     if (!sundayCheck.ok) {
       throw new Error(sundayCheck.message);
@@ -1893,8 +1951,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Optimistic update
     setSchedule((prev) => ({ ...prev, [date]: { ...prev[date], [employeeId]: shift } }));
+    const existingNote = scheduleNotes[date]?.[employeeId];
+    let nextNote = options?.note;
+    let nextKind = options?.noteKind;
+    if (options === undefined) {
+      if (shift !== "X" && existingNote?.kind === "auto_rest") {
+        nextNote = null;
+        nextKind = null;
+      }
+    }
+    setScheduleNotes((prev) => {
+      const day = { ...(prev[date] ?? {}) };
+      if (nextNote) {
+        day[employeeId] = { note: nextNote, kind: nextKind ?? "manual" };
+      } else if (nextNote === null) {
+        delete day[employeeId];
+      }
+      return { ...prev, [date]: day };
+    });
     await supabase.from("schedule_entries").upsert(
-      { user_id: employeeId, date, shift_code: shift, updated_by: currentUser?.id },
+      {
+        user_id: employeeId,
+        date,
+        shift_code: shift,
+        updated_by: currentUser?.id,
+        ...(nextNote !== undefined ? { note: nextNote, note_kind: nextKind } : {}),
+      },
       { onConflict: "user_id,date" }
     );
   };
@@ -1904,8 +1986,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     mode: HolidayOneClickMode,
     options?: { workShiftChoice?: HolidayWorkShiftChoice }
   ): Promise<{ updated: number; preservedLeave: number }> => {
-    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
-      throw new Error("僅店長或老闆可一鍵設定國定假日班表");
+    if (!currentUser || !canManageSite(currentUser.role)) {
+      throw new Error("僅店長、副店或老闆可一鍵設定國定假日班表");
     }
     if (isPastDate(date)) {
       throw new Error("已過去的日期無法修改班表");
@@ -2966,15 +3048,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
     }
 
-    const { data, error } = await supabase
-      .from("leave_applications")
-      .delete()
-      .eq("id", id)
-      .select("id");
-
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      throw new Error("未找到請假申請或刪除失敗");
+    const res = await fetch("/api/applications/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "leave", id }),
+    });
+    const payload = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      throw new Error(payload.error || "刪除請假申請失敗");
     }
 
     await loadLeaveRequests();
@@ -3196,12 +3277,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await loadScheduleOverrides();
     }
 
-    const { error } = await supabase
-      .from("shift_swap_applications")
-      .delete()
-      .eq("id", id);
-
-    if (error) throw error;
+    const res = await fetch("/api/applications/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "swap", id }),
+    });
+    const payload = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      throw new Error(payload.error || "刪除換班申請失敗");
+    }
 
     await loadSwapRequests();
     await loadScheduleOverrides();
@@ -3459,15 +3543,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteOvertimeRequest = async (id: string) => {
-    const { data, error } = await supabase
-      .from("overtime_applications")
-      .delete()
-      .eq("id", id)
-      .select("id");
-
-    if (error) throw error;
-    if (!data || data.length === 0) {
-      throw new Error("未找到加班申請或刪除失敗");
+    const res = await fetch("/api/applications/delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "overtime", id }),
+    });
+    const payload = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      throw new Error(payload.error || "刪除加班申請失敗");
     }
 
     await loadOvertimeRequests();
@@ -4134,6 +4217,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         schedule,
         updateShift,
         getShiftForDate,
+        getScheduleNote,
         getBaseShiftForDate,
         applyNationalHolidayOneClick,
         refreshSchedule: loadScheduleOverrides,

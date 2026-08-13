@@ -265,6 +265,29 @@ export default function LeaveDeferralPage() {
                             </button>
                           </>
                         )}
+                        <button
+                          type="button"
+                          className="text-rose-700 hover:underline"
+                          onClick={async () => {
+                            if (!confirm("確定刪除這筆遞延申請？")) return;
+                            try {
+                              const res = await fetch("/api/applications/delete", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ type: "leave_deferral", id: row.id }),
+                              });
+                              const payload = (await res.json().catch(() => ({}))) as {
+                                error?: string;
+                              };
+                              if (!res.ok) throw new Error(payload.error || "刪除失敗");
+                              await load();
+                            } catch (err) {
+                              alert(err instanceof Error ? err.message : "刪除失敗");
+                            }
+                          }}
+                        >
+                          刪除
+                        </button>
                       </td>
                     )}
                   </tr>

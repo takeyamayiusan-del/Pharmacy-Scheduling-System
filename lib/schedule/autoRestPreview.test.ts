@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { defaultStoreConfigForSite } from "@/lib/store-config";
-import { previewAutoRest, countAutoRestDays } from "@/lib/schedule/autoRestPreview";
+import { previewAutoRest, countAutoRestDays, autoRestNeededDays, autoRestCellNote } from "@/lib/schedule/autoRestPreview";
 
 describe("autoRestPreview", () => {
   it("八周超時會建議插入休假日", () => {
@@ -48,5 +48,18 @@ describe("autoRestPreview", () => {
       },
     });
     expect(countAutoRestDays(suggestions)).toBe(0);
+  });
+
+  it("超時以基準班時數換算天數，不是發補休時數", () => {
+    expect(autoRestNeededDays(32, 8)).toBe(4);
+    expect(autoRestNeededDays(9, 8)).toBe(2);
+    expect(
+      autoRestCellNote({
+        regimeLabel: "八周變形工時",
+        excessHours: 32,
+        baselineShiftName: "白班5",
+        baselineHours: 8,
+      })
+    ).toContain("超 32 小時");
   });
 });

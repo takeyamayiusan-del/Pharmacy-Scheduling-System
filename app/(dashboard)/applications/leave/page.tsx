@@ -770,7 +770,7 @@ export default function LeaveApplicationPage() {
                                 await deleteLeaveRequest(req.id);
                               } catch (error) {
                                 console.error(error);
-                                alert('刪除失敗，請稍後再試。');
+                                alert(error instanceof Error ? error.message : '刪除失敗，請稍後再試。');
                               }
                             }}
                             className="px-2 py-1 bg-red-100 text-red-700 rounded text-xs hover:bg-red-200"

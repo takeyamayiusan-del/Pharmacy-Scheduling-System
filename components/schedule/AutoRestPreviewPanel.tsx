@@ -3,11 +3,13 @@
 import { useMemo, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
 import {
+  autoRestCellNote,
   autoRestPreviewLabel,
   countAutoRestDays,
   previewAutoRest,
 } from "@/lib/schedule/autoRestPreview";
 import { workHoursRegimeMeta } from "@/lib/attendance/workHoursRegime";
+import { getShiftName } from "@/lib/store-config";
 
 export function AutoRestPreviewPanel(props: {
   year: number;
@@ -51,7 +53,7 @@ export function AutoRestPreviewPanel(props: {
       if (!ok) return;
     } else {
       const ok = window.confirm(
-        `確認寫入「${autoRestPreviewLabel(suggestions)}」？將依個人基準班把超時日改為休假。`
+        `確認寫入「${autoRestPreviewLabel(suggestions)}」？會把超時日改成休假，並在格子備註播假原因（不是發補休時數）。`
       );
       if (!ok) return;
     }
@@ -60,12 +62,21 @@ export function AutoRestPreviewPanel(props: {
     try {
       let written = 0;
       for (const s of suggestions) {
+        const note = autoRestCellNote({
+          regimeLabel: workHoursRegimeMeta(s.regime).label,
+          excessHours: s.excessHours,
+          baselineShiftName: getShiftName(storeConfig, s.baselineShift),
+          baselineHours: s.baselineHours,
+        });
         for (const d of s.suggestedDates) {
-          await updateShift(d.date, s.employeeId, "X");
+          await updateShift(d.date, s.employeeId, "X", {
+            note,
+            noteKind: "auto_rest",
+          });
           written += 1;
         }
       }
-      setMessage(`已寫入 ${written} 日休假。`);
+      setMessage(`已寫入 ${written} 日休假，格子已標「播」與原因。`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "寫入失敗");
     } finally {
@@ -77,7 +88,8 @@ export function AutoRestPreviewPanel(props: {
     <div className="app-card p-4 border-violet-200 bg-violet-50/50">
       <h3 className="app-section-title text-violet-900 mb-1">播假預覽</h3>
       <p className="text-sm text-violet-800/80 mb-3">
-        依個人工時制度（入職日起算可開）試算超時，僅警示與預覽。店長確認後才寫入班表。
+        週期表定工時超過上限時，用「超時時數 ÷ 個人基準班時數」算出要播幾天假，把那些上班日改成休假。
+        不是發補休時數。寫入後格子會標「播」並備註原因，比照國定假日標示。店長／副店確認才寫入。
         {monthLocked ? " 本月已鎖定，不會自動改班。" : ""}
       </p>
       {days <= 0 ? (
@@ -91,8 +103,10 @@ export function AutoRestPreviewPanel(props: {
             {suggestions.map((s) => (
               <li key={`${s.employeeId}-${s.cycleStart}`}>
                 {s.employeeName}（{workHoursRegimeMeta(s.regime).label}{" "}
-                {s.cycleStart}～{s.cycleEnd} 約 {s.cycleHours}h／上限 {s.cycleCap}h）：
-                建議休 {s.suggestedDates.map((d) => d.date.slice(8)).join("、")} 日
+                {s.cycleStart}～{s.cycleEnd} 約 {s.cycleHours}h／上限 {s.cycleCap}h，超{" "}
+                {s.excessHours}h ÷ 基準班 {getShiftName(storeConfig, s.baselineShift)}{" "}
+                {s.baselineHours}h）：建議休{" "}
+                {s.suggestedDates.map((d) => d.date.slice(8)).join("、")} 日
               </li>
             ))}
           </ul>

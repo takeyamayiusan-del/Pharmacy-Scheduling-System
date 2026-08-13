@@ -43,6 +43,7 @@ export default function SchedulePage() {
     wednesdayNightShifts,
     countSaturdaysInMonth,
     getShiftForDate,
+    getScheduleNote,
     getBaseShiftForDate,
     applyNationalHolidayOneClick,
     refreshSchedule,
@@ -645,6 +646,14 @@ export default function SchedulePage() {
             國
           </div>
         )}
+        {getScheduleNote(date, employeeId)?.kind === "auto_rest" && (
+          <div
+            className="absolute -bottom-1 -left-1 bg-violet-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow z-10"
+            title={getScheduleNote(date, employeeId)?.note}
+          >
+            播
+          </div>
+        )}
         {wednesdayNightShift && (
           <div className="absolute -bottom-1 -right-1 bg-pink-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
             晚
@@ -680,7 +689,11 @@ export default function SchedulePage() {
               </div>
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-amber-400"></div>
-                <span>國定假日 - 可編輯／可一鍵設定</span>
+                <span>國定假日 - 可編輯／可一鍵設定（欄位會標假日名稱）</span>
+              </div>
+              <div className="flex items-center gap-2.5">
+                <div className="app-legend-dot bg-violet-600"></div>
+                <span>紫色「播」- 變形工時超時播假（格子備註原因）</span>
               </div>
               <div className="flex items-center gap-2.5">
                 <div className="app-legend-dot bg-cyan-500"></div>
@@ -833,7 +846,12 @@ export default function SchedulePage() {
           <button onClick={() => setShowExportModal(true)} className="app-btn-primary">
             匯出班表
           </button>
-          {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
+          {isManager && (
+            <a href="/schedule/person" className="app-btn-outline">
+              單人排班
+            </a>
+          )}
+          {isManager && (
             <button
               onClick={toggleMonthLock}
               disabled={lockingMonth}
