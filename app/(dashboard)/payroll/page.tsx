@@ -948,6 +948,7 @@ export default function PayrollPage() {
           <h1 className="app-page-title">月底薪資結算</h1>
           <p className="app-meta mt-1">
             預設為上個月（本月結上月薪）。可先「試算」確認出勤時數與金額，再發布薪資單。
+            店長／副店／老闆直接操作即可，不走請假那種多關審核。
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">

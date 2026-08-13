@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp, type LeaveType } from '@/lib/context/AppContext';
 import { canManageSite } from '@/lib/auth/roles';
-import { approvalPendingLabel, effectiveApprovalChain } from '@/lib/approvals/chain';
+import { approvalPendingLabel, canActOnApprovalStep, currentApprovalRole, effectiveApprovalChain } from '@/lib/approvals/chain';
 import {
   calculateLeaveWorkHours,
   LEAVE_TYPE_OPTIONS,
@@ -739,7 +739,11 @@ export default function LeaveApplicationPage() {
                     {isManager && (
                       <td className="p-4">
                         <div className="flex gap-1 flex-wrap">
-                          {req.status === 'pending' && (
+                          {req.status === 'pending' &&
+                            canActOnApprovalStep(
+                              currentUser?.role,
+                              currentApprovalRole(approvalChain, req.approvalStep ?? 0)
+                            ) && (
                             <>
                               <button
                                 onClick={() => handleApprove(req.id)}
