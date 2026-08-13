@@ -406,7 +406,7 @@ export default function EmployeesPage() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  本月基準班（播假用）
+                  本月預設班（沒休假就上這班）
                 </label>
                 <select
                   value={formData.baselineShift}
@@ -424,6 +424,9 @@ export default function EmployeesPage() {
                       </option>
                     ))}
                 </select>
+                <p className="text-xs text-gray-500 mt-1">
+                  沒休假時班表預設上這班；播假用此時數換算要播幾天（不是發補休）。
+                </p>
               </div>
             </div>
             <div>

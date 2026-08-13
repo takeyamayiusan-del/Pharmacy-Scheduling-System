@@ -120,7 +120,7 @@ export function previewAutoRest(options: {
       const excess = Math.round((hours - cycle.cycleHoursCap) * 100) / 100;
       if (excess <= 0) continue;
 
-      const neededDays = Math.ceil(excess / baselineHours);
+      const neededDays = autoRestNeededDays(excess, baselineHours);
       const pick = [...workDatesInMonth]
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, neededDays);
@@ -157,4 +157,19 @@ export function autoRestPreviewLabel(suggestions: AutoRestEmployeeSuggestion[]):
   const people = new Set(suggestions.map((s) => s.employeeId)).size;
   if (days <= 0) return "本月無需播假";
   return `將自動排 ${days} 日（${people} 人）`;
+}
+
+/** 播假是把上班日改成休假來扣回超時，不是發補休時數。 */
+export function autoRestNeededDays(excessHours: number, baselineHours: number): number {
+  const hours = Math.max(0.5, baselineHours);
+  return Math.ceil(Math.max(0, excessHours) / hours);
+}
+
+export function autoRestCellNote(options: {
+  regimeLabel: string;
+  excessHours: number;
+  baselineShiftName: string;
+  baselineHours: number;
+}): string {
+  return `變形工時超時播假（${options.regimeLabel}，超 ${options.excessHours} 小時，基準班 ${options.baselineShiftName} ${options.baselineHours}h）`;
 }

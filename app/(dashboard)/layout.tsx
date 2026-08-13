@@ -23,6 +23,7 @@ import {
   DollarSign,
   Store,
   Coffee,
+  CalendarRange,
 } from 'lucide-react';
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
@@ -117,6 +118,7 @@ export default function DashboardLayout({
     { href: '/notifications', label: '通知中心', icon: Bell, allowed: true },
     { href: '/schedule', label: '月曆式班表', icon: Calendar, allowed: true },
     { href: '/my-schedule', label: '我的班表', icon: Calendar, allowed: true },
+    { href: '/schedule/person', label: '單人排班', icon: CalendarRange, allowed: isManager },
     { href: '/meal-order', label: '訂餐', icon: Coffee, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
