@@ -61,4 +61,12 @@ describe("annualLeave", () => {
     // 2027 年度總表以 12/31 估算：入職約 20 個月 → 滿一年 7 天
     expect(resolveAnnualLeaveQuotaDays(newHireApril2026, 2027, configs2026, july2026)).toBe(7);
   });
+
+  it("uses Labor Standards Act ladder when no config rows exist", () => {
+    const twoYears = {
+      ...employee,
+      hireDate: "2024-01-01",
+    };
+    expect(resolveAnnualLeaveQuotaDays(twoYears, 2026, [], new Date(2026, 6, 1))).toBe(10);
+  });
 });

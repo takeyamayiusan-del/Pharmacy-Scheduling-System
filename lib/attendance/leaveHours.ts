@@ -14,6 +14,7 @@ export type LeaveType =
   | "陪產檢及陪產假"
   | "家庭照顧事假"
   | "婚假"
+  | "公假"
   | "其他";
 
 export type LeavePeriod = "full_day" | "morning" | "afternoon" | "custom";
@@ -29,6 +30,7 @@ export const LEAVE_TYPE_OPTIONS: LeaveType[] = [
   "陪產檢及陪產假",
   "家庭照顧事假",
   "婚假",
+  "公假",
   "其他",
 ];
 
@@ -45,6 +47,7 @@ export const PAYROLL_LEAVE_RATE_KEYS: Record<
   陪產檢及陪產假: "leave_paternity",
   家庭照顧事假: "leave_family_care",
   婚假: "leave_marriage",
+  公假: "leave_official",
   其他: "leave_other",
 };
 
@@ -53,16 +56,17 @@ export const PAYROLL_LEAVE_RATE_DEFS: Array<{
   label: string;
   isDeduction: boolean;
 }> = [
-  { itemKey: "leave_personal", label: "事假扣薪（每小時）", isDeduction: true },
-  { itemKey: "leave_sick", label: "病假扣薪（每小時）", isDeduction: true },
-  { itemKey: "leave_bereavement", label: "喪假（每小時）", isDeduction: true },
-  { itemKey: "leave_annual", label: "特休（每小時）", isDeduction: true },
-  { itemKey: "leave_menstrual", label: "生理假（每小時）", isDeduction: true },
-  { itemKey: "leave_maternity", label: "產假（每小時）", isDeduction: true },
-  { itemKey: "leave_paternity", label: "陪產檢及陪產假（每小時）", isDeduction: true },
-  { itemKey: "leave_family_care", label: "家庭照顧事假（每小時）", isDeduction: true },
-  { itemKey: "leave_marriage", label: "婚假（每小時）", isDeduction: true },
-  { itemKey: "leave_other", label: "其他假別（每小時）", isDeduction: true },
+  { itemKey: "leave_personal", label: "事假（無薪）每小時扣款", isDeduction: true },
+  { itemKey: "leave_sick", label: "病假（半薪）每小時扣款", isDeduction: true },
+  { itemKey: "leave_bereavement", label: "喪假（有薪）每小時扣款（預設 0）", isDeduction: true },
+  { itemKey: "leave_annual", label: "特休（有薪）每小時扣款（預設 0）", isDeduction: true },
+  { itemKey: "leave_menstrual", label: "生理假（半薪）每小時扣款", isDeduction: true },
+  { itemKey: "leave_maternity", label: "產假（有薪）每小時扣款（預設 0）", isDeduction: true },
+  { itemKey: "leave_paternity", label: "陪產檢及陪產假（有薪）每小時扣款（預設 0）", isDeduction: true },
+  { itemKey: "leave_family_care", label: "家庭照顧事假（無薪）每小時扣款", isDeduction: true },
+  { itemKey: "leave_marriage", label: "婚假（有薪）每小時扣款（預設 0）", isDeduction: true },
+  { itemKey: "leave_official", label: "公假（有薪）每小時扣款（預設 0）", isDeduction: true },
+  { itemKey: "leave_other", label: "其他假別（預設無薪）每小時扣款", isDeduction: true },
 ];
 
 function timeToMinutes(time: string): number {

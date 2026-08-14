@@ -11,6 +11,12 @@ import {
   periodToTimes,
   type LeavePeriod,
 } from '@/lib/attendance/leaveHours';
+import {
+  effectiveLeaveRule,
+  formatLeaveLimit,
+  leaveLimitWarnings,
+  leavePayKindLabel,
+} from '@/lib/attendance/leaveEntitlements';
 import { getOriginalShiftForLeaveDay } from '@/lib/schedule/leaveSchedule';
 import { currentMonthMinDate } from '@/lib/schedule/monthAccess';
 import {
@@ -147,6 +153,11 @@ export default function LeaveApplicationPage() {
     }));
   };
 
+  const selectedLeaveRule = effectiveLeaveRule(
+    formData.type,
+    storeConfig.policies.leaveRules
+  );
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitError('');
@@ -175,9 +186,28 @@ export default function LeaveApplicationPage() {
       const year = new Date(formData.startDate).getFullYear();
       const balance = getAnnualLeaveBalance(formEmployeeId, year);
       if (balance < estimatedHours / 8) {
-        setSubmitError(`特休餘額不足（剩餘 ${balance.toFixed(1)} 天，本次需要 ${(estimatedHours / 8).toFixed(1)} 天）`);
-        return;
+        const ok = window.confirm(
+          `特休餘額不足（剩餘 ${balance.toFixed(1)} 天，本次需要 ${(estimatedHours / 8).toFixed(1)} 天）。\n` +
+            `僅警示、不硬擋。確定仍要送出？`
+        );
+        if (!ok) return;
       }
+    }
+
+    const capWarnings = leaveLimitWarnings({
+      type: formData.type,
+      employeeId: formEmployeeId,
+      startDate: formData.startDate,
+      addHours: estimatedHours,
+      requests: leaveRequests,
+      overrides: storeConfig.policies.leaveRules,
+      hoursPerDay: storeConfig.policies.leaveHoursPerDay,
+    });
+    if (capWarnings.length > 0) {
+      const ok = window.confirm(
+        capWarnings.map((w) => `${w.title}\n${w.detail}`).join('\n\n') + '\n\n確定仍要送出？'
+      );
+      if (!ok) return;
     }
 
     let startTime = formData.startTime;
@@ -538,12 +568,27 @@ export default function LeaveApplicationPage() {
                 onChange={(e) => setFormData({ ...formData, type: e.target.value as LeaveType })}
                 className="w-full px-4 py-2 border rounded-lg"
               >
-                {LEAVE_TYPE_OPTIONS.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
+                {LEAVE_TYPE_OPTIONS.map((t) => {
+                  const rule = effectiveLeaveRule(t, storeConfig.policies.leaveRules);
+                  return (
+                    <option key={t} value={t}>
+                      {t}（{leavePayKindLabel(rule.payKind)}）
+                    </option>
+                  );
+                })}
               </select>
+              <p className="text-xs text-gray-600 mt-1">
+                {leavePayKindLabel(selectedLeaveRule.payKind)} · {formatLeaveLimit(selectedLeaveRule)}
+                {selectedLeaveRule.customized ? '（店規已改）' : ''}
+                {' '}
+                {selectedLeaveRule.legalRef}：{selectedLeaveRule.summary}
+                超過上限只警示、不擋送出。
+              </p>
+              {formData.type === '特休' && (
+                <p className="text-xs text-amber-700 mt-1">
+                  目前特休剩餘 {annualBalance.toFixed(1)} 天（依年資配額）。
+                </p>
+              )}
               {formData.type === '補休假' && (
                 <p className="text-xs text-amber-700 mt-1">
                   目前補休 {compBalance} 小時

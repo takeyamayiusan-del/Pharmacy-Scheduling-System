@@ -1,5 +1,12 @@
 import type { SiteId } from "@/lib/sites";
 import type { ApprovalStepRole } from "@/lib/auth/roles";
+import {
+  parseLeaveRulesMap,
+  statutoryLeaveRulesMap,
+  type LeaveRulesMap,
+} from "@/lib/attendance/leaveEntitlements";
+
+export type { LeaveRulesMap } from "@/lib/attendance/leaveEntitlements";
 
 /** 店規：打卡／加班／排休／審核／播假（兩店同一套程式，數值不同） */
 export type SaturdayQuotaMode = "fixed" | "all_saturdays";
@@ -35,6 +42,13 @@ export type StorePolicies = {
   autoRestSuggestEnabled: boolean;
   /** 變形工時週期是否從個人入職日起算 */
   workHoursCycleFromHireDate: boolean;
+  /** 假別天數換算（預設 8 小時＝1 日），僅供上限警示 */
+  leaveHoursPerDay: number;
+  /**
+   * 假別上限／給薪覆寫。缺欄位時用勞基預設。
+   * 天數上限只警示、不硬擋。
+   */
+  leaveRules: LeaveRulesMap;
 };
 
 export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolicies {
@@ -54,6 +68,8 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
     allowLeaveDeferral: isJiji,
     autoRestSuggestEnabled: isJiji,
     workHoursCycleFromHireDate: isJiji,
+    leaveHoursPerDay: 8,
+    leaveRules: statutoryLeaveRulesMap(),
   };
 }
 
@@ -137,5 +153,10 @@ export function parseStorePolicies(
       o.workHoursCycleFromHireDate,
       defaults.workHoursCycleFromHireDate
     ),
+    leaveHoursPerDay: asInt(o.leaveHoursPerDay, defaults.leaveHoursPerDay, 1, 24),
+    leaveRules: {
+      ...defaults.leaveRules,
+      ...parseLeaveRulesMap(o.leaveRules),
+    },
   };
 }

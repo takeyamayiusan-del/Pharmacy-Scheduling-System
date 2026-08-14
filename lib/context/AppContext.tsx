@@ -40,7 +40,7 @@ import {
   hasDuplicateLeave,
   hasDuplicateOvertime,
 } from "@/lib/applications/duplicateGuard";
-import { resolveAnnualLeaveQuotaDays } from "@/lib/attendance/annualLeave";
+import { resolveAnnualLeaveQuotaDays, statutoryAnnualLeaveTiers } from "@/lib/attendance/annualLeave";
 import {
   defaultGeofenceLocationsForSite,
   parseGeofenceSettings,
@@ -163,6 +163,7 @@ export type LeaveType =
   | "陪產檢及陪產假"
   | "家庭照顧事假"
   | "婚假"
+  | "公假"
   | "其他";
 
 export type LeavePeriodMode = "full_day" | "morning" | "afternoon" | "custom";
@@ -532,6 +533,7 @@ interface AppContextType {
   loadAnnualLeaveConfigs: (year: number) => Promise<void>;
   loadAnnualLeaveAdjustments: (userId: string, year: number) => Promise<void>;
   updateAnnualLeaveConfig: (id: string, days: number) => Promise<void>;
+  applyStatutoryAnnualLeaveTiers: (year: number) => Promise<void>;
   addAnnualLeaveAdjustment: (userId: string, year: number, adjustmentDays: number, reason?: string) => Promise<void>;
   deleteAnnualLeaveAdjustment: (id: string) => Promise<void>;
   getTotalAdjustmentDays: (userId: string, year: number) => number;
@@ -921,6 +923,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (config) {
       setAnnualLeaveConfigs(prev => prev.map(c => c.id === id ? { ...c, days } : c));
     }
+  };
+
+  const applyStatutoryAnnualLeaveTiers = async (year: number) => {
+    const tiers = statutoryAnnualLeaveTiers();
+    const now = new Date().toISOString();
+    const { error } = await supabase.from("annual_leave_config").upsert(
+      tiers.map((t) => ({
+        year,
+        seniority_months: t.seniorityMonths,
+        days: t.days,
+        description: t.description,
+        updated_at: now,
+      })),
+      { onConflict: "year,seniority_months" }
+    );
+    if (error) throw new Error(error.message || "套用勞基特休階梯失敗");
+    await loadAnnualLeaveConfigs(year);
   };
 
   const addAnnualLeaveAdjustment = async (userId: string, year: number, adjustmentDays: number, reason?: string) => {
@@ -2876,30 +2895,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // 補休假允許先請後補：餘額可為負，之後加班轉補休再加回
     // （核准時寫入負數帳本，不在此阻擋）
 
-    if (status === "approved" && request?.type === "特休") {
-      const emp = employees.find((e) => e.id === request.employeeId);
-      if (emp) {
-        const year = new Date(request.startDate).getFullYear();
-        const quotaDays = getAnnualLeaveQuota(emp, year) + getTotalAdjustmentDays(request.employeeId, year);
-        const usedHours = leaveRequests
-          .filter(
-            (r) =>
-              r.id !== id &&
-              r.employeeId === request.employeeId &&
-              r.type === "特休" &&
-              r.status === "approved" &&
-              new Date(r.startDate).getFullYear() === year
-          )
-          .reduce((sum, r) => sum + r.leaveHours, 0);
-        const needHours = request.leaveHours;
-        if (usedHours + needHours > quotaDays * 8) {
-          const remainDays = Math.max(0, quotaDays - usedHours / 8);
-          throw new Error(
-            `特休餘額不足（剩餘約 ${remainDays.toFixed(1)} 天，本次需要 ${(needHours / 8).toFixed(1)} 天）`
-          );
-        }
-      }
-    }
+    // 特休超過配額只警示、不擋核准（與請假送出一致）
 
     let leaveSnapshot: ScheduleSnapshotEntry[] | undefined;
     if (request && status === "approved" && prevStatus !== "approved") {
@@ -4350,6 +4346,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         loadAnnualLeaveConfigs,
         loadAnnualLeaveAdjustments,
         updateAnnualLeaveConfig,
+        applyStatutoryAnnualLeaveTiers,
         addAnnualLeaveAdjustment,
         deleteAnnualLeaveAdjustment,
         getTotalAdjustmentDays,
