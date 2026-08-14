@@ -9,6 +9,10 @@ export function resolveLeaveTimesForSchedule(input: {
   startTime: string;
   endTime: string;
 }): { startTime: string; endTime: string } {
+  // 申請當下已依班表時段存好 start/end；寫入班表必須用這組，不可改回寫死的 08:30
+  if (input.period !== "full_day" && input.startTime && input.endTime) {
+    return { startTime: input.startTime, endTime: input.endTime };
+  }
   if (input.period === "morning") {
     return { startTime: "08:30", endTime: "12:00" };
   }

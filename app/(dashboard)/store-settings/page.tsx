@@ -31,6 +31,16 @@ import { canManageSite } from "@/lib/auth/roles";
 import { APPROVAL_STEP_LABELS, type ApprovalStepRole } from "@/lib/auth/roles";
 import type { StorePolicies } from "@/lib/store-policies";
 import {
+  LEAVE_TYPE_OPTIONS,
+} from "@/lib/attendance/leaveHours";
+import {
+  STATUTORY_LEAVE_RULES,
+  effectiveLeaveRule,
+  formatLeaveLimit,
+  statutoryLeaveRulesMap,
+  type LeavePayKind,
+} from "@/lib/attendance/leaveEntitlements";
+import {
   assertWritableShiftCode,
   getScheduleShiftOptions,
 } from "@/lib/shift-catalog/resolve";
@@ -1082,6 +1092,116 @@ export default function StoreSettingsPage() {
             目前：{draft.policies.approvalChain.map((r) => APPROVAL_STEP_LABELS[r]).join(" → ")}
           </p>
         </div>
+      </section>
+
+      <section className="app-panel p-6 space-y-4">
+        <h2 className="font-semibold text-gray-900">假別上限與給薪（勞基預設，可改）</h2>
+        <p className="text-sm text-gray-500">
+          預設依勞基法／請假規則／性工法。超過上限只在請假時警示，不擋送出、也不硬擋排班。
+          有薪假請把薪資「每小時扣款」維持 0；半薪／無薪請在薪資費率自行填每小時扣款。
+        </p>
+        <label className="block text-sm max-w-xs">
+          <span className="text-gray-700">換算 1 日＝幾小時（上限警示用）</span>
+          <input
+            type="number"
+            min={1}
+            max={24}
+            value={draft.policies.leaveHoursPerDay}
+            onChange={(e) =>
+              patchPolicies({ leaveHoursPerDay: Number(e.target.value) || 8 })
+            }
+            className="mt-1 w-full border rounded-lg px-3 py-2"
+          />
+        </label>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-gray-600 border-b">
+                <th className="py-2 pr-3">假別</th>
+                <th className="py-2 pr-3">給薪</th>
+                <th className="py-2 pr-3">上限天數</th>
+                <th className="py-2">法令對照</th>
+              </tr>
+            </thead>
+            <tbody>
+              {LEAVE_TYPE_OPTIONS.map((type) => {
+                const statutory = STATUTORY_LEAVE_RULES[type];
+                const rule = effectiveLeaveRule(type, draft.policies.leaveRules);
+                return (
+                  <tr key={type} className="border-b align-top">
+                    <td className="py-2 pr-3 font-medium text-gray-900">{type}</td>
+                    <td className="py-2 pr-3">
+                      <select
+                        value={rule.payKind}
+                        onChange={(e) =>
+                          patchPolicies({
+                            leaveRules: {
+                              ...draft.policies.leaveRules,
+                              [type]: {
+                                daysLimit: rule.daysLimit,
+                                payKind: e.target.value as LeavePayKind,
+                              },
+                            },
+                          })
+                        }
+                        className="border rounded-lg px-2 py-1"
+                      >
+                        <option value="paid">有薪</option>
+                        <option value="half">半薪</option>
+                        <option value="unpaid">無薪</option>
+                      </select>
+                    </td>
+                    <td className="py-2 pr-3">
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.5}
+                        placeholder="不限"
+                        value={rule.daysLimit ?? ""}
+                        onChange={(e) =>
+                          patchPolicies({
+                            leaveRules: {
+                              ...draft.policies.leaveRules,
+                              [type]: {
+                                daysLimit:
+                                  e.target.value === ""
+                                    ? null
+                                    : Number(e.target.value) || 0,
+                                payKind: rule.payKind,
+                              },
+                            },
+                          })
+                        }
+                        className="w-24 border rounded-lg px-2 py-1"
+                      />
+                      <span className="block text-xs text-gray-400 mt-0.5">
+                        空白＝不限；勞基預設 {formatLeaveLimit({ ...statutory, customized: false })}
+                      </span>
+                    </td>
+                    <td className="py-2 text-xs text-gray-600">
+                      {statutory.legalRef}：{statutory.summary}
+                      {rule.customized ? (
+                        <span className="block text-amber-700 mt-0.5">已改店規</span>
+                      ) : null}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        <button
+          type="button"
+          className="app-btn-outline text-sm"
+          onClick={() =>
+            patchPolicies({
+              leaveRules: statutoryLeaveRulesMap(),
+              leaveHoursPerDay: 8,
+            })
+          }
+        >
+          重設為勞基預設
+        </button>
       </section>
 
       <section className="app-panel p-6 space-y-4">

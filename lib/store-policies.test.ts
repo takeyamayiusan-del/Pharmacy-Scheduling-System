@@ -17,6 +17,10 @@ describe("store-policies", () => {
     expect(z.approvalChain).toEqual(["manager"]);
     expect(z.autoRestSuggestEnabled).toBe(false);
     expect(z.allowLeaveDeferral).toBe(false);
+    expect(z.leaveHoursPerDay).toBe(8);
+    expect(z.leaveRules["婚假"]?.daysLimit).toBe(8);
+    expect(z.leaveRules["事假"]?.payKind).toBe("unpaid");
+    expect(z.leaveRules["公假"]?.payKind).toBe("paid");
   });
 
   it("竹山可改成集集那套規則（客製化）", () => {
@@ -49,5 +53,22 @@ describe("store-policies", () => {
     const j = parseStorePolicies({}, "jiji");
     expect(j.autoRestSuggestEnabled).toBe(true);
     expect(j.saturdayQuotaMode).toBe("all_saturdays");
+  });
+
+  it("假別上限可覆寫勞基預設", () => {
+    const next = parseStorePolicies(
+      {
+        leaveHoursPerDay: 9,
+        leaveRules: {
+          婚假: { daysLimit: 10, payKind: "paid" },
+          事假: { daysLimit: null, payKind: "unpaid" },
+        },
+      },
+      "zhushan"
+    );
+    expect(next.leaveHoursPerDay).toBe(9);
+    expect(next.leaveRules["婚假"]?.daysLimit).toBe(10);
+    expect(next.leaveRules["事假"]?.daysLimit).toBeNull();
+    expect(next.leaveRules["產假"]?.daysLimit).toBe(56);
   });
 });

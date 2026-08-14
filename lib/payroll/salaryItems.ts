@@ -58,6 +58,7 @@ export const FULL_ATTENDANCE_PROTECTED_LEAVE_TYPES = [
   "陪產檢及陪產假",
   "家庭照顧事假",
   "婚假",
+  "公假",
   "其他",
 ] as const;
 
@@ -129,7 +130,7 @@ export function calculateFullAttendancePay(
 
   const notes: string[] = [];
   if (protectedLeaveHours > 0) {
-    notes.push("喪假／特休／補休／其他（公假等）不扣全勤獎金。");
+    notes.push("喪假／特休／補休／公假／生理假／產假／陪產／婚假／家庭照顧不扣全勤獎金。");
   }
   if (personalHours > 0) {
     notes.push("事假目前按日扣 1/30；若屬照顧家人請事假，依法不得扣發，請人工調整。");

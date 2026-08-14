@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { useRouter } from 'next/navigation';
 import { Settings, Plus, Trash2, Save } from 'lucide-react';
+import { getMonthsOfService, statutoryAnnualLeaveDays } from '@/lib/attendance/annualLeave';
 
 export default function AnnualLeaveSummaryPage() {
   const { 
@@ -14,7 +15,8 @@ export default function AnnualLeaveSummaryPage() {
     getAnnualLeaveQuota, getAnnualLeaveBalance,
     annualLeaveConfigs, setAnnualLeaveConfigs, annualLeaveAdjustments,
     loadAnnualLeaveConfigs, loadAnnualLeaveAdjustments,
-    updateAnnualLeaveConfig, addAnnualLeaveAdjustment, deleteAnnualLeaveAdjustment,
+    updateAnnualLeaveConfig, applyStatutoryAnnualLeaveTiers,
+    addAnnualLeaveAdjustment, deleteAnnualLeaveAdjustment,
     getTotalAdjustmentDays, activeSiteId
   } = useApp();
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
@@ -69,6 +71,22 @@ export default function AnnualLeaveSummaryPage() {
 
   const handleSaveConfig = async (id: string, days: number) => {
     await updateAnnualLeaveConfig(id, days);
+  };
+
+  const handleApplyStatutory = async () => {
+    if (
+      !confirm(
+        `將 ${selectedYear} 年特休階梯改為勞基法第38條（滿2年10日、3年14日、5年15日，十年起每年加1日至30日）？店家仍可再改天數。`
+      )
+    ) {
+      return;
+    }
+    try {
+      await applyStatutoryAnnualLeaveTiers(selectedYear);
+      alert("已套用勞基法第38條特休階梯");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "套用失敗");
+    }
   };
 
   const handleAddAdjustment = async (userId: string) => {
@@ -129,8 +147,13 @@ export default function AnnualLeaveSummaryPage() {
             {selectedYear} 年度特休規則設定
           </h2>
           <p className="text-sm text-gray-500 mb-4">
-            設定不同年資員工的特休天數（前半年 3 天、後半年 4 天 = 第一年共 7 天）
+            預設對照勞基法第38條年資階梯。店家仍可改天數。未休完應排休或折算工資，不是自動作廢；是否遞延請看店規「假別遞延」。
           </p>
+          {isManager && (
+            <Button variant="outline" className="mb-4" onClick={() => void handleApplyStatutory()}>
+              套用勞基法第38條階梯
+            </Button>
+          )}
           
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
@@ -254,7 +277,17 @@ export default function AnnualLeaveSummaryPage() {
                       </span>
                     </td>
                     <td className="px-6 py-4 text-xs text-gray-400">
-                      {baseQuota >= 7 ? '滿一年' : baseQuota >= 3 ? '滿半年' : '未達半年'}
+                      {(() => {
+                        const months = getMonthsOfService(
+                          emp.hireDate,
+                          selectedYear === new Date().getFullYear()
+                            ? new Date()
+                            : new Date(selectedYear, 11, 31)
+                        );
+                        const statutory = statutoryAnnualLeaveDays(months);
+                        if (months < 6) return "未滿半年";
+                        return `年資約 ${months} 個月；勞基對照 ${statutory} 天`;
+                      })()}
                     </td>
                     {isManager && (
                       <td className="px-6 py-4">
@@ -328,12 +361,11 @@ export default function AnnualLeaveSummaryPage() {
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
         <h3 className="text-sm font-semibold text-blue-800 mb-2">特休計算規則說明：</h3>
         <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-          <li>入職未滿 6 個月：0 天特休（依<strong>目前</strong>年資計算）。</li>
-          <li>入職滿 6 個月：給予 3 天特休。</li>
-          <li>入職滿 1 年：給予 7 天特休。</li>
-          <li>滿 2 年及以上：維持 7 天特休。</li>
-          <li>每年重置：特休採週年制重置，不管有沒有用完，均不累積至隔年。</li>
-          <li>管理者可調整：可針對個別員工增減特休天數，並記錄原因。</li>
+          <li>未滿 6 個月：0 天；滿 6 個月：3 天；滿 1 年：7 天；滿 2 年：10 天；滿 3 年：14 天；滿 5 年：15 天。</li>
+          <li>滿 10 年起每年加 1 天，加至 30 天（勞基法第38條）。</li>
+          <li>年度配額依年資重算。未休完應排休或折算工資，不是「不管用完與否都不累積、自動作廢」。</li>
+          <li>若要遞延至次年，請走店規開放的「假別遞延」申請。</li>
+          <li>管理者可針對個別員工增減天數，並記錄原因；排班相關限制只警示、不硬擋。</li>
         </ul>
       </div>
     </div>
