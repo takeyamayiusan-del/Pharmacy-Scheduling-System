@@ -136,7 +136,7 @@ export default function TardinessPage() {
       <div className="min-h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
-          <p className="text-gray-600">僅店長與老闆可以管理遲到記錄</p>
+          <p className="text-gray-600">僅店長、副店與老闆可以管理遲到記錄</p>
         </div>
       </div>
     );

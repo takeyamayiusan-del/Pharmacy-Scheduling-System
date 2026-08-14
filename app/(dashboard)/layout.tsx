@@ -24,6 +24,7 @@ import {
   Store,
   Coffee,
   CalendarRange,
+  ClipboardPen,
 } from 'lucide-react';
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
@@ -134,6 +135,7 @@ export default function DashboardLayout({
     { href: '/applications/leave-deferral', label: '假別遞延', icon: FileText, allowed: storeConfig.policies.allowLeaveDeferral },
     { href: '/applications/shift-swap', label: '換班申請', icon: Repeat, allowed: true },
     { href: '/applications/overtime', label: '加班申請', icon: Clock, allowed: true },
+    { href: '/applications/punch-correction', label: '打卡補登', icon: ClipboardPen, allowed: true },
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
     { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: isManager },
     { href: '/employees', label: '員工管理', icon: UserPlus, allowed: isManager },

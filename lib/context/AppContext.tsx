@@ -7,6 +7,7 @@ import { toAuthEmail } from "@/lib/auth/constants";
 import { fromDbRole, canManageSite, type AppRole } from "@/lib/auth/roles";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 import {
+  approvalPendingLabel,
   canActOnApprovalStep,
   currentApprovalRole,
   effectiveApprovalChain,
@@ -1173,8 +1174,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [supabase, activeSiteId]);
 
   const saveStoreConfig = async (next: StoreConfig) => {
-    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
-      throw new Error("僅店長或老闆可調整店家設定");
+    if (!currentUser || !canManageSite(currentUser.role)) {
+      throw new Error("僅店長、副店或老闆可調整店家設定");
     }
     const siteId = activeSiteId;
     const normalized = parseStoreConfig({ ...next, siteId }, siteId);
@@ -1240,8 +1241,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const saveGeofenceLocations = async (locations: GeofenceLocation[]) => {
-    if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "manager")) {
-      throw new Error("僅店長或老闆可調整打卡圍籬");
+    if (!currentUser || !canManageSite(currentUser.role)) {
+      throw new Error("僅店長、副店或老闆可調整打卡圍籬");
     }
     const normalized = parseGeofenceSettings({ locations });
     if (normalized.length === 0) {
@@ -3160,8 +3161,85 @@ export function AppProvider({ children }: { children: ReactNode }) {
       await loadScheduleOverrides();
     }
 
-    // 核准：寫入互換後班表，並立刻重載讓班表頁即時更新
+    const chain = effectiveApprovalChain(
+      storeConfig.policies.approvalChain,
+      allEmployees,
+      activeSiteId
+    );
+
+    if (
+      request &&
+      (status === "approved" ||
+        (status === "rejected" && prevStatus === "pending_approval"))
+    ) {
+      const required = currentApprovalRole(chain, request.approvalStep ?? 0);
+      if (!canActOnApprovalStep(currentUser?.role, required)) {
+        throw new Error(`目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`);
+      }
+    }
+
+    // 核准：非最後一關只推進關卡；最後一關才寫入班表
     if (request && status === "approved" && prevStatus !== "approved") {
+      const decision = resolveApprovalDecision(
+        chain,
+        request.approvalStep ?? 0,
+        "approved"
+      );
+      if (decision.kind === "advance") {
+        const { error: advanceError } = await supabase
+          .from("shift_swap_applications")
+          .update({
+            status: "pending_review",
+            approval_step: decision.nextStep,
+            reviewed_by: currentUser?.id,
+            reviewed_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+        if (advanceError) {
+          throw new Error(`換班關卡更新失敗：${advanceError.message}`);
+        }
+        const required = currentApprovalRole(chain, request.approvalStep ?? 0);
+        const nextRoles = rolesToNotify(decision.nextRole);
+        const recipients = allEmployees.filter((e) => {
+          if (!nextRoles.includes(e.role)) return false;
+          if (e.role === "owner") return true;
+          return parseSiteId(e.siteId) === activeSiteId;
+        });
+        await Promise.all(
+          recipients.map((m) =>
+            insertNotification({
+              recipientId: m.id,
+              type: "shift_swap_confirmed",
+              title: `換班待${APPROVAL_STEP_LABELS[decision.nextRole]}審核`,
+              body: `${request.requesterName} 與 ${request.targetEmployeeName} 的換班已過上一關，請審核。`,
+              relatedId: id,
+              relatedType: "shift_swap",
+            })
+          )
+        );
+        await insertNotification({
+          recipientId: request.requesterId,
+          type: "shift_swap_reviewed",
+          title: "換班申請已過一關",
+          body: `您的換班申請已由${APPROVAL_STEP_LABELS[required]}通過，待${APPROVAL_STEP_LABELS[decision.nextRole]}審核。`,
+          relatedId: id,
+          relatedType: "shift_swap",
+        });
+        if (request.requesterId !== request.targetEmployeeId) {
+          await insertNotification({
+            recipientId: request.targetEmployeeId,
+            type: "shift_swap_reviewed",
+            title: "換班申請已過一關",
+            body: `換班申請已由${APPROVAL_STEP_LABELS[required]}通過，待${APPROVAL_STEP_LABELS[decision.nextRole]}審核。`,
+            relatedId: id,
+            relatedType: "shift_swap",
+          });
+        }
+        await loadSwapRequests();
+        if (currentUser?.id) await loadNotifications(currentUser.id);
+        return;
+      }
+
       const isSelfSwap = request.requesterId === request.targetEmployeeId;
       const snapshot = await buildSwapScheduleSnapshot(request, isSelfSwap);
       const { changes } = buildSwapShiftsAndChanges(request, snapshot);
@@ -3190,6 +3268,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .from("shift_swap_applications")
       .update({
         status: dbStatus,
+        approval_step:
+          status === "pending_approval"
+            ? 0
+            : status === "approved"
+              ? Math.max(chain.length - 1, 0)
+              : request?.approvalStep ?? 0,
         reviewed_by: currentUser?.id,
         reviewed_at: new Date().toISOString(),
         ...(rejectReason ? { reject_reason: rejectReason } : {}),
@@ -3211,14 +3295,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           recipientId: request.requesterId,
           type: "shift_swap_confirmed",
           title: "對方已確認換班",
-          body: `${request.targetEmployeeName} 已同意換班，等待店長審核。`,
+          body: `${request.targetEmployeeName} 已同意換班，${approvalPendingLabel(chain, 0)}。`,
           relatedId: id,
           relatedType: "shift_swap",
         });
         await notifyManagers({
           type: "shift_swap_confirmed",
           title: "換班申請待審核",
-          body: `${request.requesterName} 與 ${request.targetEmployeeName} 的換班（${request.requesterDate}）待審核。`,
+          body: `${request.requesterName} 與 ${request.targetEmployeeName} 的換班（${request.requesterDate}）${approvalPendingLabel(chain, 0)}。`,
           relatedId: id,
           relatedType: "shift_swap",
         });
@@ -3525,7 +3609,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const isManagerActor =
       canManageSite(currentUser?.role);
     if (!isManagerActor) {
-      throw new Error("僅店長或老闆可調整加班補償方式");
+      throw new Error("僅店長、副店或老闆可調整加班補償方式");
     }
 
     const res = await fetch("/api/applications/overtime/compensation", {
@@ -3693,8 +3777,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const grantCompLeaveHours = async (employeeId: string, hours: number, note?: string) => {
     if (!currentUser) throw new Error("請先登入");
-    if (currentUser.role !== "owner" && currentUser.role !== "manager") {
-      throw new Error("僅店長或老闆可調整補休時數");
+    if (!canManageSite(currentUser.role)) {
+      throw new Error("僅店長、副店或老闆可調整補休時數");
     }
     if (!Number.isFinite(hours) || hours === 0) {
       throw new Error("請輸入有效的時數");
