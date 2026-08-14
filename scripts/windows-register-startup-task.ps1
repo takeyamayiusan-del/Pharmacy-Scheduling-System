@@ -9,6 +9,8 @@ $WatchdogScript = Join-Path $ProjectRoot "scripts\windows-funnel-watchdog.ps1"
 $StartTaskName = "YaoshengPharmacyStart"
 $WatchdogTaskName = "YaoshengPharmacyWatchdog"
 
+. (Join-Path $PSScriptRoot "windows-site-common.ps1")
+
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
@@ -46,35 +48,35 @@ Register-ScheduledTask `
     -Trigger @($triggerStartup, $triggerLogon) `
     -Principal $startPrincipal `
     -Settings $settings `
-    -Description "Yaosheng pharmacy: Docker Supabase + PM2 + Tailscale Funnel"
+    -Description "Yaosheng pharmacy: Docker Supabase + PM2 + Tailscale Funnel" | Out-Null
 
-# 每 1 分鐘：本機網站 + Auth + Funnel，掛掉自動修
+# 每 1 分鐘：本機網站 + Auth + Funnel（Daily+開機觸發，重開機後仍監聽）
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$WatchdogScript`""
-
-$triggerWatchdog = New-ScheduledTaskTrigger -Once -At (Get-Date).Date `
-    -RepetitionInterval (New-TimeSpan -Minutes 1) `
-    -RepetitionDuration (New-TimeSpan -Days 3650)
 
 $watchdogSettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
+    -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 10)
 
 Unregister-ScheduledTask -TaskName $WatchdogTaskName -Confirm:$false -ErrorAction SilentlyContinue
 Register-ScheduledTask `
     -TaskName $WatchdogTaskName `
     -Action $watchdogAction `
-    -Trigger $triggerWatchdog `
+    -Trigger (New-YaoshengMinuteWatchdogTriggers) `
     -Principal $startPrincipal `
     -Settings $watchdogSettings `
-    -Description "Yaosheng pharmacy: auto-repair site + Supabase Auth + Funnel every 1 minute"
+    -Description "Yaosheng pharmacy: auto-repair site + Supabase Auth + Funnel every 1 minute (survives reboot)" | Out-Null
+
+Enable-ScheduledTask -TaskName $WatchdogTaskName | Out-Null
+Start-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "Registered tasks:" -ForegroundColor Green
 Write-Host "  $StartTaskName  — AtStartup (+3min) + AtLogon  → windows-docker-boot.ps1"
-Write-Host "  $WatchdogTaskName — every 1 minute → windows-funnel-watchdog.ps1"
+Write-Host "  $WatchdogTaskName — Daily/1min + AtStartup/AtLogon → windows-funnel-watchdog.ps1"
 Write-Host ""
 Write-Host "Logs:"
 Write-Host "  $ProjectRoot\data\logs\docker-boot.log"

@@ -9,6 +9,8 @@ $BootScript = Join-Path $ProjectRoot "scripts\windows-docker-boot.ps1"
 $KeepaliveTaskName = "YaoshengPharmacyWatchdog"
 $StartTaskName = "YaoshengPharmacyStart"
 
+. (Join-Path $PSScriptRoot "windows-site-common.ps1")
+
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
     [Security.Principal.WindowsBuiltInRole]::Administrator
 )
@@ -38,23 +40,20 @@ $principal = New-ScheduledTaskPrincipal `
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$KeepaliveScript`""
 
-$triggerWatchdog = New-ScheduledTaskTrigger -Once -At (Get-Date).Date `
-    -RepetitionInterval (New-TimeSpan -Minutes 1) `
-    -RepetitionDuration (New-TimeSpan -Days 3650)
-
 $watchdogSettings = New-ScheduledTaskSettingsSet `
     -AllowStartIfOnBatteries `
     -DontStopIfGoingOnBatteries `
     -StartWhenAvailable `
+    -MultipleInstances IgnoreNew `
     -ExecutionTimeLimit (New-TimeSpan -Minutes 5)
 
 Register-ScheduledTask `
     -TaskName $KeepaliveTaskName `
     -Action $watchdogAction `
-    -Trigger $triggerWatchdog `
+    -Trigger (New-YaoshengMinuteWatchdogTriggers) `
     -Principal $principal `
     -Settings $watchdogSettings `
-    -Description "Simple dual-site keepalive: PM2 pharmacy:3000 + cashflow:5000 + funnel (no reset)" | Out-Null
+    -Description "Simple dual-site keepalive: PM2 pharmacy:3000 + cashflow:5000 + funnel (survives reboot)" | Out-Null
 
 Enable-ScheduledTask -TaskName $KeepaliveTaskName | Out-Null
 Start-ScheduledTask -TaskName $KeepaliveTaskName -ErrorAction SilentlyContinue
@@ -87,7 +86,7 @@ if (-not $startExisting) {
 
 Write-Host ""
 Write-Host "Registered:" -ForegroundColor Green
-Write-Host "  $KeepaliveTaskName  → windows-keepalive-simple.ps1 (every 1 min)"
+Write-Host "  $KeepaliveTaskName  → windows-keepalive-simple.ps1 (Daily/1min + boot/logon)"
 Write-Host "  $StartTaskName     → boot (if present)"
 Write-Host ""
 Write-Host "Test now:"
