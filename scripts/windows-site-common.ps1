@@ -31,6 +31,43 @@ function Test-HttpOk {
     }
 }
 
+<#
+  每分鐘監測用觸發器：重開機後仍會繼續跑。
+  舊版只用 -Once + Repetition，重開機後常停止重複；改為 Daily 續跑 + AtStartup/AtLogon 喚醒。
+#>
+function New-YaoshengMinuteWatchdogTriggers {
+    $repSource = New-ScheduledTaskTrigger -Once -At "00:00" `
+        -RepetitionInterval (New-TimeSpan -Minutes 1) `
+        -RepetitionDuration (New-TimeSpan -Hours 23 -Minutes 59)
+
+    $daily = New-ScheduledTaskTrigger -Daily -At "00:00"
+    $daily.Repetition = $repSource.Repetition
+
+    $startup = New-ScheduledTaskTrigger -AtStartup
+    $startup.Delay = "PT5M"
+
+    $logon = New-ScheduledTaskTrigger -AtLogOn
+    $logon.Delay = "PT2M"
+
+    return @($daily, $startup, $logon)
+}
+
+function Enable-YaoshengWatchdogTask {
+    param(
+        [string]$TaskName = "YaoshengPharmacyWatchdog",
+        [scriptblock]$WriteLog = $null
+    )
+    $t = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $t) {
+        if ($WriteLog) { & $WriteLog "Watchdog task missing: $TaskName" }
+        return $false
+    }
+    Enable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
+    Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($WriteLog) { & $WriteLog "Watchdog task enabled/started: $TaskName (state=$($t.State))" }
+    return $true
+}
+
 function Test-SiteHealthy {
     if (-not (Test-PortListening 3000)) { return $false }
     # 埠開著但不回 HTTP = 殭屍進程，必須判定 unhealthy 才能自動殺進程重啟

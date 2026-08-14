@@ -101,6 +101,9 @@ if (-not $SkipFunnel) {
     }
 }
 
+# 重開機後確保每分鐘監測排程仍為啟用（避免更新中途 Disable 後沒恢復、或 -Once 觸發停掉）
+[void](Enable-YaoshengWatchdogTask -WriteLog { param($m) Write-BootLog $m })
+
 Write-BootLog "Boot done"
 Write-Host "=== Done ===" -ForegroundColor Green
 Write-Host "Local: http://127.0.0.1:3000/login"

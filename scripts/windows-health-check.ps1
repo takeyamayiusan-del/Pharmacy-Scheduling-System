@@ -86,6 +86,28 @@ foreach ($name in @("YaoshengPharmacyStart", "YaoshengPharmacyWatchdog")) {
     } else {
         Ok ("{0} state={1}" -f $name, $t.State)
     }
+    if ($name -eq "YaoshengPharmacyWatchdog") {
+        $info = Get-ScheduledTaskInfo -TaskName $name -ErrorAction SilentlyContinue
+        if ($info -and $info.LastRunTime) {
+            Info ("last run: {0}  last result: {1}" -f $info.LastRunTime, $info.LastTaskResult)
+            $ageMin = [int]((Get-Date) - $info.LastRunTime).TotalMinutes
+            if ($ageMin -gt 5) {
+                Bad "watchdog last run was $ageMin min ago — likely stopped after reboot; re-register:"
+                Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-register-keepalive-simple.ps1"
+            }
+        }
+        $hasBoot = $false
+        $hasDaily = $false
+        foreach ($tr in @($t.Triggers)) {
+            $cdata = $tr.CimClass.CimClassName
+            if ("$cdata" -match "Boot|Logon") { $hasBoot = $true }
+            if ("$cdata" -match "Daily|Calendar") { $hasDaily = $true }
+            if ($tr.Repetition -and $tr.Repetition.Interval) { $hasDaily = $true }
+        }
+        if (-not $hasBoot) {
+            Bad "watchdog missing AtStartup/AtLogon — will not wake after reboot"
+        }
+    }
 }
 
 Write-Host ""
