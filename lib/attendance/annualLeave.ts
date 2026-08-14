@@ -62,7 +62,15 @@ export function statutoryAnnualLeaveTiers(): StatutoryAnnualLeaveTier[] {
   return rows;
 }
 
-/** 依 DB 年度特休設定取得配額天數；無設定時用勞基法第38條 */
+/**
+ * 舊種子只有 0／6／12 個月（滿一年 7 天），不算店家真的設過級距。
+ * 有滿 2 年（24 個月）以上的列，才改用資料庫級距。
+ */
+export function hasCustomAnnualLeaveLadder(configs: AnnualLeaveConfig[]): boolean {
+  return configs.some((c) => c.seniorityMonths >= 24);
+}
+
+/** 特休配額：預設勞基法第38條（依入職日）。不必自設級距。 */
 export function resolveAnnualLeaveQuotaDays(
   employee: Employee,
   year: number,
@@ -76,10 +84,10 @@ export function resolveAnnualLeaveQuotaDays(
     .filter((c) => c.year === year)
     .sort((a, b) => b.seniorityMonths - a.seniorityMonths);
 
-  if (yearConfigs.length === 0) {
+  if (!hasCustomAnnualLeaveLadder(yearConfigs)) {
     return statutoryAnnualLeaveDays(months);
   }
 
   const tier = yearConfigs.find((c) => months >= c.seniorityMonths);
-  return tier?.days ?? 0;
+  return tier?.days ?? statutoryAnnualLeaveDays(months);
 }

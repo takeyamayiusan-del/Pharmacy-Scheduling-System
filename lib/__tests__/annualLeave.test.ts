@@ -62,11 +62,32 @@ describe("annualLeave", () => {
     expect(resolveAnnualLeaveQuotaDays(newHireApril2026, 2027, configs2026, july2026)).toBe(7);
   });
 
+  it("舊種子只有滿一年 7 天時，仍依法定給滿兩年 10 天", () => {
+    const twoYears = { ...employee, hireDate: "2024-01-01" };
+    expect(resolveAnnualLeaveQuotaDays(twoYears, 2026, configs2026, new Date(2026, 6, 1))).toBe(10);
+  });
+
+  it("店家有滿兩年級距時才改用資料庫", () => {
+    const twoYears = { ...employee, hireDate: "2024-01-01" };
+    const custom = [
+      ...configs2026,
+      { id: "4", year: 2026, seniorityMonths: 24, days: 12, createdAt: "", updatedAt: "" },
+    ];
+    expect(resolveAnnualLeaveQuotaDays(twoYears, 2026, custom, new Date(2026, 6, 1))).toBe(12);
+  });
+
   it("uses Labor Standards Act ladder when no config rows exist", () => {
     const twoYears = {
       ...employee,
       hireDate: "2024-01-01",
     };
     expect(resolveAnnualLeaveQuotaDays(twoYears, 2026, [], new Date(2026, 6, 1))).toBe(10);
+  });
+
+  it("給滿五年 15 天、滿十年 16 天", () => {
+    const fiveYears = { ...employee, hireDate: "2021-01-01" };
+    const tenYears = { ...employee, hireDate: "2016-01-01" };
+    expect(resolveAnnualLeaveQuotaDays(fiveYears, 2026, [], new Date(2026, 6, 1))).toBe(15);
+    expect(resolveAnnualLeaveQuotaDays(tenYears, 2026, [], new Date(2026, 6, 1))).toBe(16);
   });
 });

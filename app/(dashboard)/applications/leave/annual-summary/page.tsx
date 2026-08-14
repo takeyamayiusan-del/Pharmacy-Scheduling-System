@@ -7,7 +7,12 @@ import { Button } from '@/components/ui/button';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
 import { useRouter } from 'next/navigation';
 import { Settings, Plus, Trash2, Save } from 'lucide-react';
-import { getMonthsOfService, statutoryAnnualLeaveDays } from '@/lib/attendance/annualLeave';
+import {
+  getMonthsOfService,
+  hasCustomAnnualLeaveLadder,
+  statutoryAnnualLeaveDays,
+  statutoryAnnualLeaveTiers,
+} from '@/lib/attendance/annualLeave';
 
 export default function AnnualLeaveSummaryPage() {
   const { 
@@ -68,6 +73,10 @@ export default function AnnualLeaveSummaryPage() {
   const toROC = (westernYear: number) => westernYear - 1911;
 
   const currentYearConfigs = annualLeaveConfigs.filter(c => c.year === selectedYear);
+  const usesCustomLadder = hasCustomAnnualLeaveLadder(currentYearConfigs);
+  const statutoryPreviewTiers = statutoryAnnualLeaveTiers().filter(
+    (t) => t.seniorityMonths <= 60 || t.seniorityMonths === 120
+  );
 
   const handleSaveConfig = async (id: string, days: number) => {
     await updateAnnualLeaveConfig(id, days);
@@ -102,7 +111,9 @@ export default function AnnualLeaveSummaryPage() {
       <div className="app-toolbar justify-between">
         <div>
           <h1 className="app-page-title">年度特休總表</h1>
-          <p className="app-meta mt-1">查看員工年度特休使用狀況與剩餘天數</p>
+          <p className="app-meta mt-1">
+            特休依入職日自動套勞基法第38條，不必自設級距。未休完應排休或折算工資；個別加減天數用「調整」。
+          </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
           {isManager && (
@@ -147,67 +158,106 @@ export default function AnnualLeaveSummaryPage() {
             {selectedYear} 年度特休規則設定
           </h2>
           <p className="text-sm text-gray-500 mb-4">
-            預設對照勞基法第38條年資階梯。店家仍可改天數。未休完應排休或折算工資，不是自動作廢；是否遞延請看店規「假別遞延」。
+            一般店家不必填級距：系統依入職日自動用勞基法第38條（半年3、1年7、2年10、3年14、5年15，十年起每年加1日至30）。
+            只有要比法定更好或更差時，才按下面「套用後再改天數」。未休完應排休或折算工資，不是自動作廢。
           </p>
-          {isManager && (
-            <Button variant="outline" className="mb-4" onClick={() => void handleApplyStatutory()}>
-              套用勞基法第38條階梯
-            </Button>
+          {!usesCustomLadder ? (
+            <>
+              <p className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mb-4">
+                本店目前沒有自設級距，員工特休已依入職日自動套用下列法定天數。
+              </p>
+              <div className="overflow-x-auto mb-4">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">年資條件</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">說明</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-700">天數</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {statutoryPreviewTiers.map((tier) => (
+                      <tr key={tier.seniorityMonths} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          {tier.seniorityMonths === 0 && "入職未滿半年"}
+                          {tier.seniorityMonths === 6 && "滿半年（6 個月）"}
+                          {tier.seniorityMonths === 12 && "滿一年（12 個月）"}
+                          {tier.seniorityMonths > 12 && `滿 ${tier.seniorityMonths / 12} 年`}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{tier.description}</td>
+                        <td className="px-4 py-3 text-center font-medium">{tier.days} 天</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-gray-500 mb-3">
+                滿十年起每年再加 1 天，加至 30 天。若要比法定不同，可先套用階梯再改天數。
+              </p>
+              <Button variant="outline" onClick={() => void handleApplyStatutory()}>
+                改為自設級距（先套用法定階梯）
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" className="mb-4" onClick={() => void handleApplyStatutory()}>
+                套用勞基法第38條階梯
+              </Button>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-gray-50 border-b">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">年資條件</th>
+                      <th className="px-4 py-3 text-left font-medium text-gray-700">說明</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-700">天數</th>
+                      <th className="px-4 py-3 text-center font-medium text-gray-700">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y">
+                    {currentYearConfigs.map((config) => (
+                      <tr key={config.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3">
+                          {config.seniorityMonths === 0 && "入職未滿半年"}
+                          {config.seniorityMonths === 6 && "滿半年（6 個月）"}
+                          {config.seniorityMonths === 12 && "滿一年（12 個月）"}
+                          {config.seniorityMonths > 12 && `滿 ${config.seniorityMonths} 個月`}
+                        </td>
+                        <td className="px-4 py-3 text-gray-600">{config.description || "-"}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center justify-center gap-2">
+                            <input
+                              type="number"
+                              min="0"
+                              max="30"
+                              value={config.days}
+                              onChange={(e) => {
+                                const newDays = Number(e.target.value);
+                                setAnnualLeaveConfigs((prev) =>
+                                  prev.map((c) => (c.id === config.id ? { ...c, days: newDays } : c))
+                                );
+                              }}
+                              className="w-20 px-2 py-1 border rounded text-center"
+                            />
+                            <span className="text-gray-500">天</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <Button
+                            size="sm"
+                            onClick={() => handleSaveConfig(config.id, config.days)}
+                            className="flex items-center gap-1 mx-auto"
+                          >
+                            <Save className="h-3 w-3" />
+                            儲存
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
-                <tr>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">年資條件</th>
-                  <th className="px-4 py-3 text-left font-medium text-gray-700">說明</th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-700">天數</th>
-                  <th className="px-4 py-3 text-center font-medium text-gray-700">操作</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y">
-                {currentYearConfigs.map((config) => (
-                  <tr key={config.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3">
-                      {config.seniorityMonths === 0 && '入職未滿半年'}
-                      {config.seniorityMonths === 6 && '滿半年（6 個月）'}
-                      {config.seniorityMonths === 12 && '滿一年（12 個月）'}
-                      {config.seniorityMonths > 12 && `滿 ${config.seniorityMonths} 個月`}
-                    </td>
-                    <td className="px-4 py-3 text-gray-600">{config.description || '-'}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-center gap-2">
-                        <input
-                          type="number"
-                          min="0"
-                          max="30"
-                          value={config.days}
-                          onChange={(e) => {
-                            const newDays = Number(e.target.value);
-                            setAnnualLeaveConfigs(prev => 
-                              prev.map(c => c.id === config.id ? { ...c, days: newDays } : c)
-                            );
-                          }}
-                          className="w-20 px-2 py-1 border rounded text-center"
-                        />
-                        <span className="text-gray-500">天</span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-center">
-                      <Button 
-                        size="sm" 
-                        onClick={() => handleSaveConfig(config.id, config.days)}
-                        className="flex items-center gap-1 mx-auto"
-                      >
-                        <Save className="h-3 w-3" />
-                        儲存
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
         </CollapsibleCard>
       )}
 
@@ -361,11 +411,12 @@ export default function AnnualLeaveSummaryPage() {
       <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
         <h3 className="text-sm font-semibold text-blue-800 mb-2">特休計算規則說明：</h3>
         <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
+          <li>本店<strong>不必自設級距</strong>：依入職日自動套勞基法第38條。</li>
           <li>未滿 6 個月：0 天；滿 6 個月：3 天；滿 1 年：7 天；滿 2 年：10 天；滿 3 年：14 天；滿 5 年：15 天。</li>
-          <li>滿 10 年起每年加 1 天，加至 30 天（勞基法第38條）。</li>
-          <li>年度配額依年資重算。未休完應排休或折算工資，不是「不管用完與否都不累積、自動作廢」。</li>
+          <li>滿 10 年起每年加 1 天，加至 30 天。</li>
+          <li>年度配額依年資重算。未休完應排休或折算工資，不是自動作廢。</li>
           <li>若要遞延至次年，請走店規開放的「假別遞延」申請。</li>
-          <li>管理者可針對個別員工增減天數，並記錄原因；排班相關限制只警示、不硬擋。</li>
+          <li>某人要加減天數：用個別「調整」。進階級距表僅在要比法定不同時才需要。</li>
         </ul>
       </div>
     </div>
