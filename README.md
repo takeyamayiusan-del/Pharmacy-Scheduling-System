@@ -166,7 +166,3 @@ npm start
 ## 📄 授權
 
 MIT License
-=======
-# Pharmacy-Scheduling-System
-耀聖藥局排班系統
->>>>>>> e28505ba47ec26cfa9084485127b2690fba0eec1
