@@ -6,8 +6,15 @@ import {
 } from "@/lib/schedule/leaveSchedule";
 
 describe("leaveSchedule", () => {
-  it("上午請假使用固定時段", () => {
+  it("上午請假優先使用申請已存時段，不用寫死 08:30", () => {
     expect(resolveLeaveTimesForSchedule({ period: "morning", startTime: "09:00", endTime: "11:00" })).toEqual({
+      startTime: "09:00",
+      endTime: "11:00",
+    });
+  });
+
+  it("沒有存時段時才退回預設上午／下午", () => {
+    expect(resolveLeaveTimesForSchedule({ period: "morning", startTime: "", endTime: "" })).toEqual({
       startTime: "08:30",
       endTime: "12:00",
     });

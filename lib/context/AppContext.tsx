@@ -2494,6 +2494,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const applyApprovedLeaveToSchedule = async (request: LeaveRequest) => {
     const dates = enumerateDatesInRange(request.startDate, request.endDate);
     const { startTime, endTime } = resolveLeaveTimesForSchedule(request);
+    const updates: { date: string; shift: ScheduleShiftCode }[] = [];
 
     for (const date of dates) {
       const originalShift = getOriginalShiftForLeaveDay({
@@ -2506,18 +2507,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (originalShift === "X") continue;
 
       if (request.period === "full_day") {
-        await upsertScheduleShift(supabase, request.employeeId, date, "X", currentUser?.id);
+        updates.push({ date, shift: "X" });
         continue;
       }
 
-      const { shift } = calculateEffectiveShift(originalShift, startTime, endTime);
-      await upsertScheduleShift(
-        supabase,
-        request.employeeId,
-        date,
-        shift ?? "X",
-        currentUser?.id
+      const { shift } = calculateEffectiveShift(
+        originalShift,
+        startTime,
+        endTime,
+        storeConfig,
+        shiftTimeConfig
       );
+      updates.push({ date, shift: shift ?? "X" });
+    }
+
+    if (updates.length > 0) {
+      setSchedule((prev) => {
+        const next = { ...prev };
+        for (const u of updates) {
+          next[u.date] = { ...next[u.date], [request.employeeId]: u.shift };
+        }
+        return next;
+      });
+    }
+
+    for (const u of updates) {
+      await upsertScheduleShift(supabase, request.employeeId, u.date, u.shift, currentUser?.id);
     }
     await loadScheduleOverrides();
   };

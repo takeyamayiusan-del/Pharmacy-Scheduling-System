@@ -11,6 +11,7 @@ import {
   type LeaveType,
 } from "@/lib/attendance/leaveHours";
 import { getApprovedLeaveHoursInMonth } from "@/lib/attendance/canonicalMonthHours";
+import { calculateLeavePayDeduction } from "@/lib/payroll/leaveDeduction";
 import {
   FORMULA_TYPE_OPTIONS,
   calculateRateAmount,
@@ -377,9 +378,20 @@ export default function PayrollPage() {
         leaveHours += hours;
         leaveHoursByType[r.type] = (leaveHoursByType[r.type] ?? 0) + hours;
         const leaveRate = leaveRateCfgByType(r.type);
-        if (leaveRate) {
-          leaveDeduction += calculateRateAmount(hours, leaveRate, salaryBasis, "hour");
-        }
+        leaveDeduction += calculateLeavePayDeduction({
+          leaveType: r.type,
+          hours,
+          overrides: storeConfig.policies.leaveRules,
+          rate: leaveRate
+            ? {
+                itemKey: leaveRate.itemKey,
+                amount: leaveRate.amount,
+                formulaType: leaveRate.formulaType,
+                percentage: leaveRate.percentage,
+              }
+            : null,
+          salary: salaryBasis,
+        }).amount;
       }
       leaveHours = Math.round(leaveHours * 100) / 100;
       leaveDeduction = Math.round(leaveDeduction * 100) / 100;
@@ -980,8 +992,8 @@ export default function PayrollPage() {
             <h2 className="font-semibold text-gray-900 mb-4">計算費率設定</h2>
             <p className="text-sm text-gray-600 mb-3">
               費率可選「小時公式」或「分鐘公式」。請假／加班以小時計算；遲到以分鐘計算；若公式單位不同會自動換算。
-              補休假不計費率（由補休帳本抵扣）。有薪假（特休／婚喪／產假／陪產／公假）每小時扣款請維持 0；
-              半薪（病假／生理假）與無薪（事假／家庭照顧）請填每小時扣款。加班費＝已核准且選「加班費」的申請時數＋國定假日排班工時。
+              補休假不計費率（由補休帳本抵扣）。試算會依店規給薪語意：有薪假（特休／婚喪／產假／陪產／公假）不扣；
+              半薪／無薪若費率為 0，自動用時薪（無時薪則月薪÷30÷8；半薪再 ×0.5）。有填每小時扣款則以費率為準。
               試算會從班表／請假／加班自動匯入時數；「本月正常時數」若未填，明細改用出勤應出勤時數。
             </p>
             <div className="space-y-3">
