@@ -643,11 +643,7 @@ function Test-PharmacyWebPm2OwningPort {
     $listenPid = Get-PortListenerPid -Port 3000
     if (-not $listenPid) { return $false }
     if (-not $pm2Pid) { return $false }
-<<<<<<< HEAD
-    # wrapper 啟動 next：聽埠的是子進程，不可要求 PID 完全相等
-=======
     # ecosystem 用 wrapper 啟動 next；聽埠的是子進程，不可要求 PID 完全相等
->>>>>>> pr-75
     return (Test-ProcessInTree -AncestorPid $pm2Pid -CandidatePid $listenPid)
 }
 
