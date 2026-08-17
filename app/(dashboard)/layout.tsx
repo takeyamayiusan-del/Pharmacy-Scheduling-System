@@ -25,6 +25,7 @@ import {
   Coffee,
   CalendarRange,
   ClipboardPen,
+  ClipboardList,
 } from 'lucide-react';
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
@@ -121,6 +122,7 @@ export default function DashboardLayout({
     { href: '/my-schedule', label: '我的班表', icon: Calendar, allowed: true },
     { href: '/schedule/person', label: '單人排班', icon: CalendarRange, allowed: isManager },
     { href: '/meal-order', label: '訂餐', icon: Coffee, allowed: true },
+    { href: '/shop-ops', label: '店務需求', icon: ClipboardList, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
     { href: '/attendance/punch-admin', label: '打卡管理', icon: Clock, allowed: isManager },
