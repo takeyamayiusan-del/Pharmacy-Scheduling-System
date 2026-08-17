@@ -190,7 +190,7 @@ export default function BulletinBoard() {
       case "meal_order":
         return {
           title: "建議改走「訂餐」頁發起",
-          content: "請至左側「訂餐」建立活動（會自動發公告並可點選品項）。",
+          content: "請至左側「訂餐」建立活動（會自動發公告；員工看菜單自行填寫）。",
         };
       default:
         return { title: "例如：颱風天停班通知", content: "請輸入公告詳細內容..." };
@@ -520,7 +520,7 @@ export default function BulletinBoard() {
                     className="mt-1 w-full py-1.5 bg-orange-600 text-white text-xs rounded hover:bg-orange-700 transition-colors flex items-center justify-center gap-1"
                   >
                     <Coffee className="h-3.5 w-3.5" />
-                    前往訂餐點選
+                    前往訂餐填寫
                   </button>
                 )}
               </div>

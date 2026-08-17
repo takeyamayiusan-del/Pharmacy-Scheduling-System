@@ -9,24 +9,23 @@ import {
   addMealOrderLine,
   createMealOrderActivity,
   createMealVendor,
-  createMenuItem,
   createTaxProfile,
   deactivateMealVendor,
-  deactivateMenuItem,
   deactivateTaxProfile,
   deleteMealOrderLine,
   loadMealOrders,
   loadMealVendors,
-  loadMenuItems,
   loadOrderLines,
   loadTaxProfiles,
   markMealOrderOrdered,
 } from "@/lib/meal-order/api";
 import {
   aggregateOrderLines,
+  defaultItemCategoryForOrder,
   DRINK_ICE_OPTIONS,
   DRINK_SWEETNESS_OPTIONS,
   isPlausibleTaxId,
+  itemCategoryLockedForOrder,
   ITEM_CATEGORY_LABELS,
   ORDER_CATEGORY_LABELS,
   ORDER_STATUS_LABELS,
@@ -34,7 +33,6 @@ import {
   vendorMatchesOrderCategory,
   VENDOR_CATEGORY_LABELS,
   type MealItemCategory,
-  type MealMenuItem,
   type MealOrder,
   type MealOrderCategory,
   type MealOrderLine,
@@ -52,12 +50,6 @@ type VendorFormState = {
   address: string;
   menuUrl: string;
   note: string;
-};
-
-type ItemFormState = {
-  name: string;
-  category: MealItemCategory;
-  price: string;
 };
 
 const EMPTY_VENDOR_FORM: VendorFormState = {
@@ -85,11 +77,9 @@ export default function MealOrderPage() {
   const [vendors, setVendors] = useState<MealVendor[]>([]);
   const [orders, setOrders] = useState<MealOrder[]>([]);
   const [lines, setLines] = useState<MealOrderLine[]>([]);
-  const [menuByVendor, setMenuByVendor] = useState<Record<string, MealMenuItem[]>>({});
   const [taxProfiles, setTaxProfiles] = useState<MealTaxProfile[]>([]);
   // 表單狀態放在頁面層：切換分頁／背景刷新時不要被清掉
   const [vendorForm, setVendorForm] = useState<VendorFormState>(EMPTY_VENDOR_FORM);
-  const [itemForms, setItemForms] = useState<Record<string, ItemFormState>>({});
   const [taxForm, setTaxForm] = useState({ companyName: "", taxId: "", note: "" });
 
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
@@ -112,15 +102,6 @@ export default function MealOrderPage() {
       const recentIds = orderList.slice(0, 8).map((o) => o.id);
       const lineIds = Array.from(new Set([...openIds, ...recentIds]));
       setLines(await loadOrderLines(activeSiteId, lineIds));
-
-      const menuEntries = await Promise.all(
-        vendorList.map(async (v) => [v.id, await loadMenuItems(activeSiteId, v.id)] as const)
-      );
-      const nextMenu: Record<string, MealMenuItem[]> = {};
-      menuEntries.forEach(([id, items]) => {
-        nextMenu[id] = items;
-      });
-      setMenuByVendor(nextMenu);
     } catch (err) {
       console.error(err);
       alert(err instanceof Error ? err.message : "載入訂餐資料失敗（請確認已套用資料庫 migration）");
@@ -172,7 +153,7 @@ export default function MealOrderPage() {
             訂餐
           </h1>
           <p className="app-meta mt-1">
-            本店獨立訂餐系統。一場活動對應一家店；同日要飲料＋便當可開兩場。
+            本店獨立訂餐系統。員工看菜單自己填寫；飲料選甜度冰塊，便當不用。
           </p>
         </div>
       </div>
@@ -183,18 +164,19 @@ export default function MealOrderPage() {
         defaultOpen
         storageKey={`help:meal-order:${storageScope}`}
       >
-        <p>1. 先在「店家與菜單」新增店家與品項（飲料可選甜度冰塊；便當用備註寫加飯／加蛋）。</p>
+        <p>1. 先在「店家」新增店家（名稱、電話、菜單網址即可）。<strong>不必建品項</strong>，員工看菜單自己填。</p>
         <p>2. 任何人可發起訂餐活動：選<strong>類別</strong>、店家、日期、統編（可選）、金額上限說明，並發公告。</p>
-        <p>3. 同日若要又訂飲料又訂便當：請開兩場活動（各選一家店），或類別選「飲料＋便當」。</p>
-        <p>4. 廠商統編可在「統編」分頁自行新增／刪除；發布時直接選用。</p>
-        <p>5. 大家可自點或多點，也可幫同事代點；負責人看總表下單後按「已訂購」結束，公告會自動收起。</p>
+        <p>3. 點選時自己填品名。飲料要選甜度／冰塊；便當不用，備註寫加飯／加蛋即可。</p>
+        <p>4. 同日若要又訂飲料又訂便當：請開兩場活動，或類別選「飲料＋便當」。</p>
+        <p>5. 廠商統編可在「統編」分頁自行新增／刪除；發布時直接選用。</p>
+        <p>6. 可自點或多點，也可幫同事代點；負責人看總表下單後按「已訂購」結束，公告會自動收起。</p>
       </HelpTip>
 
       <div className="flex flex-wrap gap-2">
         {(
           [
             ["today", "今日／進行中"],
-            ["vendors", "店家與菜單"],
+            ["vendors", "店家"],
             ["tax", "廠商統編"],
             ["history", "歷史訂單"],
           ] as const
@@ -219,13 +201,10 @@ export default function MealOrderPage() {
       ) : tab === "vendors" ? (
         <VendorsPanel
           vendors={vendors}
-          menuByVendor={menuByVendor}
           busy={busy}
           setBusy={setBusy}
           vendorForm={vendorForm}
           setVendorForm={setVendorForm}
-          itemForms={itemForms}
-          setItemForms={setItemForms}
           onChanged={async () => {
             await refresh({ silent: true });
           }}
@@ -257,7 +236,6 @@ export default function MealOrderPage() {
           allOrders={orders}
           lines={lines}
           vendors={vendors}
-          menuByVendor={menuByVendor}
           vendorMap={vendorMap}
           taxProfiles={taxProfiles}
           staff={staff}
@@ -279,25 +257,19 @@ export default function MealOrderPage() {
 
 function VendorsPanel({
   vendors,
-  menuByVendor,
   busy,
   setBusy,
   vendorForm,
   setVendorForm,
-  itemForms,
-  setItemForms,
   onChanged,
   siteId,
   userId,
 }: {
   vendors: MealVendor[];
-  menuByVendor: Record<string, MealMenuItem[]>;
   busy: boolean;
   setBusy: (v: boolean) => void;
   vendorForm: VendorFormState;
   setVendorForm: Dispatch<SetStateAction<VendorFormState>>;
-  itemForms: Record<string, ItemFormState>;
-  setItemForms: Dispatch<SetStateAction<Record<string, ItemFormState>>>;
   onChanged: () => Promise<void>;
   siteId: import("@/lib/sites").SiteId;
   userId: string;
@@ -320,38 +292,6 @@ function VendorsPanel({
     }
   };
 
-  const addItem = async (vendor: MealVendor) => {
-    const form = itemForms[vendor.id] ?? {
-      name: "",
-      category: vendor.category === "bento" ? "bento" : "drink",
-      price: "",
-    };
-    if (!form.name.trim() || busy) return;
-    setBusy(true);
-    try {
-      await createMenuItem({
-        siteId,
-        vendorId: vendor.id,
-        name: form.name,
-        category: form.category,
-        price: Number(form.price) || 0,
-      });
-      setItemForms((prev) => ({
-        ...prev,
-        [vendor.id]: {
-          name: "",
-          category: form.category,
-          price: "",
-        },
-      }));
-      await onChanged();
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "新增品項失敗");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div className="space-y-4">
       <div className="app-card p-4 space-y-3">
@@ -359,6 +299,9 @@ function VendorsPanel({
           <Store className="h-5 w-5 text-sky-700" />
           新增店家
         </h2>
+        <p className="text-sm text-slate-600">
+          只要店名與類別即可。菜單請員工自己看（可填菜單網址）；不必在系統裡建品項。
+        </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
             className="border rounded-xl px-3 py-2 text-sm"
@@ -394,7 +337,7 @@ function VendorsPanel({
           />
           <input
             className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
-            placeholder="菜單網址（可選）"
+            placeholder="菜單網址（可選，方便同事開啟）"
             value={vendorForm.menuUrl}
             onChange={(e) => setVendorForm({ ...vendorForm, menuUrl: e.target.value })}
           />
@@ -413,152 +356,50 @@ function VendorsPanel({
       {vendors.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">尚未建立店家</div>
       ) : (
-        vendors.map((vendor) => {
-          const items = menuByVendor[vendor.id] ?? [];
-          const form = itemForms[vendor.id] ?? {
-            name: "",
-            category: (vendor.category === "bento" ? "bento" : "drink") as MealItemCategory,
-            price: "",
-          };
-          return (
-            <div key={vendor.id} className="app-card p-4 space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div>
-                  <h3 className="font-semibold text-slate-900">{vendor.name}</h3>
-                  <p className="text-xs text-slate-500 mt-1">
-                    {VENDOR_CATEGORY_LABELS[vendor.category]}
-                    {vendor.phone ? ` · ${vendor.phone}` : ""}
-                    {vendor.address ? ` · ${vendor.address}` : ""}
-                  </p>
-                  {vendor.menuUrl && (
-                    <a
-                      href={vendor.menuUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-sky-700 underline"
-                    >
-                      開啟菜單連結
-                    </a>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  className="text-slate-400 hover:text-rose-600 inline-flex items-center gap-1 text-sm"
-                  title="刪除店家"
-                  onClick={async () => {
-                    if (!window.confirm(`刪除店家「${vendor.name}」？`)) return;
-                    setBusy(true);
-                    try {
-                      await deactivateMealVendor(vendor.id);
-                      await onChanged();
-                    } catch (err) {
-                      alert(err instanceof Error ? err.message : "刪除失敗");
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  刪除
-                </button>
-              </div>
-
-              <div className="space-y-1">
-                {items.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex items-center justify-between rounded-lg border border-slate-100 px-3 py-2 text-sm"
+        vendors.map((vendor) => (
+          <div key={vendor.id} className="app-card p-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <h3 className="font-semibold text-slate-900">{vendor.name}</h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  {VENDOR_CATEGORY_LABELS[vendor.category]}
+                  {vendor.phone ? ` · ${vendor.phone}` : ""}
+                  {vendor.address ? ` · ${vendor.address}` : ""}
+                </p>
+                {vendor.menuUrl && (
+                  <a
+                    href={vendor.menuUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-sky-700 underline"
                   >
-                    <span>
-                      <span className="text-xs text-slate-400 mr-2">
-                        {ITEM_CATEGORY_LABELS[item.category]}
-                      </span>
-                      {item.name}
-                      {item.price > 0 ? (
-                        <span className="text-slate-500 ml-2">${item.price}</span>
-                      ) : null}
-                    </span>
-                    <button
-                      type="button"
-                      className="text-slate-400 hover:text-rose-600"
-                      title="移除品項"
-                      onClick={async () => {
-                        if (!window.confirm(`移除「${item.name}」？`)) return;
-                        setBusy(true);
-                        try {
-                          await deactivateMenuItem(item.id);
-                          await onChanged();
-                        } catch (err) {
-                          alert(err instanceof Error ? err.message : "移除失敗");
-                        } finally {
-                          setBusy(false);
-                        }
-                      }}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-                {items.length === 0 && (
-                  <p className="text-sm text-slate-400">尚未新增品項</p>
+                    開啟菜單連結
+                  </a>
                 )}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-2">
-                <input
-                  className="border rounded-xl px-3 py-2 text-sm sm:col-span-2"
-                  placeholder="品項名稱"
-                  value={form.name}
-                  onChange={(e) =>
-                    setItemForms((prev) => ({
-                      ...prev,
-                      [vendor.id]: { ...form, name: e.target.value },
-                    }))
-                  }
-                />
-                <select
-                  className="border rounded-xl px-3 py-2 text-sm"
-                  value={form.category}
-                  onChange={(e) =>
-                    setItemForms((prev) => ({
-                      ...prev,
-                      [vendor.id]: {
-                        ...form,
-                        category: e.target.value as MealItemCategory,
-                      },
-                    }))
-                  }
-                >
-                  {(vendor.category === "both" || vendor.category === "drink") && (
-                    <option value="drink">飲料</option>
-                  )}
-                  {(vendor.category === "both" || vendor.category === "bento") && (
-                    <option value="bento">便當</option>
-                  )}
-                </select>
-                <input
-                  className="border rounded-xl px-3 py-2 text-sm"
-                  placeholder="參考價（可空）"
-                  value={form.price}
-                  onChange={(e) =>
-                    setItemForms((prev) => ({
-                      ...prev,
-                      [vendor.id]: { ...form, price: e.target.value },
-                    }))
-                  }
-                />
               </div>
               <button
                 type="button"
-                className="app-btn-outline text-sm"
-                disabled={busy || !form.name.trim()}
-                onClick={() => void addItem(vendor)}
+                className="text-slate-400 hover:text-rose-600 inline-flex items-center gap-1 text-sm"
+                title="刪除店家"
+                onClick={async () => {
+                  if (!window.confirm(`刪除店家「${vendor.name}」？`)) return;
+                  setBusy(true);
+                  try {
+                    await deactivateMealVendor(vendor.id);
+                    await onChanged();
+                  } catch (err) {
+                    alert(err instanceof Error ? err.message : "刪除失敗");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
               >
-                新增品項
+                <Trash2 className="h-4 w-4" />
+                刪除
               </button>
             </div>
-          );
-        })
+          </div>
+        ))
       )}
     </div>
   );
@@ -694,7 +535,6 @@ function TodayPanel({
   allOrders,
   lines,
   vendors,
-  menuByVendor,
   vendorMap,
   taxProfiles,
   staff,
@@ -710,7 +550,6 @@ function TodayPanel({
   allOrders: MealOrder[];
   lines: MealOrderLine[];
   vendors: MealVendor[];
-  menuByVendor: Record<string, MealMenuItem[]>;
   vendorMap: Map<string, MealVendor>;
   taxProfiles: MealTaxProfile[];
   staff: Array<{ id: string; name: string }>;
@@ -760,10 +599,6 @@ function TodayPanel({
   const createActivity = async () => {
     const vendor = filteredVendors.find((v) => v.id === createForm.vendorId);
     if (!vendor || busy) return;
-    if (!(menuByVendor[vendor.id]?.length > 0)) {
-      alert("請先為該店家新增至少一個菜單品項");
-      return;
-    }
     const tax = taxProfiles.find((t) => t.id === createForm.taxProfileId) || null;
     setBusy(true);
     try {
@@ -805,10 +640,10 @@ function TodayPanel({
       <div className="app-card p-4 space-y-3 border-sky-200 bg-sky-50/50">
         <h2 className="app-section-title">發起訂餐活動（任何人）</h2>
         <p className="text-sm text-slate-600">
-          一場活動一家店。請先選類別再選店家；同日要飲料又要便當可開兩場，或類別選「飲料＋便當」。
+          一場活動一家店。員工看菜單自己填品名；飲料選甜度冰塊，便當不用。
         </p>
         {vendors.length === 0 ? (
-          <p className="text-sm text-amber-700">請先到「店家與菜單」新增店家。</p>
+          <p className="text-sm text-amber-700">請先到「店家」新增店家。</p>
         ) : (
           <>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -939,7 +774,6 @@ function TodayPanel({
             key={order.id}
             order={order}
             vendor={vendorMap.get(order.vendorId)}
-            items={menuByVendor[order.vendorId] ?? []}
             lines={lines.filter((l) => l.orderId === order.id)}
             staff={staff}
             currentUserId={currentUserId}
@@ -965,7 +799,6 @@ function TodayPanel({
 function OrderCard({
   order,
   vendor,
-  items,
   lines,
   staff,
   currentUserId,
@@ -978,7 +811,6 @@ function OrderCard({
 }: {
   order: MealOrder;
   vendor?: MealVendor;
-  items: MealMenuItem[];
   lines: MealOrderLine[];
   staff: Array<{ id: string; name: string }>;
   currentUserId: string;
@@ -990,25 +822,29 @@ function OrderCard({
   onChanged: () => Promise<void>;
 }) {
   const [forUserId, setForUserId] = useState(currentUserId);
-  const [itemId, setItemId] = useState(items[0]?.id ?? "");
+  const [itemName, setItemName] = useState("");
+  const [itemCategory, setItemCategory] = useState<MealItemCategory>(
+    defaultItemCategoryForOrder(order.orderCategory)
+  );
   const [sweetness, setSweetness] = useState<string>(DRINK_SWEETNESS_OPTIONS[2]);
   const [ice, setIce] = useState<string>(DRINK_ICE_OPTIONS[2]);
   const [note, setNote] = useState("");
 
   useEffect(() => {
-    if (!itemId && items[0]?.id) setItemId(items[0].id);
-  }, [items, itemId]);
+    setItemCategory(defaultItemCategoryForOrder(order.orderCategory));
+  }, [order.orderCategory]);
 
-  const selectedItem = items.find((i) => i.id === itemId) ?? null;
+  const isDrink = itemCategory === "drink";
+  const lockCategory = itemCategoryLockedForOrder(order.orderCategory);
   const aggregates = aggregateOrderLines(lines);
   const canEdit = order.status === "open";
 
   const submitLine = async () => {
-    if (!selectedItem || !canEdit || busy) return;
+    if (!itemName.trim() || !canEdit || busy) return;
     const target =
       staff.find((s) => s.id === forUserId) ??
       ({ id: currentUserId, name: currentUserName } as const);
-    if (selectedItem.category === "drink" && (!sweetness || !ice)) {
+    if (isDrink && (!sweetness || !ice)) {
       alert("飲料請選擇甜度與冰塊");
       return;
     }
@@ -1020,11 +856,13 @@ function OrderCard({
         orderedBy: currentUserId,
         forUserId: target.id,
         forName: target.name,
-        item: selectedItem,
-        sweetness: selectedItem.category === "drink" ? sweetness : "",
-        ice: selectedItem.category === "drink" ? ice : "",
-        note: selectedItem.category === "bento" ? note : note,
+        itemName: itemName.trim(),
+        category: itemCategory,
+        sweetness: isDrink ? sweetness : "",
+        ice: isDrink ? ice : "",
+        note,
       });
+      setItemName("");
       setNote("");
       await onChanged();
     } catch (err) {
@@ -1096,7 +934,18 @@ function OrderCard({
           <p className="text-sm text-slate-600 mt-1">
             {order.orderDate.replace(/-/g, "/")} · {vendor?.name ?? "店家"}
             {vendor ? `（${VENDOR_CATEGORY_LABELS[vendor.category]}）` : ""}
+            {vendor?.phone ? ` · ${vendor.phone}` : ""}
           </p>
+          {vendor?.menuUrl && (
+            <a
+              href={vendor.menuUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-sm text-sky-700 underline"
+            >
+              開啟菜單
+            </a>
+          )}
           {(order.taxCompanyName || order.taxId) && (
             <p className="text-sm text-slate-600 mt-1">
               統編／抬頭：{[order.taxCompanyName, order.taxId].filter(Boolean).join(" ")}
@@ -1121,7 +970,7 @@ function OrderCard({
 
       {canEdit && (
         <div className="rounded-xl border border-sky-100 bg-white p-3 space-y-3">
-          <p className="text-sm font-medium text-slate-800">新增一杯／一份（可重複加入）</p>
+          <p className="text-sm font-medium text-slate-800">看菜單後自行填寫（可重複加入）</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <label className="text-sm space-y-1">
               <span className="text-slate-600">給誰</span>
@@ -1138,22 +987,31 @@ function OrderCard({
                 ))}
               </select>
             </label>
-            <label className="text-sm space-y-1">
-              <span className="text-slate-600">品項</span>
-              <select
+            {!lockCategory && (
+              <label className="text-sm space-y-1">
+                <span className="text-slate-600">飲料或便當</span>
+                <select
+                  className="w-full border rounded-xl px-3 py-2"
+                  value={itemCategory}
+                  onChange={(e) => setItemCategory(e.target.value as MealItemCategory)}
+                >
+                  <option value="drink">{ITEM_CATEGORY_LABELS.drink}</option>
+                  <option value="bento">{ITEM_CATEGORY_LABELS.bento}</option>
+                </select>
+              </label>
+            )}
+            <label className={`text-sm space-y-1 ${lockCategory ? "" : "md:col-span-2"}`}>
+              <span className="text-slate-600">
+                {isDrink ? "飲料名稱（照菜單填）" : "便當名稱（照菜單填）"}
+              </span>
+              <input
                 className="w-full border rounded-xl px-3 py-2"
-                value={itemId}
-                onChange={(e) => setItemId(e.target.value)}
-              >
-                {items.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    [{ITEM_CATEGORY_LABELS[item.category]}] {item.name}
-                    {item.price > 0 ? ` $${item.price}` : ""}
-                  </option>
-                ))}
-              </select>
+                placeholder={isDrink ? "例：珍珠奶茶" : "例：排骨便當"}
+                value={itemName}
+                onChange={(e) => setItemName(e.target.value)}
+              />
             </label>
-            {selectedItem?.category === "drink" && (
+            {isDrink && (
               <>
                 <label className="text-sm space-y-1">
                   <span className="text-slate-600">甜度</span>
@@ -1188,9 +1046,7 @@ function OrderCard({
             <input
               className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
               placeholder={
-                selectedItem?.category === "bento"
-                  ? "備註（加飯／加蛋／不要香菜…）"
-                  : "備註（可空）"
+                isDrink ? "備註（可空，例：去珍珠）" : "備註（可空，例：加飯／加蛋／不要香菜）"
               }
               value={note}
               onChange={(e) => setNote(e.target.value)}
@@ -1199,7 +1055,7 @@ function OrderCard({
           <button
             type="button"
             className="app-btn-primary"
-            disabled={busy || !selectedItem}
+            disabled={busy || !itemName.trim()}
             onClick={() => void submitLine()}
           >
             <Plus className="h-4 w-4 mr-1" />

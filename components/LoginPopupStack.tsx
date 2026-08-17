@@ -174,7 +174,7 @@ export default function LoginPopupStack() {
             </h3>
             <p className="text-sm text-gray-500 mb-4">
               {current.bulletin.type === "meal_order"
-                ? "請上去點選自己要喝／吃什麼；也可以幫同事代點。"
+                ? "請看菜單後自行填寫要喝／吃什麼；也可以幫同事代點。"
                 : "有新的重要公告，可稍後再說；按「知道了」後才不會再跳出。"}
             </p>
             <div className="w-full p-4 bg-gray-50 rounded-xl mb-6 text-left border border-gray-100">
@@ -210,7 +210,7 @@ export default function LoginPopupStack() {
                 }`}
               >
                 {current.bulletin.type === "meal_order"
-                  ? "前往點選飲料／便當"
+                  ? "前往填寫飲料／便當"
                   : "知道了，前往查看"}
               </button>
               <button
