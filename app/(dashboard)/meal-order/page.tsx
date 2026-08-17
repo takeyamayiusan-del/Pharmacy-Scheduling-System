@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useSearchParams } from "next/navigation";
-import { Coffee, Plus, Store, Trash2, UtensilsCrossed } from "lucide-react";
+import { Coffee, ExternalLink, Plus, Store, Trash2, UtensilsCrossed } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
 import { HelpTip } from "@/components/ui/HelpTip";
 import {
@@ -21,12 +21,16 @@ import {
 } from "@/lib/meal-order/api";
 import {
   aggregateOrderLines,
+  clampMealOrderQuantity,
   defaultItemCategoryForOrder,
   DRINK_ICE_OPTIONS,
   DRINK_SWEETNESS_OPTIONS,
+  formatAggregateNames,
   isPlausibleTaxId,
   itemCategoryLockedForOrder,
   ITEM_CATEGORY_LABELS,
+  mealOrderQtyUnit,
+  MEAL_ORDER_QTY_MAX,
   ORDER_CATEGORY_LABELS,
   ORDER_STATUS_LABELS,
   todayYmd,
@@ -166,7 +170,7 @@ export default function MealOrderPage() {
       >
         <p>1. 先在「店家」新增店家（名稱、電話、菜單網址即可）。<strong>不必建品項</strong>，員工看菜單自己填。</p>
         <p>2. 任何人可發起訂餐活動：選<strong>類別</strong>、店家、日期、統編（可選）、金額上限說明，並發公告。</p>
-        <p>3. 點選時自己填品名。飲料要選甜度／冰塊；便當不用，備註寫加飯／加蛋即可。</p>
+        <p>3. 點選時自己填品名，可選杯數／份數（同品項不用重打）。飲料要選甜度／冰塊；便當不用。</p>
         <p>4. 同日若要又訂飲料又訂便當：請開兩場活動，或類別選「飲料＋便當」。</p>
         <p>5. 廠商統編可在「統編」分頁自行新增／刪除；發布時直接選用。</p>
         <p>6. 可自點或多點，也可幫同事代點；負責人看總表下單後按「已訂購」結束，公告會自動收起。</p>
@@ -252,6 +256,20 @@ export default function MealOrderPage() {
         />
       )}
     </div>
+  );
+}
+
+function MenuLinkButton({ href }: { href: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center justify-center gap-2 rounded-2xl bg-sky-600 hover:bg-sky-700 text-white font-bold text-lg px-6 py-3.5 min-h-14 shadow-sm"
+    >
+      <ExternalLink className="h-5 w-5" />
+      開啟菜單
+    </a>
   );
 }
 
@@ -367,14 +385,9 @@ function VendorsPanel({
                   {vendor.address ? ` · ${vendor.address}` : ""}
                 </p>
                 {vendor.menuUrl && (
-                  <a
-                    href={vendor.menuUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs text-sky-700 underline"
-                  >
-                    開啟菜單連結
-                  </a>
+                  <div className="mt-3">
+                    <MenuLinkButton href={vendor.menuUrl} />
+                  </div>
                 )}
               </div>
               <button
@@ -823,6 +836,7 @@ function OrderCard({
 }) {
   const [forUserId, setForUserId] = useState(currentUserId);
   const [itemName, setItemName] = useState("");
+  const [quantity, setQuantity] = useState(1);
   const [itemCategory, setItemCategory] = useState<MealItemCategory>(
     defaultItemCategoryForOrder(order.orderCategory)
   );
@@ -861,9 +875,11 @@ function OrderCard({
         sweetness: isDrink ? sweetness : "",
         ice: isDrink ? ice : "",
         note,
+        quantity,
       });
       setItemName("");
       setNote("");
+      setQuantity(1);
       await onChanged();
     } catch (err) {
       alert(err instanceof Error ? err.message : "加入失敗");
@@ -901,7 +917,7 @@ function OrderCard({
       order.budgetNote ? `金額上限：${order.budgetNote}` : "",
       "",
       ...aggregates.map(
-        (a) => `${a.label} × ${a.count}（${a.names.join("、")}）`
+        (a) => `${a.label} × ${a.count}（${formatAggregateNames(a.names)}）`
       ),
     ]
       .filter(Boolean)
@@ -937,14 +953,9 @@ function OrderCard({
             {vendor?.phone ? ` · ${vendor.phone}` : ""}
           </p>
           {vendor?.menuUrl && (
-            <a
-              href={vendor.menuUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="text-sm text-sky-700 underline"
-            >
-              開啟菜單
-            </a>
+            <div className="mt-3">
+              <MenuLinkButton href={vendor.menuUrl} />
+            </div>
           )}
           {(order.taxCompanyName || order.taxId) && (
             <p className="text-sm text-slate-600 mt-1">
@@ -970,7 +981,10 @@ function OrderCard({
 
       {canEdit && (
         <div className="rounded-xl border border-sky-100 bg-white p-3 space-y-3">
-          <p className="text-sm font-medium text-slate-800">看菜單後自行填寫（可重複加入）</p>
+          <p className="text-sm font-medium text-slate-800">看菜單後自行填寫（可選杯數，同品項不用重打）</p>
+          {vendor?.menuUrl && (
+            <MenuLinkButton href={vendor.menuUrl} />
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <label className="text-sm space-y-1">
               <span className="text-slate-600">給誰</span>
@@ -1000,7 +1014,7 @@ function OrderCard({
                 </select>
               </label>
             )}
-            <label className={`text-sm space-y-1 ${lockCategory ? "" : "md:col-span-2"}`}>
+            <label className="text-sm space-y-1 md:col-span-2">
               <span className="text-slate-600">
                 {isDrink ? "飲料名稱（照菜單填）" : "便當名稱（照菜單填）"}
               </span>
@@ -1043,6 +1057,22 @@ function OrderCard({
                 </label>
               </>
             )}
+            <label className="text-sm space-y-1">
+              <span className="text-slate-600">
+                {isDrink ? "杯數" : "份數"}
+              </span>
+              <select
+                className="w-full border rounded-xl px-3 py-2 text-base font-semibold"
+                value={quantity}
+                onChange={(e) => setQuantity(clampMealOrderQuantity(e.target.value))}
+              >
+                {Array.from({ length: MEAL_ORDER_QTY_MAX }, (_, i) => i + 1).map((n) => (
+                  <option key={n} value={n}>
+                    {n} {mealOrderQtyUnit(itemCategory)}
+                  </option>
+                ))}
+              </select>
+            </label>
             <input
               className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
               placeholder={
@@ -1059,7 +1089,7 @@ function OrderCard({
             onClick={() => void submitLine()}
           >
             <Plus className="h-4 w-4 mr-1" />
-            加入點選
+            加入 {quantity} {mealOrderQtyUnit(itemCategory)}
           </button>
         </div>
       )}
@@ -1141,7 +1171,7 @@ function OrderCard({
                 <div key={a.key} className="text-slate-800">
                   <span className="font-medium">{a.label}</span>
                   <span className="text-emerald-800"> × {a.count}</span>
-                  <div className="text-xs text-slate-500">{a.names.join("、")}</div>
+                  <div className="text-xs text-slate-500">{formatAggregateNames(a.names)}</div>
                 </div>
               ))
             )}

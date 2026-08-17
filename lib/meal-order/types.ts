@@ -141,6 +141,30 @@ export function itemCategoryLockedForOrder(
   return orderCategory !== "both";
 }
 
+/** 一次加入的杯數／份數（同品項不用重填） */
+export const MEAL_ORDER_QTY_MAX = 10;
+
+export function clampMealOrderQuantity(raw: unknown): number {
+  const n = Math.round(Number(raw));
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(MEAL_ORDER_QTY_MAX, Math.max(1, n));
+}
+
+export function mealOrderQtyUnit(category: MealItemCategory): string {
+  return category === "drink" ? "杯" : "份";
+}
+
+/** 總表人名：同一人多杯顯示「小明×3」 */
+export function formatAggregateNames(names: string[]): string {
+  const counts = new Map<string, number>();
+  for (const name of names) {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return Array.from(counts.entries())
+    .map(([name, count]) => (count > 1 ? `${name}×${count}` : name))
+    .join("、");
+}
+
 export function formatOrderLineSummary(line: MealOrderLine): string {
   if (line.category === "drink") {
     const opts = [line.sweetness, line.ice].filter(Boolean).join("／");

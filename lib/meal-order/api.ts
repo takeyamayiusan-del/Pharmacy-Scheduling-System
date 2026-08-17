@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { SiteId } from "@/lib/sites";
 import {
   buildMealOrderBulletinContent,
+  clampMealOrderQuantity,
   normalizeTaxId,
   type MealItemCategory,
   type MealMenuItem,
@@ -355,28 +356,30 @@ export async function addMealOrderLine(input: {
   sweetness?: string;
   ice?: string;
   note?: string;
-}): Promise<MealOrderLine> {
+  quantity?: number;
+}): Promise<MealOrderLine[]> {
   const supabase = createClient();
   const isDrink = input.category === "drink";
+  const quantity = clampMealOrderQuantity(input.quantity);
+  const row = {
+    order_id: input.orderId,
+    site_id: input.siteId,
+    ordered_by: input.orderedBy,
+    for_user_id: input.forUserId,
+    for_name: input.forName.trim(),
+    item_id: null,
+    item_name: input.itemName.trim(),
+    category: input.category,
+    sweetness: isDrink ? (input.sweetness ?? "") : "",
+    ice: isDrink ? (input.ice ?? "") : "",
+    note: input.note?.trim() ?? "",
+  };
   const { data, error } = await supabase
     .from("meal_order_lines")
-    .insert({
-      order_id: input.orderId,
-      site_id: input.siteId,
-      ordered_by: input.orderedBy,
-      for_user_id: input.forUserId,
-      for_name: input.forName.trim(),
-      item_id: null,
-      item_name: input.itemName.trim(),
-      category: input.category,
-      sweetness: isDrink ? (input.sweetness ?? "") : "",
-      ice: isDrink ? (input.ice ?? "") : "",
-      note: input.note?.trim() ?? "",
-    })
-    .select("*")
-    .single();
+    .insert(Array.from({ length: quantity }, () => ({ ...row })))
+    .select("*");
   if (error) throw error;
-  return mapLine(data as Record<string, unknown>);
+  return (data ?? []).map((r) => mapLine(r as Record<string, unknown>));
 }
 
 export async function deleteMealOrderLine(lineId: string): Promise<void> {
