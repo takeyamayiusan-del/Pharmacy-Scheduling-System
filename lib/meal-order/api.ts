@@ -350,12 +350,14 @@ export async function addMealOrderLine(input: {
   orderedBy: string;
   forUserId: string | null;
   forName: string;
-  item: MealMenuItem;
+  itemName: string;
+  category: MealItemCategory;
   sweetness?: string;
   ice?: string;
   note?: string;
 }): Promise<MealOrderLine> {
   const supabase = createClient();
+  const isDrink = input.category === "drink";
   const { data, error } = await supabase
     .from("meal_order_lines")
     .insert({
@@ -364,11 +366,11 @@ export async function addMealOrderLine(input: {
       ordered_by: input.orderedBy,
       for_user_id: input.forUserId,
       for_name: input.forName.trim(),
-      item_id: input.item.id,
-      item_name: input.item.name,
-      category: input.item.category,
-      sweetness: input.sweetness ?? "",
-      ice: input.ice ?? "",
+      item_id: null,
+      item_name: input.itemName.trim(),
+      category: input.category,
+      sweetness: isDrink ? (input.sweetness ?? "") : "",
+      ice: isDrink ? (input.ice ?? "") : "",
       note: input.note?.trim() ?? "",
     })
     .select("*")

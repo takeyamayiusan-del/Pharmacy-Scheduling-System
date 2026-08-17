@@ -128,6 +128,19 @@ export function vendorMatchesOrderCategory(
   return vendorCategory === orderCategory;
 }
 
+/** 活動類別決定員工填寫時預設是飲料還是便當；「飲料＋便當」先預設飲料，可再改。 */
+export function defaultItemCategoryForOrder(
+  orderCategory: MealOrderCategory
+): MealItemCategory {
+  return orderCategory === "bento" ? "bento" : "drink";
+}
+
+export function itemCategoryLockedForOrder(
+  orderCategory: MealOrderCategory
+): boolean {
+  return orderCategory !== "both";
+}
+
 export function formatOrderLineSummary(line: MealOrderLine): string {
   if (line.category === "drink") {
     const opts = [line.sweetness, line.ice].filter(Boolean).join("／");
@@ -184,7 +197,7 @@ export function buildMealOrderBulletinContent(input: {
   }
   if (input.budgetNote?.trim()) lines.push(`金額上限：${input.budgetNote.trim()}`);
   if (input.note?.trim()) lines.push(input.note.trim());
-  lines.push("請至「訂餐」頁點選品項（可幫同事代點、可點多杯）。");
+  lines.push("請看菜單後自行填寫要喝／吃什麼（飲料選甜度冰塊；便當不用）。可幫同事代點、可點多份。");
   return lines.join("\n");
 }
 
