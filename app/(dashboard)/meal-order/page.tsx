@@ -295,9 +295,26 @@ function VendorsPanel({
 }) {
   const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<VendorFormState>(EMPTY_VENDOR_FORM);
+  const [vendorNotice, setVendorNotice] = useState<string>("");
+
+  const normalizeVendorName = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+
+  const hasDuplicateVendorName = (name: string, excludeVendorId?: string) => {
+    const normalized = normalizeVendorName(name);
+    if (!normalized) return false;
+    return vendors.some(
+      (v) =>
+        v.id !== excludeVendorId &&
+        normalizeVendorName(v.name) === normalized
+    );
+  };
 
   const addVendor = async () => {
     if (!vendorForm.name.trim() || busy) return;
+    if (hasDuplicateVendorName(vendorForm.name)) {
+      alert("店家名稱重複，請直接編輯既有店家，或改成不同名稱");
+      return;
+    }
     setBusy(true);
     try {
       await createMealVendor({
@@ -307,6 +324,7 @@ function VendorsPanel({
       });
       setVendorForm(EMPTY_VENDOR_FORM);
       await onChanged();
+      setVendorNotice("已新增店家");
     } catch (err) {
       alert(err instanceof Error ? err.message : "新增店家失敗");
     } finally {
@@ -316,6 +334,7 @@ function VendorsPanel({
 
   const beginEdit = (vendor: MealVendor) => {
     setEditingVendorId(vendor.id);
+    setVendorNotice("");
     setEditForm({
       name: vendor.name,
       category: vendor.category,
@@ -333,6 +352,10 @@ function VendorsPanel({
 
   const saveEdit = async () => {
     if (!editingVendorId || !editForm.name.trim() || busy) return;
+    if (hasDuplicateVendorName(editForm.name, editingVendorId)) {
+      alert("店家名稱重複，請使用不同名稱");
+      return;
+    }
     setBusy(true);
     try {
       await updateMealVendor({
@@ -341,6 +364,7 @@ function VendorsPanel({
       });
       await onChanged();
       cancelEdit();
+      setVendorNotice("店家資料已更新");
     } catch (err) {
       alert(err instanceof Error ? err.message : "更新店家失敗");
     } finally {
@@ -408,6 +432,11 @@ function VendorsPanel({
           新增店家
         </button>
       </div>
+      {vendorNotice ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {vendorNotice}
+        </div>
+      ) : null}
 
       {vendors.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">尚未建立店家</div>
