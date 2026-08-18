@@ -1,4 +1,4 @@
-import { parseLocalDateParts } from "@/lib/schedule/sundayRest";
+import { normalizeCalendarDate } from "@/lib/schedule/sundayRest";
 
 export type EmployeeActivePeriod = {
   hireDate?: string | null;
@@ -8,8 +8,8 @@ export type EmployeeActivePeriod = {
 function normalizeDateKey(value?: string | null): string | null {
   if (!value) return null;
   const trimmed = value.trim();
-  const direct = parseLocalDateParts(trimmed);
-  if (direct) return trimmed;
+  const direct = normalizeCalendarDate(trimmed);
+  if (direct) return direct;
   const m = /^(\d{4})-(\d{1,2})-(\d{1,2})/.exec(trimmed);
   if (!m) return null;
   const y = Number(m[1]);
