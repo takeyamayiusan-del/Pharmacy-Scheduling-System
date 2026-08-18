@@ -101,12 +101,12 @@ export default function MySchedulePage() {
             {year}年{month}月 {currentUser.name} 我的班表
           </h3>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-slate-500 mb-2">
+        <div className="grid grid-cols-7 gap-1 text-center text-xs sm:text-sm font-medium text-slate-500 mb-2">
           {dayLabels.map((d) => (
             <div key={d}>{d}</div>
           ))}
         </div>
-        <div className="grid grid-cols-7 gap-1">
+        <div className="grid grid-cols-7 gap-2">
           {Array.from({ length: firstDayOffset }).map((_, i) => (
             <div key={`pad-${i}`} />
           ))}
@@ -131,7 +131,7 @@ export default function MySchedulePage() {
             return (
               <div
                 key={dateStr}
-                className={`rounded-xl border p-2 min-h-[4.5rem] text-left ${
+                className={`rounded-2xl border p-3 min-h-[6rem] text-left flex flex-col gap-1 ${
                   isSunday(dateStr)
                     ? "bg-red-50 border-red-100"
                     : isSaturday(dateStr)
@@ -141,9 +141,9 @@ export default function MySchedulePage() {
                         : "bg-white border-slate-200"
                 }`}
               >
-                <div className="text-xs text-slate-500">{day}</div>
+                <div className="text-sm sm:text-base text-slate-500 leading-none">{day}</div>
                 <div
-                  className={`mt-1 text-xs font-semibold rounded px-1 py-0.5 inline-block ${
+                  className={`text-sm sm:text-[15px] font-semibold rounded px-2 py-1 inline-flex items-center justify-center max-w-full ${
                     isFullDayLeave ? "bg-violet-500 text-white" : ""
                   }`}
                   style={
@@ -156,15 +156,17 @@ export default function MySchedulePage() {
                         }
                   }
                 >
-                  {isFullDayLeave ? "假" : style.displayText || style.label}
+                  <span className="truncate w-full" title={isFullDayLeave ? "假" : style.displayText || style.label}>
+                    {isFullDayLeave ? "假" : style.displayText || style.label}
+                  </span>
                 </div>
                 {shiftInfo.isPartialLeave && (
-                  <div className="mt-1 text-[10px] text-amber-700 leading-tight">
+                  <div className="text-[11px] sm:text-xs text-amber-700 leading-tight">
                     半日假
                   </div>
                 )}
                 {ranges.length > 0 && (
-                  <div className="mt-1 text-[10px] text-slate-500 leading-tight">
+                  <div className="text-[11px] sm:text-xs text-slate-500 leading-tight whitespace-pre-wrap break-words">
                     {ranges.join(" ")}
                   </div>
                 )}
