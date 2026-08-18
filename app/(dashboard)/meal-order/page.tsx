@@ -18,6 +18,7 @@ import {
   loadOrderLines,
   loadTaxProfiles,
   markMealOrderOrdered,
+  updateMealOrderActivity,
   updateMealVendor,
 } from "@/lib/meal-order/api";
 import {
@@ -937,6 +938,8 @@ function TodayPanel({
             key={order.id}
             order={order}
             vendor={vendorMap.get(order.vendorId)}
+            vendors={vendors}
+            taxProfiles={taxProfiles}
             lines={lines.filter((l) => l.orderId === order.id)}
             staff={staff}
             currentUserId={currentUserId}
@@ -962,6 +965,8 @@ function TodayPanel({
 function OrderCard({
   order,
   vendor,
+  vendors,
+  taxProfiles,
   lines,
   staff,
   currentUserId,
@@ -974,6 +979,8 @@ function OrderCard({
 }: {
   order: MealOrder;
   vendor?: MealVendor;
+  vendors: MealVendor[];
+  taxProfiles: MealTaxProfile[];
   lines: MealOrderLine[];
   staff: Array<{ id: string; name: string }>;
   currentUserId: string;
@@ -993,6 +1000,15 @@ function OrderCard({
   const [sweetness, setSweetness] = useState<string>(DRINK_SWEETNESS_OPTIONS[2]);
   const [ice, setIce] = useState<string>(DRINK_ICE_OPTIONS[2]);
   const [note, setNote] = useState("");
+  const [editingOrder, setEditingOrder] = useState(false);
+  const [orderForm, setOrderForm] = useState({
+    vendorId: order.vendorId,
+    orderDate: order.orderDate,
+    title: order.title,
+    budgetNote: order.budgetNote,
+    note: order.note,
+    taxProfileId: order.taxProfileId ?? "",
+  });
 
   useEffect(() => {
     setItemCategory(defaultItemCategoryForOrder(order.orderCategory));
@@ -1002,6 +1018,16 @@ function OrderCard({
   const lockCategory = itemCategoryLockedForOrder(order.orderCategory);
   const aggregates = aggregateOrderLines(lines);
   const canEdit = order.status === "open";
+  const editableVendors = useMemo(
+    () => vendors.filter((v) => vendorMatchesOrderCategory(v.category, order.orderCategory)),
+    [vendors, order.orderCategory]
+  );
+
+  useEffect(() => {
+    if (!editingOrder) return;
+    if (editableVendors.some((v) => v.id === orderForm.vendorId)) return;
+    setOrderForm((prev) => ({ ...prev, vendorId: editableVendors[0]?.id ?? "" }));
+  }, [editingOrder, editableVendors, orderForm.vendorId]);
 
   const submitLine = async () => {
     if (!itemName.trim() || !canEdit || busy) return;
@@ -1080,6 +1106,48 @@ function OrderCard({
     }
   };
 
+  const startEditOrder = () => {
+    setOrderForm({
+      vendorId: order.vendorId,
+      orderDate: order.orderDate,
+      title: order.title,
+      budgetNote: order.budgetNote,
+      note: order.note,
+      taxProfileId: order.taxProfileId ?? "",
+    });
+    setEditingOrder(true);
+  };
+
+  const saveOrderEdit = async () => {
+    const nextVendor = editableVendors.find((v) => v.id === orderForm.vendorId);
+    if (!nextVendor || busy) return;
+    const tax = taxProfiles.find((t) => t.id === orderForm.taxProfileId) || null;
+    setBusy(true);
+    try {
+      await updateMealOrderActivity({
+        orderId: order.id,
+        vendorId: nextVendor.id,
+        vendorName: nextVendor.name,
+        title: orderForm.title.trim() || `${orderForm.orderDate.replace(/-/g, "/")} ${ORDER_CATEGORY_LABELS[order.orderCategory]}｜${nextVendor.name}`,
+        orderDate: orderForm.orderDate,
+        orderCategory: order.orderCategory,
+        budgetNote: orderForm.budgetNote,
+        note: orderForm.note,
+        taxProfileId: tax?.id || null,
+        taxCompanyName: tax?.companyName || "",
+        taxId: tax?.taxId || "",
+        bulletinId: order.bulletinId,
+      });
+      await onChanged();
+      setEditingOrder(false);
+      alert("活動已更新");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "活動更新失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <div
       className={`app-card p-4 space-y-4 ${
@@ -1118,16 +1186,116 @@ function OrderCard({
           {order.note && <p className="text-sm text-slate-500 mt-1">{order.note}</p>}
         </div>
         {canEdit && (
-          <button
-            type="button"
-            onClick={() => void markOrdered()}
-            disabled={busy}
-            className="app-btn-primary bg-emerald-600 hover:bg-emerald-700"
-          >
-            標記已訂購（結束）
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            {!editingOrder && (
+              <button
+                type="button"
+                onClick={startEditOrder}
+                disabled={busy}
+                className="app-btn-outline"
+              >
+                修改活動
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void markOrdered()}
+              disabled={busy}
+              className="app-btn-primary bg-emerald-600 hover:bg-emerald-700"
+            >
+              標記已訂購（結束）
+            </button>
+          </div>
         )}
       </div>
+
+      {canEdit && editingOrder && (
+        <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3 space-y-3">
+          <h4 className="text-sm font-semibold text-sky-900">修改活動內容（進行中可改）</h4>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <label className="text-sm space-y-1">
+              <span className="text-slate-600">店家</span>
+              <select
+                className="w-full border rounded-xl px-3 py-2"
+                value={orderForm.vendorId}
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, vendorId: e.target.value }))}
+              >
+                {editableVendors.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}（{VENDOR_CATEGORY_LABELS[v.category]}）
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="text-slate-600">訂餐日期</span>
+              <input
+                type="date"
+                className="w-full border rounded-xl px-3 py-2"
+                value={orderForm.orderDate}
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, orderDate: e.target.value }))}
+              />
+            </label>
+            <label className="text-sm space-y-1 md:col-span-2">
+              <span className="text-slate-600">活動標題</span>
+              <input
+                className="w-full border rounded-xl px-3 py-2"
+                value={orderForm.title}
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, title: e.target.value }))}
+              />
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="text-slate-600">廠商統編（選填）</span>
+              <select
+                className="w-full border rounded-xl px-3 py-2"
+                value={orderForm.taxProfileId}
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, taxProfileId: e.target.value }))}
+              >
+                <option value="">不帶統編</option>
+                {taxProfiles.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.companyName}（{t.taxId}）
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="text-sm space-y-1">
+              <span className="text-slate-600">金額上限說明</span>
+              <input
+                className="w-full border rounded-xl px-3 py-2"
+                value={orderForm.budgetNote}
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, budgetNote: e.target.value }))}
+              />
+            </label>
+            <label className="text-sm space-y-1 md:col-span-2">
+              <span className="text-slate-600">備註</span>
+              <input
+                className="w-full border rounded-xl px-3 py-2"
+                value={orderForm.note}
+                onChange={(e) => setOrderForm((prev) => ({ ...prev, note: e.target.value }))}
+              />
+            </label>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              className="app-btn-primary"
+              disabled={busy || !orderForm.vendorId || !orderForm.orderDate}
+              onClick={() => void saveOrderEdit()}
+            >
+              儲存修改
+            </button>
+            <button
+              type="button"
+              className="app-btn-outline"
+              disabled={busy}
+              onClick={() => setEditingOrder(false)}
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
 
       {canEdit && (
         <div className="rounded-xl border border-sky-100 bg-white p-3 space-y-3">
