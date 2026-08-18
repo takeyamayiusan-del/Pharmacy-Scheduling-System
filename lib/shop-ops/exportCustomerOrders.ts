@@ -26,6 +26,12 @@ function formatWhen(iso: string | null): string {
   return `${d.getFullYear()}/${m}/${day} ${hh}:${mm}`;
 }
 
+function formatLocalDate(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}/${m}/${day}`;
+}
+
 function mark(on: boolean): string {
   return on ? "✅" : "⬜";
 }
@@ -179,15 +185,18 @@ export async function exportCustomerOrdersPdf(input: {
     return;
   }
 
-  const th = `border:1px solid #bbb; padding:8px 10px; background:#e8e8e8; font-size:15px; text-align:left;`;
-  const td = `border:1px solid #bbb; padding:8px 10px; vertical-align:top; font-size:15px; line-height:1.5;`;
-  const tdCenter = `${td} text-align:center;`;
+  const stamp = new Date();
+  const exportDateText = formatLocalDate(stamp);
+
+  const th = `border:1px solid #bbb; padding:8px 10px; background:#e8e8e8; font-size:15px; text-align:left; line-height:1.35;`;
+  const td = `border:1px solid #bbb; padding:8px 10px; vertical-align:top; font-size:15px; line-height:1.35;`;
+  const tdCenter = `${td} text-align:center; vertical-align:middle;`;
 
   const html = `
     <div style="font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif; color:#111; padding:20px 24px; width:1000px;">
       <h1 style="font-size:22px; margin:0 0 6px; font-weight:bold;">${escapeHtml(input.storeName)}　客訂管理表</h1>
       <div style="color:#555; font-size:14px; margin-bottom:16px;">
-        匯出時間：${escapeHtml(formatWhen(new Date().toISOString()))}　共 ${input.rows.length} 筆
+        匯出時間：${escapeHtml(exportDateText)}　共 ${input.rows.length} 筆
       </div>
       <table style="width:100%; border-collapse:collapse;">
         <thead>
@@ -213,18 +222,32 @@ export async function exportCustomerOrdersPdf(input: {
                 <td style="${td}; white-space:nowrap;">${escapeHtml(formatWhen(row.createdAt))}</td>
                 <td style="${td}">
                   <div style="font-weight:600;">${escapeHtml(row.customerName)}</div>
-                  ${row.customerPhone ? `<div style="color:#555; font-size:13px;">${escapeHtml(row.customerPhone)}</div>` : ""}
+                  ${
+                    row.customerPhone
+                      ? `<div style="color:#555; font-size:14px; line-height:1.35;">${escapeHtml(row.customerPhone)}</div>`
+                      : ""
+                  }
                 </td>
                 <td style="${td}">
                   <div>${escapeHtml(row.productName)}</div>
-                  ${row.nhiCode ? `<div style="color:#555; font-size:13px;">健保碼 ${escapeHtml(row.nhiCode)}</div>` : ""}
+                  ${
+                    row.nhiCode
+                      ? `<div style="color:#555; font-size:14px; line-height:1.35;">健保碼 ${escapeHtml(row.nhiCode)}</div>`
+                      : ""
+                  }
                 </td>
                 <td style="${td}; white-space:nowrap;">${escapeHtml(qty)}</td>
                 <td style="${td}; white-space:nowrap;">${escapeHtml(formatMoney(row.amount))}</td>
                 <td style="${td};">${escapeHtml(CUSTOMER_PAYMENT_LABELS[row.paymentStatus])}</td>
-                <td style="${tdCenter}; font-size:20px;">${mark(row.goodsArrived)}</td>
-                <td style="${tdCenter}; font-size:20px;">${mark(row.notified)}</td>
-                <td style="${tdCenter}; font-size:20px;">${mark(row.pickedUp)}</td>
+                <td style="${tdCenter};">
+                  <span style="display:inline-block; font-size:16px; line-height:1.0;">${mark(row.goodsArrived)}</span>
+                </td>
+                <td style="${tdCenter};">
+                  <span style="display:inline-block; font-size:16px; line-height:1.0;">${mark(row.notified)}</span>
+                </td>
+                <td style="${tdCenter};">
+                  <span style="display:inline-block; font-size:16px; line-height:1.0;">${mark(row.pickedUp)}</span>
+                </td>
                 <td style="${td};">${escapeHtml(input.handlerName(row.handlerId))}</td>
                 <td style="${td};">${escapeHtml(row.note)}</td>
               </tr>`;
@@ -278,7 +301,6 @@ export async function exportCustomerOrdersPdf(input: {
       doc.addImage(imgData, "PNG", 0, 0, imgWidthMm, sliceImgHeightMm);
     }
 
-    const stamp = new Date();
     const y = stamp.getFullYear();
     const m = String(stamp.getMonth() + 1).padStart(2, "0");
     const d = String(stamp.getDate()).padStart(2, "0");

@@ -1248,6 +1248,15 @@ function FulfillmentPanel({
   const [selected, setSelected] = useState<string[]>([]);
   const handlerName = (id: string) => nameById.get(id) ?? "員工";
   const visible = items.filter((row) => matchesFulfillmentFilter(row, filter));
+  const closeableSelected = selected.filter((id) => {
+    const row = items.find((r) => r.id === id);
+    if (!row) return false;
+    if (row.status !== "pending") return false;
+    return row.createdBy === userId || isManager;
+  });
+  const closeableVisible = visible
+    .filter((row) => row.status === "pending" && (row.createdBy === userId || isManager))
+    .map((r) => r.id);
 
   const patch = async (
     ids: string[],
@@ -1261,6 +1270,24 @@ function FulfillmentPanel({
       await onChanged();
     } catch (err) {
       alert(err instanceof Error ? err.message : "更新失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeIds = async (ids: string[]) => {
+    if (ids.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await closeShopRecords({
+        table: "shop_customer_orders",
+        ids,
+        closedBy: userId,
+      });
+      setSelected([]);
+      await onChanged();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "結單失敗");
     } finally {
       setBusy(false);
     }
@@ -1353,6 +1380,40 @@ function FulfillmentPanel({
             onClick={() => void patch(selected, { pickedUp: true })}
           >
             所選標記已拿
+          </button>
+
+          <button
+            type="button"
+            className="app-btn-primary bg-slate-800 hover:bg-slate-900"
+            disabled={busy || closeableSelected.length === 0}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `確定要完成「${closeableSelected.length}」筆訂單？完成後會變更為已結單（紀錄仍保留）。`
+                )
+              )
+                return;
+              void closeIds(closeableSelected);
+            }}
+          >
+            訂單完成（{closeableSelected.length}）
+          </button>
+
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || closeableVisible.length === 0}
+            onClick={() => {
+              if (
+                !window.confirm(
+                  `確定要完成本篩選內「${closeableVisible.length}」筆訂單？完成後會變更為已結單（紀錄仍保留）。`
+                )
+              )
+                return;
+              void closeIds(closeableVisible);
+            }}
+          >
+            全部訂單完成
           </button>
         </div>
       )}
