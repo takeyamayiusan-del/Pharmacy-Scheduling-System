@@ -143,7 +143,7 @@ export default function MySchedulePage() {
               >
                 <div className="text-sm sm:text-base text-slate-500 leading-none">{day}</div>
                 <div
-                  className={`text-sm sm:text-[15px] font-semibold rounded px-2 py-1 inline-flex items-center justify-center max-w-full ${
+                  className={`text-sm sm:text-[15px] font-semibold rounded px-2 py-1 self-start ${
                     isFullDayLeave ? "bg-violet-500 text-white" : ""
                   }`}
                   style={
@@ -156,9 +156,7 @@ export default function MySchedulePage() {
                         }
                   }
                 >
-                  <span className="truncate w-full" title={isFullDayLeave ? "假" : style.displayText || style.label}>
-                    {isFullDayLeave ? "假" : style.displayText || style.label}
-                  </span>
+                  {isFullDayLeave ? "假" : style.displayText || style.label}
                 </div>
                 {shiftInfo.isPartialLeave && (
                   <div className="text-[11px] sm:text-xs text-amber-700 leading-tight">
