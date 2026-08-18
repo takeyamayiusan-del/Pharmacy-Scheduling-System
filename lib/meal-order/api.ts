@@ -372,6 +372,78 @@ export async function createMealOrderActivity(input: {
   });
 }
 
+export async function updateMealOrderActivity(input: {
+  orderId: string;
+  vendorId: string;
+  vendorName: string;
+  title: string;
+  orderDate: string;
+  orderCategory: MealOrderCategory;
+  budgetNote?: string;
+  note?: string;
+  taxProfileId?: string | null;
+  taxCompanyName?: string;
+  taxId?: string;
+  bulletinId?: string | null;
+}): Promise<MealOrder> {
+  const supabase = createClient();
+  const taxId = normalizeTaxId(input.taxId ?? "");
+  const taxCompanyName = input.taxCompanyName?.trim() ?? "";
+
+  const { data: orderRow, error: orderError } = await supabase
+    .from("meal_orders")
+    .update({
+      vendor_id: input.vendorId,
+      title: input.title.trim(),
+      order_date: input.orderDate,
+      order_category: input.orderCategory,
+      budget_note: input.budgetNote?.trim() ?? "",
+      note: input.note?.trim() ?? "",
+      tax_profile_id: input.taxProfileId || null,
+      tax_company_name: taxCompanyName,
+      tax_id: taxId,
+    })
+    .eq("id", input.orderId)
+    .eq("status", "open")
+    .select("*")
+    .single();
+  if (orderError) throw orderError;
+
+  const bulletinTitle = input.title.trim() || `今日訂餐｜${input.vendorName}`;
+  const bulletinContent = buildMealOrderBulletinContent({
+    orderDate: input.orderDate,
+    vendorName: input.vendorName,
+    orderCategory: input.orderCategory,
+    budgetNote: input.budgetNote,
+    note: input.note,
+    taxCompanyName,
+    taxId,
+  });
+
+  if (input.bulletinId) {
+    await supabase
+      .from("bulletin_board")
+      .update({
+        title: bulletinTitle,
+        content: bulletinContent,
+      })
+      .eq("id", input.bulletinId)
+      .eq("status", "active");
+  } else {
+    await supabase
+      .from("bulletin_board")
+      .update({
+        title: bulletinTitle,
+        content: bulletinContent,
+      })
+      .eq("related_id", input.orderId)
+      .eq("type", "meal_order")
+      .eq("status", "active");
+  }
+
+  return mapOrder(orderRow as Record<string, unknown>);
+}
+
 export async function addMealOrderLine(input: {
   siteId: SiteId;
   orderId: string;
