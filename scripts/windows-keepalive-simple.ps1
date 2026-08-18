@@ -6,6 +6,8 @@
 
 $ErrorActionPreference = "Continue"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "windows-site-common.ps1")
+Import-Pm2Environment -ProjectRoot $ProjectRoot
 $LogDir = Join-Path $ProjectRoot "data\logs"
 $LogFile = Join-Path $LogDir "keepalive-simple.log"
 $CashflowScript = "C:\cash-flow-app\backend\index.js"
@@ -58,8 +60,9 @@ function Ensure-FunnelRoute {
 
 Write-Log "keepalive start"
 
-if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
-    Write-Log "pm2 missing"
+$pm2 = Get-Pm2Command
+if (-not $pm2) {
+    Write-Log "pm2 missing (PATH=$env:Path PM2_HOME=$env:PM2_HOME)"
     exit 1
 }
 
@@ -68,14 +71,12 @@ $pharmacyOk = Test-LocalOk "http://127.0.0.1:3000/login"
 if (-not $pharmacyOk) {
     Write-Log "pharmacy down — restart on PORT=3000"
     $env:PORT = "3000"
-    $desc = & pm2 jlist 2>$null
-    $hasPharmacy = $desc -and ($desc | Out-String) -match '"name"\s*:\s*"pharmacy-web"'
-    if ($hasPharmacy) {
-        & pm2 restart pharmacy-web --update-env 2>$null | Out-Null
+    if (Test-Pm2AppExists -Name "pharmacy-web") {
+        & $pm2 restart pharmacy-web --update-env 2>$null | Out-Null
     } else {
         $eco = Join-Path $ProjectRoot "ecosystem.config.cjs"
         if (Test-Path -LiteralPath $eco) {
-            & pm2 start $eco --only pharmacy-web --update-env 2>$null | Out-Null
+            & $pm2 start $eco --only pharmacy-web --update-env 2>$null | Out-Null
         }
     }
     Start-Sleep -Seconds 4
@@ -88,13 +89,11 @@ $cashflowOk = Test-LocalOk "http://127.0.0.1:5000/"
 if (-not $cashflowOk) {
     Write-Log "cashflow down — restart on PORT=5000"
     $env:PORT = "5000"
-    $desc = & pm2 jlist 2>$null
-    $hasCashflow = $desc -and ($desc | Out-String) -match '"name"\s*:\s*"cashflow"'
-    if ($hasCashflow) {
-        & pm2 restart cashflow --update-env 2>$null | Out-Null
+    if (Test-Pm2AppExists -Name "cashflow") {
+        & $pm2 restart cashflow --update-env 2>$null | Out-Null
     } elseif (Test-Path -LiteralPath $CashflowScript) {
-        & pm2 delete cashflow 2>$null | Out-Null
-        & pm2 start $CashflowScript --name cashflow --cwd $CashflowCwd --update-env 2>$null | Out-Null
+        & $pm2 delete cashflow 2>$null | Out-Null
+        & $pm2 start $CashflowScript --name cashflow --cwd $CashflowCwd --update-env 2>$null | Out-Null
     }
     Start-Sleep -Seconds 3
     $cashflowOk = Test-LocalOk "http://127.0.0.1:5000/"
@@ -111,7 +110,7 @@ if (Get-Command tailscale -ErrorAction SilentlyContinue) {
     Write-Log "tailscale missing — skip funnel"
 }
 
-& pm2 save 2>$null | Out-Null
+& $pm2 save 2>$null | Out-Null
 
 Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnel443=$funnelPharmacy funnel8443=$funnelCashflow"
 

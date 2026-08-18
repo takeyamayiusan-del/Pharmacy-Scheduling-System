@@ -84,7 +84,7 @@ if ($SkipFunnel) {
     }
 }
 
-Write-Host "[5/6] Register Windows scheduled tasks (boot + watchdog) ..." -ForegroundColor Cyan
+Write-Host "[5/6] Register Windows scheduled tasks (boot + simple keepalive) ..." -ForegroundColor Cyan
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-register-startup-task.ps1")
 Enable-ScheduledTask -TaskName $StartTaskName -ErrorAction SilentlyContinue | Out-Null
 Enable-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue | Out-Null

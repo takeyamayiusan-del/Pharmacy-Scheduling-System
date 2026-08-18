@@ -416,46 +416,146 @@ function Test-FunnelProxyConfigured {
     return $false
 }
 
-function Get-Pm2Online([string]$Name) {
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $false }
-    $j = & pm2 jlist 2>$null
-    if (-not $j) { return $false }
-    try {
-        $apps = $j | ConvertFrom-Json
-        $app = $apps | Where-Object { $_.name -eq $Name } | Select-Object -First 1
-        if (-not $app) { return $false }
-        return ($app.pm2_env.status -eq "online")
-    } catch {
-        return $false
+function Get-Pm2Command {
+    $cmd = Get-Command pm2 -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(
+        "$env:APPDATA\npm\pm2.cmd",
+        "$env:LOCALAPPDATA\npm\pm2.cmd",
+        "C:\Program Files\nodejs\pm2.cmd",
+        "$env:USERPROFILE\AppData\Roaming\npm\pm2.cmd"
+    )
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path -LiteralPath $p)) { return $p }
     }
+    return $null
+}
+
+function Get-KeepaliveContextPath {
+    param([string]$ProjectRoot)
+    return Join-Path $ProjectRoot "data\ops\keepalive-context.json"
+}
+
+function Get-CurrentWindowsUser {
+    try {
+        $name = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+        if (-not [string]::IsNullOrWhiteSpace($name)) { return $name }
+    } catch {}
+    return "$env:USERDOMAIN\$env:USERNAME"
+}
+
+function Save-KeepaliveContext {
+    param([string]$ProjectRoot)
+
+    $pm2 = Get-Pm2Command
+    $pm2Home = $env:PM2_HOME
+    if ([string]::IsNullOrWhiteSpace($pm2Home) -and $env:USERPROFILE) {
+        $pm2Home = Join-Path $env:USERPROFILE ".pm2"
+    }
+    $nodeDir = $null
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    if ($nodeCmd) {
+        $nodeDir = Split-Path -Parent $nodeCmd.Source
+    } elseif (Test-Path "C:\Program Files\nodejs\node.exe") {
+        $nodeDir = "C:\Program Files\nodejs"
+    }
+    $npmDir = $null
+    if ($pm2) { $npmDir = Split-Path -Parent $pm2 }
+    $userNpm = Join-Path $env:APPDATA "npm"
+    if ($userNpm -and (Test-Path $userNpm)) { $npmDir = $userNpm }
+
+    $obj = [ordered]@{
+        savedAt = (Get-Date).ToString("o")
+        user    = Get-CurrentWindowsUser
+        pm2Home = $pm2Home
+        pm2Path = $pm2
+        nodeDir = $nodeDir
+        npmDir  = $npmDir
+    }
+    $path = Get-KeepaliveContextPath -ProjectRoot $ProjectRoot
+    $dir = Split-Path $path -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    ($obj | ConvertTo-Json) | Set-Content -LiteralPath $path -Encoding UTF8
+    return $path
+}
+
+function Import-Pm2Environment {
+    param([string]$ProjectRoot)
+
+    $ctxPath = Get-KeepaliveContextPath -ProjectRoot $ProjectRoot
+    if (Test-Path -LiteralPath $ctxPath) {
+        try {
+            $ctx = Get-Content -LiteralPath $ctxPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($ctx.pm2Home) { $env:PM2_HOME = [string]$ctx.pm2Home }
+            $dirs = @()
+            if ($ctx.nodeDir) { $dirs += [string]$ctx.nodeDir }
+            if ($ctx.npmDir) { $dirs += [string]$ctx.npmDir }
+            foreach ($d in $dirs) {
+                if ($d -and (Test-Path $d) -and ($env:Path -notlike "*$d*")) {
+                    $env:Path = "$d;$env:Path"
+                }
+            }
+        } catch {}
+    }
+
+    if (-not $env:PM2_HOME -and $env:USERPROFILE) {
+        $env:PM2_HOME = Join-Path $env:USERPROFILE ".pm2"
+    }
+    foreach ($d in @(
+        "C:\Program Files\nodejs",
+        "C:\Program Files\Tailscale",
+        "$env:APPDATA\npm",
+        "$env:USERPROFILE\AppData\Roaming\npm"
+    )) {
+        if ($d -and (Test-Path $d) -and ($env:Path -notlike "*$d*")) {
+            $env:Path = "$d;$env:Path"
+        }
+    }
+}
+
+function Get-Pm2Apps {
+    $pm2 = Get-Pm2Command
+    if (-not $pm2) { return @() }
+    try {
+        # PowerShell 會把 pm2 jlist 拆成多行；必須先拼成字串再 Parse，否則健康檢查會誤報 not online
+        $raw = (& $pm2 jlist 2>$null | Out-String)
+        if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
+        $start = $raw.IndexOf("[")
+        $end = $raw.LastIndexOf("]")
+        if ($start -lt 0 -or $end -le $start) { return @() }
+        $json = $raw.Substring($start, $end - $start + 1)
+        $apps = ConvertFrom-Json -InputObject $json
+        if ($null -eq $apps) { return @() }
+        return @($apps)
+    } catch {
+        return @()
+    }
+}
+
+function Get-Pm2Online([string]$Name) {
+    foreach ($app in (Get-Pm2Apps)) {
+        if ($app.name -eq $Name -and $app.pm2_env.status -eq "online") { return $true }
+    }
+    return $false
 }
 
 function Test-Pm2AppExists([string]$Name) {
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $false }
-    $j = & pm2 jlist 2>$null
-    if (-not $j) { return $false }
-    try {
-        $apps = $j | ConvertFrom-Json
-        return [bool]($apps | Where-Object { $_.name -eq $Name } | Select-Object -First 1)
-    } catch {
-        return $false
+    foreach ($app in (Get-Pm2Apps)) {
+        if ($app.name -eq $Name) { return $true }
     }
+    return $false
 }
 
 function Get-Pm2Pid([string]$Name) {
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) { return $null }
-    $j = & pm2 jlist 2>$null
-    if (-not $j) { return $null }
-    try {
-        $apps = $j | ConvertFrom-Json
-        $app = $apps | Where-Object { $_.name -eq $Name } | Select-Object -First 1
-        if (-not $app) { return $null }
-        $processId = 0
-        if ([int]::TryParse("$($app.pid)", [ref]$processId) -and $processId -gt 0) { return $processId }
-        return $null
-    } catch {
-        return $null
+    foreach ($app in (Get-Pm2Apps)) {
+        if ($app.name -eq $Name) {
+            $processId = 0
+            if ([int]::TryParse("$($app.pid)", [ref]$processId) -and $processId -gt 0) {
+                return $processId
+            }
+        }
     }
+    return $null
 }
 
 function Stop-PortListenerForce {

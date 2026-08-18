@@ -1,4 +1,5 @@
 # 每 1 分鐘檢查：本機網站 + Supabase Auth + Tailscale Funnel，異常自動修復
+# 已改掛 windows-keepalive-simple.ps1（此腳本會 funnel reset，請勿再註冊為排程）
 param(
     [string]$ProjectRoot = (Split-Path -Parent $PSScriptRoot)
 )
@@ -8,6 +9,7 @@ $LogDir = Join-Path $ProjectRoot "data\logs"
 $LogFile = Join-Path $LogDir "funnel-watchdog.log"
 
 . (Join-Path $PSScriptRoot "windows-site-common.ps1")
+Import-Pm2Environment -ProjectRoot $ProjectRoot
 
 function Write-Log([string]$Message) {
     if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
