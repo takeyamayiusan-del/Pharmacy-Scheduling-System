@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 import { useSearchParams } from "next/navigation";
-import { Coffee, ExternalLink, Plus, Store, Trash2, UtensilsCrossed } from "lucide-react";
+import { Coffee, ExternalLink, Pencil, Plus, Store, Trash2, UtensilsCrossed } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
 import { HelpTip } from "@/components/ui/HelpTip";
 import {
@@ -18,6 +18,7 @@ import {
   loadOrderLines,
   loadTaxProfiles,
   markMealOrderOrdered,
+  updateMealVendor,
 } from "@/lib/meal-order/api";
 import {
   aggregateOrderLines,
@@ -292,8 +293,28 @@ function VendorsPanel({
   siteId: import("@/lib/sites").SiteId;
   userId: string;
 }) {
+  const [editingVendorId, setEditingVendorId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<VendorFormState>(EMPTY_VENDOR_FORM);
+  const [vendorNotice, setVendorNotice] = useState<string>("");
+
+  const normalizeVendorName = (name: string) => name.trim().replace(/\s+/g, " ").toLowerCase();
+
+  const hasDuplicateVendorName = (name: string, excludeVendorId?: string) => {
+    const normalized = normalizeVendorName(name);
+    if (!normalized) return false;
+    return vendors.some(
+      (v) =>
+        v.id !== excludeVendorId &&
+        normalizeVendorName(v.name) === normalized
+    );
+  };
+
   const addVendor = async () => {
     if (!vendorForm.name.trim() || busy) return;
+    if (hasDuplicateVendorName(vendorForm.name)) {
+      alert("店家名稱重複，請直接編輯既有店家，或改成不同名稱");
+      return;
+    }
     setBusy(true);
     try {
       await createMealVendor({
@@ -303,8 +324,49 @@ function VendorsPanel({
       });
       setVendorForm(EMPTY_VENDOR_FORM);
       await onChanged();
+      setVendorNotice("已新增店家");
     } catch (err) {
       alert(err instanceof Error ? err.message : "新增店家失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const beginEdit = (vendor: MealVendor) => {
+    setEditingVendorId(vendor.id);
+    setVendorNotice("");
+    setEditForm({
+      name: vendor.name,
+      category: vendor.category,
+      phone: vendor.phone,
+      address: vendor.address,
+      menuUrl: vendor.menuUrl,
+      note: vendor.note,
+    });
+  };
+
+  const cancelEdit = () => {
+    setEditingVendorId(null);
+    setEditForm(EMPTY_VENDOR_FORM);
+  };
+
+  const saveEdit = async () => {
+    if (!editingVendorId || !editForm.name.trim() || busy) return;
+    if (hasDuplicateVendorName(editForm.name, editingVendorId)) {
+      alert("店家名稱重複，請使用不同名稱");
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateMealVendor({
+        vendorId: editingVendorId,
+        ...editForm,
+      });
+      await onChanged();
+      cancelEdit();
+      setVendorNotice("店家資料已更新");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "更新店家失敗");
     } finally {
       setBusy(false);
     }
@@ -370,47 +432,135 @@ function VendorsPanel({
           新增店家
         </button>
       </div>
+      {vendorNotice ? (
+        <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {vendorNotice}
+        </div>
+      ) : null}
 
       {vendors.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">尚未建立店家</div>
       ) : (
         vendors.map((vendor) => (
           <div key={vendor.id} className="app-card p-4">
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <h3 className="font-semibold text-slate-900">{vendor.name}</h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  {VENDOR_CATEGORY_LABELS[vendor.category]}
-                  {vendor.phone ? ` · ${vendor.phone}` : ""}
-                  {vendor.address ? ` · ${vendor.address}` : ""}
-                </p>
-                {vendor.menuUrl && (
-                  <div className="mt-3">
-                    <MenuLinkButton href={vendor.menuUrl} />
-                  </div>
-                )}
+            {editingVendorId === vendor.id ? (
+              <div className="space-y-3">
+                <h3 className="font-semibold text-slate-900">編輯店家</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <input
+                    className="border rounded-xl px-3 py-2 text-sm"
+                    placeholder="店家名稱"
+                    value={editForm.name}
+                    onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                  />
+                  <select
+                    className="border rounded-xl px-3 py-2 text-sm"
+                    value={editForm.category}
+                    onChange={(e) =>
+                      setEditForm({
+                        ...editForm,
+                        category: e.target.value as MealVendorCategory,
+                      })
+                    }
+                  >
+                    <option value="drink">飲料店</option>
+                    <option value="bento">便當店</option>
+                    <option value="both">飲料＋便當</option>
+                  </select>
+                  <input
+                    className="border rounded-xl px-3 py-2 text-sm"
+                    placeholder="電話"
+                    value={editForm.phone}
+                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+                  />
+                  <input
+                    className="border rounded-xl px-3 py-2 text-sm"
+                    placeholder="地址"
+                    value={editForm.address}
+                    onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                  />
+                  <input
+                    className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
+                    placeholder="菜單網址（可選，方便同事開啟）"
+                    value={editForm.menuUrl}
+                    onChange={(e) => setEditForm({ ...editForm, menuUrl: e.target.value })}
+                  />
+                  <input
+                    className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
+                    placeholder="備註（可空）"
+                    value={editForm.note}
+                    onChange={(e) => setEditForm({ ...editForm, note: e.target.value })}
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="app-btn-primary"
+                    disabled={busy || !editForm.name.trim()}
+                    onClick={() => void saveEdit()}
+                  >
+                    儲存
+                  </button>
+                  <button
+                    type="button"
+                    className="app-btn-outline"
+                    disabled={busy}
+                    onClick={cancelEdit}
+                  >
+                    取消
+                  </button>
+                </div>
               </div>
-              <button
-                type="button"
-                className="text-slate-400 hover:text-rose-600 inline-flex items-center gap-1 text-sm"
-                title="刪除店家"
-                onClick={async () => {
-                  if (!window.confirm(`刪除店家「${vendor.name}」？`)) return;
-                  setBusy(true);
-                  try {
-                    await deactivateMealVendor(vendor.id);
-                    await onChanged();
-                  } catch (err) {
-                    alert(err instanceof Error ? err.message : "刪除失敗");
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-                刪除
-              </button>
-            </div>
+            ) : (
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <h3 className="font-semibold text-slate-900">{vendor.name}</h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {VENDOR_CATEGORY_LABELS[vendor.category]}
+                    {vendor.phone ? ` · ${vendor.phone}` : ""}
+                    {vendor.address ? ` · ${vendor.address}` : ""}
+                  </p>
+                  {vendor.note && <p className="text-xs text-slate-500 mt-1">{vendor.note}</p>}
+                  {vendor.menuUrl && (
+                    <div className="mt-3">
+                      <MenuLinkButton href={vendor.menuUrl} />
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-slate-500 hover:text-sky-700 inline-flex items-center gap-1 text-sm"
+                    title="編輯店家"
+                    onClick={() => beginEdit(vendor)}
+                    disabled={busy}
+                  >
+                    <Pencil className="h-4 w-4" />
+                    編輯
+                  </button>
+                  <button
+                    type="button"
+                    className="text-slate-400 hover:text-rose-600 inline-flex items-center gap-1 text-sm"
+                    title="刪除店家"
+                    onClick={async () => {
+                      if (!window.confirm(`刪除店家「${vendor.name}」？`)) return;
+                      setBusy(true);
+                      try {
+                        await deactivateMealVendor(vendor.id);
+                        await onChanged();
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : "刪除失敗");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    刪除
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ))
       )}
