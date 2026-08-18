@@ -20,21 +20,31 @@ if (-not $isAdmin) {
     exit 0
 }
 
+Import-Pm2Environment -ProjectRoot $ProjectRoot
+$ctxPath = Save-KeepaliveContext -ProjectRoot $ProjectRoot
+$runAs = Get-CurrentWindowsUser
+if ($runAs -match '\\SYSTEM$' -or $runAs -eq "NT AUTHORITY\SYSTEM") {
+    throw "Do not register keepalive as SYSTEM. Sign in as the pharmacy Windows account, then run this script."
+}
+
 if (-not (Test-Path -LiteralPath $KeepaliveScript)) {
     throw "Missing: $KeepaliveScript"
 }
 
 Write-Host "=== Register simple keepalive ===" -ForegroundColor Cyan
 Write-Host "This replaces the old heavy watchdog (no git/build/funnel reset)."
+Write-Host "Run as: $runAs (Interactive — SYSTEM has no user pm2 / PM2_HOME)"
+Write-Host "PM2 context: $ctxPath"
 Write-Host ""
 
 # 停用並改掛簡單腳本
 Stop-ScheduledTask -TaskName $KeepaliveTaskName -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName $KeepaliveTaskName -Confirm:$false -ErrorAction SilentlyContinue
 
+# Must be the logged-in user: SYSTEM PATH has no pm2, so the task exits 1 and never restores Funnel.
 $principal = New-ScheduledTaskPrincipal `
-    -UserId "SYSTEM" `
-    -LogonType ServiceAccount `
+    -UserId $runAs `
+    -LogonType Interactive `
     -RunLevel Highest
 
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
@@ -86,13 +96,15 @@ if (-not $startExisting) {
 
 Write-Host ""
 Write-Host "Registered:" -ForegroundColor Green
-Write-Host "  $KeepaliveTaskName  → windows-keepalive-simple.ps1 (Daily/1min + boot/logon)"
+Write-Host "  $KeepaliveTaskName  → windows-keepalive-simple.ps1 as $runAs (Daily/1min + boot/logon)"
 Write-Host "  $StartTaskName     → boot (if present)"
 Write-Host ""
 Write-Host "Test now:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-keepalive-simple.ps1"
 Write-Host "Log:"
 Write-Host "  $ProjectRoot\data\logs\keepalive-simple.log"
+Write-Host "Then:"
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-health-check.ps1"
 Write-Host ""
 Write-Host "Updates: MANUAL only"
 Write-Host "  cashflow:  `$env:PORT=5000; cd C:\cash-flow-app; git pull; pm2 restart cashflow --update-env"

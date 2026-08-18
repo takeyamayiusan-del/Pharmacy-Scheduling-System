@@ -14,6 +14,7 @@ Set-Location $ProjectRoot
 $LogDir = Join-Path $ProjectRoot "data\logs"
 $LogFile = Join-Path $LogDir "docker-boot.log"
 . (Join-Path $PSScriptRoot "windows-site-common.ps1")
+Import-Pm2Environment -ProjectRoot $ProjectRoot
 
 function Write-BootLog([string]$Message) {
     if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
@@ -55,7 +56,7 @@ if ($authOk) {
     Write-BootLog "WARNING: Auth API not ready (login will fail until supabase is healthy)"
 }
 
-if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+if (Get-Pm2Command) {
     Write-BootLog "pm2 resurrect + health repair (auto clear occupied :3000)"
     & pm2 resurrect *>> $LogFile 2>&1
     $siteRepair = Repair-SiteIfNeeded -ProjectRoot $ProjectRoot -WriteLog {
@@ -93,9 +94,13 @@ if ($siteOk) {
 }
 
 if (-not $SkipFunnel) {
-    if (Get-Command tailscale -ErrorAction SilentlyContinue) {
-        Write-BootLog "Tailscale Funnel setup"
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") *>> $LogFile
+    if (Get-TailscaleCommand) {
+        Write-BootLog "Tailscale Funnel repair (public URL probe, no reset)"
+        $funnelOk = Repair-FunnelIfNeeded -WriteLog { param($m) Write-BootLog $m }
+        if (-not $funnelOk) {
+            Write-BootLog "Funnel still down — running full funnel setup"
+            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") *>> $LogFile
+        }
     } else {
         Write-BootLog "tailscale not found, skip Funnel"
     }

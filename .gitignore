@@ -97,3 +97,6 @@ yaosheng-usb-*.zip
 .env.local
 node_modules
 
+# Machine-local PM2/Tailscale keepalive context (user paths)
+/data/ops/keepalive-context.json
+
