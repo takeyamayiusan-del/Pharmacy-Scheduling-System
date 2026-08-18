@@ -27,7 +27,7 @@ function formatWhen(iso: string | null): string {
 }
 
 function mark(on: boolean): string {
-  return on ? "☑" : "☐";
+  return on ? "✅" : "⬜";
 }
 
 export function exportCustomerOrdersExcel(input: {
@@ -179,26 +179,30 @@ export async function exportCustomerOrdersPdf(input: {
     return;
   }
 
+  const th = `border:1px solid #bbb; padding:8px 10px; background:#e8e8e8; font-size:15px; text-align:left;`;
+  const td = `border:1px solid #bbb; padding:8px 10px; vertical-align:top; font-size:15px; line-height:1.5;`;
+  const tdCenter = `${td} text-align:center;`;
+
   const html = `
-    <div style="font-family: 'Noto Sans TC','Microsoft JhengHei',sans-serif; color:#111; padding:16px; width:1100px;">
-      <h1 style="font-size:20px; margin:0 0 4px;">${escapeHtml(input.storeName)}　客訂管理表</h1>
-      <div style="color:#555; font-size:12px; margin-bottom:12px;">
-        匯出時間 ${escapeHtml(formatWhen(new Date().toISOString()))}　共 ${input.rows.length} 筆
+    <div style="font-family:'Microsoft JhengHei','Noto Sans TC',sans-serif; color:#111; padding:20px 24px; width:1000px;">
+      <h1 style="font-size:22px; margin:0 0 6px; font-weight:bold;">${escapeHtml(input.storeName)}　客訂管理表</h1>
+      <div style="color:#555; font-size:14px; margin-bottom:16px;">
+        匯出時間：${escapeHtml(formatWhen(new Date().toISOString()))}　共 ${input.rows.length} 筆
       </div>
-      <table style="width:100%; border-collapse:collapse; font-size:12px;">
+      <table style="width:100%; border-collapse:collapse;">
         <thead>
           <tr>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">登記</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">客人／電話</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">商品</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">數量</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">金額</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">付款</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:center;">貨到</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:center;">通知</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:center;">已拿</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">接手</th>
-            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">備註</th>
+            <th style="${th}">登記時間</th>
+            <th style="${th}">客人</th>
+            <th style="${th}">商品</th>
+            <th style="${th}">數量</th>
+            <th style="${th}">金額</th>
+            <th style="${th}">付款</th>
+            <th style="${th}; text-align:center;">到貨</th>
+            <th style="${th}; text-align:center;">通知</th>
+            <th style="${th}; text-align:center;">已拿</th>
+            <th style="${th}">接手</th>
+            <th style="${th}">備註</th>
           </tr>
         </thead>
         <tbody>
@@ -206,47 +210,23 @@ export async function exportCustomerOrdersPdf(input: {
             .map((row) => {
               const qty = `${row.quantity}${row.unit ? ` ${escapeHtml(row.unit)}` : ""}`;
               return `<tr>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">${escapeHtml(
-                  formatWhen(row.createdAt)
-                )}</td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">
-                  ${escapeHtml(row.customerName)}<br/>
-                  <span style="color:#555; font-size:11px;">${escapeHtml(row.customerPhone)}</span>
+                <td style="${td}; white-space:nowrap;">${escapeHtml(formatWhen(row.createdAt))}</td>
+                <td style="${td}">
+                  <div style="font-weight:600;">${escapeHtml(row.customerName)}</div>
+                  ${row.customerPhone ? `<div style="color:#555; font-size:13px;">${escapeHtml(row.customerPhone)}</div>` : ""}
                 </td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">
-                  ${escapeHtml(row.productName)}
-                  ${
-                    row.nhiCode
-                      ? `<br/><span style="color:#555; font-size:11px;">健保碼 ${escapeHtml(
-                          row.nhiCode
-                        )}</span>`
-                      : ""
-                  }
+                <td style="${td}">
+                  <div>${escapeHtml(row.productName)}</div>
+                  ${row.nhiCode ? `<div style="color:#555; font-size:13px;">健保碼 ${escapeHtml(row.nhiCode)}</div>` : ""}
                 </td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; white-space:nowrap;">${escapeHtml(
-                  qty
-                )}</td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; white-space:nowrap;">${escapeHtml(
-                  formatMoney(row.amount)
-                )}</td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">${escapeHtml(
-                  CUSTOMER_PAYMENT_LABELS[row.paymentStatus]
-                )}</td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; text-align:center; white-space:nowrap;">${mark(
-                  row.goodsArrived
-                )} 到貨</td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; text-align:center; white-space:nowrap;">${mark(
-                  row.notified
-                )} 通知</td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; text-align:center; white-space:nowrap;">${mark(
-                  row.pickedUp
-                )} 已拿</td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">${escapeHtml(
-                  input.handlerName(row.handlerId)
-                )}</td>
-                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">${escapeHtml(
-                  row.note
-                )}</td>
+                <td style="${td}; white-space:nowrap;">${escapeHtml(qty)}</td>
+                <td style="${td}; white-space:nowrap;">${escapeHtml(formatMoney(row.amount))}</td>
+                <td style="${td};">${escapeHtml(CUSTOMER_PAYMENT_LABELS[row.paymentStatus])}</td>
+                <td style="${tdCenter}; font-size:20px;">${mark(row.goodsArrived)}</td>
+                <td style="${tdCenter}; font-size:20px;">${mark(row.notified)}</td>
+                <td style="${tdCenter}; font-size:20px;">${mark(row.pickedUp)}</td>
+                <td style="${td};">${escapeHtml(input.handlerName(row.handlerId))}</td>
+                <td style="${td};">${escapeHtml(row.note)}</td>
               </tr>`;
             })
             .join("")}

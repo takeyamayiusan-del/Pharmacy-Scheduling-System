@@ -47,7 +47,7 @@ export default function MySchedulePage() {
       const html2canvas = (await import("html2canvas")).default;
       const canvas = await html2canvas(exportRef.current, {
         backgroundColor: "#ffffff",
-        scale: 2,
+        scale: 3,
       });
       const link = document.createElement("a");
       link.href = canvas.toDataURL("image/png");
@@ -95,84 +95,105 @@ export default function MySchedulePage() {
       {viewingPast && (
         <p className="text-sm text-slate-600">已過去的月份僅供查閱。</p>
       )}
-      <div ref={exportRef} className="app-card p-4 bg-white">
-        <div className="mb-3">
-          <h3 className="text-base font-semibold text-slate-900">
-            {year}年{month}月 {currentUser.name} 我的班表
+      <div ref={exportRef} className="rounded-2xl border border-slate-200 shadow-sm bg-white overflow-hidden">
+        <div className="bg-gradient-to-r from-sky-600 to-sky-500 px-6 py-4">
+          <h3 className="text-lg font-bold text-white tracking-wide">
+            {year}年{month}月　{currentUser.name}　班表
           </h3>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center text-xs sm:text-sm font-medium text-slate-500 mb-2">
-          {dayLabels.map((d) => (
-            <div key={d}>{d}</div>
-          ))}
-        </div>
-        <div className="grid grid-cols-7 gap-2">
-          {Array.from({ length: firstDayOffset }).map((_, i) => (
-            <div key={`pad-${i}`} />
-          ))}
-          {Array.from({ length: daysInMonth }, (_, i) => {
-            const day = i + 1;
-            const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-            const shiftInfo = getDisplayedShiftInfo({
-              date: dateStr,
-              employeeId: currentUser.id,
-              originalShift: getShiftForDate(dateStr, currentUser.id),
-              leaveRequests,
-              overtimeRequests,
-              getBaseShiftForDate,
-            });
-            const displayShift = shiftInfo.hasLeave ? shiftInfo.effectiveShift : shiftInfo.originalShift;
-            const isFullDayLeave = shiftInfo.hasLeave && shiftInfo.effectiveShift === "X";
-            const style = styleOf(displayShift);
-            const holiday = getHolidayInfo(dateStr);
-            const ranges = isFullDayLeave
-              ? []
-              : resolveShiftTimeRanges(displayShift, storeConfig, shiftTimeConfig);
-            return (
+        <div className="px-4 pt-4 pb-5">
+          <div className="grid grid-cols-7 gap-2 mb-3">
+            {dayLabels.map((d, i) => (
               <div
-                key={dateStr}
-                className={`rounded-2xl border p-3 min-h-[6rem] text-left flex flex-col gap-1 ${
-                  isSunday(dateStr)
-                    ? "bg-red-50 border-red-100"
-                    : isSaturday(dateStr)
-                      ? "bg-orange-50 border-orange-100"
-                      : holiday.isHoliday
-                        ? "bg-amber-50 border-amber-100"
-                        : "bg-white border-slate-200"
+                key={d}
+                className={`text-center text-sm font-bold py-1.5 rounded-lg ${
+                  i === 0
+                    ? "bg-red-100 text-red-700"
+                    : i === 6
+                      ? "bg-orange-100 text-orange-700"
+                      : "bg-slate-100 text-slate-600"
                 }`}
               >
-                <div className="text-sm sm:text-base text-slate-500 leading-none">{day}</div>
-                <div
-                  className={`text-sm sm:text-[15px] font-semibold rounded px-2 py-1 inline-flex items-center justify-center max-w-full ${
-                    isFullDayLeave ? "bg-violet-500 text-white" : ""
-                  }`}
-                  style={
-                    isFullDayLeave
-                      ? undefined
-                      : {
-                          backgroundColor: style.bgColor,
-                          color: style.textColor,
-                          border: `1px solid ${style.borderColor}`,
-                        }
-                  }
-                >
-                  <span className="truncate w-full" title={isFullDayLeave ? "假" : style.displayText || style.label}>
-                    {isFullDayLeave ? "假" : style.displayText || style.label}
-                  </span>
-                </div>
-                {shiftInfo.isPartialLeave && (
-                  <div className="text-[11px] sm:text-xs text-amber-700 leading-tight">
-                    半日假
-                  </div>
-                )}
-                {ranges.length > 0 && (
-                  <div className="text-[11px] sm:text-xs text-slate-500 leading-tight whitespace-pre-wrap break-words">
-                    {ranges.join(" ")}
-                  </div>
-                )}
+                {d}
               </div>
-            );
-          })}
+            ))}
+          </div>
+          <div className="grid grid-cols-7 gap-2">
+            {Array.from({ length: firstDayOffset }).map((_, i) => (
+              <div key={`pad-${i}`} />
+            ))}
+            {Array.from({ length: daysInMonth }, (_, i) => {
+              const day = i + 1;
+              const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+              const shiftInfo = getDisplayedShiftInfo({
+                date: dateStr,
+                employeeId: currentUser.id,
+                originalShift: getShiftForDate(dateStr, currentUser.id),
+                leaveRequests,
+                overtimeRequests,
+                getBaseShiftForDate,
+              });
+              const displayShift = shiftInfo.hasLeave ? shiftInfo.effectiveShift : shiftInfo.originalShift;
+              const isFullDayLeave = shiftInfo.hasLeave && shiftInfo.effectiveShift === "X";
+              const style = styleOf(displayShift);
+              const holiday = getHolidayInfo(dateStr);
+              const ranges = isFullDayLeave
+                ? []
+                : resolveShiftTimeRanges(displayShift, storeConfig, shiftTimeConfig);
+              const sun = isSunday(dateStr);
+              const sat = isSaturday(dateStr);
+              return (
+                <div
+                  key={dateStr}
+                  className={`rounded-xl border-2 p-2.5 min-h-[5.5rem] text-left flex flex-col gap-0.5 transition-shadow ${
+                    sun
+                      ? "bg-red-50 border-red-200"
+                      : sat
+                        ? "bg-orange-50 border-orange-200"
+                        : holiday.isHoliday
+                          ? "bg-amber-50 border-amber-200"
+                          : "bg-white border-slate-100 hover:shadow"
+                  }`}
+                >
+                  <div className={`text-base font-bold leading-none ${sun ? "text-red-500" : sat ? "text-orange-600" : "text-slate-700"}`}>
+                    {day}
+                  </div>
+                  <div
+                    className={`mt-auto text-[15px] font-bold rounded-lg px-2 py-1 self-start leading-snug ${
+                      isFullDayLeave ? "bg-violet-500 text-white" : ""
+                    }`}
+                    style={
+                      isFullDayLeave
+                        ? undefined
+                        : {
+                            backgroundColor: style.bgColor,
+                            color: style.textColor,
+                            border: `1px solid ${style.borderColor}`,
+                          }
+                    }
+                  >
+                    {isFullDayLeave ? "休假" : style.displayText || style.label}
+                  </div>
+                  {shiftInfo.isPartialLeave && (
+                    <div className="text-xs text-amber-700 font-medium">半日假</div>
+                  )}
+                  {ranges.length > 0 && (
+                    <div className="text-xs text-slate-400 leading-snug">
+                      {ranges.map((r, ri) => (
+                        <div key={ri}>{r}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-xs text-slate-500 border-t border-slate-100 pt-3">
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-100 border border-red-200" />日</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-orange-100 border border-orange-200" />六</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-200" />國定假日</span>
+            <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-violet-500" /><span className="text-violet-700">休假</span></span>
+          </div>
         </div>
       </div>
     </div>
