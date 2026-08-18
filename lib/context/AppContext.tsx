@@ -35,6 +35,7 @@ import {
   parseLocalDateParts,
 } from "@/lib/schedule/sundayRest";
 import { resolveDefaultWorkShift } from "@/lib/schedule/defaultWorkShift";
+import { isLeaveSelectedOnDate, resolveShiftForDate } from "@/lib/schedule/resolveShiftForDate";
 import { isEmployeeActiveOnDate, isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
 import { hasPastMonthInRange, isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import {
@@ -1850,7 +1851,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // 排休勾選（含週六）優先於預設／固定班
     const dateKey = normalizeCalendarDate(date);
-    if ((leaveSelections[employeeId] ?? []).some((d) => normalizeCalendarDate(d) === dateKey)) {
+    if (isLeaveSelectedOnDate(leaveSelections[employeeId], dateKey || date)) {
       return "X";
     }
 
@@ -1858,23 +1859,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getShiftForDate = (date: string, employeeId: string): ScheduleShiftCode => {
-    // 禮拜日固定公休：覆寫（含錯誤換班）不可蓋過
-    if (isSunday(date)) return "X";
-    // 入職日前／到期日後一律休假（X），舊覆寫不可蓋過
     const emp = employees.find((e) => e.id === employeeId);
-    if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
-    // 固定班表設「禮拜六休假」優先於舊覆寫（否則會一直顯示預設 C）
-    if (isSaturday(date)) {
-      const dayOfWeek = getLocalDayOfWeek(date);
-      const fixedSat = fixedShifts.find(
-        (s) => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek
-      );
-      if (fixedSat?.shift === "X") return "X";
-    }
     const dateKey = normalizeCalendarDate(date) || date;
-    const override = schedule[dateKey]?.[employeeId];
-    if (override) return override;
-    return getBaseShiftForDate(date, employeeId);
+    const dayOfWeek = getLocalDayOfWeek(date);
+    const fixedSat = isSaturday(date)
+      ? fixedShifts.find((s) => s.employeeId === employeeId && s.dayOfWeek === dayOfWeek)
+      : undefined;
+
+    return resolveShiftForDate({
+      isSunday: isSunday(date),
+      isActive: !emp || isEmployeeActiveOnDate(emp, date),
+      saturdayFixedOff: fixedSat?.shift === "X",
+      leaveSelected: isLeaveSelectedOnDate(leaveSelections[employeeId], date),
+      override: schedule[dateKey]?.[employeeId] ?? null,
+      baseWorkShift: getWorkShiftIgnoringLeave(date, employeeId),
+    });
   };
 
   const getScheduleNote = (date: string, employeeId: string): ScheduleCellNote | null => {
@@ -1918,9 +1917,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const isManagerEdit =
       canManageSite(currentUser?.role);
     const emp = employees.find((e) => e.id === employeeId);
-    const alreadySelected = (leaveSelections[employeeId] ?? []).some(
-      (d) => normalizeCalendarDate(d) === normalizeCalendarDate(date)
-    );
+    const alreadySelected = isLeaveSelectedOnDate(leaveSelections[employeeId], date);
     const syncAction = shouldSyncLeaveSelection(date, shift);
 
     if (isManagerEdit && syncAction === "add" && !alreadySelected) {
@@ -2048,7 +2045,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       employeeIds: targets.map((e) => e.id),
       getCurrentShift: (employeeId) => getShiftForDate(date, employeeId),
       getWorkShift: (employeeId) => getWorkShiftIgnoringLeave(date, employeeId),
-      hasLeaveSelection: (employeeId) => (leaveSelections[employeeId] ?? []).includes(date),
+      hasLeaveSelection: (employeeId) => isLeaveSelectedOnDate(leaveSelections[employeeId], date),
       hasApprovedFullDayLeave,
       workShiftChoice: mode === "work" ? options?.workShiftChoice ?? "auto" : undefined,
       fallbackWorkShift: storeConfig.defaultWeekdayShift || "B",
@@ -2063,7 +2060,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     const preservedLeave = targets.filter((e) => {
       const keepLeave =
-        (leaveSelections[e.id] ?? []).includes(date) || hasApprovedFullDayLeave(e.id);
+        isLeaveSelectedOnDate(leaveSelections[e.id], date) || hasApprovedFullDayLeave(e.id);
       return mode === "work" && keepLeave;
     }).length;
 
