@@ -1,3 +1,4 @@
+import { jsPDF } from "jspdf";
 import XLSX from "xlsx-js-style";
 import {
   CUSTOMER_PAYMENT_LABELS,
@@ -165,4 +166,144 @@ export function printCustomerOrdersForm(input: {
   printWindow.document.open();
   printWindow.document.write(html);
   printWindow.document.close();
+}
+
+export async function exportCustomerOrdersPdf(input: {
+  storeName: string;
+  rows: CustomerOrder[];
+  handlerName: (id: string) => string;
+}): Promise<void> {
+  if (typeof window === "undefined") return;
+  if (input.rows.length === 0) {
+    alert("沒有可匯出的資料");
+    return;
+  }
+
+  const html = `
+    <div style="font-family: 'Noto Sans TC','Microsoft JhengHei',sans-serif; color:#111; padding:16px; width:1100px;">
+      <h1 style="font-size:20px; margin:0 0 4px;">${escapeHtml(input.storeName)}　客訂管理表</h1>
+      <div style="color:#555; font-size:12px; margin-bottom:12px;">
+        匯出時間 ${escapeHtml(formatWhen(new Date().toISOString()))}　共 ${input.rows.length} 筆
+      </div>
+      <table style="width:100%; border-collapse:collapse; font-size:12px;">
+        <thead>
+          <tr>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">登記</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">客人／電話</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">商品</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">數量</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">金額</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">付款</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:center;">貨到</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:center;">通知</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:center;">已拿</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">接手</th>
+            <th style="border:1px solid #333; padding:5px 6px; background:#eee; text-align:left;">備註</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${input.rows
+            .map((row) => {
+              const qty = `${row.quantity}${row.unit ? ` ${escapeHtml(row.unit)}` : ""}`;
+              return `<tr>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">${escapeHtml(
+                  formatWhen(row.createdAt)
+                )}</td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">
+                  ${escapeHtml(row.customerName)}<br/>
+                  <span style="color:#555; font-size:11px;">${escapeHtml(row.customerPhone)}</span>
+                </td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">
+                  ${escapeHtml(row.productName)}
+                  ${
+                    row.nhiCode
+                      ? `<br/><span style="color:#555; font-size:11px;">健保碼 ${escapeHtml(
+                          row.nhiCode
+                        )}</span>`
+                      : ""
+                  }
+                </td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; white-space:nowrap;">${escapeHtml(
+                  qty
+                )}</td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; white-space:nowrap;">${escapeHtml(
+                  formatMoney(row.amount)
+                )}</td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">${escapeHtml(
+                  CUSTOMER_PAYMENT_LABELS[row.paymentStatus]
+                )}</td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; text-align:center; white-space:nowrap;">${mark(
+                  row.goodsArrived
+                )} 到貨</td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; text-align:center; white-space:nowrap;">${mark(
+                  row.notified
+                )} 通知</td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top; text-align:center; white-space:nowrap;">${mark(
+                  row.pickedUp
+                )} 已拿</td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">${escapeHtml(
+                  input.handlerName(row.handlerId)
+                )}</td>
+                <td style="border:1px solid #333; padding:5px 6px; vertical-align:top;">${escapeHtml(
+                  row.note
+                )}</td>
+              </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
+  `;
+
+  const wrapper = document.createElement("div");
+  wrapper.style.position = "fixed";
+  wrapper.style.left = "-10000px";
+  wrapper.style.top = "0";
+  wrapper.style.background = "#fff";
+  wrapper.innerHTML = html;
+  document.body.appendChild(wrapper);
+
+  try {
+    const html2canvas = (await import("html2canvas")).default;
+    const canvas = await html2canvas(wrapper, {
+      backgroundColor: "#ffffff",
+      scale: 2,
+      useCORS: true,
+    });
+
+    const doc = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    const imgWidthMm = pageWidth;
+
+    const pageHeightPx = Math.floor((pageHeight * canvas.width) / imgWidthMm);
+    const totalPages = Math.max(1, Math.ceil(canvas.height / pageHeightPx));
+
+    for (let page = 0; page < totalPages; page += 1) {
+      const startY = page * pageHeightPx;
+      const sliceHeight = Math.min(pageHeightPx, canvas.height - startY);
+
+      const sliceCanvas = document.createElement("canvas");
+      sliceCanvas.width = canvas.width;
+      sliceCanvas.height = sliceHeight;
+      const ctx = sliceCanvas.getContext("2d");
+      if (!ctx) throw new Error("canvas context 取得失敗");
+
+      ctx.drawImage(canvas, 0, startY, canvas.width, sliceHeight, 0, 0, canvas.width, sliceHeight);
+      const imgData = sliceCanvas.toDataURL("image/png");
+
+      const sliceImgHeightMm = (sliceHeight * imgWidthMm) / canvas.width;
+      if (page > 0) doc.addPage();
+      doc.addImage(imgData, "PNG", 0, 0, imgWidthMm, sliceImgHeightMm);
+    }
+
+    const stamp = new Date();
+    const y = stamp.getFullYear();
+    const m = String(stamp.getMonth() + 1).padStart(2, "0");
+    const d = String(stamp.getDate()).padStart(2, "0");
+    doc.save(`${input.storeName}_客訂管理_${y}${m}${d}.pdf`);
+  } finally {
+    wrapper.remove();
+  }
 }

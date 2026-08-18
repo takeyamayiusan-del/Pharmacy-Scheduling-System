@@ -20,7 +20,7 @@ import {
   updateCustomerFulfillment,
   updateCustomerPayment,
 } from "@/lib/shop-ops/api";
-import { exportCustomerOrdersExcel, printCustomerOrdersForm } from "@/lib/shop-ops/exportCustomerOrders";
+import { exportCustomerOrdersExcel, exportCustomerOrdersPdf } from "@/lib/shop-ops/exportCustomerOrders";
 import {
   CUSTOMER_PAYMENT_LABELS,
   FULFILLMENT_FILTER_LABELS,
@@ -1294,7 +1294,7 @@ function FulfillmentPanel({
             className="app-btn-outline inline-flex items-center gap-1"
             disabled={visible.length === 0}
             onClick={() =>
-              printCustomerOrdersForm({
+              void exportCustomerOrdersPdf({
                 storeName,
                 rows: visible,
                 handlerName,
@@ -1302,7 +1302,7 @@ function FulfillmentPanel({
             }
           >
             <Printer className="h-4 w-4" />
-            列印紙本
+            匯出 PDF
           </button>
         </div>
       </div>
