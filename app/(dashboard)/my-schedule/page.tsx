@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
 import { resolveShiftDisplay, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 import { isPastMonth } from "@/lib/schedule/monthAccess";
+import { getDisplayedShiftInfo } from "@/lib/schedule/leaveSchedule";
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -11,12 +12,15 @@ export default function MySchedulePage() {
   const {
     currentUser,
     getShiftForDate,
+    getBaseShiftForDate,
     getHolidayInfo,
     isSunday,
     isSaturday,
     shiftDisplayConfig,
     shiftTimeConfig,
     storeConfig,
+    leaveRequests,
+    overtimeRequests,
   } = useApp();
   const [currentDate, setCurrentDate] = useState(() => {
     const now = new Date();
@@ -73,10 +77,21 @@ export default function MySchedulePage() {
           {Array.from({ length: daysInMonth }, (_, i) => {
             const day = i + 1;
             const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-            const shift = getShiftForDate(dateStr, currentUser.id);
-            const style = styleOf(shift);
+            const shiftInfo = getDisplayedShiftInfo({
+              date: dateStr,
+              employeeId: currentUser.id,
+              originalShift: getShiftForDate(dateStr, currentUser.id),
+              leaveRequests,
+              overtimeRequests,
+              getBaseShiftForDate,
+            });
+            const displayShift = shiftInfo.hasLeave ? shiftInfo.effectiveShift : shiftInfo.originalShift;
+            const isFullDayLeave = shiftInfo.hasLeave && shiftInfo.effectiveShift === "X";
+            const style = styleOf(displayShift);
             const holiday = getHolidayInfo(dateStr);
-            const ranges = resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig);
+            const ranges = isFullDayLeave
+              ? []
+              : resolveShiftTimeRanges(displayShift, storeConfig, shiftTimeConfig);
             return (
               <div
                 key={dateStr}
@@ -92,15 +107,26 @@ export default function MySchedulePage() {
               >
                 <div className="text-xs text-slate-500">{day}</div>
                 <div
-                  className="mt-1 text-xs font-semibold rounded px-1 py-0.5 inline-block"
-                  style={{
-                    backgroundColor: style.bgColor,
-                    color: style.textColor,
-                    border: `1px solid ${style.borderColor}`,
-                  }}
+                  className={`mt-1 text-xs font-semibold rounded px-1 py-0.5 inline-block ${
+                    isFullDayLeave ? "bg-violet-500 text-white" : ""
+                  }`}
+                  style={
+                    isFullDayLeave
+                      ? undefined
+                      : {
+                          backgroundColor: style.bgColor,
+                          color: style.textColor,
+                          border: `1px solid ${style.borderColor}`,
+                        }
+                  }
                 >
-                  {style.displayText || style.label}
+                  {isFullDayLeave ? "假" : style.displayText || style.label}
                 </div>
+                {shiftInfo.isPartialLeave && (
+                  <div className="mt-1 text-[10px] text-amber-700 leading-tight">
+                    半日假
+                  </div>
+                )}
                 {ranges.length > 0 && (
                   <div className="mt-1 text-[10px] text-slate-500 leading-tight">
                     {ranges.join(" ")}

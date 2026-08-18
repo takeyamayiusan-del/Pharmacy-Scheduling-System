@@ -12,6 +12,7 @@ import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastMonth } from "@/lib/schedule/monthAccess";
 import { LeaveOrderGuide } from "@/components/schedule/LeaveOrderGuide";
 import { HelpTip } from "@/components/ui/HelpTip";
+import { getLocalDayOfWeek } from "@/lib/schedule/sundayRest";
 
 type PendingEveningLeave = {
   dateStr: string;
@@ -48,7 +49,7 @@ export default function LeaveSelectionPage() {
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
   const daysInMonth = new Date(year, month, 0).getDate();
-  const firstDayOffset = (new Date(year, month - 1, 1).getDay() + 6) % 7;
+  const firstDayOffset = new Date(year, month - 1, 1).getDay();
   const saturdayCount = countSaturdaysInMonth(year, month);
   const leaveSummary = currentUser ? getLeaveSummary(currentUser.id, year, month) : null;
   const selectedDates = leaveSummary?.selectedDates ?? [];
@@ -232,8 +233,10 @@ export default function LeaveSelectionPage() {
           ；含晚班／全天覆蓋的班別排休時會提醒代班
         </p>
         <p>
-          • <strong>點選日期即會儲存或取消</strong>，沒有確認鍵，也無需另外提交
+          • <strong>點選日期即會儲存或取消</strong>，沒有確認鍵，也無需另外提交；選取後會同步到月曆式班表當日為休假
         </p>
+        <p>• 月曆表頭為「日～六」，與「我的班表」相同，格子也標示星期，避免對錯日期</p>
+        <p>• 已核准的請假以月曆式班表為準，「我的班表」會顯示相同結果（全日假／半日假）</p>
         <p>• 若選到您原為含晚班（或全天覆蓋）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
         {saturdayCount >= 5 && storeConfig.policies.saturdayQuotaMode === "fixed" && (
           <p className="text-violet-700 font-medium">
@@ -303,17 +306,17 @@ export default function LeaveSelectionPage() {
       <div className="app-panel overflow-hidden max-w-4xl">
         <div className="p-3 sm:p-5">
           <div className="grid grid-cols-7 gap-1.5 sm:gap-2">
-            {["一", "二", "三", "四", "五", "六", "日"].map((d, i) => (
+            {["日", "一", "二", "三", "四", "五", "六"].map((d, i) => (
               <div
                 key={i}
-                className={`text-center font-medium py-1.5 text-xs sm:text-sm ${i === 6 ? "text-red-600" : i === 5 ? "text-orange-600" : "text-gray-700"}`}
+                className={`text-center font-medium py-1.5 text-xs sm:text-sm ${i === 0 ? "text-red-600" : i === 6 ? "text-orange-600" : "text-gray-700"}`}
               >
                 {d}
               </div>
             ))}
 
             {Array.from({ length: firstDayOffset }, (_, i) => (
-              <div key={`empty-${i}`} className="h-14 sm:h-16 rounded-lg bg-transparent" />
+              <div key={`empty-${i}`} className="min-h-[4.25rem] sm:min-h-[4.75rem] rounded-lg bg-transparent" />
             ))}
 
             {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
@@ -323,13 +326,14 @@ export default function LeaveSelectionPage() {
               const canSelect = canSelectDate(day);
               const isSelected = selectedDates.includes(dateStr);
               const holidayInfo = getHolidayInfo(dateStr);
+              const weekday = ["日", "一", "二", "三", "四", "五", "六"][getLocalDayOfWeek(dateStr)] ?? "";
 
               return (
                 <div
                   key={day}
                   onClick={() => canSelect && toggleDate(day)}
                   className={`
-                    h-14 sm:h-16 flex flex-col items-center justify-center rounded-lg relative text-sm
+                    min-h-[4.25rem] sm:min-h-[4.75rem] py-1 flex flex-col items-center justify-center rounded-lg relative text-sm
                     ${isSelected ? "bg-green-500 text-white cursor-pointer" : "bg-gray-50 hover:bg-gray-100"}
                     ${isSun ? "bg-red-50 text-red-600" : ""}
                     ${isSat && !isSelected ? "bg-orange-50" : ""}
@@ -337,8 +341,11 @@ export default function LeaveSelectionPage() {
                   `}
                 >
                   <span className="font-medium leading-none">{day}</span>
-                  {isSelected && <span className="text-[10px] sm:text-xs leading-tight mt-0.5">已選</span>}
-                  {isSun && <span className="text-[10px] sm:text-xs leading-tight mt-0.5">固定</span>}
+                  <span className={`text-[10px] leading-tight mt-0.5 ${isSelected ? "text-white/90" : isSun ? "text-red-500" : isSat ? "text-orange-600" : "text-slate-400"}`}>
+                    {weekday}
+                  </span>
+                  {isSelected && <span className="text-[10px] sm:text-xs leading-tight">已選</span>}
+                  {isSun && !isSelected && <span className="text-[10px] sm:text-xs leading-tight">固定</span>}
                   {holidayInfo.isHoliday && !isSun && (
                     <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-yellow-400 text-yellow-950 text-[10px] sm:text-xs font-bold leading-none py-0.5 text-center border-t border-amber-600">
                       國定

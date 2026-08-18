@@ -1,5 +1,7 @@
 /** 月份／日期是否可編輯（排休選擇、班表、申請） */
 
+import { parseLocalDateParts } from "@/lib/schedule/sundayRest";
+
 export function isPastMonth(year: number, month: number): boolean {
   const today = new Date();
   const currentMonthStart = new Date(today.getFullYear(), today.getMonth(), 1).getTime();
@@ -8,8 +10,9 @@ export function isPastMonth(year: number, month: number): boolean {
 }
 
 export function isPastDate(dateStr: string): boolean {
-  const date = new Date(dateStr);
-  return isPastMonth(date.getFullYear(), date.getMonth() + 1);
+  const parts = parseLocalDateParts(dateStr);
+  if (!parts) return false;
+  return isPastMonth(parts.y, parts.m);
 }
 
 /** 當月第一天，供 date input min 使用 */
@@ -21,12 +24,13 @@ export function currentMonthMinDate(): string {
 }
 
 export function hasPastMonthInRange(startDate: string, endDate: string): boolean {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-  const endMonth = new Date(end.getFullYear(), end.getMonth(), 1);
+  const start = parseLocalDateParts(startDate);
+  const end = parseLocalDateParts(endDate);
+  if (!start || !end) return false;
+  const cursor = new Date(start.y, start.m - 1, 1);
+  const endMonth = new Date(end.y, end.m - 1, 1);
 
-  while (cursor <= endMonth) {
+  while (cursor.getTime() <= endMonth.getTime()) {
     if (isPastMonth(cursor.getFullYear(), cursor.getMonth() + 1)) return true;
     cursor.setMonth(cursor.getMonth() + 1);
   }

@@ -6,6 +6,7 @@ import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
 import { canManageSite } from "@/lib/auth/roles";
 import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import { isEmployeeActiveInMonth, isEmployeeActiveOnDate } from "@/lib/schedule/employeeActivePeriod";
+import { getDisplayedShiftInfo } from "@/lib/schedule/leaveSchedule";
 import {
   getScheduleShiftOptions,
   resolveShiftDisplay,
@@ -33,6 +34,8 @@ export default function PersonSchedulePage() {
     isSaturday,
     updateShift,
     getBaseShiftForDate,
+    leaveRequests,
+    overtimeRequests,
   } = useApp();
 
   const isManager = canManageSite(currentUser?.role);
@@ -190,10 +193,22 @@ export default function PersonSchedulePage() {
               const day = i + 1;
               const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
               const shift = getShiftForDate(dateStr, emp.id);
-              const style = resolveShiftDisplay(shift, storeConfig, shiftDisplayConfig);
+              const shiftInfo = getDisplayedShiftInfo({
+                date: dateStr,
+                employeeId: emp.id,
+                originalShift: shift,
+                leaveRequests,
+                overtimeRequests,
+                getBaseShiftForDate,
+              });
+              const displayShift = shiftInfo.hasLeave ? shiftInfo.effectiveShift : shiftInfo.originalShift;
+              const isFullDayLeave = shiftInfo.hasLeave && shiftInfo.effectiveShift === "X";
+              const style = resolveShiftDisplay(displayShift, storeConfig, shiftDisplayConfig);
               const holiday = getHolidayInfo(dateStr);
               const note = getScheduleNote(dateStr, emp.id);
-              const ranges = resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig);
+              const ranges = isFullDayLeave
+                ? []
+                : resolveShiftTimeRanges(displayShift, storeConfig, shiftTimeConfig);
               const sun = isSunday(dateStr);
               const editable = !sun && !isPastDate(dateStr);
               const isEditing = editingDate === dateStr;
@@ -256,17 +271,24 @@ export default function PersonSchedulePage() {
                       type="button"
                       disabled={!editable}
                       onClick={() => editable && setEditingDate(dateStr)}
-                      style={{
-                        backgroundColor: style.bgColor,
-                        color: style.textColor,
-                        borderColor: style.borderColor,
-                      }}
+                      style={
+                        isFullDayLeave
+                          ? undefined
+                          : {
+                              backgroundColor: style.bgColor,
+                              color: style.textColor,
+                              borderColor: style.borderColor,
+                            }
+                      }
                       className={`w-full rounded border text-xs font-semibold py-1 ${
-                        editable ? "hover:opacity-80" : "opacity-70 cursor-default"
-                      }`}
+                        isFullDayLeave ? "bg-violet-500 text-white border-violet-600" : ""
+                      } ${editable ? "hover:opacity-80" : "opacity-70 cursor-default"}`}
                     >
-                      {style.displayText || style.label}
+                      {isFullDayLeave ? "假" : style.displayText || style.label}
                     </button>
+                  )}
+                  {shiftInfo.isPartialLeave && (
+                    <p className="text-[10px] text-amber-700 mt-1 leading-tight">半日假</p>
                   )}
                   <p className="text-[10px] text-slate-500 mt-1 leading-tight">
                     {ranges.slice(0, 2).join(" ")}

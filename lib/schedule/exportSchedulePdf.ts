@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import type { ScheduleShiftCode, ShiftDisplayConfig } from "@/lib/context/AppContext";
 import type { StoreConfig } from "@/lib/store-config";
 import { resolveShiftDisplay } from "@/lib/shift-catalog/resolve";
+import { getLocalDayOfWeek } from "@/lib/schedule/sundayRest";
 
 export type ExportEmployee = { id: string; name: string };
 export type ExportLayout = "landscape" | "portrait";
@@ -79,7 +80,7 @@ function drawScheduleSegment(
 
   for (let day = dayStart; day <= dayEnd; day += 1) {
     const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    const dayOfWeek = new Date(dateStr).getDay();
+    const dayOfWeek = getLocalDayOfWeek(dateStr);
     const holidayInfo = getHolidayInfo(dateStr);
     const typhoon = typhoonDates?.[dateStr];
     const col = day - dayStart;
@@ -154,7 +155,7 @@ function drawScheduleSegment(
       const shift = getShiftForDate(dateStr, emp.id);
       const col = day - dayStart;
       const x = tableX + nameColWidth + col * dayColWidth;
-      const dayOfWeek = new Date(dateStr).getDay();
+      const dayOfWeek = getLocalDayOfWeek(dateStr);
       const holidayInfo = getHolidayInfo(dateStr);
       const isTyphoon = Boolean(typhoonDates?.[dateStr]);
       const cellBg = isTyphoon

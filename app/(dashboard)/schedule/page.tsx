@@ -10,7 +10,8 @@ import { workHoursRegimeMeta } from "@/lib/attendance/workHoursRegime";
 import { formatShiftName } from "@/lib/schedule/shiftLabels";
 import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import { isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
-import { calculateLeaveDisplayOnSchedule, getOriginalShiftForLeaveDay } from "@/lib/schedule/leaveSchedule";
+import { getDisplayedShiftInfo } from "@/lib/schedule/leaveSchedule";
+import { getLocalDayOfWeek, isLocalDateInMonth, parseLocalDateParts } from "@/lib/schedule/sundayRest";
 import {
   getHolidayWorkShiftOptions,
   type HolidayWorkShiftChoice,
@@ -353,22 +354,15 @@ export default function SchedulePage() {
   const handleExportPdf = async (layout: ExportLayout) => {
     // 創建一個包裝函數，在匯出時考慮請假和加班
     const getShiftForDateWithLeave = (date: string, employeeId: string): ScheduleShiftCode => {
-      const shift = getShiftForDate(date, employeeId);
-      
-      // 檢查是否有核准的請假申請
-      const approvedLeave = leaveRequests.find(
-        (req) =>
-          req.employeeId === employeeId &&
-          req.startDate <= date &&
-          req.endDate >= date &&
-          req.status === "approved"
-      );
-
-      if (approvedLeave) {
-        return "X";
-      }
-
-      return shift;
+      const info = getDisplayedShiftInfo({
+        date,
+        employeeId,
+        originalShift: getShiftForDate(date, employeeId),
+        leaveRequests,
+        overtimeRequests,
+        getBaseShiftForDate,
+      });
+      return info.hasLeave ? info.effectiveShift : info.originalShift;
     };
 
     await exportSchedulePdf({
@@ -389,70 +383,15 @@ export default function SchedulePage() {
   };
 
   // 獲取員工在特定日期的請假或加班資訊
-  const getEmployeeShiftInfo = (date: string, employeeId: string) => {
-    const originalShift = getShiftForDate(date, employeeId);
-
-    const approvedLeave = leaveRequests.find(
-      (req) =>
-        req.employeeId === employeeId &&
-        req.startDate <= date &&
-        req.endDate >= date &&
-        req.status === "approved"
-    );
-
-    const approvedOvertime = overtimeRequests.find(
-      (req) =>
-        req.employeeId === employeeId &&
-        req.date === date &&
-        req.status === "approved"
-    );
-
-    if (!approvedLeave) {
-      return {
-        originalShift,
-        effectiveShift: originalShift,
-        effectiveShiftDetails: "",
-        hasLeave: false,
-        isPartialLeave: false,
-        hasOvertime: !!approvedOvertime,
-        leaveType: undefined,
-        leaveStartTime: undefined,
-        leaveEndTime: undefined,
-        overtimeInfo: approvedOvertime
-          ? { startTime: approvedOvertime.startTime, endTime: approvedOvertime.endTime }
-          : null,
-      };
-    }
-
-    const baseShift = getOriginalShiftForLeaveDay({
-      employeeId,
+  const getEmployeeShiftInfo = (date: string, employeeId: string) =>
+    getDisplayedShiftInfo({
       date,
-      shiftMode: approvedLeave.shiftMode,
-      scheduleSnapshot: approvedLeave.scheduleSnapshot,
+      employeeId,
+      originalShift: getShiftForDate(date, employeeId),
+      leaveRequests,
+      overtimeRequests,
       getBaseShiftForDate,
     });
-    const leaveDisplay = calculateLeaveDisplayOnSchedule(
-      baseShift,
-      approvedLeave.period,
-      approvedLeave.startTime,
-      approvedLeave.endTime
-    );
-
-    return {
-      originalShift: baseShift,
-      effectiveShift: leaveDisplay.effectiveShift,
-      effectiveShiftDetails: leaveDisplay.effectiveShiftDetails,
-      hasLeave: true,
-      isPartialLeave: leaveDisplay.isPartialLeave,
-      hasOvertime: !!approvedOvertime,
-      leaveType: approvedLeave.type,
-      leaveStartTime: leaveDisplay.leaveStartTime,
-      leaveEndTime: leaveDisplay.leaveEndTime,
-      overtimeInfo: approvedOvertime
-        ? { startTime: approvedOvertime.startTime, endTime: approvedOvertime.endTime }
-        : null,
-    };
-  };
 
   const dateModalWorkers = selectedDate
     ? displayEmployees.map((emp) => {
@@ -551,7 +490,7 @@ export default function SchedulePage() {
     const isFullDayLeave = shiftInfo.hasLeave && shiftInfo.effectiveShift === "X";
     const isPartialLeave = shiftInfo.isPartialLeave;
     const wednesdayNightShift = wednesdayNightShifts.find(s => s.date === date && s.employeeId === employeeId);
-    const dayOfWeek = new Date(date).getDay();
+    const dayOfWeek = getLocalDayOfWeek(date);
     const hasFixedShift = fixedShifts.some(f => f.employeeId === employeeId && f.dayOfWeek === dayOfWeek);
 
     if (isEditing) {
@@ -969,13 +908,13 @@ export default function SchedulePage() {
         </h3>
         <div className="flex flex-wrap gap-2">
           {wednesdayNightShifts
-            .filter(s => new Date(s.date).getMonth() + 1 === month && new Date(s.date).getFullYear() === year)
+            .filter((s) => isLocalDateInMonth(s.date, year, month))
             .map((s) => {
               const emp = employees.find(e => e.id === s.employeeId);
-              const date = new Date(s.date);
+              const parts = parseLocalDateParts(s.date);
               return (
                 <div key={s.date} className="rounded-xl border border-pink-100 bg-pink-50/80 p-2.5 min-w-[5.5rem]">
-                  <div className="text-sm font-medium text-slate-900">{date.getMonth() + 1}/{date.getDate()}</div>
+                  <div className="text-sm font-medium text-slate-900">{parts ? `${parts.m}/${parts.d}` : s.date}</div>
                   <div className="text-xs text-slate-600">{emp?.name}</div>
                   {rotationEmployees.length > 0 && (
                     <div className="text-[11px] text-slate-500 mt-1">
@@ -1130,8 +1069,7 @@ export default function SchedulePage() {
                 </th>
                 {Array.from({ length: daysInMonth }, (_, i) => i + 1).map((day) => {
                   const dateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const date = new Date(dateStr);
-                  const dayOfWeek = date.getDay();
+                  const dayOfWeek = getLocalDayOfWeek(dateStr);
                   const holidayInfo = getHolidayInfo(dateStr);
                   const isToday = dateStr === todayDateStr;
                   const typhoon = typhoonDates[dateStr];

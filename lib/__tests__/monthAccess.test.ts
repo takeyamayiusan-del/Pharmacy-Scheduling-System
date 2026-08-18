@@ -25,6 +25,7 @@ describe("monthAccess", () => {
     vi.setSystemTime(new Date(2026, 5, 30)); // 2026-06-30
 
     expect(isPastDate("2026-05-31")).toBe(true);
+    expect(isPastDate("2026-05-31T00:00:00.000Z")).toBe(true);
     expect(isPastDate("2026-06-01")).toBe(false);
   });
 

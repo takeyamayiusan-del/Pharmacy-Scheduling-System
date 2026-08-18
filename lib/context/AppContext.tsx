@@ -27,9 +27,12 @@ import {
   assertSundayShiftAllowed,
   getLocalDayOfWeek,
   isFixedSundayRest,
+  isLocalDateInMonth,
   isLocalSaturday,
   isLocalTuesday,
   isLocalWednesday,
+  normalizeCalendarDate,
+  parseLocalDateParts,
 } from "@/lib/schedule/sundayRest";
 import { resolveDefaultWorkShift } from "@/lib/schedule/defaultWorkShift";
 import { isEmployeeActiveOnDate, isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
@@ -430,10 +433,8 @@ export const countSaturdaysInMonth = (year: number, month: number): number => {
 export const getMonthWednesdays = (year: number, month: number) =>
   getMonthRotationDates(year, month, [3]);
 
-const isInMonth = (dateStr: string, year: number, month: number) => {
-  const date = new Date(dateStr);
-  return date.getFullYear() === year && date.getMonth() + 1 === month;
-};
+const isInMonth = (dateStr: string, year: number, month: number) =>
+  isLocalDateInMonth(dateStr, year, month);
 
 const normalizeFixedShifts = (shifts: FixedShift[]) => {
   const unique = new Map<string, FixedShift>();
@@ -706,12 +707,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const result: ScheduleData = {};
     const notes: Record<string, Record<string, ScheduleCellNote>> = {};
     (data ?? []).forEach((r) => {
-      if (!result[r.date]) result[r.date] = {};
-      result[r.date][r.user_id] = r.shift_code as ScheduleShiftCode;
+      const date = normalizeCalendarDate(r.date);
+      if (!date) return;
+      if (!result[date]) result[date] = {};
+      result[date][r.user_id] = r.shift_code as ScheduleShiftCode;
       const note = typeof r.note === "string" ? r.note.trim() : "";
       if (note) {
-        if (!notes[r.date]) notes[r.date] = {};
-        notes[r.date][r.user_id] = {
+        if (!notes[date]) notes[date] = {};
+        notes[date][r.user_id] = {
           note,
           kind: String(r.note_kind ?? ""),
         };
@@ -726,8 +729,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (data) {
       const result: LeaveSelections = {};
       data.forEach((r) => {
+        const date = normalizeCalendarDate(r.date);
+        if (!date) return;
         if (!result[r.user_id]) result[r.user_id] = [];
-        result[r.user_id].push(r.date);
+        result[r.user_id].push(date);
       });
       setLeaveSelections(result);
     }
@@ -776,8 +781,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (data) {
       const result: WednesdayOffSelections = {};
       data.forEach((r) => {
+        const date = normalizeCalendarDate(r.date);
+        if (!date) return;
         if (!result[r.user_id]) result[r.user_id] = [];
-        result[r.user_id].push(r.date);
+        result[r.user_id].push(date);
       });
       setWednesdayOffSelections(result);
     }
@@ -1081,8 +1088,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: r.id,
           employeeId: r.user_id,
           employeeName: (r.users as { name?: string } | null)?.name ?? "",
-          startDate: r.leave_date,
-          endDate: r.end_date ?? r.leave_date,
+          startDate: normalizeCalendarDate(r.leave_date),
+          endDate: normalizeCalendarDate(r.end_date ?? r.leave_date),
           startTime,
           endTime,
           period,
@@ -1323,7 +1330,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           id: r.id,
           employeeId: r.user_id,
           employeeName: (r.users as { name?: string } | null)?.name ?? "",
-          date: r.overtime_date,
+          date: normalizeCalendarDate(r.overtime_date),
           startTime: formatDbTime(r.start_time, "18:00"),
           endTime: formatDbTime(r.end_time, "20:00"),
           reason: r.reason,
@@ -1338,12 +1345,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [supabase]);
 
-  const normalizeDateString = (value: string | Date | null | undefined) => {
-    if (!value) return "";
-    const raw = typeof value === "string" ? value : value.toISOString();
-    const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
-    return match ? match[1] : "";
-  };
+  const normalizeDateString = (value: string | Date | null | undefined) =>
+    normalizeCalendarDate(value);
 
   const loadTardinessRecords = useCallback(async () => {
     const { data } = await supabase
@@ -1846,7 +1849,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
 
     // 排休勾選（含週六）優先於預設／固定班
-    if ((leaveSelections[employeeId] ?? []).includes(date)) return "X";
+    const dateKey = normalizeCalendarDate(date);
+    if ((leaveSelections[employeeId] ?? []).some((d) => normalizeCalendarDate(d) === dateKey)) {
+      return "X";
+    }
 
     return getWorkShiftIgnoringLeave(date, employeeId);
   };
@@ -1865,7 +1871,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       if (fixedSat?.shift === "X") return "X";
     }
-    const override = schedule[date]?.[employeeId];
+    const dateKey = normalizeCalendarDate(date) || date;
+    const override = schedule[dateKey]?.[employeeId];
     if (override) return override;
     return getBaseShiftForDate(date, employeeId);
   };
@@ -1899,8 +1906,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error("已過去的月份無法修改班表");
     }
 
-    const y = new Date(date).getFullYear();
-    const m = new Date(date).getMonth() + 1;
+    const ym = parseLocalDateParts(date);
+    const y = ym?.y ?? 0;
+    const m = ym?.m ?? 0;
     const monthLocked = isLeaveMonthLocked(y, m);
     const canOverrideLocked = canManageSite(currentUser?.role);
     if (monthLocked && !canOverrideLocked) {
@@ -1910,7 +1918,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const isManagerEdit =
       canManageSite(currentUser?.role);
     const emp = employees.find((e) => e.id === employeeId);
-    const alreadySelected = (leaveSelections[employeeId] ?? []).includes(date);
+    const alreadySelected = (leaveSelections[employeeId] ?? []).some(
+      (d) => normalizeCalendarDate(d) === normalizeCalendarDate(date)
+    );
     const syncAction = shouldSyncLeaveSelection(date, shift);
 
     if (isManagerEdit && syncAction === "add" && !alreadySelected) {
@@ -2231,8 +2241,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { success: false, message: `只能設定${days}的晚班排休` };
     }
 
-    const year = new Date(date).getFullYear();
-    const month = new Date(date).getMonth() + 1;
+    const ym = parseLocalDateParts(date);
+    if (!ym) return { success: false, message: "日期格式錯誤" };
+    const year = ym.y;
+    const month = ym.m;
     const selectedDates = getWednesdayOffDates(employeeId, year, month);
     const selected = selectedDates.includes(date);
 
@@ -2281,7 +2293,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Leave selections ────────────────────────────────────────────────────────
 
   const getLeaveSummary = (employeeId: string, year: number, month: number): LeaveSummary => {
-    const selectedDates = (leaveSelections[employeeId] ?? []).filter((d) => isInMonth(d, year, month));
+    const selectedDates = (leaveSelections[employeeId] ?? [])
+      .map((d) => normalizeCalendarDate(d))
+      .filter((d) => d && isInMonth(d, year, month));
     const selectedSaturdayDates = selectedDates.filter((d) => isSaturday(d));
     const weekdayDates = selectedDates.filter((d) => !isSaturday(d) && !isSunday(d));
 
@@ -2305,11 +2319,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const toggleLeaveDate = (employeeId: string, date: string) => {
-    const dateObject = new Date(date);
-    const year = dateObject.getFullYear();
-    const month = dateObject.getMonth() + 1;
+    const normalized = normalizeCalendarDate(date);
+    const parts = parseLocalDateParts(normalized);
+    if (!parts) {
+      return { success: false, message: "日期格式錯誤" };
+    }
+    const year = parts.y;
+    const month = parts.m;
 
-    if (isPastMonth(year, month) || isPastDate(date)) {
+    if (isPastMonth(year, month) || isPastDate(normalized)) {
       return { success: false, message: "已過去的月份無法變更排休選擇" };
     }
 
@@ -2318,30 +2336,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const summary = getLeaveSummary(employeeId, year, month);
-    const isSelected = summary.selectedDates.includes(date);
+    const isSelected = summary.selectedDates.includes(normalized);
 
     const emp = employees.find((e) => e.id === employeeId);
     const isWeekdayOffRule = emp?.isWeekdayOffRule ?? false;
 
+    const syncScheduleRest = (action: "add" | "remove") => {
+      if (action === "add") {
+        setSchedule((prev) => ({
+          ...prev,
+          [normalized]: { ...prev[normalized], [employeeId]: "X" },
+        }));
+        void upsertScheduleShift(supabase, employeeId, normalized, "X", currentUser?.id).catch(
+          (error) => console.error("[toggleLeaveDate] 同步班表休假失敗:", error)
+        );
+        return;
+      }
+      if (schedule[normalized]?.[employeeId] !== "X") return;
+      setSchedule((prev) => {
+        const day = { ...(prev[normalized] ?? {}) };
+        delete day[employeeId];
+        return { ...prev, [normalized]: day };
+      });
+      void supabase
+        .from("schedule_entries")
+        .delete()
+        .eq("user_id", employeeId)
+        .eq("date", normalized)
+        .then(({ error }) => {
+          if (error) console.error("[toggleLeaveDate] 取消班表休假失敗:", error);
+        });
+    };
+
     if (isSelected) {
-      // Optimistic update
       setLeaveSelections((prev) => ({
         ...prev,
-        [employeeId]: (prev[employeeId] ?? []).filter((d) => d !== date),
+        [employeeId]: (prev[employeeId] ?? []).filter((d) => normalizeCalendarDate(d) !== normalized),
       }));
       supabase
         .from("leave_selections")
         .delete()
         .eq("user_id", employeeId)
-        .eq("date", date)
+        .eq("date", normalized)
         .then();
+      syncScheduleRest("remove");
       return { success: true };
     }
 
-    if (isSunday(date)) return { success: false, message: "禮拜日固定公休，不需要另外選擇" };
-    if (isWeekdayOffRule && !isSaturday(date)) return { success: false, message: "此員工套用平日不排休規則，排休只能選擇週六" };
+    if (isSunday(normalized)) return { success: false, message: "禮拜日固定公休，不需要另外選擇" };
+    if (isWeekdayOffRule && !isSaturday(normalized)) return { success: false, message: "此員工套用平日不排休規則，排休只能選擇週六" };
 
-    if (isSaturday(date)) {
+    if (isSaturday(normalized)) {
       if (summary.saturdayUsed >= summary.saturdayLimit)
         return {
           success: false,
@@ -2357,12 +2402,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
     }
 
-    // Optimistic update
     setLeaveSelections((prev) => ({
       ...prev,
-      [employeeId]: [...(prev[employeeId] ?? []), date],
+      [employeeId]: [...(prev[employeeId] ?? []), normalized],
     }));
-    supabase.from("leave_selections").insert({ user_id: employeeId, date }).then();
+    supabase.from("leave_selections").insert({ user_id: employeeId, date: normalized }).then();
+    syncScheduleRest("add");
     return { success: true };
   };
 
@@ -3033,8 +3078,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       id: row.id,
       employeeId: row.user_id,
       employeeName: (row.users as { name?: string } | null)?.name ?? "",
-      startDate: row.leave_date,
-      endDate: row.end_date ?? row.leave_date,
+      startDate: normalizeCalendarDate(row.leave_date),
+      endDate: normalizeCalendarDate(row.end_date ?? row.leave_date),
       startTime,
       endTime,
       period,
