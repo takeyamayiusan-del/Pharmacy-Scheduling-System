@@ -57,8 +57,10 @@ export type MedicineRequest = {
   siteId: SiteId;
   kind: MedicineKind;
   itemName: string;
+  nhiCode: string;
   qtyMode: MedicineQtyMode;
   quantity: number | null;
+  unit: string;
   useIc02: boolean;
   ic02Qty: number | null;
   useIc03: boolean;
@@ -88,8 +90,15 @@ export type CustomerOrder = {
   productName: string;
   nhiCode: string;
   quantity: number;
+  unit: string;
   amount: number;
   paymentStatus: CustomerPaymentStatus;
+  goodsArrived: boolean;
+  notified: boolean;
+  pickedUp: boolean;
+  goodsArrivedAt: string | null;
+  notifiedAt: string | null;
+  pickedUpAt: string | null;
   note: string;
   status: ShopRecordStatus;
   createdBy: string;
@@ -97,6 +106,41 @@ export type CustomerOrder = {
   closedAt: string | null;
   createdAt: string;
 };
+
+export type FulfillmentFilter =
+  | "all"
+  | "not_arrived"
+  | "arrived_unnotified"
+  | "notified_unpicked"
+  | "picked";
+
+export const FULFILLMENT_FILTER_LABELS: Record<FulfillmentFilter, string> = {
+  all: "全部",
+  not_arrived: "未到貨",
+  arrived_unnotified: "已到貨未通知",
+  notified_unpicked: "已通知未拿",
+  picked: "已拿",
+};
+
+export function fulfillmentStage(row: CustomerOrder): Exclude<FulfillmentFilter, "all"> {
+  if (row.pickedUp) return "picked";
+  if (row.notified) return "notified_unpicked";
+  if (row.goodsArrived) return "arrived_unnotified";
+  return "not_arrived";
+}
+
+export function matchesFulfillmentFilter(row: CustomerOrder, filter: FulfillmentFilter): boolean {
+  if (filter === "all") return true;
+  return fulfillmentStage(row) === filter;
+}
+
+export function formatFulfillmentMarks(row: CustomerOrder): string {
+  return [
+    row.goodsArrived ? "已到貨" : "未到貨",
+    row.notified ? "已通知" : "未通知",
+    row.pickedUp ? "已拿" : "未拿",
+  ].join("／");
+}
 
 export function parsePositiveNumber(raw: unknown): number | null {
   if (raw === "" || raw === null || raw === undefined) return null;
@@ -147,16 +191,17 @@ export function validateMedicineDraft(input: {
 }
 
 export function formatMedicineQty(row: MedicineRequest): string {
+  const unit = row.unit?.trim() ? ` ${row.unit.trim()}` : "";
   if (row.kind === "below_stock") {
-    return `現存 ${row.currentStock ?? 0}`;
+    return `現存 ${row.currentStock ?? 0}${unit}`;
   }
   if (row.qtyMode === "refill") {
     const parts: string[] = [];
-    if (row.useIc02) parts.push(`IC02 第二次 ${row.ic02Qty ?? 0}`);
-    if (row.useIc03) parts.push(`IC03 第三次 ${row.ic03Qty ?? 0}`);
+    if (row.useIc02) parts.push(`IC02 第二次 ${row.ic02Qty ?? 0}${unit}`);
+    if (row.useIc03) parts.push(`IC03 第三次 ${row.ic03Qty ?? 0}${unit}`);
     return parts.join("／") || "—";
   }
-  return String(row.quantity ?? 0);
+  return `${row.quantity ?? 0}${unit}`;
 }
 
 export function validateProcurementDraft(input: {

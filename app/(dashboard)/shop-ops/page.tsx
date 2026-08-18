@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardList, Package, Pill, Plus, ShoppingBag, Trash2 } from "lucide-react";
+import { ClipboardList, FileDown, ListChecks, Package, Pill, Plus, Printer, ShoppingBag, Trash2 } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
 import { HelpTip } from "@/components/ui/HelpTip";
 import { canManageSite } from "@/lib/auth/roles";
@@ -17,17 +17,22 @@ import {
   loadCustomerOrders,
   loadMedicineRequests,
   loadProcurementItems,
+  updateCustomerFulfillment,
   updateCustomerPayment,
 } from "@/lib/shop-ops/api";
+import { exportCustomerOrdersExcel, printCustomerOrdersForm } from "@/lib/shop-ops/exportCustomerOrders";
 import {
   CUSTOMER_PAYMENT_LABELS,
+  FULFILLMENT_FILTER_LABELS,
   formatMedicineQty,
   formatMoney,
+  matchesFulfillmentFilter,
   MEDICINE_KIND_LABELS,
   MEDICINE_QTY_MODE_LABELS,
   SHOP_STATUS_LABELS,
   type CustomerOrder,
   type CustomerPaymentStatus,
+  type FulfillmentFilter,
   type MedicineKind,
   type MedicineQtyMode,
   type MedicineRequest,
@@ -36,7 +41,7 @@ import {
   type ShopRecordStatus,
 } from "@/lib/shop-ops/types";
 
-type TabKey = "procurement" | "medicine" | "customer";
+type TabKey = "procurement" | "medicine" | "customer" | "fulfillment";
 type ListFilter = "pending" | "closed";
 
 function formatWhen(iso: string): string {
@@ -50,7 +55,7 @@ function formatWhen(iso: string): string {
 }
 
 export default function ShopOpsPage() {
-  const { currentUser, employees, activeSiteId } = useApp();
+  const { currentUser, employees, activeSiteId, storeConfig } = useApp();
   const [tab, setTab] = useState<TabKey>("procurement");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -111,7 +116,7 @@ export default function ShopOpsPage() {
             店務需求
           </h1>
           <p className="app-meta mt-1">
-            日常採購、叫藥、客人訂購。員工先登記，之後統一處理、結單；已結單紀錄會留下。
+            日常採購、叫藥、客人訂購、客訂管理。員工先登記，之後統一處理；客訂可追蹤到貨／通知／已拿並列印。
           </p>
         </div>
       </div>
@@ -124,12 +129,15 @@ export default function ShopOpsPage() {
       >
         <p>1. <strong>日常採購</strong>：文具、影印紙、貼紙等。類別可自己新增／刪除。</p>
         <p>
-          2. <strong>叫藥需求</strong>：包藥或缺貨時登記。預包／欠藥可直接填數量，或勾第二次（IC02）／第三次（IC03）；低於庫存填現存數量。
+          2. <strong>叫藥需求</strong>：包藥或缺貨時登記。預包／欠藥可直接填數量，或勾第二次（IC02）／第三次（IC03）；低於庫存填現存數量。健保碼、單位選填。
         </p>
         <p>
-          3. <strong>客人訂購</strong>：姓名、電話、商品、數量、金額、已付款／未付款。健保碼選填。接手人＝新增這筆的人。
+          3. <strong>客人訂購</strong>：姓名、電話、商品、數量、單位、金額、已付款／未付款。健保碼選填。接手人＝新增這筆的人。
         </p>
-        <p>4. 處理完按「結單」。待處理可刪；已結單只留紀錄、不刪。</p>
+        <p>
+          4. <strong>客訂管理</strong>：標記貨到了／已通知／已拿，可篩選、匯出 Excel、列印紙本勾選表。
+        </p>
+        <p>5. 處理完按「結單」。待處理可刪；已結單只留紀錄、不刪。</p>
       </HelpTip>
 
       <div className="flex flex-wrap gap-2">
@@ -138,6 +146,7 @@ export default function ShopOpsPage() {
             ["procurement", "日常採購", ShoppingBag],
             ["medicine", "叫藥需求", Pill],
             ["customer", "客人訂購", Package],
+            ["fulfillment", "客訂管理", ListChecks],
           ] as const
         ).map(([key, label, Icon]) => (
           <button
@@ -181,7 +190,7 @@ export default function ShopOpsPage() {
           isManager={isManager}
           onChanged={() => refresh({ silent: true })}
         />
-      ) : (
+      ) : tab === "customer" ? (
         <CustomerPanel
           items={customers}
           busy={busy}
@@ -190,6 +199,17 @@ export default function ShopOpsPage() {
           siteId={activeSiteId}
           userId={currentUser.id}
           userName={currentUser.name}
+          isManager={isManager}
+          onChanged={() => refresh({ silent: true })}
+        />
+      ) : (
+        <FulfillmentPanel
+          items={customers}
+          busy={busy}
+          setBusy={setBusy}
+          nameById={nameById}
+          storeName={storeConfig.storeName || "藥局"}
+          userId={currentUser.id}
           isManager={isManager}
           onChanged={() => refresh({ silent: true })}
         />
@@ -575,8 +595,10 @@ function MedicinePanel({
   const [form, setForm] = useState({
     kind: "shortage" as MedicineKind,
     itemName: "",
+    nhiCode: "",
     qtyMode: "direct" as MedicineQtyMode,
     quantity: "",
+    unit: "",
     useIc02: false,
     ic02Qty: "",
     useIc03: false,
@@ -600,7 +622,9 @@ function MedicinePanel({
       setForm((p) => ({
         ...p,
         itemName: "",
+        nhiCode: "",
         quantity: "",
+        unit: "",
         ic02Qty: "",
         ic03Qty: "",
         currentStock: "",
@@ -659,6 +683,18 @@ function MedicinePanel({
             placeholder="藥名／品名"
             value={form.itemName}
             onChange={(e) => setForm({ ...form, itemName: e.target.value })}
+          />
+          <input
+            className="border rounded-xl px-3 py-2 text-sm"
+            placeholder="健保碼（選填）"
+            value={form.nhiCode}
+            onChange={(e) => setForm({ ...form, nhiCode: e.target.value })}
+          />
+          <input
+            className="border rounded-xl px-3 py-2 text-sm"
+            placeholder="單位（選填，如盒／瓶／顆）"
+            value={form.unit}
+            onChange={(e) => setForm({ ...form, unit: e.target.value })}
           />
           {form.kind === "below_stock" ? (
             <label className="text-sm space-y-1 md:col-span-2">
@@ -805,6 +841,9 @@ function MedicinePanel({
                     {MEDICINE_KIND_LABELS[row.kind]}
                   </span>
                   <span className="font-semibold text-slate-900">{row.itemName}</span>
+                  {row.nhiCode ? (
+                    <span className="text-xs text-slate-500">健保碼 {row.nhiCode}</span>
+                  ) : null}
                   <span className="text-slate-700">{formatMedicineQty(row)}</span>
                   <StatusBadge status={row.status} />
                 </div>
@@ -887,6 +926,7 @@ function CustomerPanel({
     productName: "",
     nhiCode: "",
     quantity: "1",
+    unit: "",
     amount: "",
     paymentStatus: "unpaid" as CustomerPaymentStatus,
     note: "",
@@ -909,6 +949,7 @@ function CustomerPanel({
         productName: "",
         nhiCode: "",
         quantity: "1",
+        unit: "",
         amount: "",
         paymentStatus: "unpaid",
         note: "",
@@ -971,13 +1012,21 @@ function CustomerPanel({
             value={form.nhiCode}
             onChange={(e) => setForm({ ...form, nhiCode: e.target.value })}
           />
-          <input
-            className="border rounded-xl px-3 py-2 text-sm"
-            placeholder="數量"
-            inputMode="decimal"
-            value={form.quantity}
-            onChange={(e) => setForm({ ...form, quantity: e.target.value })}
-          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              className="border rounded-xl px-3 py-2 text-sm"
+              placeholder="數量"
+              inputMode="decimal"
+              value={form.quantity}
+              onChange={(e) => setForm({ ...form, quantity: e.target.value })}
+            />
+            <input
+              className="border rounded-xl px-3 py-2 text-sm"
+              placeholder="單位（選填）"
+              value={form.unit}
+              onChange={(e) => setForm({ ...form, unit: e.target.value })}
+            />
+          </div>
           <input
             className="border rounded-xl px-3 py-2 text-sm"
             placeholder="金額"
@@ -1074,8 +1123,8 @@ function CustomerPanel({
                 </div>
                 <p className="text-sm text-slate-800 mt-1">
                   {row.productName}
-                  {row.nhiCode ? `（健保碼 ${row.nhiCode}）` : ""} × {row.quantity} ·{" "}
-                  {formatMoney(row.amount)}
+                  {row.nhiCode ? `（健保碼 ${row.nhiCode}）` : ""} × {row.quantity}
+                  {row.unit ? ` ${row.unit}` : ""} · {formatMoney(row.amount)}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
                   接手 {nameById.get(row.handlerId) ?? "員工"} · {formatWhen(row.createdAt)}
@@ -1139,6 +1188,262 @@ function CustomerPanel({
                   </div>
                 )}
               </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToggleChip({
+  on,
+  onLabel,
+  offLabel,
+  disabled,
+  onClick,
+}: {
+  on: boolean;
+  onLabel: string;
+  offLabel: string;
+  disabled: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={`text-xs px-2.5 py-1 rounded-full border font-medium ${
+        on
+          ? "bg-emerald-600 text-white border-emerald-600"
+          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
+      }`}
+    >
+      {on ? onLabel : offLabel}
+    </button>
+  );
+}
+
+function FulfillmentPanel({
+  items,
+  busy,
+  setBusy,
+  nameById,
+  storeName,
+  userId,
+  isManager,
+  onChanged,
+}: {
+  items: CustomerOrder[];
+  busy: boolean;
+  setBusy: (v: boolean) => void;
+  nameById: Map<string, string>;
+  storeName: string;
+  userId: string;
+  isManager: boolean;
+  onChanged: () => Promise<void>;
+}) {
+  const [filter, setFilter] = useState<FulfillmentFilter>("all");
+  const [selected, setSelected] = useState<string[]>([]);
+  const handlerName = (id: string) => nameById.get(id) ?? "員工";
+  const visible = items.filter((row) => matchesFulfillmentFilter(row, filter));
+
+  const patch = async (
+    ids: string[],
+    fields: { goodsArrived?: boolean; notified?: boolean; pickedUp?: boolean }
+  ) => {
+    if (ids.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await updateCustomerFulfillment({ ids, ...fields });
+      setSelected([]);
+      await onChanged();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "更新失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="app-card p-4 space-y-3">
+        <h2 className="app-section-title">客訂管理</h2>
+        <p className="text-sm text-slate-600">
+          追蹤貨有沒有來、有沒有通知客人、客人有沒有拿走。可匯出 Excel 或列印成紙本勾選。
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="app-btn-outline inline-flex items-center gap-1"
+            disabled={visible.length === 0}
+            onClick={() =>
+              exportCustomerOrdersExcel({
+                storeName,
+                rows: visible,
+                handlerName,
+              })
+            }
+          >
+            <FileDown className="h-4 w-4" />
+            匯出表單
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline inline-flex items-center gap-1"
+            disabled={visible.length === 0}
+            onClick={() =>
+              printCustomerOrdersForm({
+                storeName,
+                rows: visible,
+                handlerName,
+              })
+            }
+          >
+            <Printer className="h-4 w-4" />
+            列印紙本
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {(Object.keys(FULFILLMENT_FILTER_LABELS) as FulfillmentFilter[]).map((key) => {
+          const count = items.filter((row) => matchesFulfillmentFilter(row, key)).length;
+          return (
+            <button
+              key={key}
+              type="button"
+              className={`px-3 py-1.5 rounded-lg text-sm border ${
+                filter === key ? "bg-sky-600 text-white border-sky-600" : "bg-white border-slate-200"
+              }`}
+              onClick={() => {
+                setFilter(key);
+                setSelected([]);
+              }}
+            >
+              {FULFILLMENT_FILTER_LABELS[key]}（{count}）
+            </button>
+          );
+        })}
+      </div>
+
+      {visible.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="app-btn-primary bg-emerald-600 hover:bg-emerald-700"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patch(selected, { goodsArrived: true })}
+          >
+            所選標記已到貨
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patch(selected, { notified: true })}
+          >
+            所選標記已通知
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patch(selected, { pickedUp: true })}
+          >
+            所選標記已拿
+          </button>
+        </div>
+      )}
+
+      {visible.length === 0 ? (
+        <div className="app-card p-6 text-center text-slate-500">這個篩選沒有客訂</div>
+      ) : (
+        <div className="space-y-2">
+          {visible.map((row) => (
+            <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
+              <input
+                type="checkbox"
+                className="mt-1"
+                checked={selected.includes(row.id)}
+                onChange={(e) =>
+                  setSelected((prev) =>
+                    e.target.checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
+                  )
+                }
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-slate-900">{row.customerName}</span>
+                  <span className="text-slate-600">{row.customerPhone}</span>
+                  <span
+                    className={`text-xs px-2 py-0.5 rounded-full ${
+                      row.paymentStatus === "paid"
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-rose-100 text-rose-800"
+                    }`}
+                  >
+                    {CUSTOMER_PAYMENT_LABELS[row.paymentStatus]}
+                  </span>
+                  <StatusBadge status={row.status} />
+                </div>
+                <p className="text-sm text-slate-800 mt-1">
+                  {row.productName}
+                  {row.nhiCode ? `（健保碼 ${row.nhiCode}）` : ""} × {row.quantity}
+                  {row.unit ? ` ${row.unit}` : ""} · {formatMoney(row.amount)}
+                </p>
+                <p className="text-xs text-slate-500 mt-1">
+                  接手 {handlerName(row.handlerId)} · {formatWhen(row.createdAt)}
+                </p>
+                {row.note && <p className="text-sm text-slate-600 mt-1">{row.note}</p>}
+                <div className="flex flex-wrap gap-2 mt-2">
+                  <ToggleChip
+                    on={row.goodsArrived}
+                    onLabel="已到貨"
+                    offLabel="未到貨"
+                    disabled={busy}
+                    onClick={() => void patch([row.id], { goodsArrived: !row.goodsArrived })}
+                  />
+                  <ToggleChip
+                    on={row.notified}
+                    onLabel="已通知"
+                    offLabel="未通知"
+                    disabled={busy}
+                    onClick={() => void patch([row.id], { notified: !row.notified })}
+                  />
+                  <ToggleChip
+                    on={row.pickedUp}
+                    onLabel="已拿"
+                    offLabel="未拿"
+                    disabled={busy}
+                    onClick={() => void patch([row.id], { pickedUp: !row.pickedUp })}
+                  />
+                </div>
+              </div>
+              {row.status === "pending" && (row.createdBy === userId || isManager) && (
+                <button
+                  type="button"
+                  className="text-slate-400 hover:text-rose-600"
+                  onClick={async () => {
+                    if (!window.confirm("刪除這筆待處理？")) return;
+                    setBusy(true);
+                    try {
+                      await deletePendingShopRecord({
+                        table: "shop_customer_orders",
+                        id: row.id,
+                      });
+                      await onChanged();
+                    } catch (err) {
+                      alert(err instanceof Error ? err.message : "刪除失敗");
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              )}
             </div>
           ))}
         </div>
