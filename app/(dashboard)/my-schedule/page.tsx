@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
 import { resolveShiftDisplay, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 import { isPastMonth } from "@/lib/schedule/monthAccess";
@@ -26,6 +26,8 @@ export default function MySchedulePage() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+  const [exportingImage, setExportingImage] = useState(false);
+  const exportRef = useRef<HTMLDivElement | null>(null);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -38,9 +40,30 @@ export default function MySchedulePage() {
   const styleOf = (shift: ScheduleShiftCode) =>
     resolveShiftDisplay(shift, storeConfig, shiftDisplayConfig);
 
+  const exportAsImage = async () => {
+    if (!exportRef.current || exportingImage) return;
+    setExportingImage(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(exportRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+      });
+      const link = document.createElement("a");
+      link.href = canvas.toDataURL("image/png");
+      link.download = `${year}-${String(month).padStart(2, "0")}-${currentUser.name}-我的班表.png`;
+      link.click();
+    } catch (error) {
+      console.error("[my-schedule] export image failed", error);
+      alert("匯出圖片失敗，請稍後再試");
+    } finally {
+      setExportingImage(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div className="app-toolbar">
+      <div className="app-toolbar justify-between">
         <div className="flex items-center gap-2 sm:gap-3 min-w-0">
           <button
             onClick={() => setCurrentDate(new Date(year, month - 2, 1))}
@@ -60,11 +83,24 @@ export default function MySchedulePage() {
             ▶
           </button>
         </div>
+        <button
+          type="button"
+          className="app-btn-outline shrink-0"
+          disabled={exportingImage}
+          onClick={() => void exportAsImage()}
+        >
+          {exportingImage ? "匯出中…" : "匯出圖片"}
+        </button>
       </div>
       {viewingPast && (
         <p className="text-sm text-slate-600">已過去的月份僅供查閱。</p>
       )}
-      <div className="app-card p-4">
+      <div ref={exportRef} className="app-card p-4 bg-white">
+        <div className="mb-3">
+          <h3 className="text-base font-semibold text-slate-900">
+            {year}年{month}月 {currentUser.name} 我的班表
+          </h3>
+        </div>
         <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-slate-500 mb-2">
           {dayLabels.map((d) => (
             <div key={d}>{d}</div>
