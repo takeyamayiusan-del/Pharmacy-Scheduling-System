@@ -362,12 +362,141 @@ function Test-CashflowHealthy {
     return $false
 }
 
-function Get-FunnelStatusJson {
-    if (-not (Get-Command tailscale -ErrorAction SilentlyContinue)) { return $null }
-    $raw = (tailscale funnel status --json 2>$null | Out-String)
-    if (-not $raw) { return $null }
+function Get-TailscaleCommand {
+    $cmd = Get-Command tailscale -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $candidates = @(
+        "C:\Program Files\Tailscale\tailscale.exe",
+        "${env:ProgramFiles(x86)}\Tailscale\tailscale.exe",
+        "$env:LOCALAPPDATA\Tailscale\tailscale.exe"
+    )
+    foreach ($p in $candidates) {
+        if ($p -and (Test-Path -LiteralPath $p)) { return $p }
+    }
+    return $null
+}
+
+function Get-FunnelPublicBaseUrl {
+    $ts = Get-TailscaleCommand
+    if ($ts) {
+        $text = (& $ts funnel status 2>$null | Out-String)
+        if ($text -match '(https://[a-z0-9-]+\.tail[a-z0-9]+\.ts\.net)') {
+            return $Matches[1].TrimEnd("/")
+        }
+        $json = (& $ts funnel status --json 2>$null | Out-String)
+        if ($json -match '(https://[a-z0-9-]+\.tail[a-z0-9]+\.ts\.net)') {
+            return $Matches[1].TrimEnd("/")
+        }
+    }
+    return "https://chiaho-pharmacy.tail7f62d0.ts.net"
+}
+
+function Get-TailscaleBackendState {
+    $ts = Get-TailscaleCommand
+    if (-not $ts) { return "missing" }
     try {
-        return ($raw | ConvertFrom-Json)
+        $raw = (& $ts status --json 2>$null | Out-String)
+        if ([string]::IsNullOrWhiteSpace($raw)) { return "unknown" }
+        $start = $raw.IndexOf("{")
+        $end = $raw.LastIndexOf("}")
+        if ($start -lt 0 -or $end -le $start) { return "unknown" }
+        $obj = ConvertFrom-Json -InputObject $raw.Substring($start, $end - $start + 1)
+        if ($obj.BackendState) { return [string]$obj.BackendState }
+        return "unknown"
+    } catch {
+        return "unknown"
+    }
+}
+
+function Test-FunnelPublicOk {
+    param(
+        [string]$Path = "/login",
+        [int]$HttpsPort = 443,
+        [int]$TimeoutSec = 20
+    )
+    $base = Get-FunnelPublicBaseUrl
+    if (-not $base) { return $false }
+    if ($HttpsPort -eq 443) {
+        $uri = "$base$Path"
+    } else {
+        $uri = "{0}:{1}{2}" -f $base, $HttpsPort, $Path
+    }
+    try {
+        $out = & curl.exe -s -o NUL -w "%{http_code}" --connect-timeout 8 --max-time $TimeoutSec $uri 2>$null
+        if ($LASTEXITCODE -ne 0) { return $false }
+        $code = ("$out").Trim()
+        return ($code -eq "200" -or $code -eq "204" -or $code -eq "301" -or $code -eq "302" -or $code -eq "304" -or $code -eq "307" -or $code -eq "308")
+    } catch {
+        return $false
+    }
+}
+
+function Restore-FunnelDualRoutes {
+    param([scriptblock]$WriteLog = { param($m) Write-Host $m })
+
+    $ts = Get-TailscaleCommand
+    if (-not $ts) {
+        & $WriteLog "tailscale.exe not found"
+        return $false
+    }
+
+    # 只補缺／重宣告，绝不 funnel reset（reset 會把 8443 一併清掉）
+    $out1 = (& $ts funnel --bg --yes --https=443 3000 2>&1 | Out-String)
+    & $WriteLog ("funnel 443->3000: " + $out1.Trim())
+    Start-Sleep -Seconds 1
+    $out2 = (& $ts funnel --bg --yes --https=8443 "http://127.0.0.1:5000" 2>&1 | Out-String)
+    & $WriteLog ("funnel 8443->5000: " + $out2.Trim())
+    Start-Sleep -Seconds 2
+    return $true
+}
+
+function Repair-FunnelIfNeeded {
+    param([scriptblock]$WriteLog = { param($m) Write-Host $m })
+
+    $ts = Get-TailscaleCommand
+    if (-not $ts) {
+        & $WriteLog "tailscale missing — cannot restore Funnel"
+        return $false
+    }
+
+    $state = Get-TailscaleBackendState
+    & $WriteLog "tailscale BackendState=$state"
+    if ($state -ne "Running" -and $state -ne "unknown") {
+        & $WriteLog "tailscale not Running — trying tailscale up"
+        $upOut = (& $ts up 2>&1 | Out-String)
+        if ($upOut.Trim()) { & $WriteLog $upOut.Trim() }
+        Start-Sleep -Seconds 4
+        $state = Get-TailscaleBackendState
+        & $WriteLog "tailscale BackendState after up=$state"
+    }
+
+    $phCfg = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
+    $cfCfg = (Test-FunnelProxyConfigured -LocalPort 5000 -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort 5000)
+    $publicOk = Test-FunnelPublicOk
+    & $WriteLog ("funnel check cfg443=$phCfg cfg8443=$cfCfg public=$publicOk")
+
+    if ($phCfg -and $cfCfg -and $publicOk) {
+        return $true
+    }
+
+    & $WriteLog "Funnel unhealthy — re-apply routes (no reset)"
+    [void](Restore-FunnelDualRoutes -WriteLog $WriteLog)
+    Start-Sleep -Seconds 3
+    $publicOk = Test-FunnelPublicOk
+    & $WriteLog ("funnel public after repair=$publicOk url=" + (Get-FunnelPublicBaseUrl) + "/login")
+    return $publicOk
+}
+
+function Get-FunnelStatusJson {
+    $ts = Get-TailscaleCommand
+    if (-not $ts) { return $null }
+    $raw = (& $ts funnel status --json 2>$null | Out-String)
+    if ([string]::IsNullOrWhiteSpace($raw)) { return $null }
+    try {
+        $start = $raw.IndexOf("{")
+        $end = $raw.LastIndexOf("}")
+        if ($start -lt 0 -or $end -le $start) { return $null }
+        return (ConvertFrom-Json -InputObject $raw.Substring($start, $end - $start + 1))
     } catch {
         return $null
     }
@@ -382,7 +511,9 @@ function Test-FunnelProxyConfigured {
     $status = Get-FunnelStatusJson
     if (-not $status) {
         # 後備：純文字 status（新版 CLI 常只印 443，故僅作最後手段）
-        $text = (tailscale funnel status 2>$null | Out-String)
+        $ts = Get-TailscaleCommand
+        if (-not $ts) { return $false }
+        $text = (& $ts funnel status 2>$null | Out-String)
         if (-not $text) { return $false }
         if ($text -notmatch "Funnel on") { return $false }
         return ($text -match ("127\.0\.0\.1:{0}" -f $LocalPort))

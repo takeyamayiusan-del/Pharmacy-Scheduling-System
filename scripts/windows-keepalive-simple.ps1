@@ -1,8 +1,10 @@
-# 簡單雙站保活：只檢查／重啟 PM2 + 補 Funnel，不做 git／build／funnel reset
-# 更新程式請用手拉；不要用 windows-update-site.ps1
+# 簡單雙站保活：本機網站斷了重開；外網 Funnel 斷了重宣告（每分鐘探測公開 URL）
+# 不做 git／build／funnel reset。更新程式請用手拉。
 #
 # 手動測一次：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-keepalive-simple.ps1
+# 外網現在不通：
+#   powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1
 
 $ErrorActionPreference = "Continue"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -27,48 +29,16 @@ function Test-LocalOk([string]$Uri) {
     }
 }
 
-function Get-FunnelJsonText {
-    return (tailscale funnel status --json 2>$null | Out-String)
-}
-
-function Test-FunnelHasRoute([int]$HttpsPort, [int]$LocalPort) {
-    $json = Get-FunnelJsonText
-    if (-not $json) { return $false }
-    $hasPublic = $json -match (":" + [regex]::Escape([string]$HttpsPort))
-    $hasLocal = $json.Contains("127.0.0.1:$LocalPort")
-    return ($hasPublic -and $hasLocal)
-}
-
-function Ensure-FunnelRoute {
-    param(
-        [int]$HttpsPort,
-        [int]$LocalPort
-    )
-    if (Test-FunnelHasRoute -HttpsPort $HttpsPort -LocalPort $LocalPort) {
-        return $true
-    }
-    # 只補缺，绝不 funnel reset / serve reset
-    if ($HttpsPort -eq 443) {
-        $out = (tailscale funnel --bg --yes --https=443 $LocalPort 2>&1 | Out-String)
-    } else {
-        $out = (tailscale funnel --bg --yes --https=$HttpsPort "http://127.0.0.1:$LocalPort" 2>&1 | Out-String)
-    }
-    Write-Log ("funnel ensure https=$HttpsPort -> $LocalPort : " + $out.Trim())
-    Start-Sleep -Seconds 1
-    return (Test-FunnelHasRoute -HttpsPort $HttpsPort -LocalPort $LocalPort)
-}
-
 Write-Log "keepalive start"
 
 $pm2 = Get-Pm2Command
 if (-not $pm2) {
-    Write-Log "pm2 missing (PATH=$env:Path PM2_HOME=$env:PM2_HOME)"
-    exit 1
+    Write-Log "pm2 missing (PATH=$env:Path PM2_HOME=$env:PM2_HOME) — still restoring Funnel"
 }
 
 # --- pharmacy :3000 ---
 $pharmacyOk = Test-LocalOk "http://127.0.0.1:3000/login"
-if (-not $pharmacyOk) {
+if (-not $pharmacyOk -and $pm2) {
     Write-Log "pharmacy down — restart on PORT=3000"
     $env:PORT = "3000"
     if (Test-Pm2AppExists -Name "pharmacy-web") {
@@ -86,7 +56,7 @@ if (-not $pharmacyOk) {
 
 # --- cashflow :5000（必須與排班分開設 PORT）---
 $cashflowOk = Test-LocalOk "http://127.0.0.1:5000/"
-if (-not $cashflowOk) {
+if (-not $cashflowOk -and $pm2) {
     Write-Log "cashflow down — restart on PORT=5000"
     $env:PORT = "5000"
     if (Test-Pm2AppExists -Name "cashflow") {
@@ -100,19 +70,14 @@ if (-not $cashflowOk) {
     Write-Log ("cashflow after repair: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
 }
 
-# --- funnel：只補缺 ---
-$funnelPharmacy = $false
-$funnelCashflow = $false
-if (Get-Command tailscale -ErrorAction SilentlyContinue) {
-    if ($pharmacyOk) { $funnelPharmacy = Ensure-FunnelRoute -HttpsPort 443 -LocalPort 3000 }
-    if ($cashflowOk) { $funnelCashflow = Ensure-FunnelRoute -HttpsPort 8443 -LocalPort 5000 }
-} else {
-    Write-Log "tailscale missing — skip funnel"
+# --- funnel：每分鐘探測外網；設定還在但連不上也會重宣告（不 reset）---
+$funnelPublic = Repair-FunnelIfNeeded -WriteLog { param($m) Write-Log $m }
+
+if ($pm2) {
+    & $pm2 save 2>$null | Out-Null
 }
 
-& $pm2 save 2>$null | Out-Null
+Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnelPublic=$funnelPublic"
 
-Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnel443=$funnelPharmacy funnel8443=$funnelCashflow"
-
-if ($pharmacyOk -and $cashflowOk) { exit 0 }
+if ($pharmacyOk -and $funnelPublic) { exit 0 }
 exit 1

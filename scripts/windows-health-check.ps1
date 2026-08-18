@@ -68,11 +68,27 @@ if (Test-Path -LiteralPath $bootPath) {
 
 Write-Host ""
 Write-Host "[5] Tailscale Funnel dual routes" -ForegroundColor Cyan
+$tsState = Get-TailscaleBackendState
+Info ("tailscale BackendState=$tsState")
+if ($tsState -eq "missing") {
+    Bad "tailscale.exe not found"
+} elseif ($tsState -ne "Running" -and $tsState -ne "unknown") {
+    Bad "Tailscale not Running ($tsState) — connect it in the Tailscale tray, then re-run funnel setup"
+}
 $phOk = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
 $cfOk = (Test-FunnelProxyConfigured -LocalPort $cashflowPort -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort $cashflowPort)
 if ($phOk) { Ok "funnel 443 → 3000" } else { Bad "funnel missing pharmacy (443→3000)" }
 if ($cfOk) { Ok "funnel 8443 → $cashflowPort" } else { Bad "funnel missing cashflow (8443→$cashflowPort) — old watchdog may have wiped it" }
-Info "Verify with browser (not curl) for :8443"
+
+$publicUrl = (Get-FunnelPublicBaseUrl) + "/login"
+if (Test-FunnelPublicOk) {
+    Ok "public $publicUrl"
+} else {
+    Bad "public URL not reachable: $publicUrl"
+    Info "Local HTTP can be OK while Funnel is down. Restore with:"
+    Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1"
+}
+Info "Verify :8443 with a phone on 4G (not store Wi-Fi)"
 
 Write-Host ""
 Write-Host "[6] Scheduled tasks (boot + watchdog)" -ForegroundColor Cyan
@@ -144,7 +160,7 @@ if ($fail -eq 0) {
 
 Write-Host ("FAILED checks: {0}" -f $fail) -ForegroundColor Red
 Write-Host "Fix with:" -ForegroundColor Yellow
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-register-keepalive-simple.ps1"
-Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-register-cashflow.ps1 -ScriptPath `"C:\cash-flow-app\backend\index.js`" -Cwd `"C:\cash-flow-app`" -Port 5000"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1"
 exit 1

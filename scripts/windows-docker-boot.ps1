@@ -94,9 +94,13 @@ if ($siteOk) {
 }
 
 if (-not $SkipFunnel) {
-    if (Get-Command tailscale -ErrorAction SilentlyContinue) {
-        Write-BootLog "Tailscale Funnel setup"
-        & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") *>> $LogFile
+    if (Get-TailscaleCommand) {
+        Write-BootLog "Tailscale Funnel repair (public URL probe, no reset)"
+        $funnelOk = Repair-FunnelIfNeeded -WriteLog { param($m) Write-BootLog $m }
+        if (-not $funnelOk) {
+            Write-BootLog "Funnel still down — running full funnel setup"
+            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") *>> $LogFile
+        }
     } else {
         Write-BootLog "tailscale not found, skip Funnel"
     }
