@@ -134,6 +134,33 @@ export async function createMealVendor(input: {
   return mapVendor(data as Record<string, unknown>);
 }
 
+export async function updateMealVendor(input: {
+  vendorId: string;
+  name: string;
+  category: MealVendorCategory;
+  phone?: string;
+  address?: string;
+  menuUrl?: string;
+  note?: string;
+}): Promise<MealVendor> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("meal_vendors")
+    .update({
+      name: input.name.trim(),
+      category: input.category,
+      phone: input.phone?.trim() ?? "",
+      address: input.address?.trim() ?? "",
+      menu_url: input.menuUrl?.trim() ?? "",
+      note: input.note?.trim() ?? "",
+    })
+    .eq("id", input.vendorId)
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapVendor(data as Record<string, unknown>);
+}
+
 export async function deactivateMealVendor(vendorId: string): Promise<void> {
   const supabase = createClient();
   const { error } = await supabase
