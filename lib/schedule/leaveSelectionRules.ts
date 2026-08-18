@@ -2,19 +2,15 @@ import type { Employee } from "@/lib/context/AppContext";
 
 export type LeaveSelectionsMap = Record<string, string[]>;
 
-import { isFixedSundayRest } from "@/lib/schedule/sundayRest";
+import {
+  isFixedSundayRest,
+  isLocalDateInMonth,
+  isLocalSaturday,
+  parseLocalDateParts,
+} from "@/lib/schedule/sundayRest";
 
 const isSunday = (dateStr: string) => isFixedSundayRest(dateStr);
-const isSaturday = (dateStr: string) => {
-  const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr.trim());
-  if (!parts) return false;
-  return new Date(Number(parts[1]), Number(parts[2]) - 1, Number(parts[3])).getDay() === 6;
-};
-
-const isInMonth = (dateStr: string, year: number, month: number) => {
-  const date = new Date(dateStr);
-  return date.getFullYear() === year && date.getMonth() + 1 === month;
-};
+const isSaturday = (dateStr: string) => isLocalSaturday(dateStr);
 
 export type ManagerLeaveAssignCheck = {
   shouldWarn: boolean;
@@ -38,11 +34,15 @@ export function checkManagerLeaveAssignment(
     return { shouldWarn: false };
   }
 
-  const year = new Date(date).getFullYear();
-  const month = new Date(date).getMonth() + 1;
-  const day = new Date(date).getDate();
+  const parts = parseLocalDateParts(date);
+  if (!parts) {
+    return { shouldWarn: false };
+  }
+  const year = parts.y;
+  const month = parts.m;
+  const day = parts.d;
   const monthDates = (leaveSelections[employeeId] ?? []).filter((d) =>
-    isInMonth(d, year, month)
+    isLocalDateInMonth(d, year, month)
   );
 
   if (monthDates.includes(date)) {

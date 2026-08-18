@@ -1,6 +1,7 @@
 import type { ScheduleShiftCode } from "@/lib/context/AppContext";
 import { calculateEffectiveShift } from "@/lib/schedule/effectiveShift";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
+import { normalizeCalendarDate } from "@/lib/schedule/sundayRest";
 
 export type LeavePeriodMode = "full_day" | "morning" | "afternoon" | "custom";
 
@@ -29,12 +30,14 @@ export function getOriginalShiftForLeaveDay(input: {
   scheduleSnapshot?: ScheduleSnapshotEntry[];
   getBaseShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
 }): ScheduleShiftCode {
+  const date = normalizeCalendarDate(input.date);
   const snap = input.scheduleSnapshot?.find(
-    (entry) => entry.userId === input.employeeId && entry.date === input.date
+    (entry) =>
+      entry.userId === input.employeeId && normalizeCalendarDate(entry.date) === date
   );
   if (snap?.shift) return snap.shift;
   if (input.shiftMode !== "schedule") return input.shiftMode;
-  return input.getBaseShiftForDate(input.date, input.employeeId);
+  return input.getBaseShiftForDate(date || input.date, input.employeeId);
 }
 
 export function calculateLeaveDisplayOnSchedule(
@@ -74,5 +77,115 @@ export function calculateLeaveDisplayOnSchedule(
     isPartialLeave: result.isPartial && effectiveShift !== "X",
     leaveStartTime,
     leaveEndTime,
+  };
+}
+
+/** 請假顯示用精簡形狀，避免與 AppContext 循環依賴 */
+export type LeaveRequestForDisplay = {
+  employeeId: string;
+  startDate: string;
+  endDate: string;
+  status: string;
+  period: LeavePeriodMode;
+  startTime: string;
+  endTime: string;
+  type?: string;
+  shiftMode: "schedule" | ScheduleShiftCode;
+  scheduleSnapshot?: ScheduleSnapshotEntry[];
+};
+
+export type OvertimeRequestForDisplay = {
+  employeeId: string;
+  date: string;
+  status: string;
+  startTime: string;
+  endTime: string;
+};
+
+export type DisplayedShiftInfo = {
+  originalShift: ScheduleShiftCode;
+  effectiveShift: ScheduleShiftCode;
+  effectiveShiftDetails: string;
+  hasLeave: boolean;
+  isPartialLeave: boolean;
+  hasOvertime: boolean;
+  leaveType?: string;
+  leaveStartTime?: string;
+  leaveEndTime?: string;
+  overtimeInfo: { startTime: string; endTime: string } | null;
+};
+
+/**
+ * 月曆式／個人班表共用現身班別：已核准請假以請假結果為準（全日顯示休假）。
+ */
+export function getDisplayedShiftInfo(input: {
+  date: string;
+  employeeId: string;
+  originalShift: ScheduleShiftCode;
+  leaveRequests: LeaveRequestForDisplay[];
+  overtimeRequests?: OvertimeRequestForDisplay[];
+  getBaseShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
+}): DisplayedShiftInfo {
+  const date = normalizeCalendarDate(input.date);
+  const originalShift = input.originalShift;
+
+  const approvedLeave = input.leaveRequests.find((req) => {
+    if (req.employeeId !== input.employeeId || req.status !== "approved") return false;
+    const start = normalizeCalendarDate(req.startDate);
+    const end = normalizeCalendarDate(req.endDate);
+    return Boolean(start && end && start <= date && end >= date);
+  });
+
+  const approvedOvertime = (input.overtimeRequests ?? []).find(
+    (req) =>
+      req.employeeId === input.employeeId &&
+      normalizeCalendarDate(req.date) === date &&
+      req.status === "approved"
+  );
+
+  const overtimeInfo = approvedOvertime
+    ? { startTime: approvedOvertime.startTime, endTime: approvedOvertime.endTime }
+    : null;
+
+  if (!approvedLeave) {
+    return {
+      originalShift,
+      effectiveShift: originalShift,
+      effectiveShiftDetails: "",
+      hasLeave: false,
+      isPartialLeave: false,
+      hasOvertime: !!approvedOvertime,
+      leaveType: undefined,
+      leaveStartTime: undefined,
+      leaveEndTime: undefined,
+      overtimeInfo,
+    };
+  }
+
+  const baseShift = getOriginalShiftForLeaveDay({
+    employeeId: input.employeeId,
+    date,
+    shiftMode: approvedLeave.shiftMode,
+    scheduleSnapshot: approvedLeave.scheduleSnapshot,
+    getBaseShiftForDate: input.getBaseShiftForDate,
+  });
+  const leaveDisplay = calculateLeaveDisplayOnSchedule(
+    baseShift,
+    approvedLeave.period,
+    approvedLeave.startTime,
+    approvedLeave.endTime
+  );
+
+  return {
+    originalShift: baseShift,
+    effectiveShift: leaveDisplay.effectiveShift,
+    effectiveShiftDetails: leaveDisplay.effectiveShiftDetails,
+    hasLeave: true,
+    isPartialLeave: leaveDisplay.isPartialLeave,
+    hasOvertime: !!approvedOvertime,
+    leaveType: approvedLeave.type,
+    leaveStartTime: leaveDisplay.leaveStartTime,
+    leaveEndTime: leaveDisplay.leaveEndTime,
+    overtimeInfo,
   };
 }

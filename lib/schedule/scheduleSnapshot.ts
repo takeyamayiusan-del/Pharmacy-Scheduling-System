@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ScheduleShiftCode } from "@/lib/context/AppContext";
+import { normalizeCalendarDate } from "@/lib/schedule/sundayRest";
 
 export type ScheduleSnapshotEntry = {
   userId: string;
@@ -23,7 +24,9 @@ export async function fetchDbScheduleShifts(
     .in("date", dates);
 
   for (const row of data ?? []) {
-    map.set(`${row.user_id}:${row.date}`, String(row.shift_code));
+    const date = normalizeCalendarDate(row.date);
+    if (!date) continue;
+    map.set(`${row.user_id}:${date}`, String(row.shift_code));
   }
   return map;
 }

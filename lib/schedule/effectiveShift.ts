@@ -6,6 +6,7 @@ import {
   isOffShiftCode,
   resolveShiftTimeRanges,
 } from "@/lib/shift-catalog/resolve";
+import { parseLocalDateParts } from "@/lib/schedule/sundayRest";
 
 const shiftTimeSlots: Record<ShiftType, { start: string; end: string }[]> = {
   A: [
@@ -132,10 +133,13 @@ export function calculateEffectiveShift(
 }
 
 export function enumerateDatesInRange(startDate: string, endDate: string): string[] {
+  const start = parseLocalDateParts(startDate);
+  const end = parseLocalDateParts(endDate);
+  if (!start || !end) return [];
   const dates: string[] = [];
-  const cursor = new Date(startDate);
-  const end = new Date(endDate);
-  while (cursor <= end) {
+  const cursor = new Date(start.y, start.m - 1, start.d);
+  const endLocal = new Date(end.y, end.m - 1, end.d);
+  while (cursor.getTime() <= endLocal.getTime()) {
     const y = cursor.getFullYear();
     const m = String(cursor.getMonth() + 1).padStart(2, "0");
     const d = String(cursor.getDate()).padStart(2, "0");

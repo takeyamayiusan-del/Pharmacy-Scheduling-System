@@ -4,8 +4,11 @@ import {
   assertSundayShiftAllowed,
   enforceSundayRestOnChanges,
   isFixedSundayRest,
+  isLocalDateInMonth,
   isLocalSaturday,
   getLocalDayOfWeek,
+  normalizeCalendarDate,
+  parseLocalDateParts,
 } from "@/lib/schedule/sundayRest";
 
 describe("sundayRest", () => {
@@ -19,6 +22,15 @@ describe("sundayRest", () => {
     expect(isLocalSaturday("2026-07-18")).toBe(true);
     expect(isLocalSaturday("2026-07-19")).toBe(false);
     expect(getLocalDayOfWeek("2026-07-18")).toBe(6);
+  });
+
+  it("normalizes ISO timestamps without UTC shifting the calendar day", () => {
+    expect(normalizeCalendarDate("2026-08-15")).toBe("2026-08-15");
+    expect(normalizeCalendarDate("2026-08-15T00:00:00.000Z")).toBe("2026-08-15");
+    expect(normalizeCalendarDate("2026-08-15T16:00:00.000Z")).toBe("2026-08-15");
+    expect(parseLocalDateParts("2026-08-15T00:00:00.000Z")).toEqual({ y: 2026, m: 8, d: 15 });
+    expect(isLocalDateInMonth("2026-01-01T00:00:00.000Z", 2026, 1)).toBe(true);
+    expect(isLocalDateInMonth("2026-01-01T00:00:00.000Z", 2025, 12)).toBe(false);
   });
 
   it("blocks swap dates that include Sunday", () => {

@@ -13,9 +13,10 @@ import {
   resolveShiftTimeRanges,
 } from "@/lib/shift-catalog/resolve";
 import { timeToMinutes } from "@/lib/attendance/punchSchedule";
+import { isFixedSundayRest, isLocalSaturday } from "@/lib/schedule/sundayRest";
 
-const isSunday = (dateStr: string) => new Date(dateStr).getDay() === 0;
-const isSaturday = (dateStr: string) => new Date(dateStr).getDay() === 6;
+const isSunday = (dateStr: string) => isFixedSundayRest(dateStr);
+const isSaturday = (dateStr: string) => isLocalSaturday(dateStr);
 
 export type ScheduleWarning = {
   dateStr: string;
