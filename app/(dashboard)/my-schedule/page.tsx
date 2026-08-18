@@ -145,7 +145,7 @@ export default function MySchedulePage() {
               return (
                 <div
                   key={dateStr}
-                  className={`rounded-xl border-2 p-2.5 min-h-[5.5rem] text-left flex flex-col gap-0.5 transition-shadow ${
+                  className={`rounded-xl border-2 p-2.5 min-h-[5.5rem] text-left flex flex-col transition-shadow ${
                     sun
                       ? "bg-red-50 border-red-200"
                       : sat
@@ -155,11 +155,11 @@ export default function MySchedulePage() {
                           : "bg-white border-slate-100 hover:shadow"
                   }`}
                 >
-                  <div className={`text-base font-bold leading-none ${sun ? "text-red-500" : sat ? "text-orange-600" : "text-slate-700"}`}>
+                  <div className={`text-sm font-bold leading-none mb-1.5 ${sun ? "text-red-500" : sat ? "text-orange-600" : "text-slate-700"}`}>
                     {day}
                   </div>
                   <div
-                    className={`mt-auto text-[15px] font-bold rounded-lg px-2 py-1 self-start leading-snug ${
+                    className={`text-sm font-bold rounded-lg px-2 py-1 self-start leading-snug ${
                       isFullDayLeave ? "bg-violet-500 text-white" : ""
                     }`}
                     style={
@@ -175,10 +175,10 @@ export default function MySchedulePage() {
                     {isFullDayLeave ? "休假" : style.displayText || style.label}
                   </div>
                   {shiftInfo.isPartialLeave && (
-                    <div className="text-xs text-amber-700 font-medium">半日假</div>
+                    <div className="text-[11px] text-amber-700 font-medium mt-0.5">半日假</div>
                   )}
                   {ranges.length > 0 && (
-                    <div className="text-xs text-slate-400 leading-snug">
+                    <div className="text-[11px] text-slate-400 leading-tight mt-0.5">
                       {ranges.map((r, ri) => (
                         <div key={ri}>{r}</div>
                       ))}
