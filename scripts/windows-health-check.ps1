@@ -14,6 +14,10 @@ function Info([string]$m) { Write-Host "  --  $m" -ForegroundColor DarkGray }
 
 Write-Host "=== Dual-site health check ===" -ForegroundColor Cyan
 Write-Host "Project: $ProjectRoot"
+if (Test-IsElevated) {
+    Write-Host "This window is Administrator — PM2 may look empty even when the site is up." -ForegroundColor Yellow
+    Write-Host "Prefer a normal PowerShell for this check (or ignore [1]/[3] if Local HTTP is OK)." -ForegroundColor Yellow
+}
 Write-Host ""
 
 Write-Host "[1] PM2 apps" -ForegroundColor Cyan
@@ -22,8 +26,28 @@ if (-not (Get-Pm2Command)) {
 } else {
     $pharmacyOnline = Get-Pm2Online -Name "pharmacy-web"
     $cashflowOnline = Get-Pm2Online -Name "cashflow"
-    if ($pharmacyOnline) { Ok "pharmacy-web online" } else { Bad "pharmacy-web not online" }
-    if ($cashflowOnline) { Ok "cashflow online" } else { Bad "cashflow not online (register with windows-register-cashflow.ps1)" }
+    $pharmacyHttp = Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8
+    $cashflowHttp = Test-HttpOk -Uri "http://127.0.0.1:$(Get-CashflowHealthPort -ProjectRoot $ProjectRoot)/" -TimeoutSec 8
+    if ($pharmacyOnline) {
+        Ok "pharmacy-web online"
+    } elseif ($pharmacyHttp -and (Test-IsElevated)) {
+        Info "pharmacy-web not visible in Administrator PM2 (HTTP is OK — not a real outage)"
+    } elseif ($pharmacyHttp) {
+        Info "pharmacy-web HTTP OK; PM2 list empty. Try: pm2 status"
+        Bad "pharmacy-web not online"
+    } else {
+        Bad "pharmacy-web not online"
+    }
+    if ($cashflowOnline) {
+        Ok "cashflow online"
+    } elseif ($cashflowHttp -and (Test-IsElevated)) {
+        Info "cashflow not visible in Administrator PM2 (HTTP is OK — not a real outage)"
+    } elseif ($cashflowHttp) {
+        Info "cashflow HTTP OK; PM2 list empty. Try: pm2 status"
+        Bad "cashflow not online (register with windows-register-cashflow.ps1)"
+    } else {
+        Bad "cashflow not online (register with windows-register-cashflow.ps1)"
+    }
 }
 
 Write-Host ""
@@ -45,10 +69,19 @@ Write-Host "[3] Port ownership (no zombie on :3000)" -ForegroundColor Cyan
 if (Test-PharmacyWebPm2OwningPort) {
     Ok "PM2 pharmacy-web owns :3000 (wrapper/child tree OK)"
 } else {
-    Bad "PM2 does not own :3000 — risk of EADDRINUSE restart loop"
     $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
     $listenPid = Get-PortListenerPid -Port 3000
-    Info ("pm2 pid={0} listen pid={1}" -f $(if ($pm2Pid) { $pm2Pid } else { "?" }), $(if ($listenPid) { $listenPid } else { "?" }))
+    $httpOk = Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8
+    if ($httpOk -and $listenPid -and -not $pm2Pid -and (Test-IsElevated)) {
+        Ok "port 3000 serving HTTP (PM2 pid hidden in Administrator window)"
+        Info ("listen pid={0}" -f $listenPid)
+    } elseif ($httpOk -and $listenPid -and -not $pm2Pid) {
+        Info ("pm2 pid=? listen pid={0} — HTTP OK; if pm2 status shows online, this is a false alarm" -f $listenPid)
+        Bad "PM2 does not own :3000 — risk of EADDRINUSE restart loop"
+    } else {
+        Bad "PM2 does not own :3000 — risk of EADDRINUSE restart loop"
+        Info ("pm2 pid={0} listen pid={1}" -f $(if ($pm2Pid) { $pm2Pid } else { "?" }), $(if ($listenPid) { $listenPid } else { "?" }))
+    }
 }
 
 Write-Host ""

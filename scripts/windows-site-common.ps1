@@ -644,40 +644,70 @@ function Import-Pm2Environment {
     }
 }
 
-function Get-Pm2Apps {
-    $pm2 = Get-Pm2Command
-    if (-not $pm2) { return @() }
+function Test-IsElevated {
     try {
-        # PowerShell 會把 pm2 jlist 拆成多行；必須先拼成字串再 Parse，否則健康檢查會誤報 not online
-        $raw = (& $pm2 jlist 2>$null | Out-String)
-        if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
-        $start = $raw.IndexOf("[")
-        $end = $raw.LastIndexOf("]")
-        if ($start -lt 0 -or $end -le $start) { return @() }
-        $json = $raw.Substring($start, $end - $start + 1)
-        $apps = ConvertFrom-Json -InputObject $json
-        if ($null -eq $apps) { return @() }
-        return @($apps)
+        return ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+            [Security.Principal.WindowsBuiltInRole]::Administrator
+        )
     } catch {
-        return @()
+        return $false
     }
 }
 
-function Get-Pm2Online([string]$Name) {
-    foreach ($app in (Get-Pm2Apps)) {
-        if ($app.name -eq $Name -and $app.pm2_env.status -eq "online") { return $true }
+function Invoke-Pm2Raw {
+    param([Parameter(Mandatory = $true)][string[]]$Arguments)
+
+    $pm2 = Get-Pm2Command
+    if (-not $pm2) { return "" }
+    $argLine = ($Arguments | ForEach-Object {
+        if ($_ -match '[\s"]') { '"' + ($_ -replace '"', '\"') + '"' } else { $_ }
+    }) -join " "
+    $prev = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        return ((cmd.exe /c "`"$pm2`" $argLine") 2>$null | Out-String)
+    } finally {
+        $ErrorActionPreference = $prev
     }
-    return $false
 }
 
-function Test-Pm2AppExists([string]$Name) {
-    foreach ($app in (Get-Pm2Apps)) {
-        if ($app.name -eq $Name) { return $true }
+function ConvertFrom-Pm2Jlist {
+    param([string]$Raw)
+
+    if ([string]::IsNullOrWhiteSpace($Raw)) { return @() }
+    $start = $Raw.IndexOf("[")
+    $end = $Raw.LastIndexOf("]")
+    if ($start -lt 0 -or $end -le $start) { return @() }
+    $json = $Raw.Substring($start, $end - $start + 1)
+    # Windows PowerShell 5.1 對「根節點是陣列」的 JSON 常 parse 失敗；包成物件即可
+    try {
+        $wrapped = '{ "apps": ' + $json + ' }'
+        $obj = ConvertFrom-Json -InputObject $wrapped
+        if ($null -eq $obj -or $null -eq $obj.apps) { return @() }
+        return @($obj.apps)
+    } catch {
+        try {
+            return @((ConvertFrom-Json -InputObject $json))
+        } catch {
+            return @()
+        }
     }
-    return $false
+}
+
+function Get-Pm2Apps {
+    $raw = Invoke-Pm2Raw -Arguments @("jlist")
+    return (ConvertFrom-Pm2Jlist -Raw $raw)
 }
 
 function Get-Pm2Pid([string]$Name) {
+    $raw = (Invoke-Pm2Raw -Arguments @("pid", $Name)).Trim()
+    foreach ($line in ($raw -split "`r?`n")) {
+        $t = $line.Trim()
+        $processId = 0
+        if ([int]::TryParse($t, [ref]$processId) -and $processId -gt 0) {
+            return $processId
+        }
+    }
     foreach ($app in (Get-Pm2Apps)) {
         if ($app.name -eq $Name) {
             $processId = 0
@@ -687,6 +717,40 @@ function Get-Pm2Pid([string]$Name) {
         }
     }
     return $null
+}
+
+function Get-Pm2Online([string]$Name) {
+    $text = Invoke-Pm2Raw -Arguments @("status")
+    foreach ($line in ($text -split "`n")) {
+        if ($line -match [regex]::Escape($Name) -and $line -match '\bonline\b') {
+            return $true
+        }
+    }
+    foreach ($app in (Get-Pm2Apps)) {
+        if ($app.name -eq $Name) {
+            $st = [string]$app.pm2_env.status
+            if ($st -eq "online") { return $true }
+        }
+    }
+    $processId = Get-Pm2Pid -Name $Name
+    if ($processId -and (Get-Process -Id $processId -ErrorAction SilentlyContinue)) {
+        return $true
+    }
+    return $false
+}
+
+function Test-Pm2AppExists([string]$Name) {
+    if (Get-Pm2Online -Name $Name) { return $true }
+    $text = Invoke-Pm2Raw -Arguments @("status")
+    foreach ($line in ($text -split "`n")) {
+        if ($line -match [regex]::Escape($Name)) { return $true }
+    }
+    foreach ($app in (Get-Pm2Apps)) {
+        if ($app.name -eq $Name) { return $true }
+    }
+    $processId = Get-Pm2Pid -Name $Name
+    if ($processId -and $processId -gt 0) { return $true }
+    return $false
 }
 
 function Stop-PortListenerForce {

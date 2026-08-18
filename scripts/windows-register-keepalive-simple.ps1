@@ -33,7 +33,7 @@ if (-not (Test-Path -LiteralPath $KeepaliveScript)) {
 
 Write-Host "=== Register simple keepalive ===" -ForegroundColor Cyan
 Write-Host "This replaces the old heavy watchdog (no git/build/funnel reset)."
-Write-Host "Run as: $runAs (Interactive — SYSTEM has no user pm2 / PM2_HOME)"
+Write-Host "Run as: $runAs (Interactive Limited — same PM2 as a normal PowerShell window)"
 Write-Host "PM2 context: $ctxPath"
 Write-Host ""
 
@@ -41,11 +41,12 @@ Write-Host ""
 Stop-ScheduledTask -TaskName $KeepaliveTaskName -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName $KeepaliveTaskName -Confirm:$false -ErrorAction SilentlyContinue
 
-# Must be the logged-in user: SYSTEM PATH has no pm2, so the task exits 1 and never restores Funnel.
+# Interactive + Limited：與你在一般 PowerShell 裡的 pm2 是同一個 daemon。
+# Highest（系統管理員）會變成另一個 PM2，健康檢查會誤報 not online。
 $principal = New-ScheduledTaskPrincipal `
     -UserId $runAs `
     -LogonType Interactive `
-    -RunLevel Highest
+    -RunLevel Limited
 
 $watchdogAction = New-ScheduledTaskAction -Execute "powershell.exe" `
     -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$KeepaliveScript`""
