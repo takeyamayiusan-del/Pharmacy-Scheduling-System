@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   formatMedicineQty,
+  fulfillmentStage,
+  matchesFulfillmentFilter,
   validateCustomerDraft,
   validateMedicineDraft,
   validateProcurementDraft,
+  type CustomerOrder,
   type MedicineRequest,
 } from "@/lib/shop-ops/types";
 
@@ -88,8 +91,10 @@ describe("shop-ops validation", () => {
       siteId: "jiji",
       kind: "shortage",
       itemName: "藥",
+      nhiCode: "",
       qtyMode: "refill",
       quantity: null,
+      unit: "",
       useIc02: true,
       ic02Qty: 14,
       useIc03: false,
@@ -103,6 +108,47 @@ describe("shop-ops validation", () => {
       createdAt: "",
     };
     expect(formatMedicineQty(row)).toBe("IC02 第二次 14");
-    expect(formatMedicineQty({ ...row, kind: "below_stock", currentStock: 3 })).toBe("現存 3");
+    expect(formatMedicineQty({ ...row, unit: "盒" })).toBe("IC02 第二次 14 盒");
+    expect(formatMedicineQty({ ...row, kind: "below_stock", currentStock: 3, unit: "瓶" })).toBe(
+      "現存 3 瓶"
+    );
+  });
+
+  it("客訂履約階段：未到貨 → 已到貨未通知 → 已通知未拿 → 已拿", () => {
+    const base: CustomerOrder = {
+      id: "1",
+      siteId: "zhushan",
+      customerName: "王",
+      customerPhone: "09",
+      handlerId: "u",
+      productName: "試紙",
+      nhiCode: "",
+      quantity: 1,
+      unit: "盒",
+      amount: 100,
+      paymentStatus: "unpaid",
+      goodsArrived: false,
+      notified: false,
+      pickedUp: false,
+      goodsArrivedAt: null,
+      notifiedAt: null,
+      pickedUpAt: null,
+      note: "",
+      status: "pending",
+      createdBy: "u",
+      closedBy: null,
+      closedAt: null,
+      createdAt: "",
+    };
+    expect(fulfillmentStage(base)).toBe("not_arrived");
+    expect(matchesFulfillmentFilter({ ...base, goodsArrived: true }, "arrived_unnotified")).toBe(
+      true
+    );
+    expect(fulfillmentStage({ ...base, goodsArrived: true, notified: true })).toBe(
+      "notified_unpicked"
+    );
+    expect(fulfillmentStage({ ...base, goodsArrived: true, notified: true, pickedUp: true })).toBe(
+      "picked"
+    );
   });
 });

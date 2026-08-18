@@ -50,8 +50,10 @@ function mapMedicine(r: Record<string, unknown>): MedicineRequest {
     siteId: r.site_id as SiteId,
     kind: (r.kind as MedicineKind) || "shortage",
     itemName: String(r.item_name ?? ""),
+    nhiCode: String(r.nhi_code ?? ""),
     qtyMode: (r.qty_mode as MedicineQtyMode) || "direct",
     quantity: r.quantity == null ? null : Number(r.quantity),
+    unit: String(r.unit ?? ""),
     useIc02: Boolean(r.use_ic02),
     ic02Qty: r.ic02_qty == null ? null : Number(r.ic02_qty),
     useIc03: Boolean(r.use_ic03),
@@ -76,8 +78,15 @@ function mapCustomer(r: Record<string, unknown>): CustomerOrder {
     productName: String(r.product_name ?? ""),
     nhiCode: String(r.nhi_code ?? ""),
     quantity: Number(r.quantity ?? 0),
+    unit: String(r.unit ?? ""),
     amount: Number(r.amount ?? 0),
     paymentStatus: (r.payment_status as CustomerPaymentStatus) || "unpaid",
+    goodsArrived: Boolean(r.goods_arrived),
+    notified: Boolean(r.notified),
+    pickedUp: Boolean(r.picked_up),
+    goodsArrivedAt: r.goods_arrived_at ? String(r.goods_arrived_at) : null,
+    notifiedAt: r.notified_at ? String(r.notified_at) : null,
+    pickedUpAt: r.picked_up_at ? String(r.picked_up_at) : null,
     note: String(r.note ?? ""),
     status: (r.status as ShopRecordStatus) || "pending",
     createdBy: String(r.created_by),
@@ -209,8 +218,10 @@ export async function createMedicineRequest(input: {
   siteId: SiteId;
   kind: MedicineKind;
   itemName: string;
+  nhiCode?: string;
   qtyMode: MedicineQtyMode;
   quantity: unknown;
+  unit?: string;
   useIc02: boolean;
   ic02Qty: unknown;
   useIc03: boolean;
@@ -230,8 +241,10 @@ export async function createMedicineRequest(input: {
       site_id: input.siteId,
       kind: input.kind,
       item_name: input.itemName.trim(),
+      nhi_code: input.nhiCode?.trim() ?? "",
       qty_mode: isBelow ? "direct" : input.qtyMode,
       quantity: isBelow || refill ? null : parsePositiveNumber(input.quantity),
+      unit: input.unit?.trim() ?? "",
       use_ic02: refill && input.useIc02,
       ic02_qty: refill && input.useIc02 ? parsePositiveNumber(input.ic02Qty) : null,
       use_ic03: refill && input.useIc03,
@@ -267,6 +280,7 @@ export async function createCustomerOrder(input: {
   productName: string;
   nhiCode?: string;
   quantity: unknown;
+  unit?: string;
   amount: unknown;
   paymentStatus: CustomerPaymentStatus;
   note?: string;
@@ -284,6 +298,7 @@ export async function createCustomerOrder(input: {
       product_name: input.productName.trim(),
       nhi_code: input.nhiCode?.trim() ?? "",
       quantity: parsePositiveNumber(input.quantity),
+      unit: input.unit?.trim() ?? "",
       amount: parseNonNegativeNumber(input.amount) ?? 0,
       payment_status: input.paymentStatus,
       note: input.note?.trim() ?? "",
@@ -333,5 +348,32 @@ export async function updateCustomerPayment(input: {
     .from("shop_customer_orders")
     .update({ payment_status: input.paymentStatus })
     .eq("id", input.id);
+  if (error) throw error;
+}
+
+export async function updateCustomerFulfillment(input: {
+  ids: string[];
+  goodsArrived?: boolean;
+  notified?: boolean;
+  pickedUp?: boolean;
+}): Promise<void> {
+  if (input.ids.length === 0) return;
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = {};
+  if (input.goodsArrived !== undefined) {
+    patch.goods_arrived = input.goodsArrived;
+    patch.goods_arrived_at = input.goodsArrived ? now : null;
+  }
+  if (input.notified !== undefined) {
+    patch.notified = input.notified;
+    patch.notified_at = input.notified ? now : null;
+  }
+  if (input.pickedUp !== undefined) {
+    patch.picked_up = input.pickedUp;
+    patch.picked_up_at = input.pickedUp ? now : null;
+  }
+  if (Object.keys(patch).length === 0) return;
+  const supabase = createClient();
+  const { error } = await supabase.from("shop_customer_orders").update(patch).in("id", input.ids);
   if (error) throw error;
 }
