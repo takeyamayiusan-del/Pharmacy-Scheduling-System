@@ -1300,9 +1300,6 @@ function OrderCard({
       {canEdit && (
         <div className="rounded-xl border border-sky-100 bg-white p-3 space-y-3">
           <p className="text-sm font-medium text-slate-800">看菜單後自行填寫（可選杯數，同品項不用重打）</p>
-          {vendor?.menuUrl && (
-            <MenuLinkButton href={vendor.menuUrl} />
-          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             <label className="text-sm space-y-1">
               <span className="text-slate-600">給誰</span>
