@@ -72,7 +72,7 @@ export default function PersonSchedulePage() {
   const applyBaselineMonth = async () => {
     if (!emp) return;
     const ok = window.confirm(
-      `把 ${emp.name} ${year}年${month}月尚未過去、非週日、非排休的日子，寫成預設班「${getShiftName(storeConfig, baseline)}」？之後仍可逐日改。`
+      `把 ${emp.name} ${year}年${month}月尚未過去、${storeConfig.policies.sundayFixedRest ? "非週日、" : ""}非排休的日子，寫成預設班「${getShiftName(storeConfig, baseline)}」？之後仍可逐日改。`
     );
     if (!ok) return;
     setBusy(true);
@@ -80,7 +80,11 @@ export default function PersonSchedulePage() {
       let written = 0;
       for (let day = 1; day <= daysInMonth; day += 1) {
         const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        if (isSunday(dateStr) || isPastDate(dateStr)) continue;
+        if (
+          (storeConfig.policies.sundayFixedRest && isSunday(dateStr)) ||
+          isPastDate(dateStr)
+        )
+          continue;
         if (getBaseShiftForDate(dateStr, emp.id) === "X") continue;
         if (!isEmployeeActiveOnDate(emp, dateStr)) continue;
         const shift = isSaturday(dateStr)
@@ -170,7 +174,8 @@ export default function PersonSchedulePage() {
         <p className="text-sm text-gray-600">
           {emp.name}：{workHoursRegimeMeta(regime).label}；沒休假時預設上{" "}
           <span className="font-medium">{getShiftName(storeConfig, baseline)}</span>
-          。週日公休。點日期改班。
+          {storeConfig.policies.sundayFixedRest ? "。週日公休。" : "。週日可排班，工時會算進去。"}
+          點日期改班。
         </p>
       )}
 
@@ -210,7 +215,8 @@ export default function PersonSchedulePage() {
                 ? []
                 : resolveShiftTimeRanges(displayShift, storeConfig, shiftTimeConfig);
               const sun = isSunday(dateStr);
-              const editable = !sun && !isPastDate(dateStr);
+              const sundayLocked = sun && storeConfig.policies.sundayFixedRest;
+              const editable = !sundayLocked && !isPastDate(dateStr);
               const isEditing = editingDate === dateStr;
               return (
                 <div

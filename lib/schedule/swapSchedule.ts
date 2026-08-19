@@ -88,7 +88,8 @@ export function computeSwapScheduleChanges(
 
 export function buildSwapShiftsAndChanges(
   request: SwapRequestCore,
-  snapshot: ScheduleSnapshotEntry[]
+  snapshot: ScheduleSnapshotEntry[],
+  sundayFixedRest = true
 ): {
   isSelfSwap: boolean;
   reqShift: ScheduleShiftCode;
@@ -124,7 +125,8 @@ export function buildSwapShiftsAndChanges(
 
   const sundayGuard = assertNoSundayInSwapDates(
     request.requesterDate,
-    request.targetDate
+    request.targetDate,
+    sundayFixedRest
   );
   if (!sundayGuard.ok) {
     throw new Error(sundayGuard.message);
@@ -137,7 +139,8 @@ export function buildSwapShiftsAndChanges(
       targetShift,
       requesterOnTargetDate,
       targetOnRequesterDate
-    )
+    ),
+    sundayFixedRest
   );
 
   if (changes.length < 2) {

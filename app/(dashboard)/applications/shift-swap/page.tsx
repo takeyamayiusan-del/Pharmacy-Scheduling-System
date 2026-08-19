@@ -75,12 +75,15 @@ export default function ShiftSwapPage() {
   const previewTargetShift = formData.targetEmployeeId && formData.targetDate
     ? getShiftForDate(formData.targetDate, formData.targetEmployeeId) : null;
 
+  const sundayFixedRest = storeConfig.policies.sundayFixedRest;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!currentUser) return;
     const sundayCheck = assertNoSundayInSwapDates(
       formData.requesterDate,
-      formData.targetDate
+      formData.targetDate,
+      sundayFixedRest
     );
     if (!sundayCheck.ok) {
       alert(sundayCheck.message);
@@ -209,10 +212,10 @@ export default function ShiftSwapPage() {
                 <input type="date" value={formData.requesterDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, requesterDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
-                {isFixedSundayRest(formData.requesterDate) && (
+                {isFixedSundayRest(formData.requesterDate, sundayFixedRest) && (
                   <p className="text-xs text-red-600 mt-1">{SUNDAY_REST_MESSAGE}</p>
                 )}
-                {previewRequesterShift && !isFixedSundayRest(formData.requesterDate) && (
+                {previewRequesterShift && !isFixedSundayRest(formData.requesterDate, sundayFixedRest) && (
                   <p className="text-xs text-gray-500 mt-1">當日班別：{previewRequesterShift}</p>
                 )}
               </div>
@@ -221,10 +224,10 @@ export default function ShiftSwapPage() {
                 <input type="date" value={formData.targetDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, targetDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
-                {isFixedSundayRest(formData.targetDate) && (
+                {isFixedSundayRest(formData.targetDate, sundayFixedRest) && (
                   <p className="text-xs text-red-600 mt-1">{SUNDAY_REST_MESSAGE}</p>
                 )}
-                {previewTargetShift && !isFixedSundayRest(formData.targetDate) && (
+                {previewTargetShift && !isFixedSundayRest(formData.targetDate, sundayFixedRest) && (
                   <p className="text-xs text-gray-500 mt-1">對方班別：{previewTargetShift}</p>
                 )}
               </div>

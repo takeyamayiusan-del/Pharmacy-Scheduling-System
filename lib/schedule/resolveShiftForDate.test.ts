@@ -66,6 +66,19 @@ describe("resolveShiftForDate", () => {
     ).toBe("B");
   });
 
+  it("sunday fixed rest on forces X", () => {
+    expect(
+      resolveShiftForDate({
+        isSunday: true,
+        isActive: true,
+        saturdayFixedOff: false,
+        leaveSelected: false,
+        override: "B",
+        baseWorkShift: "B",
+      })
+    ).toBe("X");
+  });
+
   it("saturday fixed off still beats override", () => {
     expect(
       resolveShiftForDate({

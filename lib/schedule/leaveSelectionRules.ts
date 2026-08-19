@@ -9,7 +9,8 @@ import {
   parseLocalDateParts,
 } from "@/lib/schedule/sundayRest";
 
-const isSunday = (dateStr: string) => isFixedSundayRest(dateStr);
+const isSunday = (dateStr: string, sundayFixedRest = true) =>
+  isFixedSundayRest(dateStr, sundayFixedRest);
 const isSaturday = (dateStr: string) => isLocalSaturday(dateStr);
 
 export type ManagerLeaveAssignCheck = {
@@ -23,9 +24,15 @@ export function checkManagerLeaveAssignment(
   employeeName: string,
   date: string,
   leaveSelections: LeaveSelectionsMap,
-  quotas?: { saturdayLimit: number; weekdayLimit: number; monthPool?: boolean }
+  quotas?: {
+    saturdayLimit: number;
+    weekdayLimit: number;
+    monthPool?: boolean;
+    sundayFixedRest?: boolean;
+  }
 ): ManagerLeaveAssignCheck {
-  if (isSunday(date)) {
+  const sundayFixedRest = quotas?.sundayFixedRest ?? true;
+  if (isSunday(date, sundayFixedRest)) {
     return { shouldWarn: false };
   }
 
@@ -65,13 +72,13 @@ export function checkManagerLeaveAssignment(
   }
 
   const saturdayUsed = monthDates.filter(isSaturday).length;
-  const weekdayUsed = monthDates.filter((d) => !isSaturday(d) && !isSunday(d)).length;
+  const weekdayUsed = monthDates.filter((d) => !isSaturday(d) && !isSunday(d, sundayFixedRest)).length;
   const saturdayLimit = quotas?.saturdayLimit ?? 2;
   const weekdayLimit = quotas?.weekdayLimit ?? 2;
   const monthPool = quotas?.monthPool === true;
 
   if (monthPool) {
-    const used = monthDates.filter((d) => !isSunday(d)).length;
+    const used = monthDates.filter((d) => !isSunday(d, sundayFixedRest)).length;
     if (used >= saturdayLimit) {
       return {
         shouldWarn: true,
@@ -98,13 +105,13 @@ export function checkManagerLeaveAssignment(
   return { shouldWarn: false };
 }
 
-/** 是否應同步寫入/刪除 leave_selections（禮拜日固定休，不列入排休選擇） */
+/** 是否應同步寫入/刪除 leave_selections（週日固定公休時不列入排休選擇） */
 export function shouldSyncLeaveSelection(
   date: string,
   shift: string,
-  options?: { keepHalfDayLeave?: boolean }
+  options?: { keepHalfDayLeave?: boolean; sundayFixedRest?: boolean }
 ): "add" | "remove" | "none" {
-  if (isSunday(date)) return "none";
+  if (isSunday(date, options?.sundayFixedRest ?? true)) return "none";
   if (shift === "X") return "add";
   if (options?.keepHalfDayLeave) return "none";
   return "remove";

@@ -1032,6 +1032,9 @@ export default function StoreSettingsPage() {
             onChange={(e) => patchPolicies({ sundayFixedRest: e.target.checked })}
           />
           <span>週日固定公休</span>
+          <span className="block text-xs text-slate-500 mt-0.5">
+            開啟：週日不可排班、不可換班、排休不用選。關閉：週日可排班，工時會算進去。
+          </span>
         </label>
         <label className="flex items-start gap-3 text-sm">
           <input
