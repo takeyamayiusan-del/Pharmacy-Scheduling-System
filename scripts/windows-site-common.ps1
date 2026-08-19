@@ -431,6 +431,16 @@ function Test-FunnelPublicOk {
     }
 }
 
+function Test-FunnelRoutesConfigured {
+    $phCfg = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
+    $cfCfg = (Test-FunnelProxyConfigured -LocalPort 5000 -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort 5000)
+    return [pscustomobject]@{
+        Pharmacy = [bool]$phCfg
+        Cashflow = [bool]$cfCfg
+        Ok       = ([bool]$phCfg -and [bool]$cfCfg)
+    }
+}
+
 function Restore-FunnelDualRoutes {
     param([scriptblock]$WriteLog = { param($m) Write-Host $m })
 
@@ -440,7 +450,7 @@ function Restore-FunnelDualRoutes {
         return $false
     }
 
-    # 只補缺／重宣告，绝不 funnel reset（reset 會把 8443 一併清掉）
+    # 只補缺／重宣告，绝不 funnel reset（reset 會把 8443 一併清掉，也會掐斷正在用的外網連線）
     $out1 = (& $ts funnel --bg --yes --https=443 3000 2>&1 | Out-String)
     & $WriteLog ("funnel 443->3000: " + $out1.Trim())
     Start-Sleep -Seconds 1
@@ -451,7 +461,10 @@ function Restore-FunnelDualRoutes {
 }
 
 function Repair-FunnelIfNeeded {
-    param([scriptblock]$WriteLog = { param($m) Write-Host $m })
+    param(
+        [scriptblock]$WriteLog = { param($m) Write-Host $m },
+        [switch]$ForceReapply
+    )
 
     $ts = Get-TailscaleCommand
     if (-not $ts) {
@@ -470,21 +483,33 @@ function Repair-FunnelIfNeeded {
         & $WriteLog "tailscale BackendState after up=$state"
     }
 
-    $phCfg = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
-    $cfCfg = (Test-FunnelProxyConfigured -LocalPort 5000 -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort 5000)
-    $publicOk = Test-FunnelPublicOk
-    & $WriteLog ("funnel check cfg443=$phCfg cfg8443=$cfCfg public=$publicOk")
+    $routes = Test-FunnelRoutesConfigured
+    & $WriteLog ("funnel check cfg443=$($routes.Pharmacy) cfg8443=$($routes.Cashflow) force=$([bool]$ForceReapply)")
 
-    if ($phCfg -and $cfCfg -and $publicOk) {
+    # 每分鐘保活不可因「本機測公開網址失敗」就重宣告。
+    # 本機打自己的 Funnel URL 常不穩，且 funnel --yes 會掐斷正在用的外網連線。
+    if ($routes.Ok -and -not $ForceReapply) {
         return $true
     }
 
-    & $WriteLog "Funnel unhealthy — re-apply routes (no reset)"
+    if ($ForceReapply) {
+        $publicOk = Test-FunnelPublicOk -TimeoutSec 12
+        & $WriteLog ("funnel public probe=$publicOk")
+        if ($routes.Ok -and $publicOk) {
+            return $true
+        }
+    }
+
+    if ($routes.Ok) {
+        & $WriteLog "Funnel routes present but public probe failed — re-apply (manual/force)"
+    } else {
+        & $WriteLog "Funnel routes missing — re-apply (no reset)"
+    }
     [void](Restore-FunnelDualRoutes -WriteLog $WriteLog)
     Start-Sleep -Seconds 3
-    $publicOk = Test-FunnelPublicOk
-    & $WriteLog ("funnel public after repair=$publicOk url=" + (Get-FunnelPublicBaseUrl) + "/login")
-    return $publicOk
+    $routes2 = Test-FunnelRoutesConfigured
+    & $WriteLog ("funnel after repair cfg443=$($routes2.Pharmacy) cfg8443=$($routes2.Cashflow) url=" + (Get-FunnelPublicBaseUrl) + "/login")
+    return [bool]$routes2.Ok
 }
 
 function Get-FunnelStatusJson {

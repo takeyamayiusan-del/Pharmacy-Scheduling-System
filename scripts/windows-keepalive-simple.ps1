@@ -1,9 +1,10 @@
-# 簡單雙站保活：本機網站斷了重開；外網 Funnel 斷了重宣告（每分鐘探測公開 URL）
-# 不做 git／build／funnel reset。更新程式請用手拉。
+# 簡單雙站保活：本機網站真的掛了才重開；外網 Funnel 路由消失才重宣告。
+# 不做 git／build／funnel reset，也不因「本機測公開網址失敗」去重宣告（會掐斷正在用的人）。
+# 更新程式請用手拉。
 #
 # 手動測一次：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-keepalive-simple.ps1
-# 外網現在不通：
+# 外網現在不通（這才會重宣告）：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1
 
 $ErrorActionPreference = "Continue"
@@ -29,7 +30,33 @@ function Test-LocalOk([string]$Uri) {
     }
 }
 
+function Get-KeepaliveHealthStatePath {
+    return Join-Path $ProjectRoot "data\ops\keepalive-health.json"
+}
+
+function Read-KeepaliveHealthState {
+    $path = Get-KeepaliveHealthStatePath
+    $obj = [ordered]@{ pharmacyHttpFails = 0; cashflowHttpFails = 0 }
+    if (Test-Path -LiteralPath $path) {
+        try {
+            $raw = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
+            $parsed = $raw | ConvertFrom-Json
+            if ($parsed.pharmacyHttpFails -ne $null) { $obj.pharmacyHttpFails = [int]$parsed.pharmacyHttpFails }
+            if ($parsed.cashflowHttpFails -ne $null) { $obj.cashflowHttpFails = [int]$parsed.cashflowHttpFails }
+        } catch {}
+    }
+    return $obj
+}
+
+function Save-KeepaliveHealthState($state) {
+    $path = Get-KeepaliveHealthStatePath
+    $dir = Split-Path $path -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    ($state | ConvertTo-Json) | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
 Write-Log "keepalive start"
+$healthState = Read-KeepaliveHealthState
 
 $pm2 = Get-Pm2Command
 if (-not $pm2) {
@@ -37,9 +64,28 @@ if (-not $pm2) {
 }
 
 # --- pharmacy :3000 ---
+# 埠還在聽就不要因單次 /login 逾時重啟（匯出 PDF、尖峰載入會讓 8 秒探測失敗，重啟會把正在用的人踢掉）
 $pharmacyOk = Test-LocalOk "http://127.0.0.1:3000/login"
-if (-not $pharmacyOk -and $pm2) {
-    Write-Log "pharmacy down — restart on PORT=3000"
+$pharmacyListen = Test-PortListening 3000
+if ($pharmacyOk) {
+    $healthState.pharmacyHttpFails = 0
+} elseif ($pharmacyListen) {
+    $healthState.pharmacyHttpFails = [int]$healthState.pharmacyHttpFails + 1
+    Write-Log "pharmacy HTTP miss but :3000 listening (fails=$($healthState.pharmacyHttpFails)/3) — skip restart"
+    $pharmacyOk = $true
+    if ($pm2 -and [int]$healthState.pharmacyHttpFails -ge 3) {
+        Write-Log "pharmacy HTTP miss x3 — restart on PORT=3000"
+        $env:PORT = "3000"
+        if (Test-Pm2AppExists -Name "pharmacy-web") {
+            & $pm2 restart pharmacy-web --update-env 2>$null | Out-Null
+        }
+        Start-Sleep -Seconds 4
+        $pharmacyOk = Test-LocalOk "http://127.0.0.1:3000/login"
+        $healthState.pharmacyHttpFails = 0
+        Write-Log ("pharmacy after repair: " + $(if ($pharmacyOk) { "OK" } else { "FAIL" }))
+    }
+} elseif ($pm2) {
+    Write-Log "pharmacy down (port closed) — restart on PORT=3000"
     $env:PORT = "3000"
     if (Test-Pm2AppExists -Name "pharmacy-web") {
         & $pm2 restart pharmacy-web --update-env 2>$null | Out-Null
@@ -51,13 +97,32 @@ if (-not $pharmacyOk -and $pm2) {
     }
     Start-Sleep -Seconds 4
     $pharmacyOk = Test-LocalOk "http://127.0.0.1:3000/login"
+    $healthState.pharmacyHttpFails = 0
     Write-Log ("pharmacy after repair: " + $(if ($pharmacyOk) { "OK" } else { "FAIL" }))
 }
 
 # --- cashflow :5000（必須與排班分開設 PORT）---
 $cashflowOk = Test-LocalOk "http://127.0.0.1:5000/"
-if (-not $cashflowOk -and $pm2) {
-    Write-Log "cashflow down — restart on PORT=5000"
+$cashflowListen = Test-PortListening 5000
+if ($cashflowOk) {
+    $healthState.cashflowHttpFails = 0
+} elseif ($cashflowListen) {
+    $healthState.cashflowHttpFails = [int]$healthState.cashflowHttpFails + 1
+    Write-Log "cashflow HTTP miss but :5000 listening (fails=$($healthState.cashflowHttpFails)/3) — skip restart"
+    $cashflowOk = $true
+    if ($pm2 -and [int]$healthState.cashflowHttpFails -ge 3) {
+        Write-Log "cashflow HTTP miss x3 — restart on PORT=5000"
+        $env:PORT = "5000"
+        if (Test-Pm2AppExists -Name "cashflow") {
+            & $pm2 restart cashflow --update-env 2>$null | Out-Null
+        }
+        Start-Sleep -Seconds 3
+        $cashflowOk = Test-LocalOk "http://127.0.0.1:5000/"
+        $healthState.cashflowHttpFails = 0
+        Write-Log ("cashflow after repair: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
+    }
+} elseif ($pm2) {
+    Write-Log "cashflow down (port closed) — restart on PORT=5000"
     $env:PORT = "5000"
     if (Test-Pm2AppExists -Name "cashflow") {
         & $pm2 restart cashflow --update-env 2>$null | Out-Null
@@ -67,17 +132,19 @@ if (-not $cashflowOk -and $pm2) {
     }
     Start-Sleep -Seconds 3
     $cashflowOk = Test-LocalOk "http://127.0.0.1:5000/"
+    $healthState.cashflowHttpFails = 0
     Write-Log ("cashflow after repair: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
 }
 
-# --- funnel：每分鐘探測外網；設定還在但連不上也會重宣告（不 reset）---
-$funnelPublic = Repair-FunnelIfNeeded -WriteLog { param($m) Write-Log $m }
+# --- funnel：路由還在就別動；消失才重宣告。不要探測公開 URL（會跟正在用的人搶連線）---
+$funnelRoutes = Repair-FunnelIfNeeded -WriteLog { param($m) Write-Log $m }
 
 if ($pm2) {
     & $pm2 save 2>$null | Out-Null
 }
 
-Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnelPublic=$funnelPublic"
+Save-KeepaliveHealthState $healthState
+Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnelRoutes=$funnelRoutes"
 
-if ($pharmacyOk -and $funnelPublic) { exit 0 }
+if ($pharmacyOk -and $funnelRoutes) { exit 0 }
 exit 1

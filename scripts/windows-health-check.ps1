@@ -84,9 +84,16 @@ $publicUrl = (Get-FunnelPublicBaseUrl) + "/login"
 if (Test-FunnelPublicOk) {
     Ok "public $publicUrl"
 } else {
-    Bad "public URL not reachable: $publicUrl"
-    Info "Local HTTP can be OK while Funnel is down. Restore with:"
-    Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1"
+    if ($phOk -and $cfOk) {
+        Info "public probe failed: $publicUrl"
+        Info "Funnel routes are still configured. Same-PC public probe is often a false alarm;"
+        Info "do not funnel reset while people are using it. If phone 4G really cannot open it:"
+        Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
+    } else {
+        Bad "public URL not reachable: $publicUrl"
+        Info "Local HTTP can be OK while Funnel is down. Restore with:"
+        Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
+    }
 }
 Info "Verify :8443 with a phone on 4G (not store Wi-Fi)"
 
