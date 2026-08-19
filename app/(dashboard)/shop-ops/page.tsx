@@ -103,7 +103,7 @@ export default function ShopOpsPage() {
         if (!opts?.silent) setLoading(false);
       }
     },
-    [activeSiteId, currentUser?.id]
+    [activeSiteId, currentUser]
   );
 
   useEffect(() => {
