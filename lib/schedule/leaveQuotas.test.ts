@@ -78,6 +78,31 @@ describe("leaveQuotas", () => {
     ).toContain("禮拜日");
   });
 
+  it("關閉週日公休後週日可排休", () => {
+    const p = {
+      ...defaultStorePoliciesForSite("jiji"),
+      sundayFixedRest: false,
+    };
+    expect(
+      canSelectLeaveDate({
+        date: "2026-08-02",
+        selectedDates: [],
+        policies: p,
+        isWeekdayOffRule: false,
+        saturdaysInMonth: 5,
+      })
+    ).toBe(true);
+    expect(
+      leaveAddBlockedMessage({
+        date: "2026-08-02",
+        selectedDates: [],
+        policies: p,
+        isWeekdayOffRule: false,
+        saturdaysInMonth: 5,
+      })
+    ).toBeNull();
+  });
+
   it("竹山週六／平日各 2 天", () => {
     const p = defaultStorePoliciesForSite("zhushan");
     expect(isMonthPoolLeaveQuota(p)).toBe(false);
@@ -136,5 +161,6 @@ describe("leaveQuotas", () => {
     const p = defaultStorePoliciesForSite("jiji");
     expect(leaveQuotaHint(p, 5, false)).toContain("週一至週六皆可休");
     expect(leaveQuotaHint(p, 5, false)).toContain("5 天");
+    expect(leaveQuotaHint(p, 5, false)).toContain("排休半天也算一次機會");
   });
 });

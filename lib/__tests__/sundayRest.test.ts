@@ -56,4 +56,15 @@ describe("sundayRest", () => {
       { date: "2026-07-18", shift: "B", userId: "u1" },
     ]);
   });
+
+  it("store setting sundayFixedRest false allows Sunday work and swap", () => {
+    expect(assertSundayShiftAllowed("2026-07-19", "A", false).ok).toBe(true);
+    expect(assertNoSundayInSwapDates("2026-07-18", "2026-07-19", false).ok).toBe(true);
+    expect(
+      enforceSundayRestOnChanges(
+        [{ date: "2026-07-19", shift: "A", userId: "u1" }],
+        false
+      )
+    ).toEqual([{ date: "2026-07-19", shift: "A", userId: "u1" }]);
+  });
 });

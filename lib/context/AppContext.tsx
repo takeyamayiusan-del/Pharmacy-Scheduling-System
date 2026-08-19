@@ -45,6 +45,7 @@ import {
   isLocalSaturday,
   isLocalTuesday,
   isLocalWednesday,
+  isSundayRestDay,
   normalizeCalendarDate,
   parseLocalDateParts,
 } from "@/lib/schedule/sundayRest";
@@ -1851,9 +1852,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Schedule (localStorage) ─────────────────────────────────────────────────
 
-  /** 基準上班班別（忽略排休勾選；禮拜日仍為 X） */
+  /** 基準上班班別（忽略排休勾選；週日公休開啟時仍為 X） */
   const getWorkShiftIgnoringLeave = (date: string, employeeId: string): ScheduleShiftCode => {
-    if (isSunday(date)) return "X";
+    if (isSundayRestDay(date, storeConfig.policies.sundayFixedRest)) return "X";
 
     const emp = employees.find((e) => e.id === employeeId);
     if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
@@ -1906,7 +1907,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getBaseShiftForDate = (date: string, employeeId: string): ScheduleShiftCode => {
-    if (isSunday(date)) return "X";
+    if (isSundayRestDay(date, storeConfig.policies.sundayFixedRest)) return "X";
 
     const emp = employees.find((e) => e.id === employeeId);
     if (emp && !isEmployeeActiveOnDate(emp, date)) return "X";
@@ -1936,7 +1937,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       : undefined;
 
     return resolveShiftForDate({
-      isSunday: isSunday(date),
+      isSunday: isSundayRestDay(date, storeConfig.policies.sundayFixedRest),
       isActive: !emp || isEmployeeActiveOnDate(emp, date),
       saturdayFixedOff: fixedSat?.shift === "X",
       leaveSelected: isLeaveSelectedOnDate(leaveSelections[employeeId], date),
@@ -1960,7 +1961,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     shift: ScheduleShiftCode,
     options?: { note?: string | null; noteKind?: string | null }
   ) => {
-    const sundayCheck = assertSundayShiftAllowed(date, shift);
+    const sundayCheck = assertSundayShiftAllowed(
+      date,
+      shift,
+      storeConfig.policies.sundayFixedRest
+    );
     if (!sundayCheck.ok) {
       throw new Error(sundayCheck.message);
     }
@@ -2128,7 +2133,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isPastDate(date)) {
       throw new Error("已過去的日期無法修改班表");
     }
-    if (isSunday(date)) {
+    if (isSundayRestDay(date, storeConfig.policies.sundayFixedRest)) {
       throw new Error("禮拜日為固定公休，無法一鍵設定");
     }
     if (!getHolidayInfo(date).isHoliday) {
@@ -2403,7 +2408,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .map((d) => normalizeCalendarDate(d))
       .filter((d) => d && isInMonth(d, year, month));
     const selectedSaturdayDates = selectedDates.filter((d) => isSaturday(d));
-    const weekdayDates = selectedDates.filter((d) => !isSaturday(d) && !isSunday(d));
+    const weekdayDates = selectedDates.filter(
+      (d) => !isSaturday(d) && !isSundayRestDay(d, storeConfig.policies.sundayFixedRest)
+    );
 
     const emp = employees.find((e) => e.id === employeeId);
     const isWeekdayOffRule = emp?.isWeekdayOffRule ?? false;
@@ -2414,7 +2421,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const wdLimit = weekdayLeaveQuota(storeConfig.policies, isWeekdayOffRule);
 
     const monthPool = isMonthPoolLeaveQuota(storeConfig.policies) && !isWeekdayOffRule;
-    const monthUsed = countMonthPoolUsed(selectedDates);
+    const monthUsed = countMonthPoolUsed(
+      selectedDates,
+      storeConfig.policies.sundayFixedRest
+    );
     const monthLimit = satLimit;
 
     return {
@@ -3331,7 +3341,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addSwapRequest = async (request: Omit<SwapRequest, "id" | "createdAt">) => {
     const sundayCheck = assertNoSundayInSwapDates(
       request.requesterDate,
-      request.targetDate
+      request.targetDate,
+      storeConfig.policies.sundayFixedRest
     );
     if (!sundayCheck.ok) {
       throw new Error(sundayCheck.message);

@@ -62,7 +62,8 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
     saturdayQuotaMode: isJiji ? "month_pool" : "fixed",
     saturdayLeaveQuota: 2,
     weekdayLeaveQuota: isJiji ? 0 : 2,
-    sundayFixedRest: true,
+  sundayFixedRest: true,
+    /** 排休半天一律算一次機會（保留欄位相容舊 JSON，畫面不再提供開關） */
     halfDayLeaveCountsAsOne: true,
     approvalChain: isJiji ? ["manager", "deputy", "owner"] : ["manager"],
     allowLeaveDeferral: isJiji,
@@ -152,10 +153,7 @@ export function parseStorePolicies(
     saturdayLeaveQuota: asInt(o.saturdayLeaveQuota, defaults.saturdayLeaveQuota, 0, 10),
     weekdayLeaveQuota,
     sundayFixedRest: asBool(o.sundayFixedRest, defaults.sundayFixedRest),
-    halfDayLeaveCountsAsOne: asBool(
-      o.halfDayLeaveCountsAsOne,
-      defaults.halfDayLeaveCountsAsOne
-    ),
+    halfDayLeaveCountsAsOne: true,
     approvalChain: parseChain(o.approvalChain, defaults.approvalChain),
     allowLeaveDeferral: asBool(o.allowLeaveDeferral, defaults.allowLeaveDeferral),
     autoRestSuggestEnabled: asBool(

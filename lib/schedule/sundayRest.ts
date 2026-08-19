@@ -43,6 +43,11 @@ export function isFixedSundayRest(dateStr: string): boolean {
   return getLocalDayOfWeek(dateStr) === 0;
 }
 
+/** 店規「週日固定公休」開啟時，該日視為公休 */
+export function isSundayRestDay(dateStr: string, sundayFixedRest: boolean): boolean {
+  return sundayFixedRest && isFixedSundayRest(dateStr);
+}
+
 export function isLocalSaturday(dateStr: string): boolean {
   return getLocalDayOfWeek(dateStr) === 6;
 }
@@ -59,9 +64,13 @@ export const SUNDAY_REST_MESSAGE = "禮拜日為固定公休，不可換班或�
 
 export function assertNoSundayInSwapDates(
   requesterDate: string,
-  targetDate: string
+  targetDate: string,
+  sundayFixedRest = true
 ): { ok: true } | { ok: false; message: string } {
-  if (isFixedSundayRest(requesterDate) || isFixedSundayRest(targetDate)) {
+  if (
+    isSundayRestDay(requesterDate, sundayFixedRest) ||
+    isSundayRestDay(targetDate, sundayFixedRest)
+  ) {
     return { ok: false, message: SUNDAY_REST_MESSAGE };
   }
   return { ok: true };
@@ -69,18 +78,20 @@ export function assertNoSundayInSwapDates(
 
 export function assertSundayShiftAllowed(
   date: string,
-  shift: string
+  shift: string,
+  sundayFixedRest = true
 ): { ok: true } | { ok: false; message: string } {
-  if (!isFixedSundayRest(date)) return { ok: true };
+  if (!isSundayRestDay(date, sundayFixedRest)) return { ok: true };
   if (shift === "X") return { ok: true };
   return { ok: false, message: SUNDAY_REST_MESSAGE };
 }
 
 /** 換班寫入前：禮拜日格子強制維持 X（防呆） */
 export function enforceSundayRestOnChanges<T extends { date: string; shift: string }>(
-  changes: T[]
+  changes: T[],
+  sundayFixedRest = true
 ): T[] {
   return changes.map((c) =>
-    isFixedSundayRest(c.date) ? { ...c, shift: "X" } : c
+    isSundayRestDay(c.date, sundayFixedRest) ? { ...c, shift: "X" } : c
   );
 }

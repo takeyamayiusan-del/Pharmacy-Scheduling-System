@@ -11,7 +11,7 @@ import { workHoursRegimeMeta, type WorkHoursRegime } from "@/lib/attendance/work
 import type { ScheduleShiftCode, ShiftTimeConfig } from "@/lib/context/AppContext";
 import type { StoreConfig } from "@/lib/store-config";
 import { isOffShiftCode } from "@/lib/shift-catalog/resolve";
-import { isFixedSundayRest } from "@/lib/schedule/sundayRest";
+import { isSundayRestDay } from "@/lib/schedule/sundayRest";
 
 export type AutoRestEmployee = RegimeEmployee & {
   id: string;
@@ -112,7 +112,7 @@ export function previewAutoRest(options: {
         if (isOffShiftCode(shift, storeConfig)) continue;
         const h = getShiftWorkHours(shift, shiftTimeConfig, storeConfig);
         hours += h;
-        if (date >= monthStart && date <= monthEnd && !isFixedSundayRest(date)) {
+        if (date >= monthStart && date <= monthEnd && !isSundayRestDay(date, storeConfig.policies.sundayFixedRest)) {
           workDatesInMonth.push({ date, shift, hours: h });
         }
       }

@@ -84,4 +84,24 @@ describe("deformedHoursSoftWarnings", () => {
     expect(cycleMsgs.some((m) => m.includes("2026-08-31"))).toBe(false);
     expect(cycleMsgs.some((m) => m.includes("2026-08-03") && m.includes("2026-08-16"))).toBe(true);
   });
+
+  it("uses hire date as cycle anchor when store policy is on", () => {
+    const cfg = defaultStoreConfigForSite("jiji");
+    const fromHire = cyclesOverlappingMonth(2026, 8, "eight_week", "2026-03-12");
+    const fromStore = cyclesOverlappingMonth(2026, 8, "eight_week", cfg.workHoursCycleAnchor);
+    expect(fromHire[0].start).not.toBe(fromStore[0].start);
+    const warnings = buildDeformedHoursSoftWarnings({
+      year: 2026,
+      month: 8,
+      employees: [
+        { id: "e1", name: "店長", role: "manager", hireDate: "2026-03-12" },
+      ],
+      storeConfig: cfg,
+      getShiftForDate: () => "X",
+    });
+    expect(warnings.some((w) => w.kind === "cycle")).toBe(false);
+    expect(fromHire.some((c) => c.start === "2026-03-12" || c.start.startsWith("2026-"))).toBe(
+      true
+    );
+  });
 });

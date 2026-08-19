@@ -1019,13 +1019,20 @@ export default function SchedulePage() {
               <div className="flex items-center gap-2 min-w-0">
                 <span className="inline-block h-3 w-3 rounded-full shrink-0 bg-amber-500" aria-hidden />
                 <span className="font-medium text-amber-900 text-sm">
-                  變形工時（{workHoursRegimeMeta(storeConfig.workHoursRegime).label}，只算本月完整週期）
+                  變形工時（店家：{workHoursRegimeMeta(storeConfig.workHoursRegime).label}
+                  {storeConfig.policies.workHoursCycleFromHireDate ? "，週期可從入職日起算" : ""}
+                  ，只算本月完整週期）
                 </span>
               </div>
             }
-            subtitle={`硬性風險 ${hardComplianceWarnings.length} 則／軟警示 ${softComplianceWarnings.length} 則（目前僅提醒不阻擋）`}
+            subtitle={`硬性風險 ${hardComplianceWarnings.length} 則／軟警示 ${softComplianceWarnings.length} 則（目前僅提醒不阻擋；時數依班別時段／目錄）`}
             buttonClassName="hover:bg-amber-100/50"
           >
+            {storeConfig.workHoursAgreementNote ? (
+              <p className="text-xs text-amber-900/80">
+                核備／備註：{storeConfig.workHoursAgreementNote}
+              </p>
+            ) : null}
             {hardComplianceWarnings.length > 0 && (
               <div className="rounded-xl border border-rose-200 bg-rose-50 p-3">
                 <p className="text-sm font-semibold text-rose-800 mb-1">硬性風險（優先處理）</p>
@@ -1058,9 +1065,16 @@ export default function SchedulePage() {
                 變形工時正常
               </h3>
               <p className="text-sm text-green-800 mt-0.5">
-                綠燈：{workHoursRegimeMeta(storeConfig.workHoursRegime).label}
+                綠燈：店家{workHoursRegimeMeta(storeConfig.workHoursRegime).label}
+                {storeConfig.policies.workHoursCycleFromHireDate ? "（有入職日者從入職日起算週期）" : ""}
                 本月完整週期正常工時／單日上限／例假（每七日一例假）軟性檢查皆未超標。
+                個人制度可在員工管理覆寫。
               </p>
+              {storeConfig.workHoursAgreementNote ? (
+                <p className="text-xs text-green-800/80 mt-1">
+                  核備／備註：{storeConfig.workHoursAgreementNote}
+                </p>
+              ) : null}
             </div>
           </div>
         )}

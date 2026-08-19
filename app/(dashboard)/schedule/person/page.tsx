@@ -14,6 +14,7 @@ import {
 } from "@/lib/shift-catalog/resolve";
 import { getShiftName } from "@/lib/store-config";
 import {
+  resolveEmployeeCycleAnchor,
   resolveEmployeeWorkHoursRegime,
 } from "@/lib/attendance/employeeRegime";
 import { workHoursRegimeMeta } from "@/lib/attendance/workHoursRegime";
@@ -68,6 +69,9 @@ export default function PersonSchedulePage() {
   const regime = emp
     ? resolveEmployeeWorkHoursRegime(emp, storeConfig)
     : storeConfig.workHoursRegime;
+  const cycleAnchor = emp
+    ? resolveEmployeeCycleAnchor(emp, storeConfig, storeConfig.policies)
+    : storeConfig.workHoursCycleAnchor;
 
   const applyBaselineMonth = async () => {
     if (!emp) return;
@@ -80,7 +84,8 @@ export default function PersonSchedulePage() {
       let written = 0;
       for (let day = 1; day <= daysInMonth; day += 1) {
         const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        if (isSunday(dateStr) || isPastDate(dateStr)) continue;
+        if (isSunday(dateStr) && storeConfig.policies.sundayFixedRest) continue;
+        if (isPastDate(dateStr)) continue;
         if (getBaseShiftForDate(dateStr, emp.id) === "X") continue;
         if (!isEmployeeActiveOnDate(emp, dateStr)) continue;
         const shift = isSaturday(dateStr)
@@ -168,9 +173,13 @@ export default function PersonSchedulePage() {
 
       {emp && (
         <p className="text-sm text-gray-600">
-          {emp.name}：{workHoursRegimeMeta(regime).label}；沒休假時預設上{" "}
+          {emp.name}：{workHoursRegimeMeta(regime).label}（週期起算 {cycleAnchor}
+          {storeConfig.policies.workHoursCycleFromHireDate && emp.hireDate
+            ? "，依入職日"
+            : "，依店家設定"}
+          ）；沒休假時預設上{" "}
           <span className="font-medium">{getShiftName(storeConfig, baseline)}</span>
-          。週日公休。點日期改班。
+          。{storeConfig.policies.sundayFixedRest ? "週日公休。" : "週日可排班。"}點日期改班。
         </p>
       )}
 

@@ -1,7 +1,7 @@
 import type { StorePolicies } from "@/lib/store-policies";
 import {
-  isFixedSundayRest,
   isLocalSaturday,
+  isSundayRestDay,
 } from "@/lib/schedule/sundayRest";
 import type { LeaveSelectionPeriod } from "@/lib/schedule/leaveSelectionPeriod";
 
@@ -50,9 +50,7 @@ export function leaveQuotaHint(
 ): string {
   const sat = saturdayLeaveQuota(policies, saturdaysInMonth);
   const sunday = policies.sundayFixedRest ? "週日固定公休" : "週日不固定公休";
-  const half = policies.halfDayLeaveCountsAsOne
-    ? "排休半天也算一次機會。"
-    : "";
+  const half = "排休半天也算一次機會。";
   if (isWeekdayOffRule) {
     const satText =
       policies.saturdayQuotaMode === "fixed"
@@ -71,8 +69,13 @@ export function leaveQuotaHint(
   return `${sunday}；${satText}；平日可排休 ${wd} 天。${half}`.trim();
 }
 
-export function countMonthPoolUsed(selectedDates: string[]): number {
-  return selectedDates.filter((d) => d && !isFixedSundayRest(d)).length;
+export function countMonthPoolUsed(
+  selectedDates: string[],
+  sundayFixedRest = true
+): number {
+  return selectedDates.filter(
+    (d) => d && !isSundayRestDay(d, sundayFixedRest)
+  ).length;
 }
 
 export function canSelectLeaveDate(input: {
@@ -85,12 +88,12 @@ export function canSelectLeaveDate(input: {
   const { date, selectedDates, policies, isWeekdayOffRule, saturdaysInMonth } =
     input;
   if (selectedDates.includes(date)) return true;
-  if (isFixedSundayRest(date)) return false;
+  if (isSundayRestDay(date, policies.sundayFixedRest)) return false;
   if (isWeekdayOffRule && !isLocalSaturday(date)) return false;
 
   const satLimit = saturdayLeaveQuota(policies, saturdaysInMonth);
   if (isMonthPoolLeaveQuota(policies) && !isWeekdayOffRule) {
-    return countMonthPoolUsed(selectedDates) < satLimit;
+    return countMonthPoolUsed(selectedDates, policies.sundayFixedRest) < satLimit;
   }
 
   if (isLocalSaturday(date)) {
@@ -100,7 +103,7 @@ export function canSelectLeaveDate(input: {
 
   const wdLimit = weekdayLeaveQuota(policies, isWeekdayOffRule);
   const wdUsed = selectedDates.filter(
-    (d) => !isLocalSaturday(d) && !isFixedSundayRest(d)
+    (d) => !isLocalSaturday(d) && !isSundayRestDay(d, policies.sundayFixedRest)
   ).length;
   return wdUsed < wdLimit;
 }
@@ -126,7 +129,7 @@ export function leaveAddBlockedMessage(input: {
     workShift,
   } = input;
 
-  if (isFixedSundayRest(date)) {
+  if (isSundayRestDay(date, policies.sundayFixedRest)) {
     return "禮拜日固定公休，不需要另外選擇";
   }
   if (isWeekdayOffRule && !isLocalSaturday(date)) {
@@ -143,7 +146,7 @@ export function leaveAddBlockedMessage(input: {
 
   const satLimit = saturdayLeaveQuota(policies, saturdaysInMonth);
   if (isMonthPoolLeaveQuota(policies) && !isWeekdayOffRule) {
-    if (countMonthPoolUsed(selectedDates) >= satLimit) {
+    if (countMonthPoolUsed(selectedDates, policies.sundayFixedRest) >= satLimit) {
       return `本月排休已達 ${satLimit} 天上限（依本月週六數）`;
     }
     return null;
@@ -159,7 +162,7 @@ export function leaveAddBlockedMessage(input: {
 
   const wdLimit = weekdayLeaveQuota(policies, isWeekdayOffRule);
   const wdUsed = selectedDates.filter(
-    (d) => !isLocalSaturday(d) && !isFixedSundayRest(d)
+    (d) => !isLocalSaturday(d) && !isSundayRestDay(d, policies.sundayFixedRest)
   ).length;
   if (wdUsed >= wdLimit) {
     return wdLimit <= 0

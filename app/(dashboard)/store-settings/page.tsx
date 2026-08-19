@@ -827,7 +827,9 @@ export default function StoreSettingsPage() {
       <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">變形工時制度（勞基法）</h2>
         <p className="text-sm text-gray-500">
-          依勞基法兩周／八周變形工時標記本店制度。班表頁檢查週期正常工時、單日上限與例假（每七日一例假），
+          這裡的制度會真正用來計工時：班表頁變形工時檢查、超時播假、薪資／出勤的表定工時都依此計算。
+          時數來自班別目錄（或竹山 A–E 時段），不是固定 8 小時。
+          依勞基法兩周／八周變形工時標記本店制度。檢查週期正常工時、單日上限與例假（每七日一例假），
           <span className="font-medium text-gray-700">僅提醒、不阻擋存檔</span>
           ；不取代正式加班申請與勞檢判定。
         </p>
@@ -864,7 +866,25 @@ export default function StoreSettingsPage() {
             className="mt-1 w-full border rounded-lg px-3 py-2"
           />
           <span className="mt-1 block text-xs text-gray-500">
-            非法條規定的「每月1日」。請填與勞檢／核備文件相同的起算日（常見為某一星期一），系統自此對齊兩周或八周。
+            {draft.policies.workHoursCycleFromHireDate
+              ? "已勾選「從入職日起算」時，有入職日的員工以此為準；沒有入職日才用這裡的店家起算日。"
+              : "非法條規定的「每月1日」。請填與勞檢／核備文件相同的起算日（常見為某一星期一），系統自此對齊兩周或八周。"}
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.policies.workHoursCycleFromHireDate}
+            onChange={(e) =>
+              patchPolicies({ workHoursCycleFromHireDate: e.target.checked })
+            }
+          />
+          <span>
+            <span className="font-medium text-gray-800">變形工時週期從個人入職日起算</span>
+            <span className="block text-gray-500">
+              開啟後，班表變形工時與播假會用該員工入職日當週期錨點（集集預設開啟）。
+            </span>
           </span>
         </label>
         <label className="block text-sm">
@@ -895,7 +915,7 @@ export default function StoreSettingsPage() {
         <p className="text-sm text-gray-500">
           兩店同一套程式，這裡改的是「目前這家店」，沒有綁死店別。集集預設：未滿 30
           分不可加班、週六依本月週六數、申請關卡店長→副店→老闆、播假可開。竹山預設維持原規則：半小時內可選加班費、週六／平日各
-          2 天、僅店長一關、不開播假；每一項都能改。
+          2 天、僅店長一關、不開播假；每一項都能改。排休半天一律算一次機會。
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="block text-sm">
@@ -1031,16 +1051,7 @@ export default function StoreSettingsPage() {
             checked={draft.policies.sundayFixedRest}
             onChange={(e) => patchPolicies({ sundayFixedRest: e.target.checked })}
           />
-          <span>週日固定公休</span>
-        </label>
-        <label className="flex items-start gap-3 text-sm">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={draft.policies.halfDayLeaveCountsAsOne}
-            onChange={(e) => patchPolicies({ halfDayLeaveCountsAsOne: e.target.checked })}
-          />
-          <span>排休半天也算一次機會</span>
+          <span>週日固定公休（關閉後週日可排班，工時會計入）</span>
         </label>
         <label className="flex items-start gap-3 text-sm">
           <input
@@ -1061,17 +1072,6 @@ export default function StoreSettingsPage() {
           <span>
             超時播假預覽（可關）。班表試算後請店長確認即可寫入，不走申請多關、不默默改已鎖定月份。
           </span>
-        </label>
-        <label className="flex items-start gap-3 text-sm">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={draft.policies.workHoursCycleFromHireDate}
-            onChange={(e) =>
-              patchPolicies({ workHoursCycleFromHireDate: e.target.checked })
-            }
-          />
-          <span>變形工時週期從個人入職日起算</span>
         </label>
         <div>
           <p className="text-sm font-medium text-gray-800 mb-2">審核關卡順序（可客製）</p>

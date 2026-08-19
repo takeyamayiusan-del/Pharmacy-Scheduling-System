@@ -79,4 +79,9 @@ describe("store-policies", () => {
     expect(next.leaveRules["事假"]?.daysLimit).toBeNull();
     expect(next.leaveRules["產假"]?.daysLimit).toBe(56);
   });
+
+  it("排休半天一律算一次機會，舊 JSON 關掉也無效", () => {
+    const j = parseStorePolicies({ halfDayLeaveCountsAsOne: false }, "jiji");
+    expect(j.halfDayLeaveCountsAsOne).toBe(true);
+  });
 });

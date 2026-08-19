@@ -430,7 +430,9 @@ export default function LeaveSelectionPage() {
                         : "已選"}
                     </span>
                   )}
-                  {isSun && !isSelected && <span className="text-[10px] sm:text-xs leading-tight">固定</span>}
+                  {isSun && storeConfig.policies.sundayFixedRest && !isSelected && (
+                    <span className="text-[10px] sm:text-xs leading-tight">固定</span>
+                  )}
                   {holidayInfo.isHoliday && !isSun && (
                     <div className="absolute inset-x-0 bottom-0 rounded-b-lg bg-yellow-400 text-yellow-950 text-[10px] sm:text-xs font-bold leading-none py-0.5 text-center border-t border-amber-600">
                       國定

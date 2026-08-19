@@ -9,7 +9,7 @@ import { LeaveOrderGuide } from "@/components/schedule/LeaveOrderGuide";
 import { HelpTip } from "@/components/ui/HelpTip";
 import {
   assertNoSundayInSwapDates,
-  isFixedSundayRest,
+  isSundayRestDay,
   SUNDAY_REST_MESSAGE,
 } from "@/lib/schedule/sundayRest";
 import {
@@ -80,7 +80,8 @@ export default function ShiftSwapPage() {
     if (!currentUser) return;
     const sundayCheck = assertNoSundayInSwapDates(
       formData.requesterDate,
-      formData.targetDate
+      formData.targetDate,
+      storeConfig.policies.sundayFixedRest
     );
     if (!sundayCheck.ok) {
       alert(sundayCheck.message);
@@ -209,10 +210,10 @@ export default function ShiftSwapPage() {
                 <input type="date" value={formData.requesterDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, requesterDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
-                {isFixedSundayRest(formData.requesterDate) && (
+                {isSundayRestDay(formData.requesterDate, storeConfig.policies.sundayFixedRest) && (
                   <p className="text-xs text-red-600 mt-1">{SUNDAY_REST_MESSAGE}</p>
                 )}
-                {previewRequesterShift && !isFixedSundayRest(formData.requesterDate) && (
+                {previewRequesterShift && !isSundayRestDay(formData.requesterDate, storeConfig.policies.sundayFixedRest) && (
                   <p className="text-xs text-gray-500 mt-1">當日班別：{previewRequesterShift}</p>
                 )}
               </div>
@@ -221,10 +222,10 @@ export default function ShiftSwapPage() {
                 <input type="date" value={formData.targetDate} min={currentMonthMinDate()}
                   onChange={e => setFormData({ ...formData, targetDate: e.target.value })}
                   className="w-full px-3 py-2 border rounded-lg" required />
-                {isFixedSundayRest(formData.targetDate) && (
+                {isSundayRestDay(formData.targetDate, storeConfig.policies.sundayFixedRest) && (
                   <p className="text-xs text-red-600 mt-1">{SUNDAY_REST_MESSAGE}</p>
                 )}
-                {previewTargetShift && !isFixedSundayRest(formData.targetDate) && (
+                {previewTargetShift && !isSundayRestDay(formData.targetDate, storeConfig.policies.sundayFixedRest) && (
                   <p className="text-xs text-gray-500 mt-1">對方班別：{previewTargetShift}</p>
                 )}
               </div>
