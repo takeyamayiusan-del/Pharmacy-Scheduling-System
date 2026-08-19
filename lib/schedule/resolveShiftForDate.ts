@@ -18,12 +18,18 @@ export function resolveShiftForDate<T extends string>(input: {
   isActive: boolean;
   saturdayFixedOff: boolean;
   leaveSelected: boolean;
+  /** 半天排休：剩下半天要上的班碼；有值時不顯示全日 X */
+  halfDayWorkShift?: T | null;
   override?: T | null;
   baseWorkShift: T;
 }): T | "X" {
   if (input.isSunday || !input.isActive) return "X";
   if (input.saturdayFixedOff) return "X";
-  if (input.leaveSelected) return "X";
+  if (input.leaveSelected) {
+    const half = input.halfDayWorkShift;
+    if (half && half !== "X") return half;
+    return "X";
+  }
   if (input.override) return input.override;
   return input.baseWorkShift;
 }

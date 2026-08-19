@@ -14,7 +14,21 @@ import {
   resolveApprovalDecision,
   rolesToNotify,
 } from "@/lib/approvals/chain";
-import { saturdayLeaveQuota, weekdayLeaveQuota } from "@/lib/schedule/leaveQuotas";
+import {
+  countMonthPoolUsed,
+  isMonthPoolLeaveQuota,
+  leaveAddBlockedMessage,
+  saturdayLeaveQuota,
+  weekdayLeaveQuota,
+} from "@/lib/schedule/leaveQuotas";
+import {
+  halfDayLeaveNote,
+  isHalfDayLeavePeriod,
+  parseLeaveSelectionPeriod,
+  type LeaveSelectionDetail,
+  type LeaveSelectionMetaMap,
+  type LeaveSelectionPeriod,
+} from "@/lib/schedule/leaveSelectionPeriod";
 import { isWorkHoursRegime } from "@/lib/attendance/workHoursRegime";
 import { getPunchSlotsForRanges, calcLateMinutes, timeToMinutes, minutesDiff, todayDateStr, type PunchSlot } from "@/lib/attendance/punchSchedule";
 import { resolveLateAfterLeaveApproval } from "@/lib/attendance/punchLeaveAdjust";
@@ -117,6 +131,10 @@ export type Employee = {
   /** 參與週期輪值晚班（DB: is_wednesday_rotation，語意已泛化） */
   isWednesdayRotation?: boolean;
   isWeekdayOffRule?: boolean;     // 平日不排休規則
+  /** 只能休半天：排休選擇不可選全日 */
+  isHalfDayLeaveRule?: boolean;
+  /** 半天規則預設剩下半天班碼 */
+  halfDayWorkShift?: string | null;
   /** 個人變形工時；空=跟店家設定 */
   workHoursRegime?: import("@/lib/attendance/workHoursRegime").WorkHoursRegime | null;
   /** 本月基準班（播假用） */
@@ -377,6 +395,14 @@ export type LeaveSummary = {
   weekdayLimit: number;
   optionalSaturdayUsed: boolean;
   optionalSaturdayAvailable: boolean;
+  monthPool: boolean;
+  monthUsed: number;
+  monthLimit: number;
+};
+
+export type ToggleLeaveDateOptions = {
+  period?: LeaveSelectionPeriod;
+  workShift?: string | null;
 };
 
 export type LeaveMonthLock = {
@@ -505,7 +531,12 @@ interface AppContextType {
   /** 是否老闆（可跨店） */
   canSwitchSite: boolean;
   getLeaveSummary: (employeeId: string, year: number, month: number) => LeaveSummary;
-  toggleLeaveDate: (employeeId: string, date: string) => { success: boolean; message?: string };
+  getLeaveSelectionDetail: (employeeId: string, date: string) => LeaveSelectionDetail | null;
+  toggleLeaveDate: (
+    employeeId: string,
+    date: string,
+    options?: ToggleLeaveDateOptions
+  ) => { success: boolean; message?: string };
   isLeaveMonthLocked: (year: number, month: number) => boolean;
   lockLeaveMonth: (year: number, month: number, lockedBy: string) => Promise<void>;
   unlockLeaveMonth: (year: number, month: number) => Promise<void>;
@@ -621,6 +652,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [bulletinReads, setBulletinReads] = useState<{ bulletinId: string; userId: string }[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>({});
+  const [leaveSelectionMeta, setLeaveSelectionMeta] = useState<LeaveSelectionMetaMap>({});
   const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({});
   const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>([]);
   const [compLeaveLedger, setCompLeaveLedger] = useState<CompLeaveLedgerEntry[]>([]);
@@ -726,17 +758,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [supabase]);
 
   const loadLeaveSelections = useCallback(async () => {
-    const { data } = await supabase.from("leave_selections").select("user_id, date");
-    if (data) {
+    const applyRows = (
+      rows: Array<{
+        user_id: string;
+        date: string;
+        period?: string | null;
+        work_shift?: string | null;
+      }>
+    ) => {
       const result: LeaveSelections = {};
-      data.forEach((r) => {
+      const meta: LeaveSelectionMetaMap = {};
+      rows.forEach((r) => {
         const date = normalizeCalendarDate(r.date);
         if (!date) return;
         if (!result[r.user_id]) result[r.user_id] = [];
         result[r.user_id].push(date);
+        if (!meta[r.user_id]) meta[r.user_id] = {};
+        meta[r.user_id][date] = {
+          period: parseLeaveSelectionPeriod(r.period),
+          workShift: r.work_shift ? String(r.work_shift) : null,
+        };
       });
       setLeaveSelections(result);
+      setLeaveSelectionMeta(meta);
+    };
+
+    const withPeriod = await supabase
+      .from("leave_selections")
+      .select("user_id, date, period, work_shift");
+    if (!withPeriod.error && withPeriod.data) {
+      applyRows(withPeriod.data);
+      return;
     }
+    const { data } = await supabase.from("leave_selections").select("user_id, date");
+    if (data) applyRows(data);
   }, [supabase]);
 
   const loadFixedShifts = useCallback(async () => {
@@ -821,6 +876,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     end_date?: string | null;
     is_wednesday_rotation?: boolean | null;
     is_weekday_off_rule?: boolean | null;
+    is_half_day_leave_rule?: boolean | null;
+    half_day_work_shift?: string | null;
     site_id?: string | null;
     work_hours_regime?: string | null;
     baseline_shift?: string | null;
@@ -834,6 +891,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     siteId: parseSiteId(r.site_id),
     isWednesdayRotation: r.is_wednesday_rotation ?? false,
     isWeekdayOffRule: r.is_weekday_off_rule ?? false,
+    isHalfDayLeaveRule: r.is_half_day_leave_rule ?? false,
+    halfDayWorkShift: r.half_day_work_shift ?? null,
     workHoursRegime: isWorkHoursRegime(r.work_hours_regime) ? r.work_hours_regime : null,
     baselineShift: r.baseline_shift ?? null,
   });
@@ -842,7 +901,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const { data } = await supabase
       .from("users")
       .select(
-        "id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id, work_hours_regime, baseline_shift"
+        "id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift"
       )
       .eq("is_active", true);
     if (data) {
@@ -1529,7 +1588,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const { data: userRow } = await supabase
               .from("users")
               .select(
-                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id, work_hours_regime, baseline_shift"
+                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift"
               )
               .eq("id", session.user.id)
               .maybeSingle();
@@ -1600,7 +1659,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const { data: userRow } = await supabase
               .from("users")
               .select(
-                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, site_id, work_hours_regime, baseline_shift"
+                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift"
               )
               .eq("id", session.user.id)
               .maybeSingle();
@@ -1676,7 +1735,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select(
-          "id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule, site_id, work_hours_regime, baseline_shift"
+          "id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift"
         )
         .eq("id", data.user.id)
         .single();
@@ -1755,6 +1814,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         password: updates.password,
         isWednesdayRotation: updates.isWednesdayRotation,
         isWeekdayOffRule: updates.isWeekdayOffRule,
+        isHalfDayLeaveRule: updates.isHalfDayLeaveRule,
+        halfDayWorkShift:
+          updates.halfDayWorkShift === undefined ? undefined : updates.halfDayWorkShift || null,
         hire_date: updates.hireDate,
         end_date: updates.endDate === undefined ? undefined : updates.endDate || null,
         site_id: updates.siteId,
@@ -1851,8 +1913,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // 排休勾選（含週六）優先於預設／固定班
     const dateKey = normalizeCalendarDate(date);
+    const halfDayWorkShift = (() => {
+      const detail = leaveSelectionMeta[employeeId]?.[dateKey || date];
+      if (isHalfDayLeavePeriod(detail?.period) && detail.workShift && detail.workShift !== "X") {
+        return detail.workShift;
+      }
+      return null;
+    })();
     if (isLeaveSelectedOnDate(leaveSelections[employeeId], dateKey || date)) {
-      return "X";
+      return halfDayWorkShift ?? "X";
     }
 
     return getWorkShiftIgnoringLeave(date, employeeId);
@@ -1871,6 +1940,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       isActive: !emp || isEmployeeActiveOnDate(emp, date),
       saturdayFixedOff: fixedSat?.shift === "X",
       leaveSelected: isLeaveSelectedOnDate(leaveSelections[employeeId], date),
+      halfDayWorkShift: (() => {
+        const detail = leaveSelectionMeta[employeeId]?.[dateKey];
+        if (isHalfDayLeavePeriod(detail?.period) && detail.workShift) return detail.workShift;
+        return null;
+      })(),
       override: schedule[dateKey]?.[employeeId] ?? null,
       baseWorkShift: getWorkShiftIgnoringLeave(date, employeeId),
     });
@@ -1918,7 +1992,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       canManageSite(currentUser?.role);
     const emp = employees.find((e) => e.id === employeeId);
     const alreadySelected = isLeaveSelectedOnDate(leaveSelections[employeeId], date);
-    const syncAction = shouldSyncLeaveSelection(date, shift);
+    const dateKey = normalizeCalendarDate(date) || date;
+    const keepHalfDayLeave =
+      alreadySelected &&
+      isHalfDayLeavePeriod(leaveSelectionMeta[employeeId]?.[dateKey]?.period);
+    const syncAction = shouldSyncLeaveSelection(date, shift, { keepHalfDayLeave });
 
     if (isManagerEdit && syncAction === "add" && !alreadySelected) {
       const summary = getLeaveSummary(employeeId, y, m);
@@ -1927,7 +2005,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         emp?.name ?? "員工",
         date,
         leaveSelections,
-        { saturdayLimit: summary.saturdayLimit, weekdayLimit: summary.weekdayLimit }
+        { saturdayLimit: summary.saturdayLimit, weekdayLimit: summary.weekdayLimit, monthPool: summary.monthPool }
       );
       if (ruleCheck.shouldWarn && ruleCheck.message) {
         if (!window.confirm(ruleCheck.message)) return;
@@ -1967,12 +2045,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...prev,
           [employeeId]: [...(prev[employeeId] ?? []), date],
         }));
+        setLeaveSelectionMeta((prev) => ({
+          ...prev,
+          [employeeId]: {
+            ...(prev[employeeId] ?? {}),
+            [dateKey]: { period: "full_day", workShift: null },
+          },
+        }));
       } else if (syncAction === "remove" && alreadySelected) {
         await syncLeaveSelection("remove");
         setLeaveSelections((prev) => ({
           ...prev,
           [employeeId]: (prev[employeeId] ?? []).filter((d) => d !== date),
         }));
+        setLeaveSelectionMeta((prev) => {
+          const nextUser = { ...(prev[employeeId] ?? {}) };
+          delete nextUser[dateKey];
+          return { ...prev, [employeeId]: nextUser };
+        });
+      } else if (keepHalfDayLeave && shift !== "X") {
+        setLeaveSelectionMeta((prev) => ({
+          ...prev,
+          [employeeId]: {
+            ...(prev[employeeId] ?? {}),
+            [dateKey]: {
+              period: prev[employeeId]?.[dateKey]?.period ?? "morning",
+              workShift: shift,
+            },
+          },
+        }));
+        void supabase
+          .from("leave_selections")
+          .update({ work_shift: shift })
+          .eq("user_id", employeeId)
+          .eq("date", date)
+          .then(({ error }) => {
+            if (error) console.error("[updateShift] 更新半天班別失敗:", error);
+          });
       }
     }
 
@@ -2304,6 +2413,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
     const wdLimit = weekdayLeaveQuota(storeConfig.policies, isWeekdayOffRule);
 
+    const monthPool = isMonthPoolLeaveQuota(storeConfig.policies) && !isWeekdayOffRule;
+    const monthUsed = countMonthPoolUsed(selectedDates);
+    const monthLimit = satLimit;
+
     return {
       selectedDates,
       saturdayUsed: selectedSaturdayDates.length,
@@ -2312,10 +2425,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
       weekdayLimit: wdLimit,
       optionalSaturdayUsed: false,
       optionalSaturdayAvailable: false,
+      monthPool,
+      monthUsed,
+      monthLimit,
     };
   };
 
-  const toggleLeaveDate = (employeeId: string, date: string) => {
+  const getLeaveSelectionDetail = (employeeId: string, date: string): LeaveSelectionDetail | null => {
+    const dateKey = normalizeCalendarDate(date) || date;
+    return leaveSelectionMeta[employeeId]?.[dateKey] ?? null;
+  };
+
+  const toggleLeaveDate = (
+    employeeId: string,
+    date: string,
+    options?: ToggleLeaveDateOptions
+  ) => {
     const normalized = normalizeCalendarDate(date);
     const parts = parseLocalDateParts(normalized);
     if (!parts) {
@@ -2335,24 +2460,64 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const summary = getLeaveSummary(employeeId, year, month);
     const isSelected = summary.selectedDates.includes(normalized);
 
-    const emp = employees.find((e) => e.id === employeeId);
+    const emp = employees.find((e) => e.id === employeeId) ?? currentUser;
     const isWeekdayOffRule = emp?.isWeekdayOffRule ?? false;
+    const isHalfDayLeaveRule = emp?.isHalfDayLeaveRule ?? false;
+    const saturdaysInMonth = countSaturdaysInMonth(year, month);
 
-    const syncScheduleRest = (action: "add" | "remove") => {
-      if (action === "add") {
-        setSchedule((prev) => ({
-          ...prev,
-          [normalized]: { ...prev[normalized], [employeeId]: "X" },
-        }));
-        void upsertScheduleShift(supabase, employeeId, normalized, "X", currentUser?.id).catch(
-          (error) => console.error("[toggleLeaveDate] 同步班表休假失敗:", error)
-        );
-        return;
-      }
-      if (schedule[normalized]?.[employeeId] !== "X") return;
+    const writeScheduleCell = (
+      shift: ScheduleShiftCode,
+      note: string | null,
+      noteKind: string | null
+    ) => {
+      setSchedule((prev) => ({
+        ...prev,
+        [normalized]: { ...prev[normalized], [employeeId]: shift },
+      }));
+      setScheduleNotes((prev) => {
+        const day = { ...(prev[normalized] ?? {}) };
+        if (note) {
+          day[employeeId] = { note, kind: noteKind ?? "half_day_leave" };
+        } else {
+          delete day[employeeId];
+        }
+        return { ...prev, [normalized]: day };
+      });
+      void supabase
+        .from("schedule_entries")
+        .upsert(
+          {
+            user_id: employeeId,
+            date: normalized,
+            shift_code: shift,
+            updated_by: currentUser?.id,
+            note,
+            note_kind: noteKind,
+          },
+          { onConflict: "user_id,date" }
+        )
+        .then(({ error }) => {
+          if (error) console.error("[toggleLeaveDate] 同步班表失敗:", error);
+        });
+    };
+
+    const clearScheduleCell = (previousShift?: string | null) => {
+      const current = schedule[normalized]?.[employeeId];
+      const shouldClear =
+        current === "X" ||
+        (previousShift && current === previousShift) ||
+        current == null;
+      if (!shouldClear && current) return;
       setSchedule((prev) => {
         const day = { ...(prev[normalized] ?? {}) };
         delete day[employeeId];
+        return { ...prev, [normalized]: day };
+      });
+      setScheduleNotes((prev) => {
+        const day = { ...(prev[normalized] ?? {}) };
+        if (day[employeeId]?.kind === "half_day_leave") {
+          delete day[employeeId];
+        }
         return { ...prev, [normalized]: day };
       });
       void supabase
@@ -2365,46 +2530,92 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
     };
 
+    const persistSelection = (period: LeaveSelectionPeriod, workShift: string | null) => {
+      const row: Record<string, unknown> = {
+        user_id: employeeId,
+        date: normalized,
+        period,
+        work_shift: workShift,
+      };
+      supabase
+        .from("leave_selections")
+        .insert(row)
+        .then(({ error }) => {
+          if (!error) return;
+          if (error.code === "PGRST204" || /period|work_shift/i.test(error.message ?? "")) {
+            void supabase
+              .from("leave_selections")
+              .insert({ user_id: employeeId, date: normalized })
+              .then(({ error: fallbackError }) => {
+                if (fallbackError) {
+                  console.error("[toggleLeaveDate] 寫入排休失敗:", fallbackError);
+                }
+              });
+            return;
+          }
+          console.error("[toggleLeaveDate] 寫入排休失敗:", error);
+        });
+    };
+
     if (isSelected) {
+      const existing = leaveSelectionMeta[employeeId]?.[normalized];
       setLeaveSelections((prev) => ({
         ...prev,
         [employeeId]: (prev[employeeId] ?? []).filter((d) => normalizeCalendarDate(d) !== normalized),
       }));
+      setLeaveSelectionMeta((prev) => {
+        const nextUser = { ...(prev[employeeId] ?? {}) };
+        delete nextUser[normalized];
+        return { ...prev, [employeeId]: nextUser };
+      });
       supabase
         .from("leave_selections")
         .delete()
         .eq("user_id", employeeId)
         .eq("date", normalized)
         .then();
-      syncScheduleRest("remove");
+      clearScheduleCell(existing?.workShift ?? null);
       return { success: true };
     }
 
-    if (isSunday(normalized)) return { success: false, message: "禮拜日固定公休，不需要另外選擇" };
-    if (isWeekdayOffRule && !isSaturday(normalized)) return { success: false, message: "此員工套用平日不排休規則，排休只能選擇週六" };
+    const period: LeaveSelectionPeriod = isHalfDayLeaveRule
+      ? parseLeaveSelectionPeriod(options?.period)
+      : "full_day";
+    const workShift =
+      isHalfDayLeaveRule && options?.workShift && options.workShift !== "X"
+        ? options.workShift
+        : null;
 
-    if (isSaturday(normalized)) {
-      if (summary.saturdayUsed >= summary.saturdayLimit)
-        return {
-          success: false,
-          message: `禮拜六排休已達 ${summary.saturdayLimit} 天上限`,
-        };
-    } else if (summary.weekdayUsed >= summary.weekdayLimit) {
-      return {
-        success: false,
-        message:
-          summary.weekdayLimit <= 0
-            ? "本店平日不可排休"
-            : `平日排休已達 ${summary.weekdayLimit} 天上限`,
-      };
-    }
+    const blocked = leaveAddBlockedMessage({
+      date: normalized,
+      selectedDates: summary.selectedDates,
+      policies: storeConfig.policies,
+      isWeekdayOffRule,
+      saturdaysInMonth,
+      isHalfDayLeaveRule,
+      period,
+      workShift,
+    });
+    if (blocked) return { success: false, message: blocked };
 
     setLeaveSelections((prev) => ({
       ...prev,
       [employeeId]: [...(prev[employeeId] ?? []), normalized],
     }));
-    supabase.from("leave_selections").insert({ user_id: employeeId, date: normalized }).then();
-    syncScheduleRest("add");
+    setLeaveSelectionMeta((prev) => ({
+      ...prev,
+      [employeeId]: {
+        ...(prev[employeeId] ?? {}),
+        [normalized]: { period, workShift },
+      },
+    }));
+    persistSelection(period, workShift);
+
+    if (isHalfDayLeavePeriod(period) && workShift) {
+      writeScheduleCell(workShift, halfDayLeaveNote(period), "half_day_leave");
+    } else {
+      writeScheduleCell("X", null, null);
+    }
     return { success: true };
   };
 
@@ -4380,6 +4591,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         setActiveSite,
         canSwitchSite,
         getLeaveSummary,
+        getLeaveSelectionDetail,
         toggleLeaveDate,
         isLeaveMonthLocked,
         lockLeaveMonth,

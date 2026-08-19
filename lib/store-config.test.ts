@@ -35,10 +35,12 @@ describe("store-config", () => {
     expect(c.features.customShiftCatalog).toBe(true);
     expect(c.features.rotationEvening).toBe(false);
     expect(c.features.weekdayOffRule).toBe(false);
+    expect(c.features.halfDayLeaveRule).toBe(true);
+    expect(getActiveRuleTags(c).map((t) => t.id)).toContain("half_day_leave");
     expect(c.workHoursRegime).toBe("eight_week");
     expect(c.policies.overtimeMinApplyMinutes).toBe(30);
     expect(c.policies.overtimeForceCompLeaveAfterMinutes).toBeNull();
-    expect(c.policies.saturdayQuotaMode).toBe("all_saturdays");
+    expect(c.policies.saturdayQuotaMode).toBe("month_pool");
     expect(c.policies.approvalChain).toEqual(["manager", "deputy", "owner"]);
     expect(c.policies.autoRestSuggestEnabled).toBe(true);
     expect(defaultStoreConfigForSite("zhushan").workHoursRegime).toBe("two_week");

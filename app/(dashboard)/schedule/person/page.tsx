@@ -235,6 +235,14 @@ export default function PersonSchedulePage() {
                           播
                         </span>
                       )}
+                      {note?.kind === "half_day_leave" && (
+                        <span
+                          className="text-[10px] text-white bg-teal-600 rounded px-1"
+                          title={note.note}
+                        >
+                          半
+                        </span>
+                      )}
                     </span>
                   </div>
                   {holiday.isHoliday && !sun && (

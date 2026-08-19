@@ -593,6 +593,14 @@ export default function SchedulePage() {
             播
           </div>
         )}
+        {getScheduleNote(date, employeeId)?.kind === "half_day_leave" && (
+          <div
+            className="absolute -bottom-1 -left-1 bg-teal-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center shadow z-10"
+            title={getScheduleNote(date, employeeId)?.note}
+          >
+            半
+          </div>
+        )}
         {wednesdayNightShift && (
           <div className="absolute -bottom-1 -right-1 bg-pink-500 text-white text-xs rounded-full w-4 h-4 flex items-center justify-center">
             晚

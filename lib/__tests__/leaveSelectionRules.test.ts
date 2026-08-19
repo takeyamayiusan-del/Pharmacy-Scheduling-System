@@ -43,4 +43,36 @@ describe("checkManagerLeaveAssignment", () => {
     );
     expect(result.shouldWarn).toBe(false);
   });
+
+  it("month pool warns on total days, including weekdays", () => {
+    const result = checkManagerLeaveAssignment(
+      baseEmployee,
+      baseEmployee.name,
+      "2026-08-03",
+      {
+        "emp-1": [
+          "2026-08-01",
+          "2026-08-08",
+          "2026-08-15",
+          "2026-08-22",
+          "2026-08-29",
+        ],
+      },
+      { saturdayLimit: 5, weekdayLimit: 0, monthPool: true }
+    );
+    expect(result.shouldWarn).toBe(true);
+    expect(result.message).toContain("本月排休已達 5/5");
+  });
+
+  it("warns half-day rule when assigning full-day rest", () => {
+    const result = checkManagerLeaveAssignment(
+      { ...baseEmployee, isHalfDayLeaveRule: true },
+      baseEmployee.name,
+      "2026-08-03",
+      { "emp-1": [] },
+      { saturdayLimit: 5, weekdayLimit: 0, monthPool: true }
+    );
+    expect(result.shouldWarn).toBe(true);
+    expect(result.message).toContain("只能休半天");
+  });
 });

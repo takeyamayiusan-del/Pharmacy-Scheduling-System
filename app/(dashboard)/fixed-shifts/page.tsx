@@ -18,10 +18,11 @@ const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
 const RULE_FIELD: Record<
   StoreRuleTagId,
-  "isWednesdayRotation" | "isWeekdayOffRule"
+  "isWednesdayRotation" | "isWeekdayOffRule" | "isHalfDayLeaveRule"
 > = {
   rotation_evening: "isWednesdayRotation",
   weekday_off: "isWeekdayOffRule",
+  half_day_leave: "isHalfDayLeaveRule",
 };
 
 export default function FixedShiftsPage() {
@@ -168,7 +169,7 @@ export default function FixedShiftsPage() {
 
   const handleToggleRule = async (
     emp: Employee,
-    rule: "isWednesdayRotation" | "isWeekdayOffRule"
+    rule: "isWednesdayRotation" | "isWeekdayOffRule" | "isHalfDayLeaveRule"
   ) => {
     setSavingRule(`${emp.id}-${rule}`);
     try {
@@ -216,6 +217,7 @@ export default function FixedShiftsPage() {
         <h3 className="app-section-title mb-1">特殊排班規則</h3>
         <p className="text-sm text-slate-500 mb-4">
           規則綁定員工身份，換人後只要重新設定即可。欄位依「店家設定」功能開關顯示。
+          「只能休半天」開啟後，該員工在排休選擇只能選休上午或下午，剩下半天可自選班別（也可在此先設預設班）。
         </p>
 
         {activeRuleTags.length === 0 ? (
@@ -252,9 +254,22 @@ export default function FixedShiftsPage() {
                       const enabled = Boolean(emp[field]);
                       const key = `${emp.id}-${field}`;
                       const onColor =
-                        tag.id === "weekday_off" ? "bg-purple-600" : "bg-blue-600";
+                        tag.id === "weekday_off"
+                          ? "bg-purple-600"
+                          : tag.id === "half_day_leave"
+                            ? "bg-teal-600"
+                            : "bg-blue-600";
                       const textColor =
-                        tag.id === "weekday_off" ? "text-purple-600" : "text-blue-600";
+                        tag.id === "weekday_off"
+                          ? "text-purple-600"
+                          : tag.id === "half_day_leave"
+                            ? "text-teal-700"
+                            : "text-blue-600";
+                      const workShiftOptions = shiftOptions.filter((code) => code !== "X");
+                      const defaultHalfShift =
+                        emp.halfDayWorkShift && workShiftOptions.includes(emp.halfDayWorkShift)
+                          ? emp.halfDayWorkShift
+                          : workShiftOptions[0] ?? storeConfig.defaultWeekdayShift;
                       return (
                         <td key={tag.id} className="px-4 py-3 text-center">
                           <button
@@ -276,6 +291,32 @@ export default function FixedShiftsPage() {
                             <span className={`ml-2 text-xs font-medium ${textColor}`}>
                               已啟用
                             </span>
+                          )}
+                          {tag.id === "half_day_leave" && enabled && (
+                            <label className="mt-2 flex flex-col items-center gap-1 text-xs text-slate-600">
+                              <span>預設剩下半天上</span>
+                              <select
+                                value={defaultHalfShift}
+                                onChange={(e) => {
+                                  void updateEmployee(emp.id, {
+                                    halfDayWorkShift: e.target.value,
+                                  });
+                                }}
+                                className="border rounded px-2 py-1 text-xs max-w-[10rem]"
+                              >
+                                {workShiftOptions.map((code) => (
+                                  <option key={code} value={code}>
+                                    {optionLabel(code)}
+                                  </option>
+                                ))}
+                                {emp.halfDayWorkShift &&
+                                  !workShiftOptions.includes(emp.halfDayWorkShift) && (
+                                    <option value={emp.halfDayWorkShift}>
+                                      {emp.halfDayWorkShift}（已停用）
+                                    </option>
+                                  )}
+                              </select>
+                            </label>
                           )}
                         </td>
                       );
@@ -532,7 +573,9 @@ export default function FixedShiftsPage() {
                       const chip =
                         tag.id === "weekday_off"
                           ? "bg-purple-100 text-purple-700"
-                          : "bg-blue-100 text-blue-700";
+                          : tag.id === "half_day_leave"
+                            ? "bg-teal-100 text-teal-800"
+                            : "bg-blue-100 text-blue-700";
                       return (
                         <span
                           key={tag.id}

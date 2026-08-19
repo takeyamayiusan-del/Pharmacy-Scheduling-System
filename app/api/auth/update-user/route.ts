@@ -21,6 +21,8 @@ export async function POST(req: NextRequest) {
       username,
       isWednesdayRotation,
       isWeekdayOffRule,
+      isHalfDayLeaveRule,
+      halfDayWorkShift,
       hire_date,
       end_date,
       site_id,
@@ -34,6 +36,8 @@ export async function POST(req: NextRequest) {
       username?: string;
       isWednesdayRotation?: boolean;
       isWeekdayOffRule?: boolean;
+      isHalfDayLeaveRule?: boolean;
+      halfDayWorkShift?: string | null;
       hire_date?: string;
       end_date?: string | null;
       site_id?: string;
@@ -69,6 +73,8 @@ export async function POST(req: NextRequest) {
     if (role !== undefined) updates.role = toDbRole(role);
     if (isWednesdayRotation !== undefined) updates.is_wednesday_rotation = isWednesdayRotation;
     if (isWeekdayOffRule !== undefined) updates.is_weekday_off_rule = isWeekdayOffRule;
+    if (isHalfDayLeaveRule !== undefined) updates.is_half_day_leave_rule = isHalfDayLeaveRule;
+    if (halfDayWorkShift !== undefined) updates.half_day_work_shift = halfDayWorkShift || null;
     if (hire_date !== undefined) updates.hire_date = hire_date;
     if (end_date !== undefined) updates.end_date = end_date || null;
     if (username !== undefined) updates.username = username.trim().toLowerCase();
@@ -99,7 +105,7 @@ export async function POST(req: NextRequest) {
     const { data: updated, error: fetchError } = await admin
       .from("users")
       .select(
-        "id, username, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, hire_date, end_date, site_id, created_at, updated_at"
+        "id, username, name, role, is_active, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, hire_date, end_date, site_id, created_at, updated_at"
       )
       .eq("id", userId)
       .single();

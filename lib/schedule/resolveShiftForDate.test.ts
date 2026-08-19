@@ -13,6 +13,20 @@ describe("isLeaveSelectedOnDate", () => {
 });
 
 describe("resolveShiftForDate", () => {
+  it("half-day leave shows remaining work shift instead of X", () => {
+    expect(
+      resolveShiftForDate({
+        isSunday: false,
+        isActive: true,
+        saturdayFixedOff: false,
+        leaveSelected: true,
+        halfDayWorkShift: "白班5",
+        override: "X",
+        baseWorkShift: "白班5",
+      })
+    ).toBe("白班5");
+  });
+
   it("weekday leave shows rest even when override is the default shift", () => {
     expect(
       resolveShiftForDate({

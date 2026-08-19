@@ -9,7 +9,7 @@ import {
 export type { LeaveRulesMap } from "@/lib/attendance/leaveEntitlements";
 
 /** 店規：打卡／加班／排休／審核／播假（兩店同一套程式，數值不同） */
-export type SaturdayQuotaMode = "fixed" | "all_saturdays";
+export type SaturdayQuotaMode = "fixed" | "all_saturdays" | "month_pool";
 
 export type StorePolicies = {
   /** 可提早打卡分鐘數 */
@@ -59,7 +59,7 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
     overtimeMinApplyMinutes: isJiji ? 30 : 0,
     overtimeForceCompLeaveAfterMinutes: isJiji ? null : 30,
     monthlyPunchCorrectionLimit: isJiji ? 2 : null,
-    saturdayQuotaMode: isJiji ? "all_saturdays" : "fixed",
+    saturdayQuotaMode: isJiji ? "month_pool" : "fixed",
     saturdayLeaveQuota: 2,
     weekdayLeaveQuota: isJiji ? 0 : 2,
     sundayFixedRest: true,
@@ -101,6 +101,16 @@ function asBool(v: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
+function parseSaturdayQuotaMode(
+  raw: unknown,
+  fallback: SaturdayQuotaMode
+): SaturdayQuotaMode {
+  if (raw === "month_pool" || raw === "all_saturdays" || raw === "fixed") {
+    return raw;
+  }
+  return fallback;
+}
+
 export function parseStorePolicies(
   raw: unknown,
   siteId: SiteId | string
@@ -108,6 +118,14 @@ export function parseStorePolicies(
   const defaults = defaultStorePoliciesForSite(siteId);
   if (!raw || typeof raw !== "object") return defaults;
   const o = raw as Record<string, unknown>;
+  const weekdayLeaveQuota = asInt(o.weekdayLeaveQuota, defaults.weekdayLeaveQuota, 0, 20);
+  let saturdayQuotaMode = parseSaturdayQuotaMode(
+    o.saturdayQuotaMode,
+    defaults.saturdayQuotaMode
+  );
+  if (saturdayQuotaMode === "all_saturdays" && weekdayLeaveQuota <= 0) {
+    saturdayQuotaMode = "month_pool";
+  }
   return {
     earlyPunchMinutes: asInt(o.earlyPunchMinutes, defaults.earlyPunchMinutes, 0, 180),
     overtimeRedirectMinutes: asInt(
@@ -130,14 +148,9 @@ export function parseStorePolicies(
       o.monthlyPunchCorrectionLimit,
       defaults.monthlyPunchCorrectionLimit
     ),
-    saturdayQuotaMode:
-      o.saturdayQuotaMode === "all_saturdays"
-        ? "all_saturdays"
-        : o.saturdayQuotaMode === "fixed"
-          ? "fixed"
-          : defaults.saturdayQuotaMode,
+    saturdayQuotaMode,
     saturdayLeaveQuota: asInt(o.saturdayLeaveQuota, defaults.saturdayLeaveQuota, 0, 10),
-    weekdayLeaveQuota: asInt(o.weekdayLeaveQuota, defaults.weekdayLeaveQuota, 0, 20),
+    weekdayLeaveQuota,
     sundayFixedRest: asBool(o.sundayFixedRest, defaults.sundayFixedRest),
     halfDayLeaveCountsAsOne: asBool(
       o.halfDayLeaveCountsAsOne,
