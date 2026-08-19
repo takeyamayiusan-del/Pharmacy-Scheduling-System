@@ -7,8 +7,10 @@ import {
   validateCustomerDraft,
   validateMedicineDraft,
   validateProcurementDraft,
+  sortCustomerOrders,
   type CustomerOrder,
   type CustomerPaymentStatus,
+  type CustomerUrgency,
   type MedicineKind,
   type MedicineQtyMode,
   type MedicineRequest,
@@ -59,6 +61,13 @@ function mapMedicine(r: Record<string, unknown>): MedicineRequest {
     useIc03: Boolean(r.use_ic03),
     ic03Qty: r.ic03_qty == null ? null : Number(r.ic03_qty),
     currentStock: r.current_stock == null ? null : Number(r.current_stock),
+    contactPhone: String(r.contact_phone ?? ""),
+    ordered: Boolean(r.ordered),
+    goodsArrived: Boolean(r.goods_arrived),
+    notified: Boolean(r.notified),
+    orderedAt: r.ordered_at ? String(r.ordered_at) : null,
+    goodsArrivedAt: r.goods_arrived_at ? String(r.goods_arrived_at) : null,
+    notifiedAt: r.notified_at ? String(r.notified_at) : null,
     note: String(r.note ?? ""),
     status: (r.status as ShopRecordStatus) || "pending",
     createdBy: String(r.created_by),
@@ -69,6 +78,7 @@ function mapMedicine(r: Record<string, unknown>): MedicineRequest {
 }
 
 function mapCustomer(r: Record<string, unknown>): CustomerOrder {
+  const wanted = r.wanted_arrive_date ? String(r.wanted_arrive_date).slice(0, 10) : "";
   return {
     id: String(r.id),
     siteId: r.site_id as SiteId,
@@ -81,9 +91,13 @@ function mapCustomer(r: Record<string, unknown>): CustomerOrder {
     unit: String(r.unit ?? ""),
     amount: Number(r.amount ?? 0),
     paymentStatus: (r.payment_status as CustomerPaymentStatus) || "unpaid",
+    urgency: r.urgency === "urgent" ? "urgent" : "normal",
+    wantedArriveDate: /^\d{4}-\d{2}-\d{2}$/.test(wanted) ? wanted : null,
+    ordered: Boolean(r.ordered),
     goodsArrived: Boolean(r.goods_arrived),
     notified: Boolean(r.notified),
     pickedUp: Boolean(r.picked_up),
+    orderedAt: r.ordered_at ? String(r.ordered_at) : null,
     goodsArrivedAt: r.goods_arrived_at ? String(r.goods_arrived_at) : null,
     notifiedAt: r.notified_at ? String(r.notified_at) : null,
     pickedUpAt: r.picked_up_at ? String(r.picked_up_at) : null,
@@ -228,6 +242,7 @@ export async function createMedicineRequest(input: {
   ic03Qty: unknown;
   currentStock: unknown;
   note?: string;
+  contactPhone?: string;
   createdBy: string;
 }): Promise<MedicineRequest> {
   const err = validateMedicineDraft(input);
@@ -250,6 +265,7 @@ export async function createMedicineRequest(input: {
       use_ic03: refill && input.useIc03,
       ic03_qty: refill && input.useIc03 ? parsePositiveNumber(input.ic03Qty) : null,
       current_stock: isBelow ? parseNonNegativeNumber(input.currentStock) : null,
+      contact_phone: input.kind === "shortage" ? input.contactPhone?.trim() ?? "" : "",
       note: input.note?.trim() ?? "",
       status: "pending",
       created_by: input.createdBy,
@@ -269,7 +285,7 @@ export async function loadCustomerOrders(siteId: SiteId): Promise<CustomerOrder[
     .order("created_at", { ascending: false })
     .limit(400);
   if (error) throw error;
-  return (data ?? []).map((r) => mapCustomer(r as Record<string, unknown>));
+  return sortCustomerOrders((data ?? []).map((r) => mapCustomer(r as Record<string, unknown>)));
 }
 
 export async function createCustomerOrder(input: {
@@ -283,6 +299,8 @@ export async function createCustomerOrder(input: {
   unit?: string;
   amount: unknown;
   paymentStatus: CustomerPaymentStatus;
+  urgency?: CustomerUrgency;
+  wantedArriveDate?: string;
   note?: string;
 }): Promise<CustomerOrder> {
   const err = validateCustomerDraft(input);
@@ -301,6 +319,11 @@ export async function createCustomerOrder(input: {
       unit: input.unit?.trim() ?? "",
       amount: parseNonNegativeNumber(input.amount) ?? 0,
       payment_status: input.paymentStatus,
+      urgency: input.urgency === "urgent" ? "urgent" : "normal",
+      wanted_arrive_date:
+        input.urgency === "urgent" && input.wantedArriveDate
+          ? input.wantedArriveDate
+          : null,
       note: input.note?.trim() ?? "",
       status: "pending",
       created_by: input.handlerId,
@@ -353,6 +376,7 @@ export async function updateCustomerPayment(input: {
 
 export async function updateCustomerFulfillment(input: {
   ids: string[];
+  ordered?: boolean;
   goodsArrived?: boolean;
   notified?: boolean;
   pickedUp?: boolean;
@@ -360,6 +384,10 @@ export async function updateCustomerFulfillment(input: {
   if (input.ids.length === 0) return;
   const now = new Date().toISOString();
   const patch: Record<string, unknown> = {};
+  if (input.ordered !== undefined) {
+    patch.ordered = input.ordered;
+    patch.ordered_at = input.ordered ? now : null;
+  }
   if (input.goodsArrived !== undefined) {
     patch.goods_arrived = input.goodsArrived;
     patch.goods_arrived_at = input.goodsArrived ? now : null;
@@ -375,5 +403,32 @@ export async function updateCustomerFulfillment(input: {
   if (Object.keys(patch).length === 0) return;
   const supabase = createClient();
   const { error } = await supabase.from("shop_customer_orders").update(patch).in("id", input.ids);
+  if (error) throw error;
+}
+
+export async function updateMedicineFulfillment(input: {
+  ids: string[];
+  ordered?: boolean;
+  goodsArrived?: boolean;
+  notified?: boolean;
+}): Promise<void> {
+  if (input.ids.length === 0) return;
+  const now = new Date().toISOString();
+  const patch: Record<string, unknown> = {};
+  if (input.ordered !== undefined) {
+    patch.ordered = input.ordered;
+    patch.ordered_at = input.ordered ? now : null;
+  }
+  if (input.goodsArrived !== undefined) {
+    patch.goods_arrived = input.goodsArrived;
+    patch.goods_arrived_at = input.goodsArrived ? now : null;
+  }
+  if (input.notified !== undefined) {
+    patch.notified = input.notified;
+    patch.notified_at = input.notified ? now : null;
+  }
+  if (Object.keys(patch).length === 0) return;
+  const supabase = createClient();
+  const { error } = await supabase.from("shop_medicine_requests").update(patch).in("id", input.ids);
   if (error) throw error;
 }

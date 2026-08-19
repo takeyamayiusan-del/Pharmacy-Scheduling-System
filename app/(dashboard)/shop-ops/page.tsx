@@ -19,19 +19,25 @@ import {
   loadProcurementItems,
   updateCustomerFulfillment,
   updateCustomerPayment,
+  updateMedicineFulfillment,
 } from "@/lib/shop-ops/api";
 import { exportCustomerOrdersExcel, exportCustomerOrdersPdf } from "@/lib/shop-ops/exportCustomerOrders";
 import {
   CUSTOMER_PAYMENT_LABELS,
+  CUSTOMER_URGENCY_LABELS,
   FULFILLMENT_FILTER_LABELS,
   formatMedicineQty,
   formatMoney,
+  formatWantedArriveDate,
+  isCustomerFulfillmentComplete,
   matchesFulfillmentFilter,
   MEDICINE_KIND_LABELS,
   MEDICINE_QTY_MODE_LABELS,
   SHOP_STATUS_LABELS,
+  sortCustomerOrders,
   type CustomerOrder,
   type CustomerPaymentStatus,
+  type CustomerUrgency,
   type FulfillmentFilter,
   type MedicineKind,
   type MedicineQtyMode,
@@ -97,11 +103,11 @@ export default function ShopOpsPage() {
         if (!opts?.silent) setLoading(false);
       }
     },
-    [activeSiteId, currentUser]
+    [activeSiteId, currentUser?.id]
   );
 
   useEffect(() => {
-    void refresh();
+    void refresh({ silent: false });
   }, [refresh]);
 
   if (!currentUser) return null;
@@ -116,28 +122,28 @@ export default function ShopOpsPage() {
             店務需求
           </h1>
           <p className="app-meta mt-1">
-            日常採購、叫藥、客人訂購、客訂管理。員工先登記，之後統一處理；客訂可追蹤到貨／通知／已拿並列印。
+            日常採購、叫藥、客人訂購、客訂管理。員工先登記，之後標記進度；完成後按已處理，紀錄仍保留。
           </p>
         </div>
       </div>
 
       <HelpTip
         title="怎麼用"
-        hint="先寫下來 → 有人處理 → 結單（紀錄仍在）"
+        hint="先寫下來 → 訂貨／到貨／通知 → 已處理（紀錄仍在）"
         defaultOpen
         storageKey={`help:shop-ops:${storageScope}`}
       >
-        <p>1. <strong>日常採購</strong>：文具、影印紙、貼紙等。類別可自己新增／刪除。</p>
+        <p>1. <strong>日常採購</strong>：文具、影印紙、貼紙等。買好了按「已處理」即可。</p>
         <p>
-          2. <strong>叫藥需求</strong>：包藥或缺貨時登記。預包／欠藥可直接填數量，或勾第二次（IC02）／第三次（IC03）；低於庫存填現存數量。健保碼、單位選填。
+          2. <strong>叫藥需求</strong>：先登記，再標「已訂貨／已到貨」。欠藥請留電話並標「已通知」；客人來拿後按「已處理」。
         </p>
         <p>
-          3. <strong>客人訂購</strong>：姓名、電話、商品、數量、單位、金額、已付款／未付款。健保碼選填。接手人＝新增這筆的人。
+          3. <strong>客人訂購</strong>：可選一般或緊急（緊急可填希望到貨日）。進度為訂貨 → 到貨 → 通知 → 已拿；四項齊了會詢問是否結案。
         </p>
         <p>
-          4. <strong>客訂管理</strong>：標記貨到了／已通知／已拿，可篩選、匯出 Excel、列印紙本勾選表。
+          4. <strong>客訂管理</strong>：可一次勾多筆一起標記，也可匯出 Excel／PDF。
         </p>
-        <p>5. 處理完按「結單」。待處理可刪；已結單只留紀錄、不刪。</p>
+        <p>5. 待處理可刪；已處理只留紀錄、不刪。</p>
       </HelpTip>
 
       <div className="flex flex-wrap gap-2">
@@ -165,9 +171,10 @@ export default function ShopOpsPage() {
         ))}
       </div>
 
-      {loading ? (
-        <div className="app-card p-8 text-center text-slate-500">載入中...</div>
-      ) : tab === "procurement" ? (
+      {loading && (
+        <p className="text-sm text-slate-500">載入紀錄中…（表單可先填）</p>
+      )}
+      {tab === "procurement" ? (
         <ProcurementPanel
           categories={categories}
           items={procurement}
@@ -247,7 +254,7 @@ function FilterToggle({
         }`}
         onClick={() => onChange("closed")}
       >
-        已結單（{closedCount}）
+        已處理（{closedCount}）
       </button>
     </div>
   );
@@ -261,6 +268,21 @@ function StatusBadge({ status }: { status: ShopRecordStatus }) {
       }`}
     >
       {SHOP_STATUS_LABELS[status]}
+    </span>
+  );
+}
+
+function UrgencyBadge({ row }: { row: CustomerOrder }) {
+  return (
+    <span
+      className={`text-xs px-2 py-0.5 rounded-full ${
+        row.urgency === "urgent" ? "bg-rose-100 text-rose-800" : "bg-slate-100 text-slate-600"
+      }`}
+    >
+      {CUSTOMER_URGENCY_LABELS[row.urgency]}
+      {row.urgency === "urgent" && row.wantedArriveDate
+        ? ` · 希望 ${formatWantedArriveDate(row.wantedArriveDate)}`
+        : ""}
     </span>
   );
 }
@@ -360,7 +382,7 @@ function ProcurementPanel({
       setSelected([]);
       await onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "結單失敗");
+      alert(err instanceof Error ? err.message : "處理失敗");
     } finally {
       setBusy(false);
     }
@@ -480,7 +502,7 @@ function ProcurementPanel({
             disabled={busy || selected.length === 0}
             onClick={() => void closeIds(selected)}
           >
-            結所選（{selected.length}）
+            所選已處理（{selected.length}）
           </button>
           <button
             type="button"
@@ -488,25 +510,23 @@ function ProcurementPanel({
             disabled={busy}
             onClick={() => void closeIds(visible.map((i) => i.id))}
           >
-            全部結單
+            全部已處理
           </button>
         </div>
       )}
 
       {visible.length === 0 ? (
-        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已結單"}紀錄</div>
+        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已處理"}紀錄</div>
       ) : (
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
               {filter === "pending" && (
-                <input
-                  type="checkbox"
-                  className="mt-1"
+                <RecordCheck
                   checked={selected.includes(row.id)}
-                  onChange={(e) =>
+                  onChange={(checked) =>
                     setSelected((prev) =>
-                      e.target.checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
+                      checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
                     )
                   }
                 />
@@ -524,7 +544,7 @@ function ProcurementPanel({
                 <p className="text-xs text-slate-500 mt-1">
                   {nameById.get(row.createdBy) ?? "員工"} · {formatWhen(row.createdAt)}
                   {row.closedAt
-                    ? ` · 結單 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
+                    ? ` · 已處理 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
                     : ""}
                 </p>
                 {row.note && <p className="text-sm text-slate-600 mt-1">{row.note}</p>}
@@ -536,7 +556,7 @@ function ProcurementPanel({
                     className="text-sm text-emerald-700 font-medium"
                     onClick={() => void closeIds([row.id])}
                   >
-                    結單
+                    已處理
                   </button>
                   {(row.createdBy === userId || isManager) && (
                     <button
@@ -604,6 +624,7 @@ function MedicinePanel({
     useIc03: false,
     ic03Qty: "",
     currentStock: "",
+    contactPhone: "",
     note: "",
   });
 
@@ -628,6 +649,7 @@ function MedicinePanel({
         ic02Qty: "",
         ic03Qty: "",
         currentStock: "",
+        contactPhone: form.kind === "shortage" ? p.contactPhone : "",
         note: "",
       }));
       await onChanged();
@@ -650,7 +672,23 @@ function MedicinePanel({
       setSelected([]);
       await onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "結單失敗");
+      alert(err instanceof Error ? err.message : "處理失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const patchMed = async (
+    ids: string[],
+    fields: { ordered?: boolean; goodsArrived?: boolean; notified?: boolean }
+  ) => {
+    if (ids.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await updateMedicineFulfillment({ ids, ...fields });
+      await onChanged();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "更新失敗");
     } finally {
       setBusy(false);
     }
@@ -661,7 +699,7 @@ function MedicinePanel({
       <div className="app-card p-4 space-y-3">
         <h2 className="app-section-title">登記叫藥需求</h2>
         <p className="text-sm text-slate-600">
-          預包、欠藥可直接填數量，或改用第二次／第三次領藥（IC02／IC03，可只勾其中一個）。低於庫存請填現存多少。
+          預包、欠藥可直接填數量，或改用第二次／第三次領藥（IC02／IC03）。欠藥請留電話，方便到貨後通知。
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm space-y-1">
@@ -775,6 +813,14 @@ function MedicinePanel({
               )}
             </>
           )}
+          {form.kind === "shortage" && (
+            <input
+              className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
+              placeholder="欠藥聯絡電話"
+              value={form.contactPhone}
+              onChange={(e) => setForm({ ...form, contactPhone: e.target.value })}
+            />
+          )}
           <input
             className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
             placeholder="備註（可空）"
@@ -797,14 +843,38 @@ function MedicinePanel({
       />
 
       {filter === "pending" && visible.length > 0 && (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patchMed(selected, { ordered: true })}
+          >
+            所選已訂貨
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patchMed(selected, { goodsArrived: true })}
+          >
+            所選已到貨
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patchMed(selected, { notified: true })}
+          >
+            所選已通知
+          </button>
           <button
             type="button"
             className="app-btn-primary bg-emerald-600 hover:bg-emerald-700"
             disabled={busy || selected.length === 0}
             onClick={() => void closeIds(selected)}
           >
-            結所選（{selected.length}）
+            所選已處理（{selected.length}）
           </button>
           <button
             type="button"
@@ -812,25 +882,23 @@ function MedicinePanel({
             disabled={busy}
             onClick={() => void closeIds(visible.map((i) => i.id))}
           >
-            全部結單
+            全部已處理
           </button>
         </div>
       )}
 
       {visible.length === 0 ? (
-        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已結單"}紀錄</div>
+        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已處理"}紀錄</div>
       ) : (
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
               {filter === "pending" && (
-                <input
-                  type="checkbox"
-                  className="mt-1"
+                <RecordCheck
                   checked={selected.includes(row.id)}
-                  onChange={(e) =>
+                  onChange={(checked) =>
                     setSelected((prev) =>
-                      e.target.checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
+                      checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
                     )
                   }
                 />
@@ -850,10 +918,40 @@ function MedicinePanel({
                 <p className="text-xs text-slate-500 mt-1">
                   {nameById.get(row.createdBy) ?? "員工"} · {formatWhen(row.createdAt)}
                   {row.closedAt
-                    ? ` · 結單 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
+                    ? ` · 已處理 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
                     : ""}
                 </p>
+                {row.kind === "shortage" && row.contactPhone ? (
+                  <p className="text-sm text-slate-700 mt-1">電話 {row.contactPhone}</p>
+                ) : null}
                 {row.note && <p className="text-sm text-slate-600 mt-1">{row.note}</p>}
+                {row.status === "pending" && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <ToggleChip
+                      on={row.ordered}
+                      onLabel="已訂貨"
+                      offLabel="未訂貨"
+                      disabled={busy}
+                      onClick={() => void patchMed([row.id], { ordered: !row.ordered })}
+                    />
+                    <ToggleChip
+                      on={row.goodsArrived}
+                      onLabel="已到貨"
+                      offLabel="未到貨"
+                      disabled={busy}
+                      onClick={() => void patchMed([row.id], { goodsArrived: !row.goodsArrived })}
+                    />
+                    {row.kind === "shortage" && (
+                      <ToggleChip
+                        on={row.notified}
+                        onLabel="已通知"
+                        offLabel="未通知"
+                        disabled={busy}
+                        onClick={() => void patchMed([row.id], { notified: !row.notified })}
+                      />
+                    )}
+                  </div>
+                )}
               </div>
               {row.status === "pending" && (
                 <div className="flex gap-2">
@@ -862,7 +960,7 @@ function MedicinePanel({
                     className="text-sm text-emerald-700 font-medium"
                     onClick={() => void closeIds([row.id])}
                   >
-                    結單
+                    已處理
                   </button>
                   {(row.createdBy === userId || isManager) && (
                     <button
@@ -929,10 +1027,12 @@ function CustomerPanel({
     unit: "",
     amount: "",
     paymentStatus: "unpaid" as CustomerPaymentStatus,
+    urgency: "normal" as CustomerUrgency,
+    wantedArriveDate: "",
     note: "",
   });
 
-  const visible = items.filter((i) => i.status === filter);
+  const visible = sortCustomerOrders(items.filter((i) => i.status === filter));
 
   const addItem = async () => {
     if (busy) return;
@@ -952,6 +1052,8 @@ function CustomerPanel({
         unit: "",
         amount: "",
         paymentStatus: "unpaid",
+        urgency: "normal",
+        wantedArriveDate: "",
         note: "",
       });
       await onChanged();
@@ -974,7 +1076,50 @@ function CustomerPanel({
       setSelected([]);
       await onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "結單失敗");
+      alert(err instanceof Error ? err.message : "處理失敗");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const patch = async (
+    ids: string[],
+    fields: { ordered?: boolean; goodsArrived?: boolean; notified?: boolean; pickedUp?: boolean }
+  ) => {
+    if (ids.length === 0 || busy) return;
+    setBusy(true);
+    try {
+      await updateCustomerFulfillment({ ids, ...fields });
+      const doneIds = items
+        .filter((r) => ids.includes(r.id) && r.status === "pending")
+        .filter((r) =>
+          isCustomerFulfillmentComplete({
+            ordered: fields.ordered ?? r.ordered,
+            goodsArrived: fields.goodsArrived ?? r.goodsArrived,
+            notified: fields.notified ?? r.notified,
+            pickedUp: fields.pickedUp ?? r.pickedUp,
+          })
+        )
+        .map((r) => r.id);
+      await onChanged();
+      if (doneIds.length > 0) {
+        const ok = window.confirm(
+          doneIds.length === 1
+            ? "這筆訂貨、到貨、通知、已拿都完成了，要標成已處理嗎？"
+            : `這 ${doneIds.length} 筆四項都完成了，要標成已處理嗎？`
+        );
+        if (ok) {
+          await closeShopRecords({
+            table: "shop_customer_orders",
+            ids: doneIds,
+            closedBy: userId,
+          });
+          await onChanged();
+        }
+      }
+      setSelected([]);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "更新失敗");
     } finally {
       setBusy(false);
     }
@@ -1047,8 +1192,32 @@ function CustomerPanel({
               <option value="paid">{CUSTOMER_PAYMENT_LABELS.paid}</option>
             </select>
           </label>
+          <label className="text-sm space-y-1">
+            <span className="text-slate-600">緊急程度</span>
+            <select
+              className="w-full border rounded-xl px-3 py-2"
+              value={form.urgency}
+              onChange={(e) =>
+                setForm({ ...form, urgency: e.target.value as CustomerUrgency, wantedArriveDate: e.target.value === "urgent" ? form.wantedArriveDate : "" })
+              }
+            >
+              <option value="normal">{CUSTOMER_URGENCY_LABELS.normal}</option>
+              <option value="urgent">{CUSTOMER_URGENCY_LABELS.urgent}</option>
+            </select>
+          </label>
+          {form.urgency === "urgent" && (
+            <label className="text-sm space-y-1">
+              <span className="text-slate-600">希望到貨日（選填）</span>
+              <input
+                type="date"
+                className="w-full border rounded-xl px-3 py-2"
+                value={form.wantedArriveDate}
+                onChange={(e) => setForm({ ...form, wantedArriveDate: e.target.value })}
+              />
+            </label>
+          )}
           <input
-            className="border rounded-xl px-3 py-2 text-sm"
+            className="border rounded-xl px-3 py-2 text-sm md:col-span-2"
             placeholder="備註（可空）"
             value={form.note}
             onChange={(e) => setForm({ ...form, note: e.target.value })}
@@ -1068,40 +1237,77 @@ function CustomerPanel({
       />
 
       {filter === "pending" && visible.length > 0 && (
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patch(selected, { ordered: true })}
+          >
+            所選已訂貨
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patch(selected, { goodsArrived: true })}
+          >
+            所選已到貨
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patch(selected, { notified: true })}
+          >
+            所選已通知
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() => void patch(selected, { pickedUp: true })}
+          >
+            所選已拿
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() =>
+              void patch(selected, {
+                ordered: true,
+                goodsArrived: true,
+                notified: true,
+                pickedUp: true,
+              })
+            }
+          >
+            所選四項完成
+          </button>
           <button
             type="button"
             className="app-btn-primary bg-emerald-600 hover:bg-emerald-700"
             disabled={busy || selected.length === 0}
             onClick={() => void closeIds(selected)}
           >
-            結所選（{selected.length}）
-          </button>
-          <button
-            type="button"
-            className="app-btn-outline"
-            disabled={busy}
-            onClick={() => void closeIds(visible.map((i) => i.id))}
-          >
-            全部結單
+            所選已處理（{selected.length}）
           </button>
         </div>
       )}
 
       {visible.length === 0 ? (
-        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已結單"}紀錄</div>
+        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已處理"}紀錄</div>
       ) : (
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
               {filter === "pending" && (
-                <input
-                  type="checkbox"
-                  className="mt-1"
+                <RecordCheck
                   checked={selected.includes(row.id)}
-                  onChange={(e) =>
+                  onChange={(checked) =>
                     setSelected((prev) =>
-                      e.target.checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
+                      checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
                     )
                   }
                 />
@@ -1110,6 +1316,7 @@ function CustomerPanel({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold text-slate-900">{row.customerName}</span>
                   <span className="text-slate-600">{row.customerPhone}</span>
+                  <UrgencyBadge row={row} />
                   <StatusBadge status={row.status} />
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full ${
@@ -1129,10 +1336,42 @@ function CustomerPanel({
                 <p className="text-xs text-slate-500 mt-1">
                   接手 {nameById.get(row.handlerId) ?? "員工"} · {formatWhen(row.createdAt)}
                   {row.closedAt
-                    ? ` · 結單 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
+                    ? ` · 已處理 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
                     : ""}
                 </p>
                 {row.note && <p className="text-sm text-slate-600 mt-1">{row.note}</p>}
+                {row.status === "pending" && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <ToggleChip
+                      on={row.ordered}
+                      onLabel="已訂貨"
+                      offLabel="未訂貨"
+                      disabled={busy}
+                      onClick={() => void patch([row.id], { ordered: !row.ordered })}
+                    />
+                    <ToggleChip
+                      on={row.goodsArrived}
+                      onLabel="已到貨"
+                      offLabel="未到貨"
+                      disabled={busy}
+                      onClick={() => void patch([row.id], { goodsArrived: !row.goodsArrived })}
+                    />
+                    <ToggleChip
+                      on={row.notified}
+                      onLabel="已通知"
+                      offLabel="未通知"
+                      disabled={busy}
+                      onClick={() => void patch([row.id], { notified: !row.notified })}
+                    />
+                    <ToggleChip
+                      on={row.pickedUp}
+                      onLabel="已拿"
+                      offLabel="未拿"
+                      disabled={busy}
+                      onClick={() => void patch([row.id], { pickedUp: !row.pickedUp })}
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex flex-col items-end gap-2">
                 <button
@@ -1160,7 +1399,7 @@ function CustomerPanel({
                       className="text-sm text-emerald-700 font-medium"
                       onClick={() => void closeIds([row.id])}
                     >
-                      結單
+                      已處理
                     </button>
                     {(row.createdBy === userId || isManager) && (
                       <button
@@ -1193,6 +1432,26 @@ function CustomerPanel({
         </div>
       )}
     </div>
+  );
+}
+
+function RecordCheck({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <input
+      type="checkbox"
+      className="mt-0.5 h-7 w-7 shrink-0 cursor-pointer accent-sky-600"
+      checked={checked}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.checked)}
+    />
   );
 }
 
@@ -1247,7 +1506,7 @@ function FulfillmentPanel({
   const [filter, setFilter] = useState<FulfillmentFilter>("all");
   const [selected, setSelected] = useState<string[]>([]);
   const handlerName = (id: string) => nameById.get(id) ?? "員工";
-  const visible = items.filter((row) => matchesFulfillmentFilter(row, filter));
+  const visible = sortCustomerOrders(items.filter((row) => matchesFulfillmentFilter(row, filter)));
   const closeableSelected = selected.filter((id) => {
     const row = items.find((r) => r.id === id);
     if (!row) return false;
@@ -1260,14 +1519,40 @@ function FulfillmentPanel({
 
   const patch = async (
     ids: string[],
-    fields: { goodsArrived?: boolean; notified?: boolean; pickedUp?: boolean }
+    fields: { ordered?: boolean; goodsArrived?: boolean; notified?: boolean; pickedUp?: boolean }
   ) => {
     if (ids.length === 0 || busy) return;
     setBusy(true);
     try {
       await updateCustomerFulfillment({ ids, ...fields });
-      setSelected([]);
+      const doneIds = items
+        .filter((r) => ids.includes(r.id) && r.status === "pending")
+        .filter((r) =>
+          isCustomerFulfillmentComplete({
+            ordered: fields.ordered ?? r.ordered,
+            goodsArrived: fields.goodsArrived ?? r.goodsArrived,
+            notified: fields.notified ?? r.notified,
+            pickedUp: fields.pickedUp ?? r.pickedUp,
+          })
+        )
+        .map((r) => r.id);
       await onChanged();
+      if (doneIds.length > 0) {
+        const ok = window.confirm(
+          doneIds.length === 1
+            ? "這筆訂貨、到貨、通知、已拿都完成了，要標成已處理嗎？"
+            : `這 ${doneIds.length} 筆四項都完成了，要標成已處理嗎？`
+        );
+        if (ok) {
+          await closeShopRecords({
+            table: "shop_customer_orders",
+            ids: doneIds,
+            closedBy: userId,
+          });
+          await onChanged();
+        }
+      }
+      setSelected([]);
     } catch (err) {
       alert(err instanceof Error ? err.message : "更新失敗");
     } finally {
@@ -1287,7 +1572,7 @@ function FulfillmentPanel({
       setSelected([]);
       await onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "結單失敗");
+      alert(err instanceof Error ? err.message : "處理失敗");
     } finally {
       setBusy(false);
     }
@@ -1361,6 +1646,14 @@ function FulfillmentPanel({
             type="button"
             className="app-btn-primary bg-emerald-600 hover:bg-emerald-700"
             disabled={busy || selected.length === 0}
+            onClick={() => void patch(selected, { ordered: true })}
+          >
+            所選標記已訂貨
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
             onClick={() => void patch(selected, { goodsArrived: true })}
           >
             所選標記已到貨
@@ -1381,6 +1674,21 @@ function FulfillmentPanel({
           >
             所選標記已拿
           </button>
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={() =>
+              void patch(selected, {
+                ordered: true,
+                goodsArrived: true,
+                notified: true,
+                pickedUp: true,
+              })
+            }
+          >
+            所選四項完成
+          </button>
 
           <button
             type="button"
@@ -1389,7 +1697,7 @@ function FulfillmentPanel({
             onClick={() => {
               if (
                 !window.confirm(
-                  `確定要完成「${closeableSelected.length}」筆訂單？完成後會變更為已結單（紀錄仍保留）。`
+                  `確定要完成「${closeableSelected.length}」筆訂單？完成後會變更為已處理（紀錄仍保留）。`
                 )
               )
                 return;
@@ -1406,7 +1714,7 @@ function FulfillmentPanel({
             onClick={() => {
               if (
                 !window.confirm(
-                  `確定要完成本篩選內「${closeableVisible.length}」筆訂單？完成後會變更為已結單（紀錄仍保留）。`
+                  `確定要完成本篩選內「${closeableVisible.length}」筆訂單？完成後會變更為已處理（紀錄仍保留）。`
                 )
               )
                 return;
@@ -1424,13 +1732,11 @@ function FulfillmentPanel({
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
-              <input
-                type="checkbox"
-                className="mt-1"
+              <RecordCheck
                 checked={selected.includes(row.id)}
-                onChange={(e) =>
+                onChange={(checked) =>
                   setSelected((prev) =>
-                    e.target.checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
+                    checked ? [...prev, row.id] : prev.filter((id) => id !== row.id)
                   )
                 }
               />
@@ -1438,6 +1744,7 @@ function FulfillmentPanel({
                 <div className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold text-slate-900">{row.customerName}</span>
                   <span className="text-slate-600">{row.customerPhone}</span>
+                  <UrgencyBadge row={row} />
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full ${
                       row.paymentStatus === "paid"
@@ -1460,24 +1767,31 @@ function FulfillmentPanel({
                 {row.note && <p className="text-sm text-slate-600 mt-1">{row.note}</p>}
                 <div className="flex flex-wrap gap-2 mt-2">
                   <ToggleChip
+                    on={row.ordered}
+                    onLabel="已訂貨"
+                    offLabel="未訂貨"
+                    disabled={busy || row.status === "closed"}
+                    onClick={() => void patch([row.id], { ordered: !row.ordered })}
+                  />
+                  <ToggleChip
                     on={row.goodsArrived}
                     onLabel="已到貨"
                     offLabel="未到貨"
-                    disabled={busy}
+                    disabled={busy || row.status === "closed"}
                     onClick={() => void patch([row.id], { goodsArrived: !row.goodsArrived })}
                   />
                   <ToggleChip
                     on={row.notified}
                     onLabel="已通知"
                     offLabel="未通知"
-                    disabled={busy}
+                    disabled={busy || row.status === "closed"}
                     onClick={() => void patch([row.id], { notified: !row.notified })}
                   />
                   <ToggleChip
                     on={row.pickedUp}
                     onLabel="已拿"
                     offLabel="未拿"
-                    disabled={busy}
+                    disabled={busy || row.status === "closed"}
                     onClick={() => void patch([row.id], { pickedUp: !row.pickedUp })}
                   />
                 </div>

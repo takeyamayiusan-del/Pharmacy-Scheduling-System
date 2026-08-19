@@ -4,7 +4,7 @@ export type ShopRecordStatus = "pending" | "closed";
 
 export const SHOP_STATUS_LABELS: Record<ShopRecordStatus, string> = {
   pending: "待處理",
-  closed: "已結單",
+  closed: "已處理",
 };
 
 export type ProcurementCategory = {
@@ -66,6 +66,13 @@ export type MedicineRequest = {
   useIc03: boolean;
   ic03Qty: number | null;
   currentStock: number | null;
+  contactPhone: string;
+  ordered: boolean;
+  goodsArrived: boolean;
+  notified: boolean;
+  orderedAt: string | null;
+  goodsArrivedAt: string | null;
+  notifiedAt: string | null;
   note: string;
   status: ShopRecordStatus;
   createdBy: string;
@@ -81,6 +88,13 @@ export const CUSTOMER_PAYMENT_LABELS: Record<CustomerPaymentStatus, string> = {
   paid: "已付款",
 };
 
+export type CustomerUrgency = "normal" | "urgent";
+
+export const CUSTOMER_URGENCY_LABELS: Record<CustomerUrgency, string> = {
+  normal: "一般",
+  urgent: "緊急",
+};
+
 export type CustomerOrder = {
   id: string;
   siteId: SiteId;
@@ -93,9 +107,13 @@ export type CustomerOrder = {
   unit: string;
   amount: number;
   paymentStatus: CustomerPaymentStatus;
+  urgency: CustomerUrgency;
+  wantedArriveDate: string | null;
+  ordered: boolean;
   goodsArrived: boolean;
   notified: boolean;
   pickedUp: boolean;
+  orderedAt: string | null;
   goodsArrivedAt: string | null;
   notifiedAt: string | null;
   pickedUpAt: string | null;
@@ -109,6 +127,7 @@ export type CustomerOrder = {
 
 export type FulfillmentFilter =
   | "all"
+  | "not_ordered"
   | "not_arrived"
   | "arrived_unnotified"
   | "notified_unpicked"
@@ -116,7 +135,8 @@ export type FulfillmentFilter =
 
 export const FULFILLMENT_FILTER_LABELS: Record<FulfillmentFilter, string> = {
   all: "全部",
-  not_arrived: "未到貨",
+  not_ordered: "未訂貨",
+  not_arrived: "已訂未到",
   arrived_unnotified: "已到貨未通知",
   notified_unpicked: "已通知未拿",
   picked: "已拿",
@@ -126,7 +146,8 @@ export function fulfillmentStage(row: CustomerOrder): Exclude<FulfillmentFilter,
   if (row.pickedUp) return "picked";
   if (row.notified) return "notified_unpicked";
   if (row.goodsArrived) return "arrived_unnotified";
-  return "not_arrived";
+  if (row.ordered) return "not_arrived";
+  return "not_ordered";
 }
 
 export function matchesFulfillmentFilter(row: CustomerOrder, filter: FulfillmentFilter): boolean {
@@ -136,10 +157,31 @@ export function matchesFulfillmentFilter(row: CustomerOrder, filter: Fulfillment
 
 export function formatFulfillmentMarks(row: CustomerOrder): string {
   return [
+    row.ordered ? "已訂貨" : "未訂貨",
     row.goodsArrived ? "已到貨" : "未到貨",
     row.notified ? "已通知" : "未通知",
     row.pickedUp ? "已拿" : "未拿",
   ].join("／");
+}
+
+export function isCustomerFulfillmentComplete(row: Pick<
+  CustomerOrder,
+  "ordered" | "goodsArrived" | "notified" | "pickedUp"
+>): boolean {
+  return Boolean(row.ordered && row.goodsArrived && row.notified && row.pickedUp);
+}
+
+export function sortCustomerOrders<T extends CustomerOrder>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const urgentDelta = Number(b.urgency === "urgent") - Number(a.urgency === "urgent");
+    if (urgentDelta !== 0) return urgentDelta;
+    return String(b.createdAt).localeCompare(String(a.createdAt));
+  });
+}
+
+export function formatWantedArriveDate(isoDate: string | null | undefined): string {
+  if (!isoDate) return "";
+  return isoDate.slice(0, 10).replace(/-/g, "/");
 }
 
 export function parsePositiveNumber(raw: unknown): number | null {
@@ -166,8 +208,12 @@ export function validateMedicineDraft(input: {
   useIc03: boolean;
   ic03Qty: unknown;
   currentStock: unknown;
+  contactPhone?: string;
 }): string | null {
   if (!input.itemName.trim()) return "請填藥名／品名";
+  if (input.kind === "shortage" && !String(input.contactPhone ?? "").trim()) {
+    return "欠藥請留聯絡電話";
+  }
   if (input.kind === "below_stock") {
     if (parseNonNegativeNumber(input.currentStock) == null) {
       return "低於庫存請填現存數量（可為 0）";
@@ -221,12 +267,19 @@ export function validateCustomerDraft(input: {
   productName: string;
   quantity: unknown;
   amount: unknown;
+  urgency?: CustomerUrgency;
+  wantedArriveDate?: string;
 }): string | null {
   if (!input.customerName.trim()) return "請填客人姓名";
   if (!input.customerPhone.trim()) return "請填電話";
   if (!input.productName.trim()) return "請填商品";
   if (parsePositiveNumber(input.quantity) == null) return "請填數量";
   if (parseNonNegativeNumber(input.amount) == null) return "請填金額（可為 0）";
+  if (input.urgency === "urgent" && input.wantedArriveDate) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(input.wantedArriveDate)) {
+      return "希望到貨日格式不正確";
+    }
+  }
   return null;
 }
 
