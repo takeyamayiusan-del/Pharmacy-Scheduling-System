@@ -2,7 +2,9 @@ import { jsPDF } from "jspdf";
 import XLSX from "xlsx-js-style";
 import {
   CUSTOMER_PAYMENT_LABELS,
+  CUSTOMER_URGENCY_LABELS,
   formatMoney,
+  formatWantedArriveDate,
   type CustomerOrder,
 } from "@/lib/shop-ops/types";
 
@@ -43,6 +45,8 @@ export function exportCustomerOrdersExcel(input: {
 }): void {
   const header = [
     "登記時間",
+    "緊急",
+    "希望到貨",
     "客人",
     "電話",
     "商品",
@@ -51,15 +55,18 @@ export function exportCustomerOrdersExcel(input: {
     "單位",
     "金額",
     "付款",
+    "訂貨",
     "貨到",
     "通知",
     "已拿",
     "接手人",
     "備註",
-    "結單",
+    "狀態",
   ];
   const body = input.rows.map((row) => [
     formatWhen(row.createdAt),
+    CUSTOMER_URGENCY_LABELS[row.urgency],
+    row.urgency === "urgent" ? formatWantedArriveDate(row.wantedArriveDate) : "",
     row.customerName,
     row.customerPhone,
     row.productName,
@@ -68,15 +75,16 @@ export function exportCustomerOrdersExcel(input: {
     row.unit,
     row.amount,
     CUSTOMER_PAYMENT_LABELS[row.paymentStatus],
+    row.ordered ? "已訂貨" : "未訂貨",
     row.goodsArrived ? "已到貨" : "未到貨",
     row.notified ? "已通知" : "未通知",
     row.pickedUp ? "已拿" : "未拿",
     input.handlerName(row.handlerId),
     row.note,
-    row.status === "closed" ? "已結單" : "待處理",
+    row.status === "closed" ? "已處理" : "待處理",
   ]);
   const ws = XLSX.utils.aoa_to_sheet([header, ...body]);
-  ws["!cols"] = header.map((_, i) => ({ wch: i === 3 || i === 13 ? 22 : 12 }));
+  ws["!cols"] = header.map((_, i) => ({ wch: i === 5 || i === 16 ? 22 : 12 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "客訂");
   const stamp = new Date();
@@ -102,11 +110,18 @@ export function printCustomerOrdersForm(input: {
       const qty = `${row.quantity}${row.unit ? ` ${escapeHtml(row.unit)}` : ""}`;
       return `<tr>
         <td>${escapeHtml(formatWhen(row.createdAt))}</td>
-        <td>${escapeHtml(row.customerName)}<br/><span class="muted">${escapeHtml(row.customerPhone)}</span></td>
+        <td>${escapeHtml(row.customerName)}${
+          row.urgency === "urgent"
+            ? `<br/><span class="muted">緊急${
+                row.wantedArriveDate ? ` · 希望 ${escapeHtml(formatWantedArriveDate(row.wantedArriveDate))}` : ""
+              }</span>`
+            : `<br/><span class="muted">一般</span>`
+        }<br/><span class="muted">${escapeHtml(row.customerPhone)}</span></td>
         <td>${escapeHtml(row.productName)}${row.nhiCode ? `<br/><span class="muted">健保碼 ${escapeHtml(row.nhiCode)}</span>` : ""}</td>
         <td class="num">${escapeHtml(qty)}</td>
         <td class="num">${escapeHtml(formatMoney(row.amount))}</td>
         <td>${escapeHtml(CUSTOMER_PAYMENT_LABELS[row.paymentStatus])}</td>
+        <td class="chk">${mark(row.ordered)} 訂貨</td>
         <td class="chk">${mark(row.goodsArrived)} 到貨</td>
         <td class="chk">${mark(row.notified)} 通知</td>
         <td class="chk">${mark(row.pickedUp)} 已拿</td>
@@ -149,6 +164,7 @@ export function printCustomerOrdersForm(input: {
         <th>數量</th>
         <th>金額</th>
         <th>付款</th>
+        <th>訂貨</th>
         <th>貨到</th>
         <th>通知</th>
         <th>已拿</th>
@@ -157,10 +173,10 @@ export function printCustomerOrdersForm(input: {
       </tr>
     </thead>
     <tbody>
-      ${rowsHtml || `<tr><td colspan="11">沒有資料</td></tr>`}
+      ${rowsHtml || `<tr><td colspan="12">沒有資料</td></tr>`}
     </tbody>
   </table>
-  <p class="note">紙本可再手寫勾選「到貨／通知／已拿」。系統已勾者表示目前狀態。</p>
+  <p class="note">紙本可再手寫勾選「訂貨／到貨／通知／已拿」。系統已勾者表示目前狀態。</p>
   <script>
     window.addEventListener("load", function () {
       setTimeout(function () { window.print(); }, 300);
@@ -207,6 +223,7 @@ export async function exportCustomerOrdersPdf(input: {
             <th style="${th}">數量</th>
             <th style="${th}">金額</th>
             <th style="${th}">付款</th>
+            <th style="${th}; text-align:center;">訂貨</th>
             <th style="${th}; text-align:center;">到貨</th>
             <th style="${th}; text-align:center;">通知</th>
             <th style="${th}; text-align:center;">已拿</th>
@@ -227,6 +244,13 @@ export async function exportCustomerOrdersPdf(input: {
                       ? `<div style="color:#555; font-size:14px; line-height:1.35;">${escapeHtml(row.customerPhone)}</div>`
                       : ""
                   }
+                  <div style="color:${row.urgency === "urgent" ? "#9f1239" : "#555"}; font-size:13px; line-height:1.35;">
+                    ${escapeHtml(CUSTOMER_URGENCY_LABELS[row.urgency])}${
+                      row.urgency === "urgent" && row.wantedArriveDate
+                        ? ` · 希望 ${escapeHtml(formatWantedArriveDate(row.wantedArriveDate))}`
+                        : ""
+                    }
+                  </div>
                 </td>
                 <td style="${td}">
                   <div>${escapeHtml(row.productName)}</div>
@@ -239,6 +263,9 @@ export async function exportCustomerOrdersPdf(input: {
                 <td style="${td}; white-space:nowrap;">${escapeHtml(qty)}</td>
                 <td style="${td}; white-space:nowrap;">${escapeHtml(formatMoney(row.amount))}</td>
                 <td style="${td};">${escapeHtml(CUSTOMER_PAYMENT_LABELS[row.paymentStatus])}</td>
+                <td style="${tdCenter};">
+                  <span style="display:inline-block; font-size:16px; line-height:1.0;">${mark(row.ordered)}</span>
+                </td>
                 <td style="${tdCenter};">
                   <span style="display:inline-block; font-size:16px; line-height:1.0;">${mark(row.goodsArrived)}</span>
                 </td>
