@@ -145,7 +145,7 @@ export default function MySchedulePage() {
               return (
                 <div
                   key={dateStr}
-                  className={`rounded-xl border-2 p-2.5 min-h-[5.5rem] text-left flex flex-col gap-0.5 transition-shadow ${
+                  className={`rounded-xl border-2 p-2.5 min-h-[6.25rem] text-left flex flex-col justify-between transition-shadow ${
                     sun
                       ? "bg-red-50 border-red-200"
                       : sat
@@ -158,32 +158,30 @@ export default function MySchedulePage() {
                   <div className={`text-base font-bold leading-none ${sun ? "text-red-500" : sat ? "text-orange-600" : "text-slate-700"}`}>
                     {day}
                   </div>
-                  <div
-                    className={`mt-auto text-[15px] font-bold rounded-lg px-2 py-1 self-start leading-snug ${
-                      isFullDayLeave ? "bg-violet-500 text-white" : ""
-                    }`}
-                    style={
-                      isFullDayLeave
-                        ? undefined
-                        : {
-                            backgroundColor: style.bgColor,
-                            color: style.textColor,
-                            border: `1px solid ${style.borderColor}`,
-                          }
-                    }
-                  >
-                    {isFullDayLeave ? "休假" : style.displayText || style.label}
-                  </div>
-                  {shiftInfo.isPartialLeave && (
-                    <div className="text-xs text-amber-700 font-medium">半日假</div>
-                  )}
-                  {ranges.length > 0 && (
-                    <div className="text-xs text-slate-400 leading-snug">
-                      {ranges.map((r, ri) => (
-                        <div key={ri}>{r}</div>
-                      ))}
+                  <div className="min-h-[1.4rem] mt-1">
+                    <div
+                      className={`text-[15px] font-bold leading-tight ${
+                        isFullDayLeave ? "text-violet-700" : ""
+                      }`}
+                      style={
+                        isFullDayLeave
+                          ? undefined
+                          : {
+                              color: style.textColor,
+                            }
+                      }
+                    >
+                      {isFullDayLeave ? "休假" : style.displayText || style.label}
                     </div>
-                  )}
+                    {shiftInfo.isPartialLeave && (
+                      <div className="text-[11px] text-amber-700 font-medium mt-0.5">半日假</div>
+                    )}
+                  </div>
+                  <div className="min-h-[2rem] mt-1 text-xs text-slate-400 leading-snug">
+                    {ranges.length > 0
+                      ? ranges.map((r, ri) => <div key={ri}>{r}</div>)
+                      : <div className="text-slate-300">　</div>}
+                  </div>
                 </div>
               );
             })}
