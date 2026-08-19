@@ -1,4 +1,4 @@
-# Docker + PM2 開機啟動（本機 Supabase，不用 Hyper-V）
+﻿# Docker + PM2 開機啟動（本機 Supabase，不用 Hyper-V）
 # 系統管理員可選；一般使用者登入後也可跑：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-docker-boot.ps1
 

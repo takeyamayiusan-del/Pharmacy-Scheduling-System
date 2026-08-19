@@ -1,4 +1,4 @@
-# 離機前全面健康檢查：本機雙站 + PM2 + Funnel 雙入口 + 排程
+﻿# 離機前全面健康檢查：本機雙站 + PM2 + Funnel 雙入口 + 排程
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-health-check.ps1
 
 $ErrorActionPreference = "Continue"
@@ -84,8 +84,8 @@ $publicUrl = (Get-FunnelPublicBaseUrl) + "/login"
 if (Test-FunnelPublicOk) {
     Ok "public $publicUrl"
 } else {
-    Bad "public URL not reachable: $publicUrl （內網通也不算外網通）"
-    Info "keepalive 會在外網連續失敗後重宣告。若現在就要修："
+    Bad "public URL not reachable: $publicUrl (local OK does not mean Funnel OK)"
+    Info "keepalive re-applies after 2 public misses. Restore now:"
     Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
 }
 Info "Verify :8443 with a phone on 4G (not store Wi-Fi)"
