@@ -1,4 +1,4 @@
-# Shared helpers for site start / watchdog / repair (Docker + PM2)
+﻿# Shared helpers for site start / watchdog / repair (Docker + PM2)
 
 function Test-PortListening([int]$Port) {
     return [bool](netstat -ano | Select-String ":$Port\s" | Select-String "LISTENING")
@@ -431,7 +431,7 @@ function Invoke-FunnelPublicProbe {
     }
 }
 
-# 先打輕量 /api/health（重建後才有）；沒有就退回 /login。單次失敗會再試一次。
+# Lightweight public probe: /api/health first, then /login. Retry once on failure.
 function Test-FunnelPublicOk {
     param(
         [string]$Path = "",
@@ -440,21 +440,24 @@ function Test-FunnelPublicOk {
         [switch]$NoRetry
     )
 
-    $probe = {
-        param($p)
-        if ($p) {
-            Invoke-FunnelPublicProbe -Path $p -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec
-        } elseif (Invoke-FunnelPublicProbe -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec) {
-            $true
-        } else {
-            Invoke-FunnelPublicProbe -Path "/login" -HttpsPort $HttpsPort -TimeoutSec ([Math]::Max($TimeoutSec, 12))
+    $ok = $false
+    if ($Path) {
+        $ok = Invoke-FunnelPublicProbe -Path $Path -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec
+    } else {
+        $ok = Invoke-FunnelPublicProbe -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec
+        if (-not $ok) {
+            $ok = Invoke-FunnelPublicProbe -Path "/login" -HttpsPort $HttpsPort -TimeoutSec ([Math]::Max($TimeoutSec, 12))
         }
     }
-
-    if (& $probe $Path) { return $true }
+    if ($ok) { return $true }
     if ($NoRetry) { return $false }
     Start-Sleep -Seconds 2
-    return [bool](& $probe $Path)
+    if ($Path) {
+        return [bool](Invoke-FunnelPublicProbe -Path $Path -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec)
+    }
+    $ok = Invoke-FunnelPublicProbe -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec
+    if ($ok) { return $true }
+    return [bool](Invoke-FunnelPublicProbe -Path "/login" -HttpsPort $HttpsPort -TimeoutSec ([Math]::Max($TimeoutSec, 12)))
 }
 
 function Test-FunnelRoutesConfigured {
@@ -516,14 +519,14 @@ function Repair-FunnelIfNeeded {
 
     $ts = Get-TailscaleCommand
     if (-not $ts) {
-        & $WriteLog "tailscale missing — cannot restore Funnel"
+        & $WriteLog "tailscale missing - cannot restore Funnel"
         return $false
     }
 
     $state = Get-TailscaleBackendState
     & $WriteLog "tailscale BackendState=$state"
     if ($state -ne "Running" -and $state -ne "unknown") {
-        & $WriteLog "tailscale not Running — trying tailscale up"
+        & $WriteLog "tailscale not Running - trying tailscale up"
         $upOut = (& $ts up 2>&1 | Out-String)
         if ($upOut.Trim()) { & $WriteLog $upOut.Trim() }
         Start-Sleep -Seconds 4
@@ -546,7 +549,7 @@ function Repair-FunnelIfNeeded {
 
     # 內網掛了先修網站，不要誤對 Funnel 動手
     if (-not $LocalOk -and -not $ForceReapply) {
-        & $WriteLog "local site down — skip Funnel re-apply (外網窗口此時也一定不通)"
+        & $WriteLog "local site down - skip Funnel re-apply"
         return $false
     }
 
@@ -555,22 +558,22 @@ function Repair-FunnelIfNeeded {
         $shouldReapply = $true
     } elseif (-not $routes.Ok) {
         $shouldReapply = $true
-        & $WriteLog "Funnel routes missing — re-apply now (no reset)"
+        & $WriteLog "Funnel routes missing - re-apply now (no reset)"
     } else {
         # 內網通、路由還在、外網窗口不通：這才是要修的情況
         $publicFails = $publicFails + 1
         if ($HealthState) { $HealthState.publicFails = $publicFails }
         $cool = Get-FunnelCooldownRemainMinutes -HealthState $HealthState -CooldownMinutes $CooldownMinutes
         if ($publicFails -lt $MinPublicFails) {
-            & $WriteLog "外網窗口失敗 $publicFails/$MinPublicFails — 先不重宣告（避免單次誤殺正在連的人）"
+            & $WriteLog ("public window fail {0}/{1} - skip re-apply this round" -f $publicFails, $MinPublicFails)
             return $false
         }
         if ($cool -gt 0) {
-            & $WriteLog "外網窗口仍失敗，冷卻中還有 ${cool} 分鐘才再重宣告"
+            & $WriteLog ("public window still down, cooldown {0} min" -f $cool)
             return $false
         }
         $shouldReapply = $true
-        & $WriteLog "內網通但外網窗口連續失敗 — re-apply (no reset)"
+        & $WriteLog "local OK but public window failed twice - re-apply (no reset)"
     }
 
     if (-not $shouldReapply) { return $false }
