@@ -4,8 +4,14 @@ import {
   formatWantedArriveDate,
   fulfillmentStage,
   isCustomerFulfillmentComplete,
+  matchesCreatedDate,
   matchesFulfillmentFilter,
+  datePresetRange,
+  formatCreatedStamp,
+  shiftDateKey,
+  sortByCreatedAtAsc,
   sortCustomerOrders,
+  toTaipeiDateKey,
   validateCustomerDraft,
   validateMedicineDraft,
   validateProcurementDraft,
@@ -203,5 +209,25 @@ describe("shop-ops validation", () => {
     expect(sortCustomerOrders([{ ...base, urgency: "normal", createdAt: "2" }, { ...base, id: "2", urgency: "urgent", createdAt: "1" }])[0].urgency).toBe(
       "urgent"
     );
+    expect(
+      sortCustomerOrders([
+        { ...base, id: "new", urgency: "normal", createdAt: "2026-08-19T00:00:00.000Z" },
+        { ...base, id: "old", urgency: "normal", createdAt: "2026-08-10T00:00:00.000Z" },
+      ])[0].id
+    ).toBe("old");
+  });
+
+  it("登記日以台北時區篩選，方便叫藥先後", () => {
+    expect(toTaipeiDateKey("2026-08-18T16:30:00.000Z")).toBe("2026-08-19");
+    expect(formatCreatedStamp("2026-08-18T16:30:00.000Z")).toBe("2026/08/19 00:30");
+    expect(shiftDateKey("2026-08-19", -6)).toBe("2026-08-13");
+    const todayRange = datePresetRange("today", "", "", new Date("2026-08-19T04:00:00.000Z"));
+    expect(todayRange).toEqual({ from: "2026-08-19", to: "2026-08-19" });
+    expect(matchesCreatedDate("2026-08-18T16:30:00.000Z", todayRange)).toBe(true);
+    expect(matchesCreatedDate("2026-08-18T15:00:00.000Z", todayRange)).toBe(false);
+    expect(sortByCreatedAtAsc([{ createdAt: "2", id: "b" }, { createdAt: "1", id: "a" }]).map((r) => r.id)).toEqual([
+      "a",
+      "b",
+    ]);
   });
 });
