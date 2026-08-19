@@ -2,10 +2,13 @@
 # 不做 git／build／funnel reset。公開網址連續失敗 2 次才重宣告（避免單次誤殺）。
 # 更新程式請用手拉。
 #
-# 手動測一次：
+# 這支是「檢查一次就結束」，不是常駐程式。排程每分鐘會再跑。
+# 手動測一次（會印結果；細節在 data\logs\keepalive-simple.log）：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-keepalive-simple.ps1
 # 外網現在不通（立刻重宣告）：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1
+# 完整檢查：
+#   powershell -ExecutionPolicy Bypass -File scripts\windows-health-check.ps1
 
 $ErrorActionPreference = "Continue"
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -19,6 +22,12 @@ $CashflowCwd = "C:\cash-flow-app"
 function Write-Log([string]$Message) {
     if (-not (Test-Path $LogDir)) { New-Item -ItemType Directory -Path $LogDir -Force | Out-Null }
     Add-Content -Path $LogFile -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message" -Encoding UTF8
+}
+
+function Write-StatusLine([string]$Label, [bool]$Ok) {
+    $text = if ($Ok) { "OK" } else { "FAIL" }
+    $color = if ($Ok) { "Green" } else { "Red" }
+    Write-Host ("  {0,-22} {1}" -f $Label, $text) -ForegroundColor $color
 }
 
 function Test-LocalOk([string]$Uri) {
@@ -68,6 +77,10 @@ function Save-KeepaliveHealthState($state) {
 }
 
 Write-Log "keepalive start"
+Write-Host "=== Keepalive (one check, then exit) ===" -ForegroundColor Cyan
+Write-Host "Not a resident process. Task Scheduler runs this every minute."
+Write-Host "Log: $LogFile"
+Write-Host ""
 $healthState = Read-KeepaliveHealthState
 
 $pm2 = Get-Pm2Command
@@ -161,6 +174,19 @@ if ($pm2) {
 
 Save-KeepaliveHealthState $healthState
 Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnelPublic=$funnelPublic"
+
+Write-Host ""
+Write-Host "Result:" -ForegroundColor Cyan
+Write-StatusLine "pharmacy :3000" ([bool]$pharmacyOk)
+Write-StatusLine "cashflow :5000" ([bool]$cashflowOk)
+Write-StatusLine "funnel public" ([bool]$funnelPublic)
+Write-Host ("Log: {0}" -f $LogFile) -ForegroundColor DarkGray
+
+if (-not $funnelPublic) {
+    Write-Host ""
+    Write-Host "External URL is down. Restore now:" -ForegroundColor Yellow
+    Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
+}
 
 if ($pharmacyOk -and $funnelPublic) { exit 0 }
 exit 1
