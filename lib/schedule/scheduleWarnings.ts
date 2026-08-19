@@ -15,7 +15,6 @@ import {
 import { timeToMinutes } from "@/lib/attendance/punchSchedule";
 import { isFixedSundayRest, isLocalSaturday } from "@/lib/schedule/sundayRest";
 
-const isSunday = (dateStr: string) => isFixedSundayRest(dateStr);
 const isSaturday = (dateStr: string) => isLocalSaturday(dateStr);
 
 export type ScheduleWarning = {
@@ -107,10 +106,12 @@ export function buildScheduleWarnings(options: {
     ? null
     : "A";
 
+  const sundayFixedRest = storeConfig?.policies.sundayFixedRest ?? true;
+
   return Array.from({ length: daysInMonth }, (_, index) => index + 1)
     .map((day) => {
       const dateStr = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      if (isSunday(dateStr)) return null;
+      if (isFixedSundayRest(dateStr, sundayFixedRest)) return null;
 
       const workers = staff.map((emp) => ({
         emp,

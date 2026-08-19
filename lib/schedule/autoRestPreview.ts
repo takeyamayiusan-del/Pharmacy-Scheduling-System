@@ -112,7 +112,11 @@ export function previewAutoRest(options: {
         if (isOffShiftCode(shift, storeConfig)) continue;
         const h = getShiftWorkHours(shift, shiftTimeConfig, storeConfig);
         hours += h;
-        if (date >= monthStart && date <= monthEnd && !isFixedSundayRest(date)) {
+        if (
+          date >= monthStart &&
+          date <= monthEnd &&
+          !isFixedSundayRest(date, storeConfig.policies.sundayFixedRest)
+        ) {
           workDatesInMonth.push({ date, shift, hours: h });
         }
       }

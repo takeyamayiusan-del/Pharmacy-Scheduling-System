@@ -75,4 +75,15 @@ describe("checkManagerLeaveAssignment", () => {
     expect(result.shouldWarn).toBe(true);
     expect(result.message).toContain("只能休半天");
   });
+
+  it("does not warn on Sunday when fixed rest is off", () => {
+    const result = checkManagerLeaveAssignment(
+      baseEmployee,
+      baseEmployee.name,
+      "2026-07-19",
+      { "emp-1": [] },
+      { saturdayLimit: 2, weekdayLimit: 2, sundayFixedRest: false }
+    );
+    expect(result.shouldWarn).toBe(false);
+  });
 });

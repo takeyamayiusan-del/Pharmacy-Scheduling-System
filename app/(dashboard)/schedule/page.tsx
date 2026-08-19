@@ -457,7 +457,7 @@ export default function SchedulePage() {
   const canEdit = (employeeId: string, dateStr: string): boolean => {
     if (!currentUser) return false;
     if (isPastDate(dateStr)) return false;
-    if (isSunday(dateStr)) return false;
+    if (isSunday(dateStr) && storeConfig.policies.sundayFixedRest) return false;
     if (canManageSite(currentUser.role)) return true;
     return false;
   };

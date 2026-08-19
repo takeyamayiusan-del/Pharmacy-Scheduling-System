@@ -78,6 +78,28 @@ describe("leaveQuotas", () => {
     ).toContain("禮拜日");
   });
 
+  it("關閉週日固定公休後，整月池週日可排休", () => {
+    const p = { ...defaultStorePoliciesForSite("jiji"), sundayFixedRest: false };
+    expect(
+      canSelectLeaveDate({
+        date: "2026-08-02",
+        selectedDates: [],
+        policies: p,
+        isWeekdayOffRule: false,
+        saturdaysInMonth: 5,
+      })
+    ).toBe(true);
+    expect(
+      leaveAddBlockedMessage({
+        date: "2026-08-02",
+        selectedDates: [],
+        policies: p,
+        isWeekdayOffRule: false,
+        saturdaysInMonth: 5,
+      })
+    ).toBeNull();
+  });
+
   it("竹山週六／平日各 2 天", () => {
     const p = defaultStorePoliciesForSite("zhushan");
     expect(isMonthPoolLeaveQuota(p)).toBe(false);

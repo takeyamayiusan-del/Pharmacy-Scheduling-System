@@ -38,9 +38,17 @@ export function getLocalDayOfWeek(dateStr: string): number {
   return new Date(parts.y, parts.m - 1, parts.d).getDay();
 }
 
-/** 以本地日曆判斷星期，避免 `new Date('YYYY-MM-DD')` UTC 解析偏差 */
-export function isFixedSundayRest(dateStr: string): boolean {
+/** 以本地日曆判斷是否為週日（不含店規） */
+export function isLocalSunday(dateStr: string): boolean {
   return getLocalDayOfWeek(dateStr) === 0;
+}
+
+/**
+ * 店規「週日固定公休」開啟時，該日視為不可排班的公休。
+ * 關閉後週日可排班，工時會算進去。未傳第二參數時維持舊行為（視為開啟）。
+ */
+export function isFixedSundayRest(dateStr: string, sundayFixedRest = true): boolean {
+  return sundayFixedRest && isLocalSunday(dateStr);
 }
 
 export function isLocalSaturday(dateStr: string): boolean {
@@ -59,9 +67,13 @@ export const SUNDAY_REST_MESSAGE = "禮拜日為固定公休，不可換班或�
 
 export function assertNoSundayInSwapDates(
   requesterDate: string,
-  targetDate: string
+  targetDate: string,
+  sundayFixedRest = true
 ): { ok: true } | { ok: false; message: string } {
-  if (isFixedSundayRest(requesterDate) || isFixedSundayRest(targetDate)) {
+  if (
+    isFixedSundayRest(requesterDate, sundayFixedRest) ||
+    isFixedSundayRest(targetDate, sundayFixedRest)
+  ) {
     return { ok: false, message: SUNDAY_REST_MESSAGE };
   }
   return { ok: true };
@@ -69,18 +81,21 @@ export function assertNoSundayInSwapDates(
 
 export function assertSundayShiftAllowed(
   date: string,
-  shift: string
+  shift: string,
+  sundayFixedRest = true
 ): { ok: true } | { ok: false; message: string } {
-  if (!isFixedSundayRest(date)) return { ok: true };
+  if (!isFixedSundayRest(date, sundayFixedRest)) return { ok: true };
   if (shift === "X") return { ok: true };
   return { ok: false, message: SUNDAY_REST_MESSAGE };
 }
 
-/** 換班寫入前：禮拜日格子強制維持 X（防呆） */
+/** 換班寫入前：固定公休的週日格子強制維持 X（防呆） */
 export function enforceSundayRestOnChanges<T extends { date: string; shift: string }>(
-  changes: T[]
+  changes: T[],
+  sundayFixedRest = true
 ): T[] {
+  if (!sundayFixedRest) return changes;
   return changes.map((c) =>
-    isFixedSundayRest(c.date) ? { ...c, shift: "X" } : c
+    isFixedSundayRest(c.date, sundayFixedRest) ? { ...c, shift: "X" } : c
   );
 }

@@ -7,6 +7,8 @@ import { createAdminClient } from "@/lib/supabase/server";
 import type { ScheduleSnapshotEntry } from "@/lib/schedule/scheduleSnapshot";
 import { buildSwapShiftsAndChanges } from "@/lib/schedule/swapSchedule";
 import { assertNoSundayInSwapDates } from "@/lib/schedule/sundayRest";
+import { parseSiteId, storeConfigSettingId } from "@/lib/sites";
+import { parseStoreConfig } from "@/lib/store-config";
 
 type SwapAction = "approve" | "revert";
 
@@ -126,9 +128,24 @@ export async function POST(req: NextRequest) {
       targetDate: swapRow.target_swap_date || swapRow.swap_date,
     };
 
+    const { data: requesterRow } = await admin
+      .from("users")
+      .select("site_id")
+      .eq("id", swapRow.requester_id)
+      .maybeSingle();
+    const siteId = parseSiteId(requesterRow?.site_id ?? auth.siteId);
+    const { data: setting } = await admin
+      .from("app_settings")
+      .select("value")
+      .eq("id", storeConfigSettingId(siteId))
+      .maybeSingle();
+    const storeConfig = parseStoreConfig(setting?.value, siteId);
+    const sundayFixedRest = storeConfig.policies.sundayFixedRest;
+
     const sundayGuard = assertNoSundayInSwapDates(
       swapRequest.requesterDate,
-      swapRequest.targetDate
+      swapRequest.targetDate,
+      sundayFixedRest
     );
     if (!sundayGuard.ok) {
       return NextResponse.json({ error: sundayGuard.message }, { status: 400 });
@@ -136,7 +153,7 @@ export async function POST(req: NextRequest) {
 
     let changes;
     try {
-      ({ changes } = buildSwapShiftsAndChanges(swapRequest, snapshot));
+      ({ changes } = buildSwapShiftsAndChanges(swapRequest, snapshot, sundayFixedRest));
     } catch (err) {
       const message = err instanceof Error ? err.message : "換班班表計算失敗";
       return NextResponse.json({ error: message }, { status: 400 });
