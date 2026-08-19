@@ -1,4 +1,4 @@
-# 註冊「簡單保活」排程（取代會亂 reset 的舊 watchdog）
+﻿# 註冊「簡單保活」排程（取代會亂 reset 的舊 watchdog）
 # 管理員執行一次：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-register-keepalive-simple.ps1
 
@@ -99,8 +99,10 @@ Write-Host "Registered:" -ForegroundColor Green
 Write-Host "  $KeepaliveTaskName  → windows-keepalive-simple.ps1 as $runAs (Daily/1min + boot/logon)"
 Write-Host "  $StartTaskName     → boot (if present)"
 Write-Host ""
-Write-Host "Test now:"
+Write-Host "Test now (prints OK/FAIL, then exits):"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-keepalive-simple.ps1"
+Write-Host "Full check:"
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-health-check.ps1"
 Write-Host "Log:"
 Write-Host "  $ProjectRoot\data\logs\keepalive-simple.log"
 Write-Host "Then:"
