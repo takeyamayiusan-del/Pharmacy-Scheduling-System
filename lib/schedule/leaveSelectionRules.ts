@@ -23,7 +23,7 @@ export function checkManagerLeaveAssignment(
   employeeName: string,
   date: string,
   leaveSelections: LeaveSelectionsMap,
-  quotas?: { saturdayLimit: number; weekdayLimit: number }
+  quotas?: { saturdayLimit: number; weekdayLimit: number; monthPool?: boolean }
 ): ManagerLeaveAssignCheck {
   if (isSunday(date)) {
     return { shouldWarn: false };
@@ -57,10 +57,29 @@ export function checkManagerLeaveAssignment(
     };
   }
 
+  if (employee?.isHalfDayLeaveRule) {
+    return {
+      shouldWarn: true,
+      message: `${employeeName} 套用「只能休半天」。班表改全日休假會算一次排休機會；若要休上午或下午，請改由排休選擇指定。是否仍要將 ${month}/${day} 排為全日休假？`,
+    };
+  }
+
   const saturdayUsed = monthDates.filter(isSaturday).length;
   const weekdayUsed = monthDates.filter((d) => !isSaturday(d) && !isSunday(d)).length;
   const saturdayLimit = quotas?.saturdayLimit ?? 2;
   const weekdayLimit = quotas?.weekdayLimit ?? 2;
+  const monthPool = quotas?.monthPool === true;
+
+  if (monthPool) {
+    const used = monthDates.filter((d) => !isSunday(d)).length;
+    if (used >= saturdayLimit) {
+      return {
+        shouldWarn: true,
+        message: `${employeeName} 本月排休已達 ${used}/${saturdayLimit} 天（依本月週六數），再排休將超過規定。是否仍要修改並同步至排休選擇？`,
+      };
+    }
+    return { shouldWarn: false };
+  }
 
   if (isSaturday(date) && saturdayUsed >= saturdayLimit) {
     return {
@@ -80,8 +99,13 @@ export function checkManagerLeaveAssignment(
 }
 
 /** 是否應同步寫入/刪除 leave_selections（禮拜日固定休，不列入排休選擇） */
-export function shouldSyncLeaveSelection(date: string, shift: string): "add" | "remove" | "none" {
+export function shouldSyncLeaveSelection(
+  date: string,
+  shift: string,
+  options?: { keepHalfDayLeave?: boolean }
+): "add" | "remove" | "none" {
   if (isSunday(date)) return "none";
   if (shift === "X") return "add";
+  if (options?.keepHalfDayLeave) return "none";
   return "remove";
 }

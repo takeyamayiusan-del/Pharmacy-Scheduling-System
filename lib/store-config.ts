@@ -51,7 +51,7 @@ export type StoreShiftDef = {
 };
 
 /** 員工可勾選的規則標籤（店層功能開啟後才顯示） */
-export type StoreRuleTagId = "rotation_evening" | "weekday_off";
+export type StoreRuleTagId = "rotation_evening" | "weekday_off" | "half_day_leave";
 
 export type StoreRuleTag = {
   id: StoreRuleTagId;
@@ -92,6 +92,8 @@ export type StoreConfig = {
     rotationEvening: boolean;
     /** 平日不排休規則 */
     weekdayOffRule: boolean;
+    /** 只能休半天（個人規則；開啟後固定班表可勾選） */
+    halfDayLeaveRule: boolean;
     /**
      * 進階班別目錄（自訂名稱／多段休息）。
      * 竹山預設 false（仍走 A–E，行為不變）；集集預設 true。
@@ -147,6 +149,11 @@ const DEFAULT_RULE_TAGS: StoreRuleTag[] = [
     label: "平日不排休",
     description: "平日正常上班，排休只能選週六",
   },
+  {
+    id: "half_day_leave",
+    label: "只能休半天",
+    description: "排休不可選全日，每次自選休上午或下午，剩下半天上自選班別",
+  },
 ];
 
 /** 竹山現況預設（禮三晚班等）— 排班行為不變 */
@@ -168,6 +175,7 @@ export function defaultStoreConfigForSite(siteId: SiteId): StoreConfig {
     features: {
       rotationEvening: isZhushan,
       weekdayOffRule: isZhushan,
+      halfDayLeaveRule: !isZhushan,
       // 竹山維持 false → 行為仍是 A–E；目錄鏡像僅備援，不影響排班
       customShiftCatalog: site.customShiftCatalog,
     },
@@ -298,7 +306,7 @@ function normalizeRuleTags(raw: unknown, menuLabel: string): StoreRuleTag[] {
     if (!item || typeof item !== "object") continue;
     const row = item as Record<string, unknown>;
     const id = row.id;
-    if (id !== "rotation_evening" && id !== "weekday_off") continue;
+    if (id !== "rotation_evening" && id !== "weekday_off" && id !== "half_day_leave") continue;
     const target = base.find((t) => t.id === id)!;
     if (typeof row.label === "string" && row.label.trim()) {
       target.label = row.label.trim();
@@ -349,6 +357,10 @@ export function parseStoreConfig(raw: unknown, siteId: SiteId = "zhushan"): Stor
       typeof featuresRaw.weekdayOffRule === "boolean"
         ? featuresRaw.weekdayOffRule
         : defaults.features.weekdayOffRule,
+    halfDayLeaveRule:
+      typeof featuresRaw.halfDayLeaveRule === "boolean"
+        ? featuresRaw.halfDayLeaveRule
+        : defaults.features.halfDayLeaveRule,
     customShiftCatalog:
       typeof featuresRaw.customShiftCatalog === "boolean"
         ? featuresRaw.customShiftCatalog
@@ -455,6 +467,7 @@ export function getActiveRuleTags(config: StoreConfig): StoreRuleTag[] {
   return config.ruleTags.filter((tag) => {
     if (tag.id === "rotation_evening") return config.features.rotationEvening;
     if (tag.id === "weekday_off") return config.features.weekdayOffRule;
+    if (tag.id === "half_day_leave") return config.features.halfDayLeaveRule;
     return false;
   });
 }

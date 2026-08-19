@@ -970,15 +970,24 @@ export default function StoreSettingsPage() {
             <span className="text-gray-700">週六排休配額</span>
             <select
               value={draft.policies.saturdayQuotaMode}
-              onChange={(e) =>
+              onChange={(e) => {
+                const saturdayQuotaMode = e.target.value as StorePolicies["saturdayQuotaMode"];
                 patchPolicies({
-                  saturdayQuotaMode: e.target.value as StorePolicies["saturdayQuotaMode"],
-                })
-              }
+                  saturdayQuotaMode,
+                  weekdayLeaveQuota:
+                    saturdayQuotaMode === "month_pool"
+                      ? 0
+                      : saturdayQuotaMode === "all_saturdays" &&
+                          draft.policies.weekdayLeaveQuota <= 0
+                        ? 2
+                        : draft.policies.weekdayLeaveQuota,
+                });
+              }}
               className="mt-1 w-full border rounded-lg px-3 py-2"
             >
-              <option value="fixed">固定天數</option>
-              <option value="all_saturdays">本月所有週六</option>
+              <option value="fixed">固定天數（週六／平日分開）</option>
+              <option value="all_saturdays">本月所有週六（只能休週六；平日另計）</option>
+              <option value="month_pool">本月週六數＝可休天數（週一到週六都能休）</option>
             </select>
           </label>
           {draft.policies.saturdayQuotaMode === "fixed" && (
@@ -995,18 +1004,25 @@ export default function StoreSettingsPage() {
               />
             </label>
           )}
-          <label className="block text-sm">
-            <span className="text-gray-700">平日可排休天數</span>
-            <input
-              type="number"
-              min={0}
-              value={draft.policies.weekdayLeaveQuota}
-              onChange={(e) =>
-                patchPolicies({ weekdayLeaveQuota: Number(e.target.value) || 0 })
-              }
-              className="mt-1 w-full border rounded-lg px-3 py-2"
-            />
-          </label>
+          {draft.policies.saturdayQuotaMode !== "month_pool" && (
+            <label className="block text-sm">
+              <span className="text-gray-700">平日可排休天數</span>
+              <input
+                type="number"
+                min={0}
+                value={draft.policies.weekdayLeaveQuota}
+                onChange={(e) =>
+                  patchPolicies({ weekdayLeaveQuota: Number(e.target.value) || 0 })
+                }
+                className="mt-1 w-full border rounded-lg px-3 py-2"
+              />
+            </label>
+          )}
+          {draft.policies.saturdayQuotaMode === "month_pool" && (
+            <p className="text-sm text-slate-600 sm:col-span-2">
+              有幾個禮拜六就能休幾天，週一到週六都可排休，週日仍公休。
+            </p>
+          )}
         </div>
         <label className="flex items-start gap-3 text-sm">
           <input
@@ -1242,6 +1258,26 @@ export default function StoreSettingsPage() {
             <span className="font-medium text-gray-900">平日不排休規則</span>
             <span className="block text-gray-500">
               關閉後固定班表不再顯示此規則勾選欄。
+            </span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.features.halfDayLeaveRule}
+            onChange={(e) =>
+              setDraft((p) => ({
+                ...p,
+                features: { ...p.features, halfDayLeaveRule: e.target.checked },
+              }))
+            }
+          />
+          <span>
+            <span className="font-medium text-gray-900">只能休半天規則</span>
+            <span className="block text-gray-500">
+              開啟後可在固定班表為個別員工勾選。該員工排休只能選休上午或下午，剩下半天自選班別。
+              {activeSiteId === "jiji" && "（集集預設開啟，給店長等需要休半天的人用）"}
             </span>
           </span>
         </label>

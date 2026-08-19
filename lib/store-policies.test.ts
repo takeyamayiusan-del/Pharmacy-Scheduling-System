@@ -28,7 +28,7 @@ describe("store-policies", () => {
       {
         overtimeMinApplyMinutes: 30,
         overtimeForceCompLeaveAfterMinutes: null,
-        saturdayQuotaMode: "all_saturdays",
+        saturdayQuotaMode: "month_pool",
         weekdayLeaveQuota: 0,
         approvalChain: ["manager", "deputy", "owner"],
         autoRestSuggestEnabled: true,
@@ -38,7 +38,7 @@ describe("store-policies", () => {
     );
     expect(next.overtimeMinApplyMinutes).toBe(30);
     expect(next.overtimeForceCompLeaveAfterMinutes).toBeNull();
-    expect(next.saturdayQuotaMode).toBe("all_saturdays");
+    expect(next.saturdayQuotaMode).toBe("month_pool");
     expect(next.weekdayLeaveQuota).toBe(0);
     expect(next.approvalChain).toEqual(["manager", "deputy", "owner"]);
     expect(next.autoRestSuggestEnabled).toBe(true);
@@ -52,7 +52,15 @@ describe("store-policies", () => {
     expect(z.saturdayQuotaMode).toBe("fixed");
     const j = parseStorePolicies({}, "jiji");
     expect(j.autoRestSuggestEnabled).toBe(true);
-    expect(j.saturdayQuotaMode).toBe("all_saturdays");
+    expect(j.saturdayQuotaMode).toBe("month_pool");
+  });
+
+  it("舊集集 all_saturdays + 平日 0 會讀成整月池", () => {
+    const j = parseStorePolicies(
+      { saturdayQuotaMode: "all_saturdays", weekdayLeaveQuota: 0 },
+      "jiji"
+    );
+    expect(j.saturdayQuotaMode).toBe("month_pool");
   });
 
   it("假別上限可覆寫勞基預設", () => {
