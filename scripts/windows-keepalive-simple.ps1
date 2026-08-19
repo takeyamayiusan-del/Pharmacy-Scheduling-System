@@ -1,10 +1,10 @@
-# 簡單雙站保活：本機網站真的掛了才重開；外網 Funnel 路由消失才重宣告。
-# 不做 git／build／funnel reset，也不因「本機測公開網址失敗」去重宣告（會掐斷正在用的人）。
+# 簡單雙站保活：本機網站真的掛了才重開；外網窗口不通才重宣告 Funnel。
+# 不做 git／build／funnel reset。公開網址連續失敗 2 次才重宣告（避免單次誤殺）。
 # 更新程式請用手拉。
 #
 # 手動測一次：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-keepalive-simple.ps1
-# 外網現在不通（這才會重宣告）：
+# 外網現在不通（立刻重宣告）：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1
 
 $ErrorActionPreference = "Continue"
@@ -30,19 +30,31 @@ function Test-LocalOk([string]$Uri) {
     }
 }
 
+function Test-PharmacyLocalOk {
+    if (Test-LocalOk "http://127.0.0.1:3000/api/health") { return $true }
+    return (Test-LocalOk "http://127.0.0.1:3000/login")
+}
+
 function Get-KeepaliveHealthStatePath {
     return Join-Path $ProjectRoot "data\ops\keepalive-health.json"
 }
 
 function Read-KeepaliveHealthState {
     $path = Get-KeepaliveHealthStatePath
-    $obj = [ordered]@{ pharmacyHttpFails = 0; cashflowHttpFails = 0 }
+    $obj = [ordered]@{
+        pharmacyHttpFails    = 0
+        cashflowHttpFails    = 0
+        publicFails          = 0
+        lastFunnelReapplyAt  = ""
+    }
     if (Test-Path -LiteralPath $path) {
         try {
             $raw = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
             $parsed = $raw | ConvertFrom-Json
-            if ($parsed.pharmacyHttpFails -ne $null) { $obj.pharmacyHttpFails = [int]$parsed.pharmacyHttpFails }
-            if ($parsed.cashflowHttpFails -ne $null) { $obj.cashflowHttpFails = [int]$parsed.cashflowHttpFails }
+            if ($null -ne $parsed.pharmacyHttpFails) { $obj.pharmacyHttpFails = [int]$parsed.pharmacyHttpFails }
+            if ($null -ne $parsed.cashflowHttpFails) { $obj.cashflowHttpFails = [int]$parsed.cashflowHttpFails }
+            if ($null -ne $parsed.publicFails) { $obj.publicFails = [int]$parsed.publicFails }
+            if ($parsed.lastFunnelReapplyAt) { $obj.lastFunnelReapplyAt = [string]$parsed.lastFunnelReapplyAt }
         } catch {}
     }
     return $obj
@@ -65,7 +77,7 @@ if (-not $pm2) {
 
 # --- pharmacy :3000 ---
 # 埠還在聽就不要因單次 /login 逾時重啟（匯出 PDF、尖峰載入會讓 8 秒探測失敗，重啟會把正在用的人踢掉）
-$pharmacyOk = Test-LocalOk "http://127.0.0.1:3000/login"
+$pharmacyOk = Test-PharmacyLocalOk
 $pharmacyListen = Test-PortListening 3000
 if ($pharmacyOk) {
     $healthState.pharmacyHttpFails = 0
@@ -80,7 +92,7 @@ if ($pharmacyOk) {
             & $pm2 restart pharmacy-web --update-env 2>$null | Out-Null
         }
         Start-Sleep -Seconds 4
-        $pharmacyOk = Test-LocalOk "http://127.0.0.1:3000/login"
+        $pharmacyOk = Test-PharmacyLocalOk
         $healthState.pharmacyHttpFails = 0
         Write-Log ("pharmacy after repair: " + $(if ($pharmacyOk) { "OK" } else { "FAIL" }))
     }
@@ -96,7 +108,7 @@ if ($pharmacyOk) {
         }
     }
     Start-Sleep -Seconds 4
-    $pharmacyOk = Test-LocalOk "http://127.0.0.1:3000/login"
+    $pharmacyOk = Test-PharmacyLocalOk
     $healthState.pharmacyHttpFails = 0
     Write-Log ("pharmacy after repair: " + $(if ($pharmacyOk) { "OK" } else { "FAIL" }))
 }
@@ -136,15 +148,19 @@ if ($cashflowOk) {
     Write-Log ("cashflow after repair: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
 }
 
-# --- funnel：路由還在就別動；消失才重宣告。不要探測公開 URL（會跟正在用的人搶連線）---
-$funnelRoutes = Repair-FunnelIfNeeded -WriteLog { param($m) Write-Log $m }
+# --- funnel：一定檢查外網窗口。內網通但外網不通，連續 2 次才重宣告（不 reset）---
+$funnelPublic = Repair-FunnelIfNeeded `
+    -WriteLog { param($m) Write-Log $m } `
+    -LocalOk $pharmacyOk `
+    -MinPublicFails 2 `
+    -HealthState $healthState
 
 if ($pm2) {
     & $pm2 save 2>$null | Out-Null
 }
 
 Save-KeepaliveHealthState $healthState
-Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnelRoutes=$funnelRoutes"
+Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnelPublic=$funnelPublic"
 
-if ($pharmacyOk -and $funnelRoutes) { exit 0 }
+if ($pharmacyOk -and $funnelPublic) { exit 0 }
 exit 1
