@@ -175,9 +175,114 @@ export function sortCustomerOrders<T extends CustomerOrder>(rows: T[]): T[] {
   return [...rows].sort((a, b) => {
     const urgentDelta = Number(b.urgency === "urgent") - Number(a.urgency === "urgent");
     if (urgentDelta !== 0) return urgentDelta;
-    return String(b.createdAt).localeCompare(String(a.createdAt));
+    const createdDelta = String(a.createdAt).localeCompare(String(b.createdAt));
+    if (createdDelta !== 0) return createdDelta;
+    return String(a.id).localeCompare(String(b.id));
   });
 }
+
+export function sortByCreatedAtAsc<T extends { createdAt: string; id?: string }>(rows: T[]): T[] {
+  return [...rows].sort((a, b) => {
+    const createdDelta = String(a.createdAt).localeCompare(String(b.createdAt));
+    if (createdDelta !== 0) return createdDelta;
+    return String(a.id ?? "").localeCompare(String(b.id ?? ""));
+  });
+}
+
+export const SHOP_OPS_TZ = "Asia/Taipei";
+
+export type DatePreset = "all" | "today" | "7d" | "month" | "custom";
+
+export const DATE_PRESET_LABELS: Record<DatePreset, string> = {
+  all: "全部日期",
+  today: "今天",
+  "7d": "近 7 天",
+  month: "本月",
+  custom: "自訂",
+};
+
+export function toTaipeiDateKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: SHOP_OPS_TZ,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+export function formatCreatedStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const date = toTaipeiDateKey(iso).replace(/-/g, "/");
+  if (!date) return iso;
+  const time = new Intl.DateTimeFormat("en-GB", {
+    timeZone: SHOP_OPS_TZ,
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).format(d);
+  return `${date} ${time}`;
+}
+
+export function shiftDateKey(key: string, days: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key)) return "";
+  const [y, m, d] = key.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + days));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
+}
+
+export function datePresetRange(
+  preset: DatePreset,
+  customFrom = "",
+  customTo = "",
+  now = new Date()
+): { from: string | null; to: string | null } {
+  if (preset === "all") return { from: null, to: null };
+  const today = toTaipeiDateKey(now.toISOString());
+  if (preset === "today") return { from: today, to: today };
+  if (preset === "7d") return { from: shiftDateKey(today, -6), to: today };
+  if (preset === "month") return { from: `${today.slice(0, 7)}-01`, to: today };
+  const from = /^\d{4}-\d{2}-\d{2}$/.test(customFrom) ? customFrom : null;
+  const to = /^\d{4}-\d{2}-\d{2}$/.test(customTo) ? customTo : null;
+  return { from, to };
+}
+
+export function matchesCreatedDate(
+  iso: string,
+  range: { from: string | null; to: string | null }
+): boolean {
+  const key = toTaipeiDateKey(iso);
+  if (!key) return false;
+  if (range.from && key < range.from) return false;
+  if (range.to && key > range.to) return false;
+  return true;
+}
+
+export const CUSTOMER_EXPORT_HEADERS = [
+  "登記時間",
+  "緊急",
+  "希望到貨",
+  "客人",
+  "電話",
+  "商品",
+  "健保碼",
+  "數量",
+  "單位",
+  "金額",
+  "付款",
+  "訂貨",
+  "到貨",
+  "通知",
+  "已拿",
+  "接手人",
+  "備註",
+  "狀態",
+] as const;
 
 export function formatWantedArriveDate(isoDate: string | null | undefined): string {
   if (!isoDate) return "";

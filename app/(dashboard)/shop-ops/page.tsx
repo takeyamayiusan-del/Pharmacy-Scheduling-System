@@ -26,18 +26,24 @@ import {
   CUSTOMER_PAYMENT_LABELS,
   CUSTOMER_URGENCY_LABELS,
   FULFILLMENT_FILTER_LABELS,
+  DATE_PRESET_LABELS,
+  datePresetRange,
+  formatCreatedStamp,
   formatMedicineQty,
   formatMoney,
   formatWantedArriveDate,
   isCustomerFulfillmentComplete,
+  matchesCreatedDate,
   matchesFulfillmentFilter,
   MEDICINE_KIND_LABELS,
   MEDICINE_QTY_MODE_LABELS,
   SHOP_STATUS_LABELS,
+  sortByCreatedAtAsc,
   sortCustomerOrders,
   type CustomerOrder,
   type CustomerPaymentStatus,
   type CustomerUrgency,
+  type DatePreset,
   type FulfillmentFilter,
   type MedicineKind,
   type MedicineQtyMode,
@@ -48,16 +54,10 @@ import {
 } from "@/lib/shop-ops/types";
 
 type TabKey = "procurement" | "medicine" | "customer" | "fulfillment";
-type ListFilter = "pending" | "closed";
+type ListFilter = "pending" | "closed" | "all";
 
 function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${d.getFullYear()}/${m}/${day} ${hh}:${mm}`;
+  return formatCreatedStamp(iso);
 }
 
 export default function ShopOpsPage() {
@@ -143,7 +143,7 @@ export default function ShopOpsPage() {
         <p>
           4. <strong>客訂管理</strong>：可一次勾多筆一起標記，也可匯出 Excel／PDF。
         </p>
-        <p>5. 待處理可刪；已處理只留紀錄、不刪。</p>
+        <p>5. 待處理可刪；已處理只留紀錄、不刪。每筆都會標登記日期；下方列表可依日期／類別篩選，方便統計與叫藥先後。</p>
       </HelpTip>
 
       <div className="flex flex-wrap gap-2">
@@ -236,6 +236,7 @@ function FilterToggle({
   pendingCount: number;
   closedCount: number;
 }) {
+  const allCount = pendingCount + closedCount;
   return (
     <div className="flex flex-wrap gap-2">
       <button
@@ -256,8 +257,111 @@ function FilterToggle({
       >
         已處理（{closedCount}）
       </button>
+      <button
+        type="button"
+        className={`px-3 py-1.5 rounded-lg text-sm border ${
+          value === "all" ? "bg-sky-600 text-white border-sky-600" : "bg-white border-slate-200"
+        }`}
+        onClick={() => onChange("all")}
+      >
+        全部（{allCount}）
+      </button>
     </div>
   );
+}
+
+function DateFilterBar({
+  preset,
+  onPreset,
+  from,
+  to,
+  onFrom,
+  onTo,
+}: {
+  preset: DatePreset;
+  onPreset: (v: DatePreset) => void;
+  from: string;
+  to: string;
+  onFrom: (v: string) => void;
+  onTo: (v: string) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs font-medium text-slate-500">登記日</span>
+      {(Object.keys(DATE_PRESET_LABELS) as DatePreset[]).map((key) => (
+        <button
+          key={key}
+          type="button"
+          className={`px-3 py-1.5 rounded-lg text-sm border ${
+            preset === key ? "bg-sky-600 text-white border-sky-600" : "bg-white border-slate-200"
+          }`}
+          onClick={() => onPreset(key)}
+        >
+          {DATE_PRESET_LABELS[key]}
+        </button>
+      ))}
+      {preset === "custom" && (
+        <>
+          <input
+            type="date"
+            className="border rounded-lg px-2 py-1.5 text-sm"
+            value={from}
+            onChange={(e) => onFrom(e.target.value)}
+          />
+          <span className="text-slate-400">～</span>
+          <input
+            type="date"
+            className="border rounded-lg px-2 py-1.5 text-sm"
+            value={to}
+            onChange={(e) => onTo(e.target.value)}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ChipFilter({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: { value: string; label: string; count?: number }[];
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-xs font-medium text-slate-500">{label}</span>
+      {options.map((opt) => (
+        <button
+          key={opt.value}
+          type="button"
+          className={`px-3 py-1.5 rounded-lg text-sm border ${
+            value === opt.value ? "bg-slate-800 text-white border-slate-800" : "bg-white border-slate-200"
+          }`}
+          onClick={() => onChange(opt.value)}
+        >
+          {opt.label}
+          {opt.count != null ? `（${opt.count}）` : ""}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function CreatedBadge({ iso }: { iso: string }) {
+  return (
+    <span className="text-xs font-semibold tabular-nums px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-100">
+      登記 {formatCreatedStamp(iso)}
+    </span>
+  );
+}
+
+function StatsLine({ count }: { count: number }) {
+  return <p className="text-sm text-slate-600">目前顯示 {count} 筆</p>;
 }
 
 function StatusBadge({ status }: { status: ShopRecordStatus }) {
@@ -310,6 +414,10 @@ function ProcurementPanel({
 }) {
   const [filter, setFilter] = useState<ListFilter>("pending");
   const [selected, setSelected] = useState<string[]>([]);
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [form, setForm] = useState({
     categoryId: categories[0]?.id ?? "",
     itemName: "",
@@ -325,7 +433,25 @@ function ProcurementPanel({
     }
   }, [categories, form.categoryId]);
 
-  const visible = items.filter((i) => i.status === filter);
+  const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
+  const byStatus = items.filter((i) => filter === "all" || i.status === filter);
+  const visible = sortByCreatedAtAsc(
+    byStatus
+      .filter((i) => matchesCreatedDate(i.createdAt, dateRange))
+      .filter((i) => categoryFilter === "all" || i.categoryName === categoryFilter)
+  );
+  const categoryOptions = [
+    {
+      value: "all",
+      label: "全部類別",
+      count: byStatus.filter((i) => matchesCreatedDate(i.createdAt, dateRange)).length,
+    },
+    ...Array.from(new Set(items.map((i) => i.categoryName).filter(Boolean))).map((name) => ({
+      value: name,
+      label: name,
+      count: byStatus.filter((i) => i.categoryName === name && matchesCreatedDate(i.createdAt, dateRange)).length,
+    })),
+  ];
 
   const addCategory = async () => {
     if (!newCat.trim() || busy) return;
@@ -489,10 +615,28 @@ function ProcurementPanel({
 
       <FilterToggle
         value={filter}
-        onChange={setFilter}
+        onChange={(v) => {
+          setFilter(v);
+          setSelected([]);
+        }}
         pendingCount={items.filter((i) => i.status === "pending").length}
         closedCount={items.filter((i) => i.status === "closed").length}
       />
+      <DateFilterBar
+        preset={datePreset}
+        onPreset={setDatePreset}
+        from={dateFrom}
+        to={dateTo}
+        onFrom={setDateFrom}
+        onTo={setDateTo}
+      />
+      <ChipFilter
+        label="類別"
+        value={categoryFilter}
+        onChange={setCategoryFilter}
+        options={categoryOptions}
+      />
+      <StatsLine count={visible.length} />
 
       {filter === "pending" && visible.length > 0 && (
         <div className="flex gap-2">
@@ -516,7 +660,7 @@ function ProcurementPanel({
       )}
 
       {visible.length === 0 ? (
-        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已處理"}紀錄</div>
+        <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
       ) : (
         <div className="space-y-2">
           {visible.map((row) => (
@@ -533,6 +677,7 @@ function ProcurementPanel({
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
+                  <CreatedBadge iso={row.createdAt} />
                   <span className="text-xs text-slate-500">{row.categoryName}</span>
                   <span className="font-semibold text-slate-900">{row.itemName}</span>
                   <span className="text-slate-700">
@@ -542,7 +687,7 @@ function ProcurementPanel({
                   <StatusBadge status={row.status} />
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  {nameById.get(row.createdBy) ?? "員工"} · {formatWhen(row.createdAt)}
+                  {nameById.get(row.createdBy) ?? "員工"}
                   {row.closedAt
                     ? ` · 已處理 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
                     : ""}
@@ -612,6 +757,10 @@ function MedicinePanel({
 }) {
   const [filter, setFilter] = useState<ListFilter>("pending");
   const [selected, setSelected] = useState<string[]>([]);
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [kindFilter, setKindFilter] = useState<"all" | MedicineKind>("all");
   const [form, setForm] = useState({
     kind: "shortage" as MedicineKind,
     itemName: "",
@@ -628,7 +777,13 @@ function MedicinePanel({
     note: "",
   });
 
-  const visible = items.filter((i) => i.status === filter);
+  const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
+  const byStatus = items.filter((i) => filter === "all" || i.status === filter);
+  const visible = sortByCreatedAtAsc(
+    byStatus
+      .filter((i) => matchesCreatedDate(i.createdAt, dateRange))
+      .filter((i) => kindFilter === "all" || i.kind === kindFilter)
+  );
   const needsQty = form.kind !== "below_stock";
 
   const addItem = async () => {
@@ -837,10 +992,39 @@ function MedicinePanel({
 
       <FilterToggle
         value={filter}
-        onChange={setFilter}
+        onChange={(v) => {
+          setFilter(v);
+          setSelected([]);
+        }}
         pendingCount={items.filter((i) => i.status === "pending").length}
         closedCount={items.filter((i) => i.status === "closed").length}
       />
+      <DateFilterBar
+        preset={datePreset}
+        onPreset={setDatePreset}
+        from={dateFrom}
+        to={dateTo}
+        onFrom={setDateFrom}
+        onTo={setDateTo}
+      />
+      <ChipFilter
+        label="類型"
+        value={kindFilter}
+        onChange={(v) => setKindFilter(v as "all" | MedicineKind)}
+        options={[
+          {
+            value: "all",
+            label: "全部類型",
+            count: byStatus.filter((i) => matchesCreatedDate(i.createdAt, dateRange)).length,
+          },
+          ...(Object.keys(MEDICINE_KIND_LABELS) as MedicineKind[]).map((k) => ({
+            value: k,
+            label: MEDICINE_KIND_LABELS[k],
+            count: byStatus.filter((i) => i.kind === k && matchesCreatedDate(i.createdAt, dateRange)).length,
+          })),
+        ]}
+      />
+      <StatsLine count={visible.length} />
 
       {filter === "pending" && visible.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -888,7 +1072,7 @@ function MedicinePanel({
       )}
 
       {visible.length === 0 ? (
-        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已處理"}紀錄</div>
+        <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
       ) : (
         <div className="space-y-2">
           {visible.map((row) => (
@@ -905,6 +1089,7 @@ function MedicinePanel({
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
+                  <CreatedBadge iso={row.createdAt} />
                   <span className="text-xs px-2 py-0.5 rounded-full bg-violet-100 text-violet-800">
                     {MEDICINE_KIND_LABELS[row.kind]}
                   </span>
@@ -916,7 +1101,7 @@ function MedicinePanel({
                   <StatusBadge status={row.status} />
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  {nameById.get(row.createdBy) ?? "員工"} · {formatWhen(row.createdAt)}
+                  {nameById.get(row.createdBy) ?? "員工"}
                   {row.closedAt
                     ? ` · 已處理 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
                     : ""}
@@ -1018,6 +1203,11 @@ function CustomerPanel({
 }) {
   const [filter, setFilter] = useState<ListFilter>("pending");
   const [selected, setSelected] = useState<string[]>([]);
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [urgencyFilter, setUrgencyFilter] = useState<"all" | CustomerUrgency>("all");
+  const [paymentFilter, setPaymentFilter] = useState<"all" | CustomerPaymentStatus>("all");
   const [form, setForm] = useState({
     customerName: "",
     customerPhone: "",
@@ -1032,7 +1222,14 @@ function CustomerPanel({
     note: "",
   });
 
-  const visible = sortCustomerOrders(items.filter((i) => i.status === filter));
+  const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
+  const visible = sortCustomerOrders(
+    items
+      .filter((i) => filter === "all" || i.status === filter)
+      .filter((i) => matchesCreatedDate(i.createdAt, dateRange))
+      .filter((i) => urgencyFilter === "all" || i.urgency === urgencyFilter)
+      .filter((i) => paymentFilter === "all" || i.paymentStatus === paymentFilter)
+  );
 
   const addItem = async () => {
     if (busy) return;
@@ -1231,10 +1428,42 @@ function CustomerPanel({
 
       <FilterToggle
         value={filter}
-        onChange={setFilter}
+        onChange={(v) => {
+          setFilter(v);
+          setSelected([]);
+        }}
         pendingCount={items.filter((i) => i.status === "pending").length}
         closedCount={items.filter((i) => i.status === "closed").length}
       />
+      <DateFilterBar
+        preset={datePreset}
+        onPreset={setDatePreset}
+        from={dateFrom}
+        to={dateTo}
+        onFrom={setDateFrom}
+        onTo={setDateTo}
+      />
+      <ChipFilter
+        label="緊急"
+        value={urgencyFilter}
+        onChange={(v) => setUrgencyFilter(v as "all" | CustomerUrgency)}
+        options={[
+          { value: "all", label: "全部" },
+          { value: "urgent", label: CUSTOMER_URGENCY_LABELS.urgent },
+          { value: "normal", label: CUSTOMER_URGENCY_LABELS.normal },
+        ]}
+      />
+      <ChipFilter
+        label="付款"
+        value={paymentFilter}
+        onChange={(v) => setPaymentFilter(v as "all" | CustomerPaymentStatus)}
+        options={[
+          { value: "all", label: "全部" },
+          { value: "unpaid", label: CUSTOMER_PAYMENT_LABELS.unpaid },
+          { value: "paid", label: CUSTOMER_PAYMENT_LABELS.paid },
+        ]}
+      />
+      <StatsLine count={visible.length} />
 
       {filter === "pending" && visible.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -1297,7 +1526,7 @@ function CustomerPanel({
       )}
 
       {visible.length === 0 ? (
-        <div className="app-card p-6 text-center text-slate-500">沒有{filter === "pending" ? "待處理" : "已處理"}紀錄</div>
+        <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
       ) : (
         <div className="space-y-2">
           {visible.map((row) => (
@@ -1314,6 +1543,7 @@ function CustomerPanel({
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
+                  <CreatedBadge iso={row.createdAt} />
                   <span className="font-semibold text-slate-900">{row.customerName}</span>
                   <span className="text-slate-600">{row.customerPhone}</span>
                   <UrgencyBadge row={row} />
@@ -1334,7 +1564,7 @@ function CustomerPanel({
                   {row.unit ? ` ${row.unit}` : ""} · {formatMoney(row.amount)}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  接手 {nameById.get(row.handlerId) ?? "員工"} · {formatWhen(row.createdAt)}
+                  接手 {nameById.get(row.handlerId) ?? "員工"}
                   {row.closedAt
                     ? ` · 已處理 ${nameById.get(row.closedBy ?? "") ?? ""} ${formatWhen(row.closedAt)}`
                     : ""}
@@ -1504,9 +1734,23 @@ function FulfillmentPanel({
   onChanged: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState<FulfillmentFilter>("all");
+  const [statusFilter, setStatusFilter] = useState<ListFilter>("all");
+  const [datePreset, setDatePreset] = useState<DatePreset>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [urgencyFilter, setUrgencyFilter] = useState<"all" | CustomerUrgency>("all");
+  const [paymentFilter, setPaymentFilter] = useState<"all" | CustomerPaymentStatus>("all");
   const [selected, setSelected] = useState<string[]>([]);
   const handlerName = (id: string) => nameById.get(id) ?? "員工";
-  const visible = sortCustomerOrders(items.filter((row) => matchesFulfillmentFilter(row, filter)));
+  const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
+  const visible = sortCustomerOrders(
+    items
+      .filter((row) => matchesFulfillmentFilter(row, filter))
+      .filter((row) => statusFilter === "all" || row.status === statusFilter)
+      .filter((row) => matchesCreatedDate(row.createdAt, dateRange))
+      .filter((row) => urgencyFilter === "all" || row.urgency === urgencyFilter)
+      .filter((row) => paymentFilter === "all" || row.paymentStatus === paymentFilter)
+  );
   const closeableSelected = selected.filter((id) => {
     const row = items.find((r) => r.id === id);
     if (!row) return false;
@@ -1639,6 +1883,45 @@ function FulfillmentPanel({
           );
         })}
       </div>
+      <DateFilterBar
+        preset={datePreset}
+        onPreset={setDatePreset}
+        from={dateFrom}
+        to={dateTo}
+        onFrom={setDateFrom}
+        onTo={setDateTo}
+      />
+      <ChipFilter
+        label="狀態"
+        value={statusFilter}
+        onChange={(v) => setStatusFilter(v as ListFilter)}
+        options={[
+          { value: "all", label: "全部" },
+          { value: "pending", label: SHOP_STATUS_LABELS.pending },
+          { value: "closed", label: SHOP_STATUS_LABELS.closed },
+        ]}
+      />
+      <ChipFilter
+        label="緊急"
+        value={urgencyFilter}
+        onChange={(v) => setUrgencyFilter(v as "all" | CustomerUrgency)}
+        options={[
+          { value: "all", label: "全部" },
+          { value: "urgent", label: CUSTOMER_URGENCY_LABELS.urgent },
+          { value: "normal", label: CUSTOMER_URGENCY_LABELS.normal },
+        ]}
+      />
+      <ChipFilter
+        label="付款"
+        value={paymentFilter}
+        onChange={(v) => setPaymentFilter(v as "all" | CustomerPaymentStatus)}
+        options={[
+          { value: "all", label: "全部" },
+          { value: "unpaid", label: CUSTOMER_PAYMENT_LABELS.unpaid },
+          { value: "paid", label: CUSTOMER_PAYMENT_LABELS.paid },
+        ]}
+      />
+      <StatsLine count={visible.length} />
 
       {visible.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -1727,7 +2010,7 @@ function FulfillmentPanel({
       )}
 
       {visible.length === 0 ? (
-        <div className="app-card p-6 text-center text-slate-500">這個篩選沒有客訂</div>
+        <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的客訂</div>
       ) : (
         <div className="space-y-2">
           {visible.map((row) => (
@@ -1742,6 +2025,7 @@ function FulfillmentPanel({
               />
               <div className="flex-1 min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
+                  <CreatedBadge iso={row.createdAt} />
                   <span className="font-semibold text-slate-900">{row.customerName}</span>
                   <span className="text-slate-600">{row.customerPhone}</span>
                   <UrgencyBadge row={row} />
@@ -1762,7 +2046,7 @@ function FulfillmentPanel({
                   {row.unit ? ` ${row.unit}` : ""} · {formatMoney(row.amount)}
                 </p>
                 <p className="text-xs text-slate-500 mt-1">
-                  接手 {handlerName(row.handlerId)} · {formatWhen(row.createdAt)}
+                  接手 {handlerName(row.handlerId)}
                 </p>
                 {row.note && <p className="text-sm text-slate-600 mt-1">{row.note}</p>}
                 <div className="flex flex-wrap gap-2 mt-2">
