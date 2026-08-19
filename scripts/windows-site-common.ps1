@@ -408,11 +408,11 @@ function Get-TailscaleBackendState {
     }
 }
 
-function Test-FunnelPublicOk {
+function Invoke-FunnelPublicProbe {
     param(
         [string]$Path = "/login",
         [int]$HttpsPort = 443,
-        [int]$TimeoutSec = 20
+        [int]$TimeoutSec = 10
     )
     $base = Get-FunnelPublicBaseUrl
     if (-not $base) { return $false }
@@ -422,12 +422,48 @@ function Test-FunnelPublicOk {
         $uri = "{0}:{1}{2}" -f $base, $HttpsPort, $Path
     }
     try {
-        $out = & curl.exe -s -o NUL -w "%{http_code}" --connect-timeout 8 --max-time $TimeoutSec $uri 2>$null
+        $out = & curl.exe -s -o NUL -w "%{http_code}" --connect-timeout 5 --max-time $TimeoutSec --http1.1 $uri 2>$null
         if ($LASTEXITCODE -ne 0) { return $false }
         $code = ("$out").Trim()
         return ($code -eq "200" -or $code -eq "204" -or $code -eq "301" -or $code -eq "302" -or $code -eq "304" -or $code -eq "307" -or $code -eq "308")
     } catch {
         return $false
+    }
+}
+
+# 先打輕量 /api/health（重建後才有）；沒有就退回 /login。單次失敗會再試一次。
+function Test-FunnelPublicOk {
+    param(
+        [string]$Path = "",
+        [int]$HttpsPort = 443,
+        [int]$TimeoutSec = 10,
+        [switch]$NoRetry
+    )
+
+    $probe = {
+        param($p)
+        if ($p) {
+            Invoke-FunnelPublicProbe -Path $p -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec
+        } elseif (Invoke-FunnelPublicProbe -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec) {
+            $true
+        } else {
+            Invoke-FunnelPublicProbe -Path "/login" -HttpsPort $HttpsPort -TimeoutSec ([Math]::Max($TimeoutSec, 12))
+        }
+    }
+
+    if (& $probe $Path) { return $true }
+    if ($NoRetry) { return $false }
+    Start-Sleep -Seconds 2
+    return [bool](& $probe $Path)
+}
+
+function Test-FunnelRoutesConfigured {
+    $phCfg = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
+    $cfCfg = (Test-FunnelProxyConfigured -LocalPort 5000 -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort 5000)
+    return [pscustomobject]@{
+        Pharmacy = [bool]$phCfg
+        Cashflow = [bool]$cfCfg
+        Ok       = ([bool]$phCfg -and [bool]$cfCfg)
     }
 }
 
@@ -440,7 +476,7 @@ function Restore-FunnelDualRoutes {
         return $false
     }
 
-    # 只補缺／重宣告，绝不 funnel reset（reset 會把 8443 一併清掉）
+    # 只補缺／重宣告，绝不 funnel reset（reset 會把 8443 一併清掉，也會掐斷正在用的外網連線）
     $out1 = (& $ts funnel --bg --yes --https=443 3000 2>&1 | Out-String)
     & $WriteLog ("funnel 443->3000: " + $out1.Trim())
     Start-Sleep -Seconds 1
@@ -450,8 +486,33 @@ function Restore-FunnelDualRoutes {
     return $true
 }
 
+function Get-FunnelCooldownRemainMinutes {
+    param(
+        $HealthState,
+        [int]$CooldownMinutes = 8
+    )
+    if (-not $HealthState) { return 0 }
+    $raw = [string]$HealthState.lastFunnelReapplyAt
+    if ([string]::IsNullOrWhiteSpace($raw)) { return 0 }
+    try {
+        $at = [datetime]::Parse($raw)
+        $remain = $CooldownMinutes - ((Get-Date) - $at).TotalMinutes
+        if ($remain -le 0) { return 0 }
+        return [int][Math]::Ceiling($remain)
+    } catch {
+        return 0
+    }
+}
+
 function Repair-FunnelIfNeeded {
-    param([scriptblock]$WriteLog = { param($m) Write-Host $m })
+    param(
+        [scriptblock]$WriteLog = { param($m) Write-Host $m },
+        [switch]$ForceReapply,
+        [bool]$LocalOk = $true,
+        [int]$MinPublicFails = 2,
+        [int]$CooldownMinutes = 8,
+        $HealthState = $null
+    )
 
     $ts = Get-TailscaleCommand
     if (-not $ts) {
@@ -470,21 +531,60 @@ function Repair-FunnelIfNeeded {
         & $WriteLog "tailscale BackendState after up=$state"
     }
 
-    $phCfg = (Test-FunnelProxyConfigured -LocalPort 3000 -PublicHttpsPort 443) -or (Test-FunnelProxyConfigured -LocalPort 3000)
-    $cfCfg = (Test-FunnelProxyConfigured -LocalPort 5000 -PublicHttpsPort 8443) -or (Test-FunnelProxyConfigured -LocalPort 5000)
+    $routes = Test-FunnelRoutesConfigured
     $publicOk = Test-FunnelPublicOk
-    & $WriteLog ("funnel check cfg443=$phCfg cfg8443=$cfCfg public=$publicOk")
+    $publicFails = 0
+    if ($HealthState -and $null -ne $HealthState.publicFails) {
+        $publicFails = [int]$HealthState.publicFails
+    }
+    & $WriteLog ("funnel check cfg443=$($routes.Pharmacy) cfg8443=$($routes.Cashflow) public=$publicOk localOk=$LocalOk fails=$publicFails/$MinPublicFails force=$([bool]$ForceReapply)")
 
-    if ($phCfg -and $cfCfg -and $publicOk) {
+    if ($publicOk -and $routes.Ok) {
+        if ($HealthState) { $HealthState.publicFails = 0 }
         return $true
     }
 
-    & $WriteLog "Funnel unhealthy — re-apply routes (no reset)"
+    # 內網掛了先修網站，不要誤對 Funnel 動手
+    if (-not $LocalOk -and -not $ForceReapply) {
+        & $WriteLog "local site down — skip Funnel re-apply (外網窗口此時也一定不通)"
+        return $false
+    }
+
+    $shouldReapply = $false
+    if ($ForceReapply) {
+        $shouldReapply = $true
+    } elseif (-not $routes.Ok) {
+        $shouldReapply = $true
+        & $WriteLog "Funnel routes missing — re-apply now (no reset)"
+    } else {
+        # 內網通、路由還在、外網窗口不通：這才是要修的情況
+        $publicFails = $publicFails + 1
+        if ($HealthState) { $HealthState.publicFails = $publicFails }
+        $cool = Get-FunnelCooldownRemainMinutes -HealthState $HealthState -CooldownMinutes $CooldownMinutes
+        if ($publicFails -lt $MinPublicFails) {
+            & $WriteLog "外網窗口失敗 $publicFails/$MinPublicFails — 先不重宣告（避免單次誤殺正在連的人）"
+            return $false
+        }
+        if ($cool -gt 0) {
+            & $WriteLog "外網窗口仍失敗，冷卻中還有 ${cool} 分鐘才再重宣告"
+            return $false
+        }
+        $shouldReapply = $true
+        & $WriteLog "內網通但外網窗口連續失敗 — re-apply (no reset)"
+    }
+
+    if (-not $shouldReapply) { return $false }
+
     [void](Restore-FunnelDualRoutes -WriteLog $WriteLog)
+    if ($HealthState) {
+        $HealthState.publicFails = 0
+        $HealthState.lastFunnelReapplyAt = (Get-Date).ToString("o")
+    }
     Start-Sleep -Seconds 3
-    $publicOk = Test-FunnelPublicOk
-    & $WriteLog ("funnel public after repair=$publicOk url=" + (Get-FunnelPublicBaseUrl) + "/login")
-    return $publicOk
+    $routes2 = Test-FunnelRoutesConfigured
+    $public2 = Test-FunnelPublicOk
+    & $WriteLog ("funnel after repair cfg443=$($routes2.Pharmacy) cfg8443=$($routes2.Cashflow) public=$public2 url=" + (Get-FunnelPublicBaseUrl) + "/login")
+    return [bool]$public2
 }
 
 function Get-FunnelStatusJson {

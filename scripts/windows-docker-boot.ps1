@@ -95,11 +95,16 @@ if ($siteOk) {
 
 if (-not $SkipFunnel) {
     if (Get-TailscaleCommand) {
-        Write-BootLog "Tailscale Funnel repair (public URL probe, no reset)"
-        $funnelOk = Repair-FunnelIfNeeded -WriteLog { param($m) Write-BootLog $m }
+        Write-BootLog "Tailscale Funnel repair (probe public window; no reset unless routes missing)"
+        $funnelOk = Repair-FunnelIfNeeded -WriteLog { param($m) Write-BootLog $m } -LocalOk $siteOk -MinPublicFails 1
         if (-not $funnelOk) {
-            Write-BootLog "Funnel still down — running full funnel setup"
-            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") *>> $LogFile
+            $routes = Test-FunnelRoutesConfigured
+            if ($routes.Ok) {
+                Write-BootLog "Funnel routes present but public window still down — skip reset; keepalive will retry"
+            } else {
+                Write-BootLog "Funnel routes missing — running full funnel setup"
+                & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot "windows-tailscale-funnel-setup.ps1") *>> $LogFile
+            }
         }
     } else {
         Write-BootLog "tailscale not found, skip Funnel"
