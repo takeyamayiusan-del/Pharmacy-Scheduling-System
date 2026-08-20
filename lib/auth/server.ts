@@ -17,35 +17,47 @@ export type ManagerAuthResult = ManagerAuthOk | { error: string; status: 401 | 4
 async function readSessionProfile(
   req: NextRequest
 ): Promise<UserAuthOk | { error: string; status: 401 | 403 }> {
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return req.cookies.getAll();
-        },
-        setAll() {
-          return;
-        },
-      },
+  const admin = createAdminClient();
+  let userId: string | null = null;
+
+  const bearer = req.headers.get("authorization");
+  if (bearer?.toLowerCase().startsWith("bearer ")) {
+    const token = bearer.slice(7).trim();
+    if (token) {
+      const { data, error } = await admin.auth.getUser(token);
+      if (!error && data.user) userId = data.user.id;
     }
-  );
+  }
 
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  if (!userId) {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return req.cookies.getAll();
+          },
+          setAll() {
+            return;
+          },
+        },
+      }
+    );
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    userId = user?.id ?? null;
+  }
 
-  if (authError || !user) {
+  if (!userId) {
     return { error: "尚未登入或會話已失效", status: 401 };
   }
 
-  const admin = createAdminClient();
   const { data: profile, error } = await admin
     .from("users")
     .select("role, is_active, site_id, name")
-    .eq("id", user.id)
+    .eq("id", userId)
     .single();
 
   if (error || !profile || !profile.is_active) {
@@ -53,7 +65,7 @@ async function readSessionProfile(
   }
 
   return {
-    callerId: user.id,
+    callerId: userId,
     role: profile.role,
     siteId: parseSiteId(profile.site_id),
     name: String(profile.name ?? ""),
