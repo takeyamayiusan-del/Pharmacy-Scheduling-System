@@ -160,7 +160,7 @@ export default function MySchedulePage() {
                   </div>
                   <div className="min-h-0 flex flex-col justify-center">
                     <div
-                      className={`text-[15px] font-bold leading-tight ${
+                      className={`text-[18px] font-extrabold leading-tight tracking-wide ${
                         isFullDayLeave ? "text-violet-700" : ""
                       }`}
                       style={
