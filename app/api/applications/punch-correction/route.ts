@@ -9,8 +9,7 @@ import {
   punchCorrectionOverLimitMessage,
 } from "@/lib/attendance/punchCorrectionLimit";
 import { loadApprovalContext } from "@/lib/approvals/server";
-import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
-import { rolesToNotify } from "@/lib/approvals/chain";
+import { approvalPendingLabel, rolesToNotify } from "@/lib/approvals/chain";
 
 type PunchAction = "work_in" | "work_out";
 
@@ -134,9 +133,9 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { employees, chain } = await loadApprovalContext(admin, siteId);
+    const { employees, chain, approvalMode } = await loadApprovalContext(admin, siteId);
     const firstRole = chain[0] ?? "manager";
-    const nextRoles = rolesToNotify(firstRole);
+    const nextRoles = rolesToNotify(firstRole, approvalMode);
     const recipients = employees.filter((e) => {
       if (!nextRoles.includes(e.role)) return false;
       if (e.role === "owner") return true;
@@ -161,7 +160,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       id: inserted.id,
-      pendingLabel: `待${APPROVAL_STEP_LABELS[firstRole]}審核`,
+      pendingLabel: approvalPendingLabel(chain, 0, approvalMode),
     });
   } catch (err) {
     console.error("[applications/punch-correction POST]", err);

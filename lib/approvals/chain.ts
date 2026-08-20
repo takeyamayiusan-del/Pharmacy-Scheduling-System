@@ -1,4 +1,4 @@
-import type { AppRole, ApprovalStepRole } from "@/lib/auth/roles";
+import type { AppRole, ApprovalMode, ApprovalStepRole } from "@/lib/auth/roles";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 
 export type ApprovalDecision =
@@ -36,17 +36,26 @@ export function currentApprovalRole(
 
 export function approvalPendingLabel(
   chain: ApprovalStepRole[],
-  step: number
+  step: number,
+  mode: ApprovalMode = "sequential"
 ): string {
+  if (mode === "any") return "待店長／副店／老闆審核";
   const role = currentApprovalRole(chain, step);
   return `待${APPROVAL_STEP_LABELS[role]}審核`;
 }
 
-/** 老闆可代任何關卡；其餘須對應當前關卡角色 */
+/**
+ * sequential：老闆可代任何關卡，其餘須對應當前關卡。
+ * any：店長／副店／老闆誰來都能審。
+ */
 export function canActOnApprovalStep(
   actorRole: AppRole | string | null | undefined,
-  required: ApprovalStepRole
+  required: ApprovalStepRole,
+  mode: ApprovalMode = "sequential"
 ): boolean {
+  if (mode === "any") {
+    return actorRole === "owner" || actorRole === "manager" || actorRole === "deputy";
+  }
   if (actorRole === "owner") return true;
   return actorRole === required;
 }
@@ -54,10 +63,12 @@ export function canActOnApprovalStep(
 export function resolveApprovalDecision(
   chain: ApprovalStepRole[],
   currentStep: number,
-  action: "approved" | "rejected" | "pending"
+  action: "approved" | "rejected" | "pending",
+  mode: ApprovalMode = "sequential"
 ): ApprovalDecision | { kind: "pending" } {
   if (action === "pending") return { kind: "pending" };
   if (action === "rejected") return { kind: "reject" };
+  if (mode === "any") return { kind: "final" };
   const step = Math.max(0, currentStep);
   if (step >= chain.length - 1) return { kind: "final" };
   const nextStep = step + 1;
@@ -68,7 +79,11 @@ export function resolveApprovalDecision(
   };
 }
 
-export function rolesToNotify(role: ApprovalStepRole): AppRole[] {
+export function rolesToNotify(
+  role: ApprovalStepRole,
+  mode: ApprovalMode = "sequential"
+): AppRole[] {
+  if (mode === "any") return ["manager", "deputy", "owner"];
   if (role === "owner") return ["owner"];
   if (role === "deputy") return ["deputy"];
   return ["manager"];

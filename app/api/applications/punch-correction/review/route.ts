@@ -131,19 +131,24 @@ export async function PATCH(req: NextRequest) {
       .eq("id", row.user_id)
       .maybeSingle();
     const siteId = parseSiteId(empRow?.site_id ?? auth.siteId);
-    const { employees, chain } = await loadApprovalContext(admin, siteId);
+    const { employees, chain, approvalMode } = await loadApprovalContext(admin, siteId);
 
     const actorRole = fromDbRole(auth.role);
     const currentStep = Number(row.approval_step ?? 0) || 0;
     const required = currentApprovalRole(chain, currentStep);
-    if (status !== "pending" && !canActOnApprovalStep(actorRole, required)) {
+    if (status !== "pending" && !canActOnApprovalStep(actorRole, required, approvalMode)) {
       return NextResponse.json(
-        { error: `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核` },
+        {
+          error:
+            approvalMode === "any"
+              ? "僅店長、副店或老闆可審核"
+              : `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`,
+        },
         { status: 403 }
       );
     }
 
-    const decision = resolveApprovalDecision(chain, currentStep, status);
+    const decision = resolveApprovalDecision(chain, currentStep, status, approvalMode);
     const prevStatus = row.status as ReviewStatus;
     const isFinalApprove = decision.kind === "final";
     const nextStatus: ReviewStatus =
@@ -187,7 +192,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (decision.kind === "advance") {
-      const nextRoles = rolesToNotify(decision.nextRole);
+      const nextRoles = rolesToNotify(decision.nextRole, approvalMode);
       const recipients = employees.filter((e) => {
         if (!nextRoles.includes(e.role)) return false;
         if (e.role === "owner") return true;

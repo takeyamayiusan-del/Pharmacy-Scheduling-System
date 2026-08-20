@@ -324,6 +324,7 @@ export default function LeaveApplicationPage() {
     employees,
     activeSiteId
   );
+  const approvalMode = storeConfig.policies.approvalMode;
   const statusLabels: Record<string, { label: string; color: string }> = {
     pending: { label: '待審核', color: 'bg-yellow-100 text-yellow-800' },
     approved: { label: '已核准', color: 'bg-green-100 text-green-800' },
@@ -711,7 +712,7 @@ export default function LeaveApplicationPage() {
                 const status = statusLabels[req.status];
                 const statusText =
                   req.status === 'pending'
-                    ? approvalPendingLabel(approvalChain, req.approvalStep ?? 0)
+                    ? approvalPendingLabel(approvalChain, req.approvalStep ?? 0, approvalMode)
                     : status.label;
                 const empName = req.employeeName || getEmpName(req.employeeId);
                 const displayHours = calcDisplayHours(req);
@@ -787,7 +788,8 @@ export default function LeaveApplicationPage() {
                           {req.status === 'pending' &&
                             canActOnApprovalStep(
                               currentUser?.role,
-                              currentApprovalRole(approvalChain, req.approvalStep ?? 0)
+                              currentApprovalRole(approvalChain, req.approvalStep ?? 0),
+                              approvalMode
                             ) && (
                             <>
                               <button

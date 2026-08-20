@@ -58,6 +58,7 @@ export default function LeaveDeferralPage() {
     employees,
     activeSiteId
   );
+  const approvalMode = storeConfig.policies.approvalMode;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -111,7 +112,7 @@ export default function LeaveDeferralPage() {
       return;
     }
     const firstRole = approvalChain[0] ?? "manager";
-    const nextRoles = rolesToNotify(firstRole);
+    const nextRoles = rolesToNotify(firstRole, approvalMode);
     const recipients = employees.filter((emp) => {
       if (!nextRoles.includes(emp.role)) return false;
       if (emp.role === "owner") return true;
@@ -132,7 +133,7 @@ export default function LeaveDeferralPage() {
     }
     setForm({ ...form, reason: "" });
     await load();
-    alert(`已送出遞延申請，${approvalPendingLabel(approvalChain, 0)}。`);
+    alert(`已送出遞延申請，${approvalPendingLabel(approvalChain, 0, approvalMode)}。`);
   };
 
   const review = async (
@@ -256,11 +257,12 @@ export default function LeaveDeferralPage() {
                     row.status === "pending" &&
                     canActOnApprovalStep(
                       currentUser?.role,
-                      currentApprovalRole(approvalChain, row.approval_step ?? 0)
+                      currentApprovalRole(approvalChain, row.approval_step ?? 0),
+                      approvalMode
                     );
                   const statusText =
                     row.status === "pending"
-                      ? approvalPendingLabel(approvalChain, row.approval_step ?? 0)
+                      ? approvalPendingLabel(approvalChain, row.approval_step ?? 0, approvalMode)
                       : row.status === "approved"
                         ? "已核准"
                         : "已駁回";
@@ -309,15 +311,11 @@ export default function LeaveDeferralPage() {
                           )}
                           {row.status === "pending" && !canReview && (
                             <span className="text-xs text-gray-400">
-                              待
-                              {
-                                APPROVAL_STEP_LABELS[
-                                  currentApprovalRole(
-                                    approvalChain,
-                                    row.approval_step ?? 0
-                                  )
-                                ]
-                              }
+                              {approvalPendingLabel(
+                                approvalChain,
+                                row.approval_step ?? 0,
+                                approvalMode
+                              )}
                             </span>
                           )}
                           <button

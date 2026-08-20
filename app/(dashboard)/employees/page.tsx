@@ -319,9 +319,12 @@ export default function EmployeesPage() {
                   className="w-full px-3 py-2 border rounded-lg"
                 >
                   <option value="staff">員工</option>
-                  <option value="deputy">副店（功能同店長）</option>
+                  <option value="deputy">副店（功能同店長：排班、播假、薪資、審核）</option>
                   <option value="manager">店長</option>
                 </select>
+                <p className="mt-1 text-xs text-gray-500">
+                  副店與店長同樣可排班、播假、薪資結算。申請審核依店家設定：集集預設店長→副店→老闆三段；竹山預設誰審都可以。
+                </p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">

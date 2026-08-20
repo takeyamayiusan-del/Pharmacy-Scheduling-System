@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  approvalPendingLabel,
   canActOnApprovalStep,
   effectiveApprovalChain,
   resolveApprovalDecision,
+  rolesToNotify,
 } from "@/lib/approvals/chain";
 
 describe("approval chain", () => {
@@ -33,5 +35,20 @@ describe("approval chain", () => {
     expect(canActOnApprovalStep("owner", "manager")).toBe(true);
     expect(canActOnApprovalStep("deputy", "manager")).toBe(false);
     expect(canActOnApprovalStep("deputy", "deputy")).toBe(true);
+  });
+
+  it("any 模式：店長／副店／老闆誰來都能審，一次結案", () => {
+    expect(canActOnApprovalStep("deputy", "manager", "any")).toBe(true);
+    expect(canActOnApprovalStep("manager", "deputy", "any")).toBe(true);
+    expect(canActOnApprovalStep("staff", "manager", "any")).toBe(false);
+    expect(resolveApprovalDecision(["manager", "deputy", "owner"], 0, "approved", "any")).toEqual({
+      kind: "final",
+    });
+    expect(rolesToNotify("manager", "any")).toEqual(["manager", "deputy", "owner"]);
+    expect(rolesToNotify("manager", "sequential")).toEqual(["manager"]);
+    expect(approvalPendingLabel(["manager"], 0, "any")).toBe("待店長／副店／老闆審核");
+    expect(approvalPendingLabel(["manager", "deputy", "owner"], 1, "sequential")).toBe(
+      "待副店審核"
+    );
   });
 });
