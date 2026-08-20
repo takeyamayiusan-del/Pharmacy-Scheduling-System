@@ -8,11 +8,14 @@ import {
   canActOnApprovalStep,
   currentApprovalRole,
   effectiveApprovalChain,
+  rolesToNotify,
 } from "@/lib/approvals/chain";
 import { createClient } from "@/lib/supabase/client";
 import {
   currentMonthCreatedAtRange,
+  friendlyPunchCorrectionDbError,
   isPunchCorrectionOverLimit,
+  normalizeRequestedTime,
   punchCorrectionQuotaText,
 } from "@/lib/attendance/punchCorrectionLimit";
 
@@ -78,8 +81,8 @@ export default function PunchCorrectionPage() {
     const { data, error } = await q;
     if (error) {
       setLoadError(
-        /schema cache|does not exist/i.test(error.message)
-          ? "打卡補登資料表尚未建立，請先在資料庫套用更新後再使用"
+        /schema cache|does not exist|permission denied/i.test(error.message)
+          ? "網站還沒讀到打卡補登表，請先授權並重載 schema 後再試"
           : error.message
       );
       setRows([]);
@@ -122,27 +125,85 @@ export default function PunchCorrectionPage() {
     }
     setSubmitting(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      const res = await fetch("/api/applications/punch-correction", {
-        method: "POST",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          punchDate: form.punchDate,
-          punchAction: form.punchAction,
-          segmentIndex: form.segmentIndex,
-          requestedTime: form.requestedTime,
-          originalRecordId: form.originalRecordId || null,
-          reason: form.reason,
-        }),
-      });
-      const payload = (await res.json().catch(() => ({}))) as { error?: string };
-      if (!res.ok) {
-        throw new Error(payload.error || `送出失敗（${res.status}）`);
+      const requestedTime = normalizeRequestedTime(form.requestedTime);
+      if (!requestedTime) {
+        throw new Error("時間請用 HH:MM");
+      }
+
+      const payload = {
+        user_id: currentUser.id,
+        site_id: currentUser.siteId ?? activeSiteId,
+        punch_date: form.punchDate,
+        punch_action: form.punchAction,
+        segment_index: form.segmentIndex,
+        requested_time: requestedTime,
+        original_record_id: form.originalRecordId || null,
+        reason: form.reason.trim(),
+        status: "pending" as const,
+        approval_step: 0,
+      };
+
+      const { data: inserted, error: insertError } = await supabase
+        .from("punch_correction_requests")
+        .insert(payload)
+        .select("id")
+        .single();
+
+      let insertedId = inserted?.id ?? null;
+      if (insertError || !insertedId) {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        const res = await fetch("/api/applications/punch-correction", {
+          method: "POST",
+          credentials: "include",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({
+            punchDate: form.punchDate,
+            punchAction: form.punchAction,
+            segmentIndex: form.segmentIndex,
+            requestedTime: form.requestedTime,
+            originalRecordId: form.originalRecordId || null,
+            reason: form.reason,
+          }),
+        });
+        const apiPayload = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          id?: string;
+        };
+        if (!res.ok) {
+          throw new Error(
+            friendlyPunchCorrectionDbError(
+              apiPayload.error || insertError?.message || `送出失敗（${res.status}）`
+            )
+          );
+        }
+        insertedId = apiPayload.id ?? null;
+      } else {
+        const firstRole = approvalChain[0] ?? "manager";
+        const nextRoles = rolesToNotify(firstRole, approvalMode);
+        const recipients = employees.filter((emp) => {
+          if (!nextRoles.includes(emp.role)) return false;
+          if (emp.role === "owner") return true;
+          return emp.siteId === activeSiteId;
+        });
+        if (recipients.length > 0) {
+          await supabase.from("notifications").insert(
+            recipients.map((m) => ({
+              recipient_id: m.id,
+              type: "punch_correction_submitted",
+              title: "新打卡補登申請",
+              body: `${currentUser.name} 申請補登 ${form.punchDate} ${
+                form.punchAction === "work_in" ? "上班" : "下班"
+              } ${requestedTime.slice(0, 5)}，請審核。`,
+              related_id: insertedId,
+              related_type: "punch_correction",
+              is_read: false,
+            }))
+          );
+        }
       }
       setForm({
         punchDate: "",

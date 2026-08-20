@@ -94,6 +94,7 @@ CREATE POLICY "punch_correction_delete" ON public.punch_correction_requests
   );
 
 GRANT SELECT, INSERT, UPDATE, DELETE ON public.punch_correction_requests TO authenticated;
+GRANT ALL ON public.punch_correction_requests TO service_role;
 
 COMMENT ON TABLE public.punch_correction_requests IS '員工打卡補登申請；走審核關卡。店長打卡管理代改不入此表、不佔次數。';
 

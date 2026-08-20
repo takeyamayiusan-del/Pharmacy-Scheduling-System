@@ -47,8 +47,8 @@ export function normalizeRequestedTime(raw: unknown): string | null {
 
 export function friendlyPunchCorrectionDbError(message: string | null | undefined): string {
   const msg = String(message ?? "");
-  if (/schema cache|does not exist|relation .*punch_correction/i.test(msg)) {
-    return "打卡補登資料表尚未建立，請先在資料庫套用更新後再送出";
+  if (/schema cache|does not exist|relation .*punch_correction|permission denied/i.test(msg)) {
+    return "網站還沒讀到打卡補登表，請授權 service_role／authenticated 並執行 NOTIFY pgrst, 'reload schema'";
   }
   if (/invalid input syntax for type time/i.test(msg)) {
     return "時間格式不正確，請再選一次希望登記時間";
