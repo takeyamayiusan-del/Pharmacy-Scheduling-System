@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import type { SiteId } from "@/lib/sites";
+import { encodeMealOrderDate } from "@/lib/bulletin/bulletinMeta";
 import {
   buildMealOrderBulletinContent,
   clampMealOrderQuantity,
@@ -332,15 +333,18 @@ export async function createMealOrderActivity(input: {
 
   let bulletinId: string | null = null;
   if (input.publishBulletin) {
-    const content = buildMealOrderBulletinContent({
-      orderDate: input.orderDate,
-      vendorName: input.vendorName,
-      orderCategory: input.orderCategory,
-      budgetNote: input.budgetNote,
-      note: input.note,
-      taxCompanyName,
-      taxId,
-    });
+    const content = encodeMealOrderDate(
+      buildMealOrderBulletinContent({
+        orderDate: input.orderDate,
+        vendorName: input.vendorName,
+        orderCategory: input.orderCategory,
+        budgetNote: input.budgetNote,
+        note: input.note,
+        taxCompanyName,
+        taxId,
+      }),
+      input.orderDate
+    );
     const { data: bulletin, error: bulletinError } = await supabase
       .from("bulletin_board")
       .insert({
@@ -410,15 +414,18 @@ export async function updateMealOrderActivity(input: {
   if (orderError) throw orderError;
 
   const bulletinTitle = input.title.trim() || `今日訂餐｜${input.vendorName}`;
-  const bulletinContent = buildMealOrderBulletinContent({
-    orderDate: input.orderDate,
-    vendorName: input.vendorName,
-    orderCategory: input.orderCategory,
-    budgetNote: input.budgetNote,
-    note: input.note,
-    taxCompanyName,
-    taxId,
-  });
+  const bulletinContent = encodeMealOrderDate(
+    buildMealOrderBulletinContent({
+      orderDate: input.orderDate,
+      vendorName: input.vendorName,
+      orderCategory: input.orderCategory,
+      budgetNote: input.budgetNote,
+      note: input.note,
+      taxCompanyName,
+      taxId,
+    }),
+    input.orderDate
+  );
 
   if (input.bulletinId) {
     await supabase

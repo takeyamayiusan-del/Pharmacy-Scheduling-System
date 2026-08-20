@@ -171,7 +171,7 @@ export default function MealOrderPage() {
         storageKey={`help:meal-order:${storageScope}`}
       >
         <p>1. 先在「店家」新增店家（名稱、電話、菜單網址即可）。<strong>不必建品項</strong>，員工看菜單自己填。</p>
-        <p>2. 任何人可發起訂餐活動：選<strong>類別</strong>、店家、日期、統編（可選）、金額上限說明，並發公告。</p>
+        <p>2. 任何人可發起訂餐活動：選<strong>類別</strong>、店家、日期（可選未來）、統編（可選）、金額上限說明，並發公告。公告可提前看；登入彈窗只在<strong>訂餐當天</strong>出現。大家可先填要吃／喝什麼。</p>
         <p>3. 點選時自己填品名，可選杯數／份數（同品項不用重打）。飲料要選甜度／冰塊；便當不用。</p>
         <p>4. 同日若要又訂飲料又訂便當：請開兩場活動，或類別選「飲料＋便當」。</p>
         <p>5. 廠商統編可在「統編」分頁自行新增／刪除；發布時直接選用。</p>
@@ -804,7 +804,7 @@ function TodayPanel({
       <div className="app-card p-4 space-y-3 border-sky-200 bg-sky-50/50">
         <h2 className="app-section-title">發起訂餐活動（任何人）</h2>
         <p className="text-sm text-slate-600">
-          一場活動一家店。員工看菜單自己填品名；飲料選甜度冰塊，便當不用。
+          一場活動一家店。日期可選未來，大家可先填要吃什麼；公告可提前張貼，登入彈窗只在訂餐當天出現。
         </p>
         {vendors.length === 0 ? (
           <p className="text-sm text-amber-700">請先到「店家」新增店家。</p>
@@ -862,6 +862,7 @@ function TodayPanel({
                     setCreateForm({ ...createForm, orderDate: e.target.value })
                   }
                 />
+                <span className="text-xs text-slate-500">可選未來日期，讓同事先填</span>
               </label>
               <label className="text-sm space-y-1">
                 <span className="text-slate-600">廠商統編（選填）</span>
@@ -914,7 +915,7 @@ function TodayPanel({
                   setCreateForm({ ...createForm, publishBulletin: e.target.checked })
                 }
               />
-              同時發布訂餐公告（當天進站會提醒）
+              同時發布訂餐公告（可提前張貼；登入彈窗只在訂餐當天出現）
             </label>
             <button
               type="button"

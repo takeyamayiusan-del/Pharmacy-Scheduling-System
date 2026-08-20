@@ -531,6 +531,8 @@ interface AppContextType {
   /** 是否老闆（可跨店） */
   canSwitchSite: boolean;
   getLeaveSummary: (employeeId: string, year: number, month: number) => LeaveSummary;
+  /** 排休勾選已從資料庫載入過（避免尚未載入時誤跳「下個月排休」提醒） */
+  leaveSelectionsReady: boolean;
   getLeaveSelectionDetail: (employeeId: string, date: string) => LeaveSelectionDetail | null;
   toggleLeaveDate: (
     employeeId: string,
@@ -652,6 +654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [bulletinReads, setBulletinReads] = useState<{ bulletinId: string; userId: string }[]>([]);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [leaveSelections, setLeaveSelections] = useState<LeaveSelections>({});
+  const [leaveSelectionsReady, setLeaveSelectionsReady] = useState(false);
   const [leaveSelectionMeta, setLeaveSelectionMeta] = useState<LeaveSelectionMetaMap>({});
   const [wednesdayOffSelections, setWednesdayOffSelections] = useState<WednesdayOffSelections>({});
   const [leaveMonthLocks, setLeaveMonthLocks] = useState<LeaveMonthLock[]>([]);
@@ -781,6 +784,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       setLeaveSelections(result);
       setLeaveSelectionMeta(meta);
+      setLeaveSelectionsReady(true);
     };
 
     const withPeriod = await supabase
@@ -792,6 +796,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     const { data } = await supabase.from("leave_selections").select("user_id, date");
     if (data) applyRows(data);
+    else setLeaveSelectionsReady(true);
   }, [supabase]);
 
   const loadFixedShifts = useCallback(async () => {
@@ -2411,7 +2416,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // ─── Leave selections ────────────────────────────────────────────────────────
 
-  const getLeaveSummary = (employeeId: string, year: number, month: number): LeaveSummary => {
+  const getLeaveSummary = useCallback((employeeId: string, year: number, month: number): LeaveSummary => {
     const selectedDates = (leaveSelections[employeeId] ?? [])
       .map((d) => normalizeCalendarDate(d))
       .filter((d) => d && isInMonth(d, year, month));
@@ -2447,7 +2452,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       monthUsed,
       monthLimit,
     };
-  };
+  }, [leaveSelections, employees, storeConfig]);
 
   const getLeaveSelectionDetail = (employeeId: string, date: string): LeaveSelectionDetail | null => {
     const dateKey = normalizeCalendarDate(date) || date;
@@ -4622,6 +4627,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         setActiveSite,
         canSwitchSite,
         getLeaveSummary,
+        leaveSelectionsReady,
         getLeaveSelectionDetail,
         toggleLeaveDate,
         isLeaveMonthLocked,
