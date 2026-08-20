@@ -28,5 +28,5 @@ export async function loadApprovalContext(admin: AdminClient, siteId: SiteId) {
     employees,
     siteId
   );
-  return { storeConfig, employees, chain };
+  return { storeConfig, employees, chain, approvalMode: storeConfig.policies.approvalMode };
 }

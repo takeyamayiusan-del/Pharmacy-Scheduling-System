@@ -10,13 +10,12 @@ import { fromDbRole } from "@/lib/auth/roles";
 import {
   canActOnApprovalStep,
   currentApprovalRole,
-  effectiveApprovalChain,
   resolveApprovalDecision,
   rolesToNotify,
 } from "@/lib/approvals/chain";
+import { loadApprovalContext } from "@/lib/approvals/server";
 import { isPastDate } from "@/lib/schedule/monthAccess";
-import { parseSiteId, storeConfigSettingId } from "@/lib/sites";
-import { parseStoreConfig } from "@/lib/store-config";
+import { parseSiteId } from "@/lib/sites";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 
 type ReviewStatus = "approved" | "rejected" | "pending";
@@ -63,40 +62,26 @@ export async function PATCH(req: NextRequest) {
       .eq("id", row.user_id)
       .maybeSingle();
     const siteId = parseSiteId(empRow?.site_id ?? auth.siteId);
-
-    const { data: setting } = await admin
-      .from("app_settings")
-      .select("value")
-      .eq("id", storeConfigSettingId(siteId))
-      .maybeSingle();
-    const storeConfig = parseStoreConfig(setting?.value, siteId);
-    const { data: staffRows } = await admin
-      .from("users")
-      .select("id, role, site_id, name, is_active")
-      .eq("is_active", true);
-    const employees = (staffRows ?? []).map((u) => ({
-      id: u.id,
-      role: fromDbRole(String(u.role)),
-      siteId: parseSiteId(u.site_id),
-      name: u.name as string,
-    }));
-
-    const chain = effectiveApprovalChain(
-      storeConfig.policies.approvalChain,
-      employees,
+    const { storeConfig, employees, chain, approvalMode } = await loadApprovalContext(
+      admin,
       siteId
     );
     const actorRole = fromDbRole(auth.role);
     const currentStep = Number(row.approval_step ?? 0) || 0;
     const required = currentApprovalRole(chain, currentStep);
-    if (status !== "pending" && !canActOnApprovalStep(actorRole, required)) {
+    if (status !== "pending" && !canActOnApprovalStep(actorRole, required, approvalMode)) {
       return NextResponse.json(
-        { error: `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核` },
+        {
+          error:
+            approvalMode === "any"
+              ? "僅店長、副店或老闆可審核"
+              : `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`,
+        },
         { status: 403 }
       );
     }
 
-    const decision = resolveApprovalDecision(chain, currentStep, status);
+    const decision = resolveApprovalDecision(chain, currentStep, status, approvalMode);
     const prevStatus = row.status as ReviewStatus;
     const startTime = String(row.start_time).slice(0, 5);
     const endTime = String(row.end_time).slice(0, 5);
@@ -137,7 +122,7 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (decision.kind === "advance") {
-      const nextRoles = rolesToNotify(decision.nextRole);
+      const nextRoles = rolesToNotify(decision.nextRole, approvalMode);
       const recipients = employees.filter((e) => {
         if (!nextRoles.includes(e.role)) return false;
         if (e.role === "owner") return true;

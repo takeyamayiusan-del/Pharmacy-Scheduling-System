@@ -65,6 +65,7 @@ export default function PunchCorrectionPage() {
     employees,
     activeSiteId
   );
+  const approvalMode = storeConfig.policies.approvalMode;
   const limit = storeConfig.policies.monthlyPunchCorrectionLimit;
   const { startIso, endIso } = currentMonthCreatedAtRange();
 
@@ -292,11 +293,12 @@ export default function PunchCorrectionPage() {
                     row.status === "pending" &&
                     canActOnApprovalStep(
                       currentUser?.role,
-                      currentApprovalRole(approvalChain, row.approval_step ?? 0)
+                      currentApprovalRole(approvalChain, row.approval_step ?? 0),
+                      approvalMode
                     );
                   const statusText =
                     row.status === "pending"
-                      ? approvalPendingLabel(approvalChain, row.approval_step ?? 0)
+                      ? approvalPendingLabel(approvalChain, row.approval_step ?? 0, approvalMode)
                       : row.status === "approved"
                         ? "已核准"
                         : "已駁回";
@@ -350,7 +352,11 @@ export default function PunchCorrectionPage() {
                           )}
                           {row.status === "pending" && !canReview && (
                             <span className="text-xs text-gray-400">
-                              待{APPROVAL_STEP_LABELS[currentApprovalRole(approvalChain, row.approval_step ?? 0)]}
+                              {approvalPendingLabel(
+                                approvalChain,
+                                row.approval_step ?? 0,
+                                approvalMode
+                              )}
                             </span>
                           )}
                         </td>

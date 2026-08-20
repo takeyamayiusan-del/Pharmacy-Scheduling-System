@@ -1,5 +1,5 @@
 import type { SiteId } from "@/lib/sites";
-import type { ApprovalStepRole } from "@/lib/auth/roles";
+import type { ApprovalMode, ApprovalStepRole } from "@/lib/auth/roles";
 import {
   parseLeaveRulesMap,
   statutoryLeaveRulesMap,
@@ -33,6 +33,12 @@ export type StorePolicies = {
   halfDayLeaveCountsAsOne: boolean;
   /** 審核關卡順序（可客製）。僅申請類：請假／加班／換班／遞延／打卡補登 */
   approvalChain: ApprovalStepRole[];
+  /**
+   * sequential：申請依關卡順序審（集集）。
+   * any：店長／副店／老闆誰來都能結案（竹山）。
+   * 排班、播假、薪資結算一律誰有管理權就能做，不走關卡。
+   */
+  approvalMode: ApprovalMode;
   /** 特休／補休過期可提遞延申請 */
   allowLeaveDeferral: boolean;
   /**
@@ -65,6 +71,7 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
     sundayFixedRest: true,
     halfDayLeaveCountsAsOne: true,
     approvalChain: isJiji ? ["manager", "deputy", "owner"] : ["manager"],
+    approvalMode: isJiji ? "sequential" : "any",
     allowLeaveDeferral: isJiji,
     autoRestSuggestEnabled: isJiji,
     workHoursCycleFromHireDate: isJiji,
@@ -108,6 +115,11 @@ function parseSaturdayQuotaMode(
   if (raw === "month_pool" || raw === "all_saturdays" || raw === "fixed") {
     return raw;
   }
+  return fallback;
+}
+
+function parseApprovalMode(raw: unknown, fallback: ApprovalMode): ApprovalMode {
+  if (raw === "sequential" || raw === "any") return raw;
   return fallback;
 }
 
@@ -157,6 +169,7 @@ export function parseStorePolicies(
       defaults.halfDayLeaveCountsAsOne
     ),
     approvalChain: parseChain(o.approvalChain, defaults.approvalChain),
+    approvalMode: parseApprovalMode(o.approvalMode, defaults.approvalMode),
     allowLeaveDeferral: asBool(o.allowLeaveDeferral, defaults.allowLeaveDeferral),
     autoRestSuggestEnabled: asBool(
       o.autoRestSuggestEnabled,

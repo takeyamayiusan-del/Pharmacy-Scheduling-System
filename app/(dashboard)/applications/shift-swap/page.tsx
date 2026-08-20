@@ -114,10 +114,11 @@ export default function ShiftSwapPage() {
     employees,
     activeSiteId
   );
+  const approvalMode = storeConfig.policies.approvalMode;
 
   const getStatusLabel = (status: string, approvalStep = 0) => {
     if (status === "pending_approval") {
-      return approvalPendingLabel(approvalChain, approvalStep);
+      return approvalPendingLabel(approvalChain, approvalStep, approvalMode);
     }
     return ({
       pending_confirmation: "等待對方確認",
@@ -280,7 +281,8 @@ export default function ShiftSwapPage() {
               req.status === "pending_approval" &&
               canActOnApprovalStep(
                 currentUser?.role,
-                currentApprovalRole(approvalChain, req.approvalStep ?? 0)
+                currentApprovalRole(approvalChain, req.approvalStep ?? 0),
+                approvalMode
               );
             const waitingTarget = isRequester && req.status === "pending_confirmation" && !isSelfSwap;
 

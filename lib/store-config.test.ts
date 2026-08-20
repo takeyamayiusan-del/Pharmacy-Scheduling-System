@@ -42,6 +42,8 @@ describe("store-config", () => {
     expect(c.policies.overtimeForceCompLeaveAfterMinutes).toBeNull();
     expect(c.policies.saturdayQuotaMode).toBe("month_pool");
     expect(c.policies.approvalChain).toEqual(["manager", "deputy", "owner"]);
+    expect(c.policies.approvalMode).toBe("sequential");
+    expect(defaultStoreConfigForSite("zhushan").policies.approvalMode).toBe("any");
     expect(c.policies.autoRestSuggestEnabled).toBe(true);
     expect(defaultStoreConfigForSite("zhushan").workHoursRegime).toBe("two_week");
     expect(defaultStoreConfigForSite("zhushan").policies.overtimeForceCompLeaveAfterMinutes).toBe(30);

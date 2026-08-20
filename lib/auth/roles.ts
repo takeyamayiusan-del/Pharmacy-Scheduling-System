@@ -10,10 +10,18 @@ export const APP_ROLE_LABELS: Record<AppRole, string> = {
 
 export type ApprovalStepRole = "manager" | "deputy" | "owner";
 
+/** sequential＝依關卡順序；any＝店長／副店／老闆任一即可結案 */
+export type ApprovalMode = "sequential" | "any";
+
 export const APPROVAL_STEP_LABELS: Record<ApprovalStepRole, string> = {
   manager: "店長",
   deputy: "副店",
   owner: "老闆",
+};
+
+export const APPROVAL_MODE_LABELS: Record<ApprovalMode, string> = {
+  sequential: "依關卡順序（店長 → 副店 → 老闆）",
+  any: "店長／副店／老闆任一即可",
 };
 
 /** 店長／副店／老闆皆可管理本店（排班、審核、薪資等） */

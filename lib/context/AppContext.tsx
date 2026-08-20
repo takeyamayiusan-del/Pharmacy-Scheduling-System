@@ -1548,13 +1548,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       relatedId?: string;
       relatedType?: string;
     }) => {
-      // 店長：僅目前店；老闆：全店都通知（跨店切換仍收得到）
-      const recipients = allEmployees.filter(
-        (e) =>
-          e.role === "owner" ||
-          ((e.role === "manager" || e.role === "deputy") &&
-            parseSiteId(e.siteId) === activeSiteId)
+      const chain = effectiveApprovalChain(
+        storeConfig.policies.approvalChain,
+        allEmployees,
+        activeSiteId
       );
+      const approvalMode = storeConfig.policies.approvalMode;
+      const nextRoles = rolesToNotify(chain[0] ?? "manager", approvalMode);
+      // sequential：只通知當前關卡；any：店長／副店／老闆都通知。老闆跨店仍收得到。
+      const recipients = allEmployees.filter((e) => {
+        if (!nextRoles.includes(e.role)) return false;
+        if (e.role === "owner") return true;
+        return parseSiteId(e.siteId) === activeSiteId;
+      });
       await Promise.all(
         recipients.map((m) =>
           insertNotification({
@@ -1568,7 +1574,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         )
       );
     },
-    [allEmployees, activeSiteId, insertNotification]
+    [allEmployees, activeSiteId, insertNotification, storeConfig]
   );
 
   // ─── Auth state ──────────────────────────────────────────────────────────────
@@ -3120,15 +3126,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       allEmployees,
       activeSiteId
     );
+    const approvalMode = storeConfig.policies.approvalMode;
     if (request && isManagerActor && (status === "approved" || status === "rejected")) {
       const required = currentApprovalRole(chain, request.approvalStep ?? 0);
-      if (!canActOnApprovalStep(currentUser?.role, required)) {
-        throw new Error(`目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`);
+      if (!canActOnApprovalStep(currentUser?.role, required, approvalMode)) {
+        throw new Error(
+          approvalMode === "any"
+            ? "僅店長、副店或老闆可審核"
+            : `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`
+        );
       }
       const decision = resolveApprovalDecision(
         chain,
         request.approvalStep ?? 0,
-        status
+        status,
+        approvalMode
       );
       if (decision.kind === "advance") {
         await supabase
@@ -3140,7 +3152,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             reviewed_at: new Date().toISOString(),
           })
           .eq("id", id);
-        const nextRoles = rolesToNotify(decision.nextRole);
+        const nextRoles = rolesToNotify(decision.nextRole, approvalMode);
         const recipients = allEmployees.filter((e) => {
           if (!nextRoles.includes(e.role)) return false;
           if (e.role === "owner") return true;
@@ -3443,6 +3455,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       allEmployees,
       activeSiteId
     );
+    const approvalMode = storeConfig.policies.approvalMode;
 
     if (
       request &&
@@ -3450,8 +3463,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (status === "rejected" && prevStatus === "pending_approval"))
     ) {
       const required = currentApprovalRole(chain, request.approvalStep ?? 0);
-      if (!canActOnApprovalStep(currentUser?.role, required)) {
-        throw new Error(`目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`);
+      if (!canActOnApprovalStep(currentUser?.role, required, approvalMode)) {
+        throw new Error(
+          approvalMode === "any"
+            ? "僅店長、副店或老闆可審核"
+            : `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`
+        );
       }
     }
 
@@ -3460,7 +3477,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const decision = resolveApprovalDecision(
         chain,
         request.approvalStep ?? 0,
-        "approved"
+        "approved",
+        approvalMode
       );
       if (decision.kind === "advance") {
         const { error: advanceError } = await supabase
@@ -3476,7 +3494,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           throw new Error(`換班關卡更新失敗：${advanceError.message}`);
         }
         const required = currentApprovalRole(chain, request.approvalStep ?? 0);
-        const nextRoles = rolesToNotify(decision.nextRole);
+        const nextRoles = rolesToNotify(decision.nextRole, approvalMode);
         const recipients = allEmployees.filter((e) => {
           if (!nextRoles.includes(e.role)) return false;
           if (e.role === "owner") return true;
@@ -3572,14 +3590,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           recipientId: request.requesterId,
           type: "shift_swap_confirmed",
           title: "對方已確認換班",
-          body: `${request.targetEmployeeName} 已同意換班，${approvalPendingLabel(chain, 0)}。`,
+          body: `${request.targetEmployeeName} 已同意換班，${approvalPendingLabel(chain, 0, approvalMode)}。`,
           relatedId: id,
           relatedType: "shift_swap",
         });
         await notifyManagers({
           type: "shift_swap_confirmed",
           title: "換班申請待審核",
-          body: `${request.requesterName} 與 ${request.targetEmployeeName} 的換班（${request.requesterDate}）${approvalPendingLabel(chain, 0)}。`,
+          body: `${request.requesterName} 與 ${request.targetEmployeeName} 的換班（${request.requesterDate}）${approvalPendingLabel(chain, 0, approvalMode)}。`,
           relatedId: id,
           relatedType: "shift_swap",
         });

@@ -1077,39 +1077,80 @@ export default function StoreSettingsPage() {
           <span>變形工時週期從個人入職日起算</span>
         </label>
         <div>
-          <p className="text-sm font-medium text-gray-800 mb-2">審核關卡順序（可客製）</p>
+          <p className="text-sm font-medium text-gray-800 mb-2">申請審核方式</p>
           <p className="text-xs text-gray-500 mb-2">
             僅用於申請類：請假、加班、換班、特休／補休遞延、打卡補登。
-            薪資結算、超時播假、打卡管理代改由店長／副店／老闆按即可，不走多關。
+            排班、超時播假、薪資結算由店長／副店／老闆誰來做都可以，不走申請關卡。
           </p>
-          <div className="flex flex-wrap gap-3">
-            {(["manager", "deputy", "owner"] as ApprovalStepRole[]).map((role) => {
-              const on = draft.policies.approvalChain.includes(role);
-              return (
-                <label key={role} className="inline-flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={on}
-                    onChange={(e) => {
-                      const next = e.target.checked
-                        ? (["manager", "deputy", "owner"] as ApprovalStepRole[]).filter(
-                            (r) =>
-                              r === role || draft.policies.approvalChain.includes(r)
-                          )
-                        : draft.policies.approvalChain.filter((r) => r !== role);
-                      patchPolicies({
-                        approvalChain: next.length > 0 ? next : ["manager"],
-                      });
-                    }}
-                  />
-                  {APPROVAL_STEP_LABELS[role]}
-                </label>
-              );
-            })}
+          <div className="flex flex-col gap-2 mb-3">
+            <label className="inline-flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                className="mt-1"
+                name="approvalMode"
+                checked={draft.policies.approvalMode === "sequential"}
+                onChange={() =>
+                  patchPolicies({
+                    approvalMode: "sequential",
+                    approvalChain:
+                      draft.policies.approvalChain.length > 1
+                        ? draft.policies.approvalChain
+                        : ["manager", "deputy", "owner"],
+                  })
+                }
+              />
+              <span>
+                依關卡順序（集集）
+                <span className="block text-xs text-slate-500">店長 → 副店 → 老闆，一段段審</span>
+              </span>
+            </label>
+            <label className="inline-flex items-start gap-2 text-sm">
+              <input
+                type="radio"
+                className="mt-1"
+                name="approvalMode"
+                checked={draft.policies.approvalMode === "any"}
+                onChange={() => patchPolicies({ approvalMode: "any" })}
+              />
+              <span>
+                店長／副店／老闆任一即可（竹山）
+                <span className="block text-xs text-slate-500">誰有空誰審，審一關就結案</span>
+              </span>
+            </label>
           </div>
-          <p className="text-xs text-gray-500 mt-1">
-            目前：{draft.policies.approvalChain.map((r) => APPROVAL_STEP_LABELS[r]).join(" → ")}
-          </p>
+          {draft.policies.approvalMode === "sequential" && (
+            <>
+              <p className="text-sm font-medium text-gray-800 mb-2">審核關卡順序</p>
+              <div className="flex flex-wrap gap-3">
+                {(["manager", "deputy", "owner"] as ApprovalStepRole[]).map((role) => {
+                  const on = draft.policies.approvalChain.includes(role);
+                  return (
+                    <label key={role} className="inline-flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={on}
+                        onChange={(e) => {
+                          const next = e.target.checked
+                            ? (["manager", "deputy", "owner"] as ApprovalStepRole[]).filter(
+                                (r) =>
+                                  r === role || draft.policies.approvalChain.includes(r)
+                              )
+                            : draft.policies.approvalChain.filter((r) => r !== role);
+                          patchPolicies({
+                            approvalChain: next.length > 0 ? next : ["manager"],
+                          });
+                        }}
+                      />
+                      {APPROVAL_STEP_LABELS[role]}
+                    </label>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-gray-500 mt-1">
+                目前：{draft.policies.approvalChain.map((r) => APPROVAL_STEP_LABELS[r]).join(" → ")}
+              </p>
+            </>
+          )}
         </div>
       </section>
 

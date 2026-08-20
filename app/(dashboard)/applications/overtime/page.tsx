@@ -208,6 +208,7 @@ export default function OvertimePage() {
     employees,
     activeSiteId
   );
+  const approvalMode = storeConfig.policies.approvalMode;
   const statusLabels: Record<string, { label: string; color: string }> = {
     pending:  { label: "待審核", color: "bg-yellow-100 text-yellow-800" },
     approved: { label: "已核准", color: "bg-green-100 text-green-800" },
@@ -717,7 +718,7 @@ export default function OvertimePage() {
                 const st = statusLabels[req.status];
                 const statusText =
                   req.status === "pending"
-                    ? approvalPendingLabel(approvalChain, req.approvalStep ?? 0)
+                    ? approvalPendingLabel(approvalChain, req.approvalStep ?? 0, approvalMode)
                     : st.label;
                 const h = calcOvertimeHours(req.startTime, req.endTime);
                 const empName = req.employeeName || getEmpName(req.employeeId);
@@ -780,7 +781,8 @@ export default function OvertimePage() {
                           {req.status === "pending" &&
                             canActOnApprovalStep(
                               currentUser?.role,
-                              currentApprovalRole(approvalChain, req.approvalStep ?? 0)
+                              currentApprovalRole(approvalChain, req.approvalStep ?? 0),
+                              approvalMode
                             ) && (
                             <>
                               <button onClick={() => handleReviewOvertime(req.id, "approved")}

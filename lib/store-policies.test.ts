@@ -15,6 +15,8 @@ describe("store-policies", () => {
     expect(z.saturdayLeaveQuota).toBe(2);
     expect(z.weekdayLeaveQuota).toBe(2);
     expect(z.approvalChain).toEqual(["manager"]);
+    expect(z.approvalMode).toBe("any");
+    expect(parseStorePolicies({}, "zhushan").approvalMode).toBe("any");
     expect(z.autoRestSuggestEnabled).toBe(false);
     expect(z.allowLeaveDeferral).toBe(false);
     expect(z.leaveHoursPerDay).toBe(8);
@@ -53,6 +55,8 @@ describe("store-policies", () => {
     const j = parseStorePolicies({}, "jiji");
     expect(j.autoRestSuggestEnabled).toBe(true);
     expect(j.saturdayQuotaMode).toBe("month_pool");
+    expect(j.approvalMode).toBe("sequential");
+    expect(j.approvalChain).toEqual(["manager", "deputy", "owner"]);
   });
 
   it("舊集集 all_saturdays + 平日 0 會讀成整月池", () => {
