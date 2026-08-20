@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   useApp,
@@ -8,7 +8,16 @@ import {
   type Notification,
 } from "@/lib/context/AppContext";
 import { Megaphone, Calendar, DollarSign, X, Coffee } from "lucide-react";
-import { getBulletinTypeLabel, stripMetaLines } from "@/lib/bulletin/bulletinMeta";
+import {
+  getBulletinTypeLabel,
+  shouldPopupMealOrderBulletin,
+  stripMetaLines,
+} from "@/lib/bulletin/bulletinMeta";
+import {
+  addLoginPopupSessionSkip,
+  readLoginPopupSessionSkip,
+} from "@/lib/bulletin/loginPopupSession";
+import { todayYmd } from "@/lib/meal-order/types";
 
 type PopupItem =
   | { kind: "bulletin"; id: string; bulletin: BulletinItem }
@@ -26,7 +35,8 @@ function leaveDismissKey(year: number, month: number, userId: string) {
 /**
  * 登入後彈窗堆疊：
  * - 僅 active 公告會彈（已取消／封存不彈）
- * - 按 X／稍後再說：只關這次，下次仍會彈
+ * - 訂餐公告可提前張貼，登入彈窗只在訂餐當天出現
+ * - 按 X／稍後再說：本分頁不再跳（換頁也不閃）
  * - 知道了／不再顯示／前往查看：永久關閉該則
  * - 公告、薪資、排休提醒可依序疊加，互不覆蓋取消
  */
@@ -37,14 +47,19 @@ export default function LoginPopupStack() {
     notifications,
     markNotificationRead,
     getLeaveSummary,
+    leaveSelectionsReady,
     storeConfig,
   } = useApp();
   const router = useRouter();
-  const [queue, setQueue] = useState<PopupItem[]>([]);
-  const [sessionSkip, setSessionSkip] = useState<Set<string>>(new Set());
+  const [sessionSkip, setSessionSkip] = useState<Set<string>>(() => readLoginPopupSessionSkip());
+
+  const skipThisSession = (id: string) => {
+    setSessionSkip((prev) => addLoginPopupSessionSkip(id, prev));
+  };
 
   const leaveCandidate = useMemo(() => {
     if (!currentUser || currentUser.role === "owner") return null;
+    if (!leaveSelectionsReady) return null;
     const today = new Date();
     if (today.getDate() < 20) return null;
     const year = today.getFullYear();
@@ -57,20 +72,17 @@ export default function LoginPopupStack() {
     const summary = getLeaveSummary(currentUser.id, nextYear, nextMonth);
     if (summary.selectedDates.length > 0) return null;
     return { year, month, nextYear, nextMonth };
-  }, [currentUser, getLeaveSummary]);
+  }, [currentUser, getLeaveSummary, leaveSelectionsReady]);
 
-  useEffect(() => {
-    if (!currentUser) {
-      setQueue([]);
-      return;
-    }
-
+  const queue = useMemo((): PopupItem[] => {
+    if (!currentUser) return [];
+    const today = todayYmd();
     const items: PopupItem[] = [];
 
-    // 1) 僅 active 公告；已封存／取消不彈
     const activeBulletins = bulletinItems.filter((b) => {
       if (b.status !== "active") return false;
       if (b.targetType === "specific" && !b.targetIds.includes(currentUser.id)) return false;
+      if (!shouldPopupMealOrderBulletin(b.type, b.content, today)) return false;
       if (typeof window !== "undefined" && localStorage.getItem(bulletinDismissKey(b.id))) {
         return false;
       }
@@ -83,7 +95,6 @@ export default function LoginPopupStack() {
       items.push({ kind: "bulletin", id: `bulletin:${b.id}`, bulletin: b });
     });
 
-    // 2) 未讀薪資發布通知
     notifications
       .filter(
         (n) =>
@@ -96,7 +107,6 @@ export default function LoginPopupStack() {
         items.push({ kind: "payroll", id: `payroll:${n.id}`, notification: n });
       });
 
-    // 3) 排休提醒
     if (leaveCandidate && !sessionSkip.has("leave_reminder")) {
       items.push({
         kind: "leave_reminder",
@@ -105,30 +115,30 @@ export default function LoginPopupStack() {
       });
     }
 
-    setQueue(items);
+    return items;
   }, [currentUser, bulletinItems, notifications, leaveCandidate, sessionSkip]);
 
   const current = queue[0] ?? null;
 
   const closeSessionOnly = () => {
     if (!current) return;
-    setSessionSkip((prev) => new Set(prev).add(current.id));
+    skipThisSession(current.id);
   };
 
   const dismissPermanentBulletin = (bulletinId: string) => {
     localStorage.setItem(bulletinDismissKey(bulletinId), "1");
-    setSessionSkip((prev) => new Set(prev).add(`bulletin:${bulletinId}`));
+    skipThisSession(`bulletin:${bulletinId}`);
   };
 
   const dismissPermanentLeave = (year: number, month: number) => {
     if (!currentUser) return;
     localStorage.setItem(leaveDismissKey(year, month, currentUser.id), "1");
-    setSessionSkip((prev) => new Set(prev).add("leave_reminder"));
+    skipThisSession("leave_reminder");
   };
 
   const dismissPayroll = async (notificationId: string, goPayroll: boolean) => {
     await markNotificationRead(notificationId);
-    setSessionSkip((prev) => new Set(prev).add(`payroll:${notificationId}`));
+    skipThisSession(`payroll:${notificationId}`);
     if (goPayroll) router.push("/payroll-detail");
   };
 
