@@ -145,7 +145,7 @@ export default function MySchedulePage() {
               return (
                 <div
                   key={dateStr}
-                  className={`rounded-xl border-2 p-2.5 h-[7.5rem] text-left grid grid-rows-[auto_1fr_2.5rem] gap-0.5 transition-shadow ${
+                  className={`rounded-xl border-2 p-2.5 h-[8.25rem] text-left grid grid-rows-[auto_1fr_3.25rem] gap-0.5 transition-shadow ${
                     sun
                       ? "bg-red-50 border-red-200"
                       : sat
@@ -177,9 +177,9 @@ export default function MySchedulePage() {
                       <div className="text-[11px] text-amber-700 font-medium mt-0.5">半日假</div>
                     )}
                   </div>
-                  <div className="text-sm font-medium text-slate-600 leading-tight">
+                  <div className="text-[15px] font-semibold text-slate-700 leading-6">
                     {[0, 1].map((slot) => (
-                      <div key={slot} className="h-[1.25rem] truncate">
+                      <div key={slot} className="h-6 whitespace-nowrap">
                         {ranges[slot] ?? "\u00A0"}
                       </div>
                     ))}
