@@ -5,7 +5,9 @@ import { parseSiteId, storeConfigSettingId } from "@/lib/sites";
 import { parseStoreConfig } from "@/lib/store-config";
 import {
   currentMonthCreatedAtRange,
+  friendlyPunchCorrectionDbError,
   isPunchCorrectionOverLimit,
+  normalizeRequestedTime,
   punchCorrectionOverLimitMessage,
 } from "@/lib/attendance/punchCorrectionLimit";
 import { loadApprovalContext } from "@/lib/approvals/server";
@@ -31,7 +33,7 @@ export async function POST(req: NextRequest) {
 
     const punchDate = String(body.punchDate ?? "").slice(0, 10);
     const punchAction = body.punchAction;
-    const requestedTime = String(body.requestedTime ?? "").slice(0, 5);
+    const requestedTime = normalizeRequestedTime(body.requestedTime);
     const segmentIndex = Number(body.segmentIndex ?? 0) || 0;
     const reason = String(body.reason ?? "").trim();
     const originalRecordId = body.originalRecordId || null;
@@ -42,7 +44,7 @@ export async function POST(req: NextRequest) {
     if (punchAction !== "work_in" && punchAction !== "work_out") {
       return NextResponse.json({ error: "請選擇上班或下班" }, { status: 400 });
     }
-    if (!/^\d{2}:\d{2}$/.test(requestedTime)) {
+    if (!requestedTime) {
       return NextResponse.json({ error: "時間請用 HH:MM" }, { status: 400 });
     }
 
@@ -72,7 +74,10 @@ export async function POST(req: NextRequest) {
       .in("status", ["pending", "approved"]);
 
     if (countError) {
-      return NextResponse.json({ error: countError.message }, { status: 500 });
+      return NextResponse.json(
+        { error: friendlyPunchCorrectionDbError(countError.message) },
+        { status: 500 }
+      );
     }
     const used = count ?? 0;
     if (isPunchCorrectionOverLimit(used, limit) && limit != null) {
@@ -93,7 +98,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const { data: dup } = await admin
+    const { data: dup, error: dupError } = await admin
       .from("punch_correction_requests")
       .select("id")
       .eq("user_id", auth.callerId)
@@ -102,6 +107,12 @@ export async function POST(req: NextRequest) {
       .eq("segment_index", segmentIndex)
       .eq("status", "pending")
       .maybeSingle();
+    if (dupError) {
+      return NextResponse.json(
+        { error: friendlyPunchCorrectionDbError(dupError.message) },
+        { status: 500 }
+      );
+    }
     if (dup) {
       return NextResponse.json(
         { error: "此日時段已有待審的補登申請" },
@@ -128,42 +139,55 @@ export async function POST(req: NextRequest) {
 
     if (insertError || !inserted?.id) {
       return NextResponse.json(
-        { error: insertError?.message || "送出失敗" },
+        { error: friendlyPunchCorrectionDbError(insertError?.message) },
         { status: 500 }
       );
     }
 
-    const { employees, chain, approvalMode } = await loadApprovalContext(admin, siteId);
-    const firstRole = chain[0] ?? "manager";
-    const nextRoles = rolesToNotify(firstRole, approvalMode);
-    const recipients = employees.filter((e) => {
-      if (!nextRoles.includes(e.role)) return false;
-      if (e.role === "owner") return true;
-      return e.siteId === siteId;
-    });
-    if (recipients.length > 0) {
-      await admin.from("notifications").insert(
-        recipients.map((m) => ({
-          recipient_id: m.id,
-          type: "punch_correction_submitted",
-          title: "新打卡補登申請",
-          body: `${empRow?.name ?? "員工"} 申請補登 ${punchDate} ${
-            punchAction === "work_in" ? "上班" : "下班"
-          } ${requestedTime}，請審核。`,
-          related_id: inserted.id,
-          related_type: "punch_correction",
-          is_read: false,
-        }))
-      );
-    }
+    try {
+      const { employees, chain, approvalMode } = await loadApprovalContext(admin, siteId);
+      const firstRole = chain[0] ?? "manager";
+      const nextRoles = rolesToNotify(firstRole, approvalMode);
+      const recipients = employees.filter((e) => {
+        if (!nextRoles.includes(e.role)) return false;
+        if (e.role === "owner") return true;
+        return e.siteId === siteId;
+      });
+      if (recipients.length > 0) {
+        await admin.from("notifications").insert(
+          recipients.map((m) => ({
+            recipient_id: m.id,
+            type: "punch_correction_submitted",
+            title: "新打卡補登申請",
+            body: `${empRow?.name ?? "員工"} 申請補登 ${punchDate} ${
+              punchAction === "work_in" ? "上班" : "下班"
+            } ${requestedTime.slice(0, 5)}，請審核。`,
+            related_id: inserted.id,
+            related_type: "punch_correction",
+            is_read: false,
+          }))
+        );
+      }
 
-    return NextResponse.json({
-      success: true,
-      id: inserted.id,
-      pendingLabel: approvalPendingLabel(chain, 0, approvalMode),
-    });
+      return NextResponse.json({
+        success: true,
+        id: inserted.id,
+        pendingLabel: approvalPendingLabel(chain, 0, approvalMode),
+      });
+    } catch (notifyErr) {
+      console.error("[applications/punch-correction POST notify]", notifyErr);
+      return NextResponse.json({
+        success: true,
+        id: inserted.id,
+        pendingLabel: "待審核",
+      });
+    }
   } catch (err) {
     console.error("[applications/punch-correction POST]", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : "送出失敗";
+    return NextResponse.json(
+      { error: friendlyPunchCorrectionDbError(message) },
+      { status: 500 }
+    );
   }
 }

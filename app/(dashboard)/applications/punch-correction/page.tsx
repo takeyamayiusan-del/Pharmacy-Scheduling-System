@@ -44,6 +44,7 @@ export default function PunchCorrectionPage() {
   const isManager = canManageSite(currentUser?.role);
   const [rows, setRows] = useState<CorrectionRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(
     null
@@ -68,13 +69,23 @@ export default function PunchCorrectionPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     let q = supabase
       .from("punch_correction_requests")
-      .select("*, users(name)")
+      .select("*")
       .order("created_at", { ascending: false });
     if (!isManager && currentUser) q = q.eq("user_id", currentUser.id);
     const { data, error } = await q;
-    if (!error && data) setRows(data as CorrectionRow[]);
+    if (error) {
+      setLoadError(
+        /schema cache|does not exist/i.test(error.message)
+          ? "打卡補登資料表尚未建立，請先在資料庫套用更新後再使用"
+          : error.message
+      );
+      setRows([]);
+    } else if (data) {
+      setRows(data as CorrectionRow[]);
+    }
     setLoading(false);
   }, [supabase, isManager, currentUser]);
 
@@ -111,9 +122,15 @@ export default function PunchCorrectionPage() {
     }
     setSubmitting(true);
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
       const res = await fetch("/api/applications/punch-correction", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({
           punchDate: form.punchDate,
           punchAction: form.punchAction,
@@ -125,7 +142,7 @@ export default function PunchCorrectionPage() {
       });
       const payload = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        throw new Error(payload.error || "送出失敗");
+        throw new Error(payload.error || `送出失敗（${res.status}）`);
       }
       setForm({
         punchDate: "",
@@ -150,9 +167,15 @@ export default function PunchCorrectionPage() {
     rejectReason?: string
   ) => {
     try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
       const res = await fetch("/api/applications/punch-correction/review", {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ id, status, rejectReason }),
       });
       const payload = (await res.json().catch(() => ({}))) as { error?: string };
@@ -226,9 +249,17 @@ export default function PunchCorrectionPage() {
               <span className="text-gray-700">對應既有打卡（選填）</span>
               <select
                 value={form.originalRecordId}
-                onChange={(e) =>
-                  setForm({ ...form, originalRecordId: e.target.value })
-                }
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const punch = dayPunches.find((p) => p.id === id);
+                  setForm({
+                    ...form,
+                    originalRecordId: id,
+                    punchAction: punch?.action ?? form.punchAction,
+                    segmentIndex: punch?.segmentIndex ?? 0,
+                    requestedTime: punch?.time?.slice(0, 5) || form.requestedTime,
+                  });
+                }}
                 className="mt-1 w-full border rounded-lg px-3 py-2"
               >
                 <option value="">沒有紀錄，核准後新增</option>
@@ -267,6 +298,8 @@ export default function PunchCorrectionPage() {
         </div>
         {loading ? (
           <p className="p-6 text-sm text-gray-500">載入中…</p>
+        ) : loadError ? (
+          <p className="p-6 text-sm text-rose-700">{loadError}</p>
         ) : rows.length === 0 ? (
           <p className="p-6 text-sm text-gray-500">尚無申請。</p>
         ) : (
