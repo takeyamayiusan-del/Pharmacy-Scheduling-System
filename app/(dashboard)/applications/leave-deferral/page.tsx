@@ -2,10 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useApp } from "@/lib/context/AppContext";
-import {
-  APPROVAL_STEP_LABELS,
-  canManageSite,
-} from "@/lib/auth/roles";
+import { canManageSite } from "@/lib/auth/roles";
 import {
   approvalPendingLabel,
   canActOnApprovalStep,
