@@ -13,10 +13,12 @@ import {
   createProcurementItem,
   deactivateProcurementCategory,
   deletePendingShopRecord,
+  deleteShopRecords,
   ensureDefaultProcurementCategories,
   loadCustomerOrders,
   loadMedicineRequests,
   loadProcurementItems,
+  reopenShopRecords,
   updateCustomerFulfillment,
   updateCustomerOrder,
   updateCustomerPayment,
@@ -125,7 +127,7 @@ export default function ShopOpsPage() {
             店務需求
           </h1>
           <p className="app-meta mt-1">
-            日常採購、叫藥、客人訂購、客訂管理。員工先登記，之後標記進度；完成後按已處理，紀錄仍保留。
+            日常採購、叫藥、客人訂購、客訂管理。員工先登記，之後標記進度；完成後按已處理，之後仍可改回待處理或刪除。
           </p>
         </div>
       </div>
@@ -146,7 +148,7 @@ export default function ShopOpsPage() {
         <p>
           4. <strong>客訂管理</strong>：可一次勾多筆一起標記，也可匯出 Excel／PDF。
         </p>
-        <p>5. 待處理可刪；已處理只留紀錄、不刪。每筆都會標登記日期；下方列表可依日期／類別篩選，方便統計與叫藥先後。</p>
+        <p>5. 待處理可修改／刪除；已處理可「改回待處理」或刪除。每筆都會標登記日期；下方列表可依日期／類別篩選，方便統計與叫藥先後。</p>
       </HelpTip>
 
       <div className="flex flex-wrap gap-2">
@@ -714,6 +716,58 @@ function ProcurementPanel({
           </button>
         </div>
       )}
+      {filter === "closed" && visible.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={async () => {
+              if (selected.length === 0 || busy) return;
+              setBusy(true);
+              try {
+                await reopenShopRecords({ table: "shop_procurement_items", ids: selected });
+                setSelected([]);
+                await onChanged();
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "改回失敗");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            所選改回待處理（{selected.length}）
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline text-rose-700 border-rose-200"
+            disabled={busy || selected.length === 0}
+            onClick={async () => {
+              const ids = selected.filter((id) => {
+                const row = items.find((r) => r.id === id);
+                return row && (row.createdBy === userId || isManager);
+              });
+              if (ids.length === 0) {
+                alert("所選項目中沒有你可刪除的（僅建立者或店長／副店可刪）");
+                return;
+              }
+              if (!window.confirm(`確定刪除 ${ids.length} 筆已處理紀錄？刪除後無法復原。`)) return;
+              setBusy(true);
+              try {
+                await deleteShopRecords({ table: "shop_procurement_items", ids });
+                setSelected([]);
+                await onChanged();
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "刪除失敗");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            所選刪除
+          </button>
+        </div>
+      )}
 
       {visible.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
@@ -721,7 +775,7 @@ function ProcurementPanel({
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
-              {filter === "pending" && (
+              {(filter === "pending" || filter === "closed") && (
                 <RecordCheck
                   checked={selected.includes(row.id)}
                   onChange={(checked) =>
@@ -779,6 +833,47 @@ function ProcurementPanel({
                             id: row.id,
                           });
                           if (editingId === row.id) resetForm(form.categoryId);
+                          await onChanged();
+                        } catch (err) {
+                          alert(err instanceof Error ? err.message : "刪除失敗");
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {row.status === "closed" && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-sm text-sky-700 font-medium"
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await reopenShopRecords({ table: "shop_procurement_items", ids: [row.id] });
+                        await onChanged();
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : "改回失敗");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    改回待處理
+                  </button>
+                  {(row.createdBy === userId || isManager) && (
+                    <button
+                      type="button"
+                      className="text-slate-400 hover:text-rose-600"
+                      onClick={async () => {
+                        if (!window.confirm("刪除這筆已處理紀錄？刪除後無法復原。")) return;
+                        setBusy(true);
+                        try {
+                          await deleteShopRecords({ table: "shop_procurement_items", ids: [row.id] });
                           await onChanged();
                         } catch (err) {
                           alert(err instanceof Error ? err.message : "刪除失敗");
@@ -1189,6 +1284,58 @@ function MedicinePanel({
           </button>
         </div>
       )}
+      {filter === "closed" && visible.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={async () => {
+              if (selected.length === 0 || busy) return;
+              setBusy(true);
+              try {
+                await reopenShopRecords({ table: "shop_medicine_requests", ids: selected });
+                setSelected([]);
+                await onChanged();
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "改回失敗");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            所選改回待處理（{selected.length}）
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline text-rose-700 border-rose-200"
+            disabled={busy || selected.length === 0}
+            onClick={async () => {
+              const ids = selected.filter((id) => {
+                const row = items.find((r) => r.id === id);
+                return row && (row.createdBy === userId || isManager);
+              });
+              if (ids.length === 0) {
+                alert("所選項目中沒有你可刪除的（僅建立者或店長／副店可刪）");
+                return;
+              }
+              if (!window.confirm(`確定刪除 ${ids.length} 筆已處理紀錄？刪除後無法復原。`)) return;
+              setBusy(true);
+              try {
+                await deleteShopRecords({ table: "shop_medicine_requests", ids });
+                setSelected([]);
+                await onChanged();
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "刪除失敗");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            所選刪除
+          </button>
+        </div>
+      )}
 
       {visible.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
@@ -1196,7 +1343,7 @@ function MedicinePanel({
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
-              {filter === "pending" && (
+              {(filter === "pending" || filter === "closed") && (
                 <RecordCheck
                   checked={selected.includes(row.id)}
                   onChange={(checked) =>
@@ -1286,6 +1433,47 @@ function MedicinePanel({
                             id: row.id,
                           });
                           if (editingId === row.id) resetForm(form.kind);
+                          await onChanged();
+                        } catch (err) {
+                          alert(err instanceof Error ? err.message : "刪除失敗");
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+              )}
+              {row.status === "closed" && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="text-sm text-sky-700 font-medium"
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await reopenShopRecords({ table: "shop_medicine_requests", ids: [row.id] });
+                        await onChanged();
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : "改回失敗");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    改回待處理
+                  </button>
+                  {(row.createdBy === userId || isManager) && (
+                    <button
+                      type="button"
+                      className="text-slate-400 hover:text-rose-600"
+                      onClick={async () => {
+                        if (!window.confirm("刪除這筆已處理紀錄？刪除後無法復原。")) return;
+                        setBusy(true);
+                        try {
+                          await deleteShopRecords({ table: "shop_medicine_requests", ids: [row.id] });
                           await onChanged();
                         } catch (err) {
                           alert(err instanceof Error ? err.message : "刪除失敗");
@@ -1702,6 +1890,58 @@ function CustomerPanel({
           </button>
         </div>
       )}
+      {filter === "closed" && visible.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            className="app-btn-outline"
+            disabled={busy || selected.length === 0}
+            onClick={async () => {
+              if (selected.length === 0 || busy) return;
+              setBusy(true);
+              try {
+                await reopenShopRecords({ table: "shop_customer_orders", ids: selected });
+                setSelected([]);
+                await onChanged();
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "改回失敗");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            所選改回待處理（{selected.length}）
+          </button>
+          <button
+            type="button"
+            className="app-btn-outline text-rose-700 border-rose-200"
+            disabled={busy || selected.length === 0}
+            onClick={async () => {
+              const ids = selected.filter((id) => {
+                const row = items.find((r) => r.id === id);
+                return row && (row.createdBy === userId || isManager);
+              });
+              if (ids.length === 0) {
+                alert("所選項目中沒有你可刪除的（僅建立者或店長／副店可刪）");
+                return;
+              }
+              if (!window.confirm(`確定刪除 ${ids.length} 筆已處理紀錄？刪除後無法復原。`)) return;
+              setBusy(true);
+              try {
+                await deleteShopRecords({ table: "shop_customer_orders", ids });
+                setSelected([]);
+                await onChanged();
+              } catch (err) {
+                alert(err instanceof Error ? err.message : "刪除失敗");
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            所選刪除
+          </button>
+        </div>
+      )}
 
       {visible.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
@@ -1709,7 +1949,7 @@ function CustomerPanel({
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
-              {filter === "pending" && (
+              {(filter === "pending" || filter === "closed") && (
                 <RecordCheck
                   checked={selected.includes(row.id)}
                   onChange={(checked) =>
@@ -1829,6 +2069,47 @@ function CustomerPanel({
                               id: row.id,
                             });
                             if (editingId === row.id) resetForm();
+                            await onChanged();
+                          } catch (err) {
+                            alert(err instanceof Error ? err.message : "刪除失敗");
+                          } finally {
+                            setBusy(false);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {row.status === "closed" && (
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      className="text-sm text-sky-700 font-medium"
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          await reopenShopRecords({ table: "shop_customer_orders", ids: [row.id] });
+                          await onChanged();
+                        } catch (err) {
+                          alert(err instanceof Error ? err.message : "改回失敗");
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      改回待處理
+                    </button>
+                    {(row.createdBy === userId || isManager) && (
+                      <button
+                        type="button"
+                        className="text-slate-400 hover:text-rose-600"
+                        onClick={async () => {
+                          if (!window.confirm("刪除這筆已處理紀錄？刪除後無法復原。")) return;
+                          setBusy(true);
+                          try {
+                            await deleteShopRecords({ table: "shop_customer_orders", ids: [row.id] });
                             await onChanged();
                           } catch (err) {
                             alert(err instanceof Error ? err.message : "刪除失敗");
@@ -2288,6 +2569,47 @@ function FulfillmentPanel({
                 >
                   <Trash2 className="h-4 w-4" />
                 </button>
+              )}
+              {row.status === "closed" && (
+                <div className="flex flex-col items-end gap-2">
+                  <button
+                    type="button"
+                    className="text-sm text-sky-700 font-medium"
+                    onClick={async () => {
+                      setBusy(true);
+                      try {
+                        await reopenShopRecords({ table: "shop_customer_orders", ids: [row.id] });
+                        await onChanged();
+                      } catch (err) {
+                        alert(err instanceof Error ? err.message : "改回失敗");
+                      } finally {
+                        setBusy(false);
+                      }
+                    }}
+                  >
+                    改回待處理
+                  </button>
+                  {(row.createdBy === userId || isManager) && (
+                    <button
+                      type="button"
+                      className="text-slate-400 hover:text-rose-600"
+                      onClick={async () => {
+                        if (!window.confirm("刪除這筆已處理紀錄？刪除後無法復原。")) return;
+                        setBusy(true);
+                        try {
+                          await deleteShopRecords({ table: "shop_customer_orders", ids: [row.id] });
+                          await onChanged();
+                        } catch (err) {
+                          alert(err instanceof Error ? err.message : "刪除失敗");
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
               )}
             </div>
           ))}

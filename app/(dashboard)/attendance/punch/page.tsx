@@ -31,6 +31,7 @@ import {
   validateOvertimeWithPolicy,
 } from "@/lib/attendance/overtimePolicy";
 import { MapPin, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
 
 type GpsState = "loading" | "denied" | "outside" | "inside";
 
@@ -85,9 +86,22 @@ export default function PunchPage() {
     endTime: string;
     reason: string;
     message: string;
+    segmentIndex: number;
   } | null>(null);
   const [quickOtComp, setQuickOtComp] = useState<OvertimeCompensationType>("time_off");
   const [quickOtSubmitting, setQuickOtSubmitting] = useState(false);
+
+  /** 拒絕加班後：詢問是否一鍵打卡補登 */
+  const [punchCorrectionOffer, setPunchCorrectionOffer] = useState<{
+    date: string;
+    punchAction: "work_in" | "work_out";
+    segmentIndex: number;
+    requestedTime: string;
+    originalRecordId: string | null;
+    reason: string;
+    message: string;
+  } | null>(null);
+  const [punchCorrectionSubmitting, setPunchCorrectionSubmitting] = useState(false);
 
   // 無班表打卡的加班詢問 Modal
   const [noShiftOvertimeModal, setNoShiftOvertimeModal] = useState<{
@@ -286,6 +300,7 @@ export default function PunchPage() {
             : `無班表加班（下班打卡 ${punchTime}）`,
           message:
             "打卡成功！今日無排班。已帶入打卡時間，請確認起迄並選擇補休或加班費後送出。",
+          segmentIndex: 0,
         });
       } else {
         setSuccessModal({
@@ -379,6 +394,7 @@ export default function PunchPage() {
             endTime: punchTime,
             reason: `下班打卡逾時（應下班 ${slot.scheduledTime}，實際 ${punchTime}，逾時 ${minutesPastEnd} 分鐘）`,
             message: `打卡成功！已超過下班時間 ${minutesPastEnd} 分鐘。時間已依打卡帶入，請選擇補休或加班費後一鍵送出。`,
+            segmentIndex: slot.segmentIndex,
           });
         } catch {
           // finalizePunch 已顯示錯誤訊息
@@ -479,6 +495,70 @@ export default function PunchPage() {
       alert(e instanceof Error ? e.message : "加班申請失敗");
     } finally {
       setQuickOtSubmitting(false);
+    }
+  };
+
+  const declineQuickOvertime = () => {
+    if (!quickOvertime || !currentUser) {
+      setQuickOvertime(null);
+      return;
+    }
+    const original =
+      todayPunches.find(
+        (p) =>
+          p.action === "work_out" &&
+          p.segmentIndex === quickOvertime.segmentIndex &&
+          p.date === quickOvertime.date
+      ) ?? todayPunches.find((p) => p.action === "work_out" && p.date === quickOvertime.date);
+    setPunchCorrectionOffer({
+      date: quickOvertime.date,
+      punchAction: "work_out",
+      segmentIndex: quickOvertime.segmentIndex,
+      requestedTime: quickOvertime.startTime,
+      originalRecordId: original?.id ?? null,
+      reason: `非加班：請將下班時間更正為應下班 ${quickOvertime.startTime}（實際打卡 ${quickOvertime.endTime}）`,
+      message: `不是加班的話，要打卡補登嗎？可一鍵申請把下班時間改回應下班 ${quickOvertime.startTime}。`,
+    });
+    setQuickOvertime(null);
+  };
+
+  const submitPunchCorrectionOffer = async () => {
+    if (!punchCorrectionOffer || punchCorrectionSubmitting) return;
+    setPunchCorrectionSubmitting(true);
+    try {
+      const supabase = createClient();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      const res = await fetch("/api/applications/punch-correction", {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          punchDate: punchCorrectionOffer.date,
+          punchAction: punchCorrectionOffer.punchAction,
+          segmentIndex: punchCorrectionOffer.segmentIndex,
+          requestedTime: punchCorrectionOffer.requestedTime,
+          originalRecordId: punchCorrectionOffer.originalRecordId,
+          reason: punchCorrectionOffer.reason,
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(payload.error || `送出失敗（${res.status}）`);
+      }
+      setPunchCorrectionOffer(null);
+      setSuccessModal({
+        message: `已一鍵送出打卡補登（${punchCorrectionOffer.punchAction === "work_out" ? "下班" : "上班"} ${punchCorrectionOffer.requestedTime}），等候審核。`,
+        askLeave: false,
+        askOvertime: false,
+      });
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "打卡補登申請失敗");
+    } finally {
+      setPunchCorrectionSubmitting(false);
     }
   };
 
@@ -879,10 +959,10 @@ export default function PunchPage() {
               <button
                 type="button"
                 disabled={quickOtSubmitting}
-                onClick={() => setQuickOvertime(null)}
+                onClick={declineQuickOvertime}
                 className="flex-1 py-2 border rounded-lg text-gray-700"
               >
-                稍後再說
+                否
               </button>
               <button
                 type="button"
@@ -891,6 +971,49 @@ export default function PunchPage() {
                 className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 {quickOtSubmitting ? "送出中…" : "一鍵送出申請"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 拒絕加班後：詢問打卡補登 */}
+      {punchCorrectionOffer && (
+        <div className="app-modal-backdrop">
+          <div className="app-panel shadow-xl p-6 max-w-md w-full space-y-4">
+            <div className="flex items-start gap-2 text-sky-900">
+              <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-bold">要打卡補登嗎？</p>
+                <p className="text-sm mt-1 text-slate-600">{punchCorrectionOffer.message}</p>
+              </div>
+            </div>
+            <div className="rounded-lg border bg-slate-50 p-3 text-sm space-y-1">
+              <p>
+                補登時間：
+                <strong>
+                  {punchCorrectionOffer.punchAction === "work_out" ? "下班" : "上班"}{" "}
+                  {punchCorrectionOffer.requestedTime}
+                </strong>
+              </p>
+              <p className="text-xs text-slate-500">送出後仍需店長／關卡審核。</p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                disabled={punchCorrectionSubmitting}
+                onClick={() => setPunchCorrectionOffer(null)}
+                className="flex-1 py-2 border rounded-lg text-gray-700"
+              >
+                不用
+              </button>
+              <button
+                type="button"
+                disabled={punchCorrectionSubmitting}
+                onClick={() => void submitPunchCorrectionOffer()}
+                className="flex-1 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+              >
+                {punchCorrectionSubmitting ? "送出中…" : "一鍵申請補登"}
               </button>
             </div>
           </div>
@@ -957,10 +1080,22 @@ export default function PunchPage() {
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => setNoShiftOvertimeModal(null)}
+                onClick={() => {
+                  const action = noShiftOvertimeModal.action;
+                  setNoShiftOvertimeModal(null);
+                  setPunchCorrectionOffer({
+                    date: today,
+                    punchAction: action,
+                    segmentIndex: 0,
+                    requestedTime: formatNowTime(),
+                    originalRecordId: null,
+                    reason: "今日無排班／忘記打卡，申請補登",
+                    message: "不是加班的話，要打卡補登嗎？可一鍵幫你送出補登申請。",
+                  });
+                }}
                 className="flex-1 py-2 border rounded-lg text-gray-700"
               >
-                取消
+                否
               </button>
               <button
                 type="button"
