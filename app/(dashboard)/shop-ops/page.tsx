@@ -13,10 +13,12 @@ import {
   createProcurementItem,
   deactivateProcurementCategory,
   deletePendingShopRecord,
+  deleteShopRecords,
   ensureDefaultProcurementCategories,
   loadCustomerOrders,
   loadMedicineRequests,
   loadProcurementItems,
+  reopenShopRecords,
   updateCustomerFulfillment,
   updateCustomerOrder,
   updateCustomerPayment,
@@ -26,6 +28,7 @@ import {
 } from "@/lib/shop-ops/api";
 import { exportCustomerOrdersExcel, exportCustomerOrdersPdf } from "@/lib/shop-ops/exportCustomerOrders";
 import {
+  canDeleteShopRecord,
   CUSTOMER_PAYMENT_LABELS,
   CUSTOMER_URGENCY_LABELS,
   FULFILLMENT_FILTER_LABELS,
@@ -40,6 +43,7 @@ import {
   matchesFulfillmentFilter,
   MEDICINE_KIND_LABELS,
   MEDICINE_QTY_MODE_LABELS,
+  SHOP_OPS_TAB_KEYS,
   SHOP_STATUS_LABELS,
   sortByCreatedAtAsc,
   sortCustomerOrders,
@@ -56,16 +60,146 @@ import {
   type ShopRecordStatus,
 } from "@/lib/shop-ops/types";
 
-type TabKey = "procurement" | "medicine" | "customer" | "fulfillment";
+type TabKey = (typeof SHOP_OPS_TAB_KEYS)[number];
 type ListFilter = "pending" | "closed" | "all";
+type ShopOpsTable = "shop_procurement_items" | "shop_medicine_requests" | "shop_customer_orders";
+
+const SHOP_OPS_TAB_UI = [
+  { key: "medicine" as const, label: "叫藥需求", Icon: Pill },
+  { key: "customer" as const, label: "客人訂購", Icon: Package },
+  { key: "fulfillment" as const, label: "客訂管理", Icon: ListChecks },
+  { key: "procurement" as const, label: "日常採購", Icon: ShoppingBag },
+];
 
 function formatWhen(iso: string): string {
   return formatCreatedStamp(iso);
 }
 
+function ClosedBatchBar({
+  busy,
+  reopenSelectedIds,
+  reopenVisibleIds,
+  deleteSelectedIds,
+  deleteVisibleIds,
+  onReopen,
+  onDelete,
+}: {
+  busy: boolean;
+  reopenSelectedIds: string[];
+  reopenVisibleIds: string[];
+  deleteSelectedIds: string[];
+  deleteVisibleIds: string[];
+  onReopen: (ids: string[]) => void;
+  onDelete: (ids: string[]) => void;
+}) {
+  if (reopenVisibleIds.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2">
+      <button
+        type="button"
+        className="app-btn-outline"
+        disabled={busy || reopenSelectedIds.length === 0}
+        onClick={() => onReopen(reopenSelectedIds)}
+      >
+        所選改回待處理（{reopenSelectedIds.length}）
+      </button>
+      <button type="button" className="app-btn-outline" disabled={busy} onClick={() => onReopen(reopenVisibleIds)}>
+        全部改回待處理
+      </button>
+      <button
+        type="button"
+        className="app-btn-outline text-rose-700 border-rose-200 hover:bg-rose-50"
+        disabled={busy || deleteSelectedIds.length === 0}
+        onClick={() => {
+          if (!window.confirm(`確定刪除所選 ${deleteSelectedIds.length} 筆已處理紀錄？刪除後無法復原。`)) return;
+          onDelete(deleteSelectedIds);
+        }}
+      >
+        所選刪除（{deleteSelectedIds.length}）
+      </button>
+      <button
+        type="button"
+        className="app-btn-outline text-rose-700 border-rose-200 hover:bg-rose-50"
+        disabled={busy || deleteVisibleIds.length === 0}
+        onClick={() => {
+          if (
+            !window.confirm(
+              `確定刪除 ${deleteVisibleIds.length} 筆已處理紀錄？刪除後無法復原，請先確認篩選範圍。`
+            )
+          )
+            return;
+          onDelete(deleteVisibleIds);
+        }}
+      >
+        刪除本篩選全部已處理
+      </button>
+    </div>
+  );
+}
+
+function ClosedRowActions({
+  busy,
+  canDelete,
+  onReopen,
+  onDelete,
+}: {
+  busy: boolean;
+  canDelete: boolean;
+  onReopen: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <button type="button" className="text-sm text-sky-700 font-medium" disabled={busy} onClick={onReopen}>
+        改回待處理
+      </button>
+      {canDelete ? (
+        <button
+          type="button"
+          className="text-slate-400 hover:text-rose-600"
+          disabled={busy}
+          title="刪除已處理紀錄"
+          onClick={() => {
+            if (!window.confirm("確定刪除這筆已處理紀錄？刪除後無法復原。")) return;
+            onDelete();
+          }}
+        >
+          <Trash2 className="h-4 w-4" />
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+async function mutateClosedRecords(input: {
+  table: ShopOpsTable;
+  ids: string[];
+  mode: "reopen" | "delete";
+  busy: boolean;
+  setBusy: (v: boolean) => void;
+  onChanged: () => Promise<void>;
+  after?: () => void;
+}): Promise<void> {
+  if (input.ids.length === 0 || input.busy) return;
+  input.setBusy(true);
+  try {
+    if (input.mode === "reopen") {
+      await reopenShopRecords({ table: input.table, ids: input.ids });
+    } else {
+      await deleteShopRecords({ table: input.table, ids: input.ids, status: "closed" });
+    }
+    input.after?.();
+    await input.onChanged();
+  } catch (err) {
+    alert(err instanceof Error ? err.message : input.mode === "reopen" ? "改回待處理失敗" : "刪除失敗");
+  } finally {
+    input.setBusy(false);
+  }
+}
+
 export default function ShopOpsPage() {
   const { currentUser, employees, activeSiteId, storeConfig } = useApp();
-  const [tab, setTab] = useState<TabKey>("procurement");
+  const [tab, setTab] = useState<TabKey>(SHOP_OPS_TAB_KEYS[0]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [categories, setCategories] = useState<ProcurementCategory[]>([]);
@@ -125,39 +259,34 @@ export default function ShopOpsPage() {
             店務需求
           </h1>
           <p className="app-meta mt-1">
-            日常採購、叫藥、客人訂購、客訂管理。員工先登記，之後標記進度；完成後按已處理，紀錄仍保留。
+            叫藥、客人訂購、客訂管理、日常採購。員工先登記，之後標記進度；完成後按已處理。誤按可改回待處理，已處理也可一次刪除。
           </p>
         </div>
       </div>
 
       <HelpTip
         title="怎麼用"
-        hint="先寫下來 → 訂貨／到貨／通知 → 已處理（紀錄仍在）"
+        hint="先寫下來 → 訂貨／到貨／通知 → 已處理；誤按可改回，清掉可一次刪"
         defaultOpen
         storageKey={`help:shop-ops:${storageScope}`}
       >
-        <p>1. <strong>日常採購</strong>：文具、影印紙、貼紙等。買好了按「已處理」即可。</p>
         <p>
-          2. <strong>叫藥需求</strong>：先登記，再標「已訂貨／已到貨」。欠藥請留電話並標「已通知」；客人來拿後按「已處理」。
+          1. <strong>叫藥需求</strong>：先登記，再標「已訂貨／已到貨」。欠藥請留電話並標「已通知」；客人來拿後按「已處理」。
         </p>
         <p>
-          3. <strong>客人訂購</strong>：可選一般或緊急（緊急可填希望到貨日）。進度為訂貨 → 到貨 → 通知 → 已拿；四項齊了會詢問是否結案。
+          2. <strong>客人訂購</strong>：可選一般或緊急（緊急可填希望到貨日）。進度為訂貨 → 到貨 → 通知 → 已拿；四項齊了會詢問是否結案。
         </p>
         <p>
-          4. <strong>客訂管理</strong>：可一次勾多筆一起標記，也可匯出 Excel／PDF。
+          3. <strong>客訂管理</strong>：可一次勾多筆一起標記，也可匯出 Excel／PDF。
         </p>
-        <p>5. 待處理可刪；已處理只留紀錄、不刪。每筆都會標登記日期；下方列表可依日期／類別篩選，方便統計與叫藥先後。</p>
+        <p>4. <strong>日常採購</strong>：文具、影印紙、貼紙等。買好了按「已處理」即可。</p>
+        <p>
+          5. 待處理可刪。誤按「已處理」可改回待處理。已處理也可勾選後一次刪除（無法復原），避免越積越多。
+        </p>
       </HelpTip>
 
       <div className="flex flex-wrap gap-2">
-        {(
-          [
-            ["procurement", "日常採購", ShoppingBag],
-            ["medicine", "叫藥需求", Pill],
-            ["customer", "客人訂購", Package],
-            ["fulfillment", "客訂管理", ListChecks],
-          ] as const
-        ).map(([key, label, Icon]) => (
+        {SHOP_OPS_TAB_UI.map(({ key, label, Icon }) => (
           <button
             key={key}
             type="button"
@@ -467,6 +596,12 @@ function ProcurementPanel({
       .filter((i) => matchesCreatedDate(i.createdAt, dateRange))
       .filter((i) => categoryFilter === "all" || i.categoryName === categoryFilter)
   );
+  const closedVisibleIds = visible.filter((row) => row.status === "closed").map((row) => row.id);
+  const deletableClosedIds = visible
+    .filter((row) => row.status === "closed" && canDeleteShopRecord(row.createdBy, userId, isManager))
+    .map((row) => row.id);
+  const selectedClosedIds = selected.filter((id) => closedVisibleIds.includes(id));
+  const selectedDeletableClosedIds = selected.filter((id) => deletableClosedIds.includes(id));
   const categoryOptions = [
     {
       value: "all",
@@ -552,6 +687,28 @@ function ProcurementPanel({
       setBusy(false);
     }
   };
+
+  const reopenIds = (ids: string[]) =>
+    mutateClosedRecords({
+      table: "shop_procurement_items",
+      ids,
+      mode: "reopen",
+      busy,
+      setBusy,
+      onChanged,
+      after: () => setSelected([]),
+    });
+
+  const deleteClosedIds = (ids: string[]) =>
+    mutateClosedRecords({
+      table: "shop_procurement_items",
+      ids,
+      mode: "delete",
+      busy,
+      setBusy,
+      onChanged,
+      after: () => setSelected([]),
+    });
 
   return (
     <div className="space-y-4">
@@ -714,6 +871,17 @@ function ProcurementPanel({
           </button>
         </div>
       )}
+      {filter === "closed" ? (
+        <ClosedBatchBar
+          busy={busy}
+          reopenSelectedIds={selectedClosedIds}
+          reopenVisibleIds={closedVisibleIds}
+          deleteSelectedIds={selectedDeletableClosedIds}
+          deleteVisibleIds={deletableClosedIds}
+          onReopen={(ids) => void reopenIds(ids)}
+          onDelete={(ids) => void deleteClosedIds(ids)}
+        />
+      ) : null}
 
       {visible.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
@@ -721,7 +889,7 @@ function ProcurementPanel({
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
-              {filter === "pending" && (
+              {(filter === "pending" || filter === "closed") && (
                 <RecordCheck
                   checked={selected.includes(row.id)}
                   onChange={(checked) =>
@@ -792,6 +960,14 @@ function ProcurementPanel({
                   )}
                 </div>
               )}
+              {row.status === "closed" ? (
+                <ClosedRowActions
+                  busy={busy}
+                  canDelete={canDeleteShopRecord(row.createdBy, userId, isManager)}
+                  onReopen={() => void reopenIds([row.id])}
+                  onDelete={() => void deleteClosedIds([row.id])}
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -890,6 +1066,12 @@ function MedicinePanel({
       .filter((i) => matchesCreatedDate(i.createdAt, dateRange))
       .filter((i) => kindFilter === "all" || i.kind === kindFilter)
   );
+  const closedVisibleIds = visible.filter((row) => row.status === "closed").map((row) => row.id);
+  const deletableClosedIds = visible
+    .filter((row) => row.status === "closed" && canDeleteShopRecord(row.createdBy, userId, isManager))
+    .map((row) => row.id);
+  const selectedClosedIds = selected.filter((id) => closedVisibleIds.includes(id));
+  const selectedDeletableClosedIds = selected.filter((id) => deletableClosedIds.includes(id));
   const needsQty = form.kind !== "below_stock";
 
   const addItem = async () => {
@@ -934,6 +1116,28 @@ function MedicinePanel({
       setBusy(false);
     }
   };
+
+  const reopenIds = (ids: string[]) =>
+    mutateClosedRecords({
+      table: "shop_medicine_requests",
+      ids,
+      mode: "reopen",
+      busy,
+      setBusy,
+      onChanged,
+      after: () => setSelected([]),
+    });
+
+  const deleteClosedIds = (ids: string[]) =>
+    mutateClosedRecords({
+      table: "shop_medicine_requests",
+      ids,
+      mode: "delete",
+      busy,
+      setBusy,
+      onChanged,
+      after: () => setSelected([]),
+    });
 
   const patchMed = async (
     ids: string[],
@@ -1189,6 +1393,17 @@ function MedicinePanel({
           </button>
         </div>
       )}
+      {filter === "closed" ? (
+        <ClosedBatchBar
+          busy={busy}
+          reopenSelectedIds={selectedClosedIds}
+          reopenVisibleIds={closedVisibleIds}
+          deleteSelectedIds={selectedDeletableClosedIds}
+          deleteVisibleIds={deletableClosedIds}
+          onReopen={(ids) => void reopenIds(ids)}
+          onDelete={(ids) => void deleteClosedIds(ids)}
+        />
+      ) : null}
 
       {visible.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
@@ -1196,7 +1411,7 @@ function MedicinePanel({
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
-              {filter === "pending" && (
+              {(filter === "pending" || filter === "closed") && (
                 <RecordCheck
                   checked={selected.includes(row.id)}
                   onChange={(checked) =>
@@ -1299,6 +1514,14 @@ function MedicinePanel({
                   )}
                 </div>
               )}
+              {row.status === "closed" ? (
+                <ClosedRowActions
+                  busy={busy}
+                  canDelete={canDeleteShopRecord(row.createdBy, userId, isManager)}
+                  onReopen={() => void reopenIds([row.id])}
+                  onDelete={() => void deleteClosedIds([row.id])}
+                />
+              ) : null}
             </div>
           ))}
         </div>
@@ -1395,6 +1618,12 @@ function CustomerPanel({
       .filter((i) => urgencyFilter === "all" || i.urgency === urgencyFilter)
       .filter((i) => paymentFilter === "all" || i.paymentStatus === paymentFilter)
   );
+  const closedVisibleIds = visible.filter((row) => row.status === "closed").map((row) => row.id);
+  const deletableClosedIds = visible
+    .filter((row) => row.status === "closed" && canDeleteShopRecord(row.createdBy, userId, isManager))
+    .map((row) => row.id);
+  const selectedClosedIds = selected.filter((id) => closedVisibleIds.includes(id));
+  const selectedDeletableClosedIds = selected.filter((id) => deletableClosedIds.includes(id));
 
   const addItem = async () => {
     if (busy) return;
@@ -1438,6 +1667,28 @@ function CustomerPanel({
       setBusy(false);
     }
   };
+
+  const reopenIds = (ids: string[]) =>
+    mutateClosedRecords({
+      table: "shop_customer_orders",
+      ids,
+      mode: "reopen",
+      busy,
+      setBusy,
+      onChanged,
+      after: () => setSelected([]),
+    });
+
+  const deleteClosedIds = (ids: string[]) =>
+    mutateClosedRecords({
+      table: "shop_customer_orders",
+      ids,
+      mode: "delete",
+      busy,
+      setBusy,
+      onChanged,
+      after: () => setSelected([]),
+    });
 
   const patch = async (
     ids: string[],
@@ -1702,6 +1953,17 @@ function CustomerPanel({
           </button>
         </div>
       )}
+      {filter === "closed" ? (
+        <ClosedBatchBar
+          busy={busy}
+          reopenSelectedIds={selectedClosedIds}
+          reopenVisibleIds={closedVisibleIds}
+          deleteSelectedIds={selectedDeletableClosedIds}
+          deleteVisibleIds={deletableClosedIds}
+          onReopen={(ids) => void reopenIds(ids)}
+          onDelete={(ids) => void deleteClosedIds(ids)}
+        />
+      ) : null}
 
       {visible.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的紀錄</div>
@@ -1709,7 +1971,7 @@ function CustomerPanel({
         <div className="space-y-2">
           {visible.map((row) => (
             <div key={row.id} className="app-card p-3 flex flex-wrap items-start gap-3">
-              {filter === "pending" && (
+              {(filter === "pending" || filter === "closed") && (
                 <RecordCheck
                   checked={selected.includes(row.id)}
                   onChange={(checked) =>
@@ -1842,6 +2104,14 @@ function CustomerPanel({
                     )}
                   </div>
                 )}
+                {row.status === "closed" ? (
+                  <ClosedRowActions
+                    busy={busy}
+                    canDelete={canDeleteShopRecord(row.createdBy, userId, isManager)}
+                    onReopen={() => void reopenIds([row.id])}
+                    onDelete={() => void deleteClosedIds([row.id])}
+                  />
+                ) : null}
               </div>
             </div>
           ))}
@@ -1946,6 +2216,12 @@ function FulfillmentPanel({
   const closeableVisible = visible
     .filter((row) => row.status === "pending" && (row.createdBy === userId || isManager))
     .map((r) => r.id);
+  const closedVisibleIds = visible.filter((row) => row.status === "closed").map((row) => row.id);
+  const deletableClosedIds = visible
+    .filter((row) => row.status === "closed" && canDeleteShopRecord(row.createdBy, userId, isManager))
+    .map((row) => row.id);
+  const selectedClosedIds = selected.filter((id) => closedVisibleIds.includes(id));
+  const selectedDeletableClosedIds = selected.filter((id) => deletableClosedIds.includes(id));
 
   const patch = async (
     ids: string[],
@@ -2007,6 +2283,28 @@ function FulfillmentPanel({
       setBusy(false);
     }
   };
+
+  const reopenIds = (ids: string[]) =>
+    mutateClosedRecords({
+      table: "shop_customer_orders",
+      ids,
+      mode: "reopen",
+      busy,
+      setBusy,
+      onChanged,
+      after: () => setSelected([]),
+    });
+
+  const deleteClosedIds = (ids: string[]) =>
+    mutateClosedRecords({
+      table: "shop_customer_orders",
+      ids,
+      mode: "delete",
+      busy,
+      setBusy,
+      onChanged,
+      after: () => setSelected([]),
+    });
 
   return (
     <div className="space-y-4">
@@ -2109,7 +2407,7 @@ function FulfillmentPanel({
       />
       <StatsLine count={visible.length} />
 
-      {visible.length > 0 && (
+      {visible.length > 0 && statusFilter !== "closed" && (
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -2166,7 +2464,7 @@ function FulfillmentPanel({
             onClick={() => {
               if (
                 !window.confirm(
-                  `確定要完成「${closeableSelected.length}」筆訂單？完成後會變更為已處理（紀錄仍保留）。`
+                  `確定要完成「${closeableSelected.length}」筆訂單？完成後會變更為已處理（若誤按可改回待處理）。`
                 )
               )
                 return;
@@ -2183,7 +2481,7 @@ function FulfillmentPanel({
             onClick={() => {
               if (
                 !window.confirm(
-                  `確定要完成本篩選內「${closeableVisible.length}」筆訂單？完成後會變更為已處理（紀錄仍保留）。`
+                  `確定要完成本篩選內「${closeableVisible.length}」筆訂單？完成後會變更為已處理（若誤按可改回待處理）。`
                 )
               )
                 return;
@@ -2194,6 +2492,17 @@ function FulfillmentPanel({
           </button>
         </div>
       )}
+      {statusFilter === "closed" ? (
+        <ClosedBatchBar
+          busy={busy}
+          reopenSelectedIds={selectedClosedIds}
+          reopenVisibleIds={closedVisibleIds}
+          deleteSelectedIds={selectedDeletableClosedIds}
+          deleteVisibleIds={deletableClosedIds}
+          onReopen={(ids) => void reopenIds(ids)}
+          onDelete={(ids) => void deleteClosedIds(ids)}
+        />
+      ) : null}
 
       {visible.length === 0 ? (
         <div className="app-card p-6 text-center text-slate-500">沒有符合篩選的客訂</div>
@@ -2289,6 +2598,14 @@ function FulfillmentPanel({
                   <Trash2 className="h-4 w-4" />
                 </button>
               )}
+              {row.status === "closed" ? (
+                <ClosedRowActions
+                  busy={busy}
+                  canDelete={canDeleteShopRecord(row.createdBy, userId, isManager)}
+                  onReopen={() => void reopenIds([row.id])}
+                  onDelete={() => void deleteClosedIds([row.id])}
+                />
+              ) : null}
             </div>
           ))}
         </div>

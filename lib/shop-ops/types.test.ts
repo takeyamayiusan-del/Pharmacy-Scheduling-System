@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canDeleteShopRecord,
   formatMedicineQty,
   formatWantedArriveDate,
   fulfillmentStage,
@@ -9,6 +10,7 @@ import {
   datePresetRange,
   formatCreatedStamp,
   shiftDateKey,
+  SHOP_OPS_TAB_KEYS,
   sortByCreatedAtAsc,
   sortCustomerOrders,
   toTaipeiDateKey,
@@ -229,5 +231,17 @@ describe("shop-ops validation", () => {
       "a",
       "b",
     ]);
+  });
+
+  it("日常採購分頁排在最後，預設先進叫藥", () => {
+    expect(SHOP_OPS_TAB_KEYS[0]).toBe("medicine");
+    expect(SHOP_OPS_TAB_KEYS.at(-1)).toBe("procurement");
+    expect([...SHOP_OPS_TAB_KEYS]).toEqual(["medicine", "customer", "fulfillment", "procurement"]);
+  });
+
+  it("已處理紀錄：建立者或店長可刪", () => {
+    expect(canDeleteShopRecord("emp-1", "emp-1", false)).toBe(true);
+    expect(canDeleteShopRecord("emp-1", "emp-2", false)).toBe(false);
+    expect(canDeleteShopRecord("emp-1", "mgr-1", true)).toBe(true);
   });
 });

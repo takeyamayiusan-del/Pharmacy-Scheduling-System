@@ -490,13 +490,42 @@ export async function closeShopRecords(input: {
   if (error) throw error;
 }
 
+export async function reopenShopRecords(input: {
+  table: "shop_procurement_items" | "shop_medicine_requests" | "shop_customer_orders";
+  ids: string[];
+}): Promise<void> {
+  if (input.ids.length === 0) return;
+  const supabase = createClient();
+  const { error } = await supabase
+    .from(input.table)
+    .update({
+      status: "pending",
+      closed_by: null,
+      closed_at: null,
+    })
+    .in("id", input.ids)
+    .eq("status", "closed");
+  if (error) throw error;
+}
+
+export async function deleteShopRecords(input: {
+  table: "shop_procurement_items" | "shop_medicine_requests" | "shop_customer_orders";
+  ids: string[];
+  status?: "pending" | "closed";
+}): Promise<void> {
+  if (input.ids.length === 0) return;
+  const supabase = createClient();
+  let query = supabase.from(input.table).delete().in("id", input.ids);
+  if (input.status) query = query.eq("status", input.status);
+  const { error } = await query;
+  if (error) throw error;
+}
+
 export async function deletePendingShopRecord(input: {
   table: "shop_procurement_items" | "shop_medicine_requests" | "shop_customer_orders";
   id: string;
 }): Promise<void> {
-  const supabase = createClient();
-  const { error } = await supabase.from(input.table).delete().eq("id", input.id).eq("status", "pending");
-  if (error) throw error;
+  await deleteShopRecords({ table: input.table, ids: [input.id], status: "pending" });
 }
 
 export async function updateCustomerPayment(input: {

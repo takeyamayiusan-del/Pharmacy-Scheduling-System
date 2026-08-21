@@ -7,6 +7,14 @@ export const SHOP_STATUS_LABELS: Record<ShopRecordStatus, string> = {
   closed: "已處理",
 };
 
+/** 店務需求分頁順序：日常採購放最後 */
+export const SHOP_OPS_TAB_KEYS = ["medicine", "customer", "fulfillment", "procurement"] as const;
+export type ShopOpsTabKey = (typeof SHOP_OPS_TAB_KEYS)[number];
+
+export function canDeleteShopRecord(createdBy: string, userId: string, isManager: boolean): boolean {
+  return isManager || createdBy === userId;
+}
+
 export type ProcurementCategory = {
   id: string;
   siteId: SiteId;
