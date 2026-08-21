@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useApp } from "@/lib/context/AppContext";
 import { canManageSite } from "@/lib/auth/roles";
 import {
@@ -39,6 +40,7 @@ const ACTION_LABEL: Record<PunchAction, string> = {
 };
 
 export default function PunchCorrectionPage() {
+  const searchParams = useSearchParams();
   const { currentUser, employees, storeConfig, punchRecords, activeSiteId } = useApp();
   const supabase = createClient();
   const isManager = canManageSite(currentUser?.role);
@@ -57,6 +59,31 @@ export default function PunchCorrectionPage() {
     originalRecordId: "",
     reason: "",
   });
+
+  useEffect(() => {
+    const date = searchParams.get("date");
+    const action = searchParams.get("action");
+    const time = searchParams.get("time");
+    const segment = searchParams.get("segment");
+    const reason = searchParams.get("reason");
+    const originalRecordId = searchParams.get("originalRecordId");
+    if (!date && !action && !time && !reason && !originalRecordId && segment == null) {
+      return;
+    }
+    setForm((prev) => ({
+      ...prev,
+      punchDate: date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : prev.punchDate,
+      punchAction:
+        action === "work_out" || action === "work_in" ? action : prev.punchAction,
+      segmentIndex:
+        segment != null && Number.isFinite(Number(segment))
+          ? Number(segment)
+          : prev.segmentIndex,
+      requestedTime: time?.trim() ? time.trim().slice(0, 5) : prev.requestedTime,
+      originalRecordId: originalRecordId?.trim() || prev.originalRecordId,
+      reason: reason?.trim() || prev.reason,
+    }));
+  }, [searchParams]);
 
   const approvalChain = effectiveApprovalChain(
     storeConfig.policies.approvalChain,
