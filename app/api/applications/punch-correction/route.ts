@@ -148,7 +148,18 @@ export async function POST(req: NextRequest) {
       insertError &&
       /original_time/i.test(String(insertError.message ?? ""))
     ) {
-      const { original_time: _omit, ...legacyPayload } = insertPayload;
+      const legacyPayload = {
+        user_id: insertPayload.user_id,
+        site_id: insertPayload.site_id,
+        punch_date: insertPayload.punch_date,
+        punch_action: insertPayload.punch_action,
+        segment_index: insertPayload.segment_index,
+        requested_time: insertPayload.requested_time,
+        original_record_id: insertPayload.original_record_id,
+        reason: insertPayload.reason,
+        status: insertPayload.status,
+        approval_step: insertPayload.approval_step,
+      };
       const retry = await admin
         .from("punch_correction_requests")
         .insert(legacyPayload)
