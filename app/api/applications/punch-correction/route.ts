@@ -87,15 +87,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    let originalTime: string | null = null;
     if (originalRecordId) {
       const { data: original } = await admin
         .from("punch_records")
-        .select("id, employee_id")
+        .select("id, employee_id, time")
         .eq("id", originalRecordId)
         .maybeSingle();
       if (!original || original.employee_id !== auth.callerId) {
         return NextResponse.json({ error: "找不到要更正的打卡紀錄" }, { status: 400 });
       }
+      const raw = String(original.time ?? "").trim();
+      originalTime = raw ? raw.slice(0, 8) : null;
     }
 
     const { data: dup, error: dupError } = await admin
@@ -120,22 +123,40 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { data: inserted, error: insertError } = await admin
+    const insertPayload = {
+      user_id: auth.callerId,
+      site_id: siteId,
+      punch_date: punchDate,
+      punch_action: punchAction,
+      segment_index: segmentIndex,
+      requested_time: requestedTime,
+      original_time: originalTime,
+      original_record_id: originalRecordId,
+      reason,
+      status: "pending" as const,
+      approval_step: 0,
+    };
+
+    let { data: inserted, error: insertError } = await admin
       .from("punch_correction_requests")
-      .insert({
-        user_id: auth.callerId,
-        site_id: siteId,
-        punch_date: punchDate,
-        punch_action: punchAction,
-        segment_index: segmentIndex,
-        requested_time: requestedTime,
-        original_record_id: originalRecordId,
-        reason,
-        status: "pending",
-        approval_step: 0,
-      })
+      .insert(insertPayload)
       .select("id")
       .single();
+
+    // 舊庫尚未加 original_time 欄位時，降級不寫該欄
+    if (
+      insertError &&
+      /original_time/i.test(String(insertError.message ?? ""))
+    ) {
+      const { original_time: _omit, ...legacyPayload } = insertPayload;
+      const retry = await admin
+        .from("punch_correction_requests")
+        .insert(legacyPayload)
+        .select("id")
+        .single();
+      inserted = retry.data;
+      insertError = retry.error;
+    }
 
     if (insertError || !inserted?.id) {
       return NextResponse.json(
@@ -143,6 +164,10 @@ export async function POST(req: NextRequest) {
         { status: 500 }
       );
     }
+
+    const timeSummary = originalTime
+      ? `${String(originalTime).slice(0, 5)} → ${requestedTime.slice(0, 5)}`
+      : `新增 ${requestedTime.slice(0, 5)}`;
 
     try {
       const { employees, chain, approvalMode } = await loadApprovalContext(admin, siteId);
@@ -161,7 +186,7 @@ export async function POST(req: NextRequest) {
             title: "新打卡補登申請",
             body: `${empRow?.name ?? "員工"} 申請補登 ${punchDate} ${
               punchAction === "work_in" ? "上班" : "下班"
-            } ${requestedTime.slice(0, 5)}，請審核。`,
+            }（${timeSummary}），請審核。`,
             related_id: inserted.id,
             related_type: "punch_correction",
             is_read: false,
