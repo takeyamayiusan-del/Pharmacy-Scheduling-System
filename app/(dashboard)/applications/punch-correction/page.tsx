@@ -25,6 +25,7 @@ type CorrectionRow = {
   punch_action: PunchAction;
   segment_index: number;
   requested_time: string;
+  original_time?: string | null;
   original_record_id: string | null;
   reason: string | null;
   status: "pending" | "approved" | "rejected";
@@ -38,6 +39,11 @@ const ACTION_LABEL: Record<PunchAction, string> = {
   work_in: "上班",
   work_out: "下班",
 };
+
+function formatHm(raw: string | null | undefined): string {
+  if (!raw) return "";
+  return String(raw).slice(0, 5);
+}
 
 export default function PunchCorrectionPage() {
   const searchParams = useSearchParams();
@@ -263,7 +269,7 @@ export default function PunchCorrectionPage() {
               </select>
             </label>
             <label className="block text-sm">
-              <span className="text-gray-700">希望登記時間</span>
+              <span className="text-gray-700">希望改成的時間</span>
               <input
                 type="time"
                 value={form.requestedTime}
@@ -284,7 +290,7 @@ export default function PunchCorrectionPage() {
                     originalRecordId: id,
                     punchAction: punch?.action ?? form.punchAction,
                     segmentIndex: punch?.segmentIndex ?? 0,
-                    requestedTime: punch?.time?.slice(0, 5) || form.requestedTime,
+                    // 不覆寫「希望改成」時間，避免看起來像申請錯誤時間
                   });
                 }}
                 className="mt-1 w-full border rounded-lg px-3 py-2"
@@ -292,11 +298,22 @@ export default function PunchCorrectionPage() {
                 <option value="">沒有紀錄，核准後新增</option>
                 {dayPunches.map((p) => (
                   <option key={p.id} value={p.id}>
-                    {ACTION_LABEL[p.action]} {p.time}
+                    目前 {ACTION_LABEL[p.action]} {p.time}
                     {p.segmentIndex > 0 ? `（第 ${p.segmentIndex + 1} 段）` : ""}
                   </option>
                 ))}
               </select>
+              {form.originalRecordId ? (
+                <p className="text-xs text-slate-500 mt-1">
+                  將把「
+                  {formatHm(dayPunches.find((p) => p.id === form.originalRecordId)?.time)}
+                  」改成「{formatHm(form.requestedTime) || "？"}」
+                </p>
+              ) : form.requestedTime ? (
+                <p className="text-xs text-slate-500 mt-1">
+                  核准後新增打卡時間 {formatHm(form.requestedTime)}
+                </p>
+              ) : null}
             </label>
           </div>
           <label className="block text-sm">
@@ -337,7 +354,7 @@ export default function PunchCorrectionPage() {
                   {isManager && <th className="px-4 py-3">員工</th>}
                   <th className="px-4 py-3">日期</th>
                   <th className="px-4 py-3">類型</th>
-                  <th className="px-4 py-3">時間</th>
+                  <th className="px-4 py-3">時間變更</th>
                   <th className="px-4 py-3">原因</th>
                   <th className="px-4 py-3">狀態</th>
                   {isManager && <th className="px-4 py-3">操作</th>}
@@ -359,8 +376,18 @@ export default function PunchCorrectionPage() {
                       : row.status === "approved"
                         ? "已核准"
                         : "已駁回";
+                  const afterTime = formatHm(row.requested_time);
+                  const beforeFromCol = formatHm(row.original_time);
+                  const beforeFromPunch = formatHm(
+                    punchRecords.find((p) => p.id === row.original_record_id)?.time
+                  );
+                  // pending 可回查打卡；核准後原時間以申請快照為準
+                  const beforeTime =
+                    beforeFromCol ||
+                    (row.status === "pending" ? beforeFromPunch : "") ||
+                    "";
                   return (
-                    <tr key={row.id} className="border-b">
+                    <tr key={row.id} className="border-b align-top">
                       {isManager && (
                         <td className="px-4 py-3">
                           {row.users?.name ??
@@ -368,23 +395,39 @@ export default function PunchCorrectionPage() {
                             "—"}
                         </td>
                       )}
-                      <td className="px-4 py-3">{row.punch_date}</td>
-                      <td className="px-4 py-3">
+                      <td className="px-4 py-3 whitespace-nowrap">{row.punch_date}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">
                         {ACTION_LABEL[row.punch_action]}
                         {row.segment_index > 0 ? ` 第${row.segment_index + 1}段` : ""}
                       </td>
                       <td className="px-4 py-3">
-                        {String(row.requested_time).slice(0, 5)}
+                        {beforeTime ? (
+                          <div className="space-y-0.5">
+                            <p className="text-slate-500">
+                              原時間 <span className="font-medium text-slate-700">{beforeTime}</span>
+                            </p>
+                            <p className="text-sky-800">
+                              改後為 <span className="font-semibold">{afterTime}</span>
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-0.5">
+                            <p className="text-slate-500">原無打卡紀錄</p>
+                            <p className="text-sky-800">
+                              核准後新增 <span className="font-semibold">{afterTime}</span>
+                            </p>
+                          </div>
+                        )}
                       </td>
-                      <td className="px-4 py-3 max-w-xs truncate">
-                        {row.reason || "—"}
+                      <td className="px-4 py-3 max-w-xs">
+                        <span className="line-clamp-3">{row.reason || "—"}</span>
                         {row.status === "rejected" && row.reject_reason ? (
-                          <span className="block text-rose-700 text-xs">
+                          <span className="block text-rose-700 text-xs mt-1">
                             駁回：{row.reject_reason}
                           </span>
                         ) : null}
                       </td>
-                      <td className="px-4 py-3">{statusText}</td>
+                      <td className="px-4 py-3 whitespace-nowrap">{statusText}</td>
                       {isManager && (
                         <td className="px-4 py-3 space-x-2">
                           {canReview && (
