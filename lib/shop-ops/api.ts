@@ -216,6 +216,36 @@ export async function createProcurementItem(input: {
   return mapProcurement(data as Record<string, unknown>);
 }
 
+export async function updateProcurementItem(input: {
+  id: string;
+  categoryId: string;
+  categoryName: string;
+  itemName: string;
+  quantity: unknown;
+  unit?: string;
+  note?: string;
+}): Promise<ProcurementItem> {
+  const err = validateProcurementDraft(input);
+  if (err) throw new Error(err);
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("shop_procurement_items")
+    .update({
+      category_id: input.categoryId,
+      category_name: input.categoryName.trim(),
+      item_name: input.itemName.trim(),
+      quantity: parsePositiveNumber(input.quantity),
+      unit: input.unit?.trim() ?? "",
+      note: input.note?.trim() ?? "",
+    })
+    .eq("id", input.id)
+    .eq("status", "pending")
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapProcurement(data as Record<string, unknown>);
+}
+
 export async function loadMedicineRequests(siteId: SiteId): Promise<MedicineRequest[]> {
   const supabase = createClient();
   const { data, error } = await supabase
@@ -276,6 +306,70 @@ export async function createMedicineRequest(input: {
   return mapMedicine(data as Record<string, unknown>);
 }
 
+function medicinePayload(input: {
+  kind: MedicineKind;
+  itemName: string;
+  nhiCode?: string;
+  qtyMode: MedicineQtyMode;
+  quantity: unknown;
+  unit?: string;
+  useIc02: boolean;
+  ic02Qty: unknown;
+  useIc03: boolean;
+  ic03Qty: unknown;
+  currentStock: unknown;
+  note?: string;
+  contactPhone?: string;
+}) {
+  const isBelow = input.kind === "below_stock";
+  const refill = !isBelow && input.qtyMode === "refill";
+  return {
+    kind: input.kind,
+    item_name: input.itemName.trim(),
+    nhi_code: input.nhiCode?.trim() ?? "",
+    qty_mode: isBelow ? "direct" : input.qtyMode,
+    quantity: isBelow || refill ? null : parsePositiveNumber(input.quantity),
+    unit: input.unit?.trim() ?? "",
+    use_ic02: refill && input.useIc02,
+    ic02_qty: refill && input.useIc02 ? parsePositiveNumber(input.ic02Qty) : null,
+    use_ic03: refill && input.useIc03,
+    ic03_qty: refill && input.useIc03 ? parsePositiveNumber(input.ic03Qty) : null,
+    current_stock: isBelow ? parseNonNegativeNumber(input.currentStock) : null,
+    contact_phone: input.kind === "shortage" ? input.contactPhone?.trim() ?? "" : "",
+    note: input.note?.trim() ?? "",
+  };
+}
+
+export async function updateMedicineRequest(input: {
+  id: string;
+  kind: MedicineKind;
+  itemName: string;
+  nhiCode?: string;
+  qtyMode: MedicineQtyMode;
+  quantity: unknown;
+  unit?: string;
+  useIc02: boolean;
+  ic02Qty: unknown;
+  useIc03: boolean;
+  ic03Qty: unknown;
+  currentStock: unknown;
+  note?: string;
+  contactPhone?: string;
+}): Promise<MedicineRequest> {
+  const err = validateMedicineDraft(input);
+  if (err) throw new Error(err);
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("shop_medicine_requests")
+    .update(medicinePayload(input))
+    .eq("id", input.id)
+    .eq("status", "pending")
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapMedicine(data as Record<string, unknown>);
+}
+
 export async function loadCustomerOrders(siteId: SiteId): Promise<CustomerOrder[]> {
   const supabase = createClient();
   const { data, error } = await supabase
@@ -328,6 +422,49 @@ export async function createCustomerOrder(input: {
       status: "pending",
       created_by: input.handlerId,
     })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapCustomer(data as Record<string, unknown>);
+}
+
+export async function updateCustomerOrder(input: {
+  id: string;
+  customerName: string;
+  customerPhone: string;
+  productName: string;
+  nhiCode?: string;
+  quantity: unknown;
+  unit?: string;
+  amount: unknown;
+  paymentStatus: CustomerPaymentStatus;
+  urgency?: CustomerUrgency;
+  wantedArriveDate?: string;
+  note?: string;
+}): Promise<CustomerOrder> {
+  const err = validateCustomerDraft(input);
+  if (err) throw new Error(err);
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("shop_customer_orders")
+    .update({
+      customer_name: input.customerName.trim(),
+      customer_phone: input.customerPhone.trim(),
+      product_name: input.productName.trim(),
+      nhi_code: input.nhiCode?.trim() ?? "",
+      quantity: parsePositiveNumber(input.quantity),
+      unit: input.unit?.trim() ?? "",
+      amount: parseNonNegativeNumber(input.amount) ?? 0,
+      payment_status: input.paymentStatus,
+      urgency: input.urgency === "urgent" ? "urgent" : "normal",
+      wanted_arrive_date:
+        input.urgency === "urgent" && input.wantedArriveDate
+          ? input.wantedArriveDate
+          : null,
+      note: input.note?.trim() ?? "",
+    })
+    .eq("id", input.id)
+    .eq("status", "pending")
     .select("*")
     .single();
   if (error) throw error;

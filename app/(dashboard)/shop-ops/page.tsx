@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardList, FileDown, ListChecks, Package, Pill, Plus, Printer, ShoppingBag, Trash2 } from "lucide-react";
+import { ClipboardList, FileDown, ListChecks, Package, Pencil, Pill, Plus, Printer, ShoppingBag, Trash2, X } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
 import { HelpTip } from "@/components/ui/HelpTip";
 import { canManageSite } from "@/lib/auth/roles";
@@ -18,8 +18,11 @@ import {
   loadMedicineRequests,
   loadProcurementItems,
   updateCustomerFulfillment,
+  updateCustomerOrder,
   updateCustomerPayment,
   updateMedicineFulfillment,
+  updateMedicineRequest,
+  updateProcurementItem,
 } from "@/lib/shop-ops/api";
 import { exportCustomerOrdersExcel, exportCustomerOrdersPdf } from "@/lib/shop-ops/exportCustomerOrders";
 import {
@@ -425,6 +428,7 @@ function ProcurementPanel({
     unit: "",
     note: "",
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newCat, setNewCat] = useState("");
 
   useEffect(() => {
@@ -432,6 +436,29 @@ function ProcurementPanel({
       setForm((p) => ({ ...p, categoryId: categories[0].id }));
     }
   }, [categories, form.categoryId]);
+
+  const resetForm = (categoryId = categories[0]?.id ?? "") => {
+    setEditingId(null);
+    setForm({
+      categoryId,
+      itemName: "",
+      quantity: "1",
+      unit: "",
+      note: "",
+    });
+  };
+
+  const startEdit = (row: ProcurementItem) => {
+    setEditingId(row.id);
+    setForm({
+      categoryId: row.categoryId ?? categories.find((c) => c.name === row.categoryName)?.id ?? categories[0]?.id ?? "",
+      itemName: row.itemName,
+      quantity: String(row.quantity),
+      unit: row.unit,
+      note: row.note,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
   const byStatus = items.filter((i) => filter === "all" || i.status === filter);
@@ -477,20 +504,32 @@ function ProcurementPanel({
     if (!cat || busy) return;
     setBusy(true);
     try {
-      await createProcurementItem({
-        siteId,
-        categoryId: cat.id,
-        categoryName: cat.name,
-        itemName: form.itemName,
-        quantity: form.quantity,
-        unit: form.unit,
-        note: form.note,
-        createdBy: userId,
-      });
-      setForm((p) => ({ ...p, itemName: "", quantity: "1", note: "" }));
+      if (editingId) {
+        await updateProcurementItem({
+          id: editingId,
+          categoryId: cat.id,
+          categoryName: cat.name,
+          itemName: form.itemName,
+          quantity: form.quantity,
+          unit: form.unit,
+          note: form.note,
+        });
+      } else {
+        await createProcurementItem({
+          siteId,
+          categoryId: cat.id,
+          categoryName: cat.name,
+          itemName: form.itemName,
+          quantity: form.quantity,
+          unit: form.unit,
+          note: form.note,
+          createdBy: userId,
+        });
+      }
+      resetForm(cat.id);
       await onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "新增失敗");
+      alert(err instanceof Error ? err.message : editingId ? "修改失敗" : "新增失敗");
     } finally {
       setBusy(false);
     }
@@ -517,7 +556,7 @@ function ProcurementPanel({
   return (
     <div className="space-y-4">
       <div className="app-card p-4 space-y-3">
-        <h2 className="app-section-title">登記日常採購</h2>
+        <h2 className="app-section-title">{editingId ? "修改日常採購" : "登記日常採購"}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm space-y-1">
             <span className="text-slate-600">類別</span>
@@ -576,10 +615,27 @@ function ProcurementPanel({
             onChange={(e) => setForm({ ...form, note: e.target.value })}
           />
         </div>
-        <button type="button" className="app-btn-primary" disabled={busy} onClick={() => void addItem()}>
-          <Plus className="h-4 w-4 mr-1" />
-          寫入待處理
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="app-btn-primary" disabled={busy} onClick={() => void addItem()}>
+            {editingId ? (
+              <>
+                <Pencil className="h-4 w-4 mr-1" />
+                儲存修改
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4 mr-1" />
+                寫入待處理
+              </>
+            )}
+          </button>
+          {editingId && (
+            <button type="button" className="app-btn-outline" disabled={busy} onClick={() => resetForm(form.categoryId)}>
+              <X className="h-4 w-4 mr-1" />
+              取消修改
+            </button>
+          )}
+        </div>
         {categories.length > 0 && (
           <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
             {categories.map((c) => (
@@ -698,6 +754,13 @@ function ProcurementPanel({
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    className="text-sm text-sky-700 font-medium"
+                    onClick={() => startEdit(row)}
+                  >
+                    修改
+                  </button>
+                  <button
+                    type="button"
                     className="text-sm text-emerald-700 font-medium"
                     onClick={() => void closeIds([row.id])}
                   >
@@ -715,6 +778,7 @@ function ProcurementPanel({
                             table: "shop_procurement_items",
                             id: row.id,
                           });
+                          if (editingId === row.id) resetForm(form.categoryId);
                           await onChanged();
                         } catch (err) {
                           alert(err instanceof Error ? err.message : "刪除失敗");
@@ -776,6 +840,48 @@ function MedicinePanel({
     contactPhone: "",
     note: "",
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const emptyMedicineForm = {
+    kind: "shortage" as MedicineKind,
+    itemName: "",
+    nhiCode: "",
+    qtyMode: "direct" as MedicineQtyMode,
+    quantity: "",
+    unit: "",
+    useIc02: false,
+    ic02Qty: "",
+    useIc03: false,
+    ic03Qty: "",
+    currentStock: "",
+    contactPhone: "",
+    note: "",
+  };
+
+  const resetForm = (kind: MedicineKind = "shortage") => {
+    setEditingId(null);
+    setForm({ ...emptyMedicineForm, kind });
+  };
+
+  const startEdit = (row: MedicineRequest) => {
+    setEditingId(row.id);
+    setForm({
+      kind: row.kind,
+      itemName: row.itemName,
+      nhiCode: row.nhiCode,
+      qtyMode: row.qtyMode,
+      quantity: row.quantity == null ? "" : String(row.quantity),
+      unit: row.unit,
+      useIc02: row.useIc02,
+      ic02Qty: row.ic02Qty == null ? "" : String(row.ic02Qty),
+      useIc03: row.useIc03,
+      ic03Qty: row.ic03Qty == null ? "" : String(row.ic03Qty),
+      currentStock: row.currentStock == null ? "" : String(row.currentStock),
+      contactPhone: row.contactPhone,
+      note: row.note,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
   const byStatus = items.filter((i) => filter === "all" || i.status === filter);
@@ -790,26 +896,22 @@ function MedicinePanel({
     if (busy) return;
     setBusy(true);
     try {
-      await createMedicineRequest({
-        siteId,
-        createdBy: userId,
-        ...form,
-      });
-      setForm((p) => ({
-        ...p,
-        itemName: "",
-        nhiCode: "",
-        quantity: "",
-        unit: "",
-        ic02Qty: "",
-        ic03Qty: "",
-        currentStock: "",
-        contactPhone: form.kind === "shortage" ? p.contactPhone : "",
-        note: "",
-      }));
+      if (editingId) {
+        await updateMedicineRequest({
+          id: editingId,
+          ...form,
+        });
+      } else {
+        await createMedicineRequest({
+          siteId,
+          createdBy: userId,
+          ...form,
+        });
+      }
+      resetForm(form.kind);
       await onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "新增失敗");
+      alert(err instanceof Error ? err.message : editingId ? "修改失敗" : "新增失敗");
     } finally {
       setBusy(false);
     }
@@ -852,7 +954,7 @@ function MedicinePanel({
   return (
     <div className="space-y-4">
       <div className="app-card p-4 space-y-3">
-        <h2 className="app-section-title">登記叫藥需求</h2>
+        <h2 className="app-section-title">{editingId ? "修改叫藥需求" : "登記叫藥需求"}</h2>
         <p className="text-sm text-slate-600">
           預包、欠藥可直接填數量，或改用第二次／第三次領藥（IC02／IC03）。欠藥請留電話，方便到貨後通知。
         </p>
@@ -983,10 +1085,27 @@ function MedicinePanel({
             onChange={(e) => setForm({ ...form, note: e.target.value })}
           />
         </div>
-        <button type="button" className="app-btn-primary" disabled={busy} onClick={() => void addItem()}>
-          <Plus className="h-4 w-4 mr-1" />
-          寫入待處理
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="app-btn-primary" disabled={busy} onClick={() => void addItem()}>
+            {editingId ? (
+              <>
+                <Pencil className="h-4 w-4 mr-1" />
+                儲存修改
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4 mr-1" />
+                寫入待處理
+              </>
+            )}
+          </button>
+          {editingId && (
+            <button type="button" className="app-btn-outline" disabled={busy} onClick={() => resetForm(form.kind)}>
+              <X className="h-4 w-4 mr-1" />
+              取消修改
+            </button>
+          )}
+        </div>
         {!needsQty && <p className="text-xs text-slate-500">低於庫存不必填叫貨數量，先登記現存即可。</p>}
       </div>
 
@@ -1142,6 +1261,13 @@ function MedicinePanel({
                 <div className="flex gap-2">
                   <button
                     type="button"
+                    className="text-sm text-sky-700 font-medium"
+                    onClick={() => startEdit(row)}
+                  >
+                    修改
+                  </button>
+                  <button
+                    type="button"
                     className="text-sm text-emerald-700 font-medium"
                     onClick={() => void closeIds([row.id])}
                   >
@@ -1159,6 +1285,7 @@ function MedicinePanel({
                             table: "shop_medicine_requests",
                             id: row.id,
                           });
+                          if (editingId === row.id) resetForm(form.kind);
                           await onChanged();
                         } catch (err) {
                           alert(err instanceof Error ? err.message : "刪除失敗");
@@ -1221,6 +1348,44 @@ function CustomerPanel({
     wantedArriveDate: "",
     note: "",
   });
+  const [editingId, setEditingId] = useState<string | null>(null);
+
+  const emptyCustomerForm = {
+    customerName: "",
+    customerPhone: "",
+    productName: "",
+    nhiCode: "",
+    quantity: "1",
+    unit: "",
+    amount: "",
+    paymentStatus: "unpaid" as CustomerPaymentStatus,
+    urgency: "normal" as CustomerUrgency,
+    wantedArriveDate: "",
+    note: "",
+  };
+
+  const resetForm = () => {
+    setEditingId(null);
+    setForm({ ...emptyCustomerForm });
+  };
+
+  const startEdit = (row: CustomerOrder) => {
+    setEditingId(row.id);
+    setForm({
+      customerName: row.customerName,
+      customerPhone: row.customerPhone,
+      productName: row.productName,
+      nhiCode: row.nhiCode,
+      quantity: String(row.quantity),
+      unit: row.unit,
+      amount: String(row.amount),
+      paymentStatus: row.paymentStatus,
+      urgency: row.urgency,
+      wantedArriveDate: row.wantedArriveDate ?? "",
+      note: row.note,
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
   const visible = sortCustomerOrders(
@@ -1235,27 +1400,22 @@ function CustomerPanel({
     if (busy) return;
     setBusy(true);
     try {
-      await createCustomerOrder({
-        siteId,
-        handlerId: userId,
-        ...form,
-      });
-      setForm({
-        customerName: "",
-        customerPhone: "",
-        productName: "",
-        nhiCode: "",
-        quantity: "1",
-        unit: "",
-        amount: "",
-        paymentStatus: "unpaid",
-        urgency: "normal",
-        wantedArriveDate: "",
-        note: "",
-      });
+      if (editingId) {
+        await updateCustomerOrder({
+          id: editingId,
+          ...form,
+        });
+      } else {
+        await createCustomerOrder({
+          siteId,
+          handlerId: userId,
+          ...form,
+        });
+      }
+      resetForm();
       await onChanged();
     } catch (err) {
-      alert(err instanceof Error ? err.message : "新增失敗");
+      alert(err instanceof Error ? err.message : editingId ? "修改失敗" : "新增失敗");
     } finally {
       setBusy(false);
     }
@@ -1325,9 +1485,10 @@ function CustomerPanel({
   return (
     <div className="space-y-4">
       <div className="app-card p-4 space-y-3">
-        <h2 className="app-section-title">登記客人訂購</h2>
+        <h2 className="app-section-title">{editingId ? "修改客人訂購" : "登記客人訂購"}</h2>
         <p className="text-sm text-slate-600">
-          接手人：<strong>{userName}</strong>（由誰新增就記誰）
+          接手人：<strong>{userName}</strong>
+          {editingId ? "（修改不會改接手人）" : "（由誰新增就記誰）"}
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <input
@@ -1420,10 +1581,27 @@ function CustomerPanel({
             onChange={(e) => setForm({ ...form, note: e.target.value })}
           />
         </div>
-        <button type="button" className="app-btn-primary" disabled={busy} onClick={() => void addItem()}>
-          <Plus className="h-4 w-4 mr-1" />
-          寫入待處理
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" className="app-btn-primary" disabled={busy} onClick={() => void addItem()}>
+            {editingId ? (
+              <>
+                <Pencil className="h-4 w-4 mr-1" />
+                儲存修改
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4 mr-1" />
+                寫入待處理
+              </>
+            )}
+          </button>
+          {editingId && (
+            <button type="button" className="app-btn-outline" disabled={busy} onClick={resetForm}>
+              <X className="h-4 w-4 mr-1" />
+              取消修改
+            </button>
+          )}
+        </div>
       </div>
 
       <FilterToggle
@@ -1626,6 +1804,13 @@ function CustomerPanel({
                   <div className="flex gap-2">
                     <button
                       type="button"
+                      className="text-sm text-sky-700 font-medium"
+                      onClick={() => startEdit(row)}
+                    >
+                      修改
+                    </button>
+                    <button
+                      type="button"
                       className="text-sm text-emerald-700 font-medium"
                       onClick={() => void closeIds([row.id])}
                     >
@@ -1643,6 +1828,7 @@ function CustomerPanel({
                               table: "shop_customer_orders",
                               id: row.id,
                             });
+                            if (editingId === row.id) resetForm();
                             await onChanged();
                           } catch (err) {
                             alert(err instanceof Error ? err.message : "刪除失敗");
