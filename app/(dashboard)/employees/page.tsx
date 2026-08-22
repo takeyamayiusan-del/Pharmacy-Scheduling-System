@@ -3,13 +3,28 @@
 import { useState } from "react";
 import { useApp, type Employee } from "@/lib/context/AppContext";
 import { SITE_IDS, SITES, type SiteId } from "@/lib/sites";
-import { APP_ROLE_LABELS, canManageSite, type AppRole } from "@/lib/auth/roles";
+import { APP_ROLE_LABELS, type AppRole } from "@/lib/auth/roles";
+import {
+  CAPABILITY_KEYS,
+  CAPABILITY_LABELS,
+  canManageEmployees,
+  describeCapabilityGrants,
+  type UserCapabilities,
+} from "@/lib/auth/permissions";
 import {
   WORK_HOURS_REGIME_OPTIONS,
   type WorkHoursRegime,
 } from "@/lib/attendance/workHoursRegime";
 import { getScheduleShiftOptions } from "@/lib/shift-catalog/resolve";
 import { getShiftName } from "@/lib/store-config";
+
+const emptyCaps = (): UserCapabilities => ({
+  schedule: false,
+  payroll: false,
+  employees: false,
+  store_settings: false,
+  punch_admin: false,
+});
 
 export default function EmployeesPage() {
   const {
@@ -36,6 +51,7 @@ export default function EmployeesPage() {
     siteId: activeSiteId as SiteId,
     workHoursRegime: "" as "" | WorkHoursRegime,
     baselineShift: "",
+    capabilities: emptyCaps(),
   });
   
   const loadEmployee = (employee: Employee) => {
@@ -50,6 +66,7 @@ export default function EmployeesPage() {
       siteId: employee.siteId ?? activeSiteId,
       workHoursRegime: employee.workHoursRegime ?? "",
       baselineShift: employee.baselineShift ?? "",
+      capabilities: { ...emptyCaps(), ...employee.capabilities },
     });
     setShowForm(true);
   };
@@ -65,6 +82,7 @@ export default function EmployeesPage() {
       siteId: activeSiteId,
       workHoursRegime: "",
       baselineShift: "",
+      capabilities: emptyCaps(),
     });
     setEditingId(null);
     setShowForm(false);
@@ -75,6 +93,32 @@ export default function EmployeesPage() {
     e.preventDefault();
     
     try {
+      const caps =
+        formData.role === "staff" || formData.role === "deputy"
+          ? formData.capabilities
+          : emptyCaps();
+
+      // 升為店長時：同店其他店長可選擇降為員工
+      if (formData.role === "manager") {
+        const otherManagers = employees.filter(
+          (emp) =>
+            emp.role === "manager" &&
+            (emp.siteId ?? activeSiteId) === formData.siteId &&
+            emp.id !== editingId
+        );
+        if (otherManagers.length > 0) {
+          const names = otherManagers.map((m) => m.name).join("、");
+          const demote = window.confirm(
+            `將「${formData.name}」設為店長後，同店目前店長（${names}）是否降為員工？\n\n按「確定」會降職；按「取消」則保留多位店長（僅儲存本次角色）。`
+          );
+          if (demote) {
+            for (const m of otherManagers) {
+              await updateEmployee(m.id, { role: "staff", capabilities: emptyCaps() });
+            }
+          }
+        }
+      }
+
       if (editingId) {
         const updates: Partial<Employee> = {
           name: formData.name,
@@ -85,6 +129,7 @@ export default function EmployeesPage() {
           siteId: formData.siteId,
           workHoursRegime: formData.workHoursRegime || null,
           baselineShift: formData.baselineShift.trim() || null,
+          capabilities: caps,
         };
         if (formData.password) {
           updates.password = formData.password;
@@ -112,6 +157,7 @@ export default function EmployeesPage() {
           siteId: formData.siteId,
           workHoursRegime: formData.workHoursRegime || null,
           baselineShift: formData.baselineShift.trim() || null,
+          capabilities: caps,
         });
         if (formData.siteId !== activeSiteId) {
           alert(
@@ -177,13 +223,18 @@ export default function EmployeesPage() {
     }
   };
   
-  // 店長與老闆權限一致
-  if (!canManageSite(currentUser?.role)) {
+  // 店長／老闆／有員工管理授權者
+  if (
+    !canManageEmployees(
+      { role: currentUser?.role, capabilities: currentUser?.capabilities },
+      storeConfig.policies
+    )
+  ) {
     return (
       <div className="min-h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
-          <p className="text-gray-600">僅店長、副店與老闆可以管理員工</p>
+          <p className="text-gray-600">僅有員工管理權限者可進入（店長／副店／老闆，或已額外授權）</p>
         </div>
       </div>
     );
@@ -319,13 +370,45 @@ export default function EmployeesPage() {
                   className="w-full px-3 py-2 border rounded-lg"
                 >
                   <option value="staff">員工</option>
-                  <option value="deputy">副店（功能同店長：排班、播假、薪資、審核）</option>
+                  <option value="deputy">副店</option>
                   <option value="manager">店長</option>
                 </select>
                 <p className="mt-1 text-xs text-gray-500">
-                  副店與店長同樣可排班、播假、薪資結算。申請審核依店家設定：集集預設店長→副店→老闆三段；竹山預設誰審都可以。
+                  換店長：把新任改成「店長」，儲存時可選擇把舊店長降為員工。不用的帳號可按停用（刪除）。
+                  細部誰能排班／看薪資請到「店家設定 → 權限設定」，或下方替員工勾選額外授權。
                 </p>
               </div>
+              {(formData.role === "staff" ||
+                (formData.role === "deputy" &&
+                  !storeConfig.policies.roleCapabilities.deputyLikeManager)) &&
+                storeConfig.policies.roleCapabilities.allowStaffGrants && (
+                <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                  <p className="text-sm font-medium text-slate-800">額外授權（非店長職位）</p>
+                  <p className="text-xs text-slate-500">
+                    例如會計只開「薪資結算」、資深員工只開「排班」。可多選。
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {CAPABILITY_KEYS.map((key) => (
+                      <label key={key} className="inline-flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(formData.capabilities[key])}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              capabilities: {
+                                ...formData.capabilities,
+                                [key]: e.target.checked,
+                              },
+                            })
+                          }
+                        />
+                        {CAPABILITY_LABELS[key]}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   所屬店
@@ -517,6 +600,11 @@ export default function EmployeesPage() {
                     <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(employee.role)}`}>
                       {getRoleLabel(employee.role)}
                     </span>
+                    {describeCapabilityGrants(employee.capabilities) ? (
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        授權：{describeCapabilityGrants(employee.capabilities)}
+                      </p>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-sm">
                     <div className="flex gap-2">

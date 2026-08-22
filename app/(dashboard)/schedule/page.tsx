@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
-import { canManageSite } from "@/lib/auth/roles";
+import { canEditSchedule } from "@/lib/auth/permissions";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { buildDeformedHoursSoftWarnings } from "@/lib/attendance/deformedHoursSoftWarnings";
@@ -269,7 +269,10 @@ export default function SchedulePage() {
     rotationEmployees.length > 0
       ? rotationEmployees.map((e) => e.name).join("/")
       : "尚未設定";
-  const isManager = canManageSite(currentUser?.role);
+  const isManager = canEditSchedule(
+    { role: currentUser?.role, capabilities: currentUser?.capabilities },
+    storeConfig.policies
+  );
 
   const monthNationalHolidays = Array.from({ length: daysInMonth }, (_, i) => {
     const day = i + 1;
@@ -335,7 +338,10 @@ export default function SchedulePage() {
   };
 
   const toggleMonthLock = async () => {
-    if (!currentUser || !canManageSite(currentUser.role)) return;
+    if (!currentUser || !canEditSchedule(
+      { role: currentUser.role, capabilities: currentUser.capabilities },
+      storeConfig.policies
+    )) return;
     if (lockingMonth) return;
     setLockingMonth(true);
     try {
@@ -458,7 +464,10 @@ export default function SchedulePage() {
     if (!currentUser) return false;
     if (isPastDate(dateStr)) return false;
     if (isSunday(dateStr) && storeConfig.policies.sundayFixedRest) return false;
-    if (canManageSite(currentUser.role)) return true;
+    if (canEditSchedule(
+      { role: currentUser.role, capabilities: currentUser.capabilities },
+      storeConfig.policies
+    )) return true;
     return false;
   };
 

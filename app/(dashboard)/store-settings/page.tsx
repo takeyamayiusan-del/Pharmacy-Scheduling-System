@@ -27,8 +27,9 @@ import {
   type StoreShiftCode,
   type WorkHoursRegime,
 } from "@/lib/store-config";
-import { canManageSite } from "@/lib/auth/roles";
+import { canEditStoreSettings } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS, type ApprovalStepRole } from "@/lib/auth/roles";
+import type { ManageRole, RoleCapabilityPolicy } from "@/lib/auth/permissions";
 import type { StorePolicies } from "@/lib/store-policies";
 import {
   LEAVE_TYPE_OPTIONS,
@@ -67,7 +68,7 @@ export default function StoreSettingsPage() {
     setMessage(null);
   }, [storeConfig, activeSiteId]);
 
-  const canManage = canManageSite(currentUser?.role);
+  const canManage = canEditStoreSettings({ role: currentUser?.role, capabilities: currentUser?.capabilities }, draft?.policies ?? storeConfig.policies);
   const siteMeta = SITES[activeSiteId];
   const useCatalog = draft.features.customShiftCatalog;
 
@@ -1080,7 +1081,7 @@ export default function StoreSettingsPage() {
           <p className="text-sm font-medium text-gray-800 mb-2">申請審核方式</p>
           <p className="text-xs text-gray-500 mb-2">
             僅用於申請類：請假、加班、換班、特休／補休遞延、打卡補登。
-            排班、超時播假、薪資結算由店長／副店／老闆誰來做都可以，不走申請關卡。
+            排班、超時播假、薪資結算權限改由下方「權限設定」控制。
           </p>
           <div className="flex flex-col gap-2 mb-3">
             <label className="inline-flex items-start gap-2 text-sm">
@@ -1152,6 +1153,96 @@ export default function StoreSettingsPage() {
             </>
           )}
         </div>
+      </section>
+
+      <section className="app-panel p-6 space-y-4">
+        <h2 className="font-semibold text-gray-900">權限設定（排班／薪資／管理）</h2>
+        <p className="text-sm text-gray-500">
+          控制誰能排班、誰能看薪資結算、誰能管員工。竹山換店長請到「員工管理」把新人改成店長（可一併把舊店長降職）。
+          若要讓「會計」看薪資：角色維持員工，到員工管理勾「薪資結算」授權即可。
+        </p>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.policies.roleCapabilities.deputyLikeManager}
+            onChange={(e) =>
+              patchPolicies({
+                roleCapabilities: {
+                  ...draft.policies.roleCapabilities,
+                  deputyLikeManager: e.target.checked,
+                },
+              })
+            }
+          />
+          <span>
+            副店等同店長（預設開啟）
+            <span className="block text-xs text-slate-500">關閉後副店需另外勾選授權才有排班／薪資等功能</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-3 text-sm">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={draft.policies.roleCapabilities.allowStaffGrants}
+            onChange={(e) =>
+              patchPolicies({
+                roleCapabilities: {
+                  ...draft.policies.roleCapabilities,
+                  allowStaffGrants: e.target.checked,
+                },
+              })
+            }
+          />
+          <span>
+            允許對「員工」額外授權
+            <span className="block text-xs text-slate-500">關閉後員工管理頁無法再勾排班／薪資等授權</span>
+          </span>
+        </label>
+        {(
+          [
+            ["scheduleRoles", "可排班（月曆／固定班／單人排班）"],
+            ["payrollRoles", "可薪資結算"],
+            ["adminRoles", "可管員工／店家設定／打卡管理"],
+          ] as const
+        ).map(([field, label]) => {
+          const list = draft.policies.roleCapabilities[field] as ManageRole[];
+          const toggle = (role: ManageRole, on: boolean) => {
+            const next = on
+              ? Array.from(new Set([...list, role]))
+              : list.filter((r) => r !== role);
+            const safe = (next.length > 0 ? next : ["owner"]) as ManageRole[];
+            patchPolicies({
+              roleCapabilities: {
+                ...draft.policies.roleCapabilities,
+                [field]: safe,
+              } as RoleCapabilityPolicy,
+            });
+          };
+          return (
+            <div key={field} className="rounded-xl border border-slate-200 p-3 space-y-2">
+              <p className="text-sm font-medium text-slate-800">{label}</p>
+              <div className="flex flex-wrap gap-4 text-sm">
+                {(
+                  [
+                    ["owner", "老闆"],
+                    ["manager", "店長"],
+                    ["deputy", "副店"],
+                  ] as const
+                ).map(([role, roleLabel]) => (
+                  <label key={role} className="inline-flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={list.includes(role)}
+                      onChange={(e) => toggle(role, e.target.checked)}
+                    />
+                    {roleLabel}
+                  </label>
+                ))}
+              </div>
+            </div>
+          );
+        })}
       </section>
 
       <section className="app-panel p-6 space-y-4">

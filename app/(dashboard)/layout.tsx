@@ -30,7 +30,14 @@ import {
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
 import { SITE_IDS, SITES, SYSTEM_NAME, type SiteId } from '@/lib/sites';
-import { APP_ROLE_LABELS, canManageSite } from '@/lib/auth/roles';
+import { APP_ROLE_LABELS } from '@/lib/auth/roles';
+import {
+  canEditSchedule,
+  canEditStoreSettings,
+  canManageEmployees,
+  canManagePayroll,
+  canUsePunchAdmin,
+} from '@/lib/auth/permissions';
 
 export default function DashboardLayout({
   children,
@@ -110,7 +117,13 @@ export default function DashboardLayout({
     return null;
   }
 
-  const isManager = canManageSite(currentUser.role);
+  const actor = { role: currentUser.role, capabilities: currentUser.capabilities };
+  const policies = storeConfig.policies;
+  const allowSchedule = canEditSchedule(actor, policies);
+  const allowPayroll = canManagePayroll(actor, policies);
+  const allowEmployees = canManageEmployees(actor, policies);
+  const allowStoreSettings = canEditStoreSettings(actor, policies);
+  const allowPunchAdmin = canUsePunchAdmin(actor, policies);
   
   const unreadCount = notifications.filter(
     (n) => n.userId === currentUser.id && !n.read
@@ -120,13 +133,13 @@ export default function DashboardLayout({
     { href: '/notifications', label: '通知中心', icon: Bell, allowed: true },
     { href: '/schedule', label: '月曆式班表', icon: Calendar, allowed: true },
     { href: '/my-schedule', label: '我的班表', icon: Calendar, allowed: true },
-    { href: '/schedule/person', label: '單人排班', icon: CalendarRange, allowed: isManager },
+    { href: '/schedule/person', label: '單人排班', icon: CalendarRange, allowed: allowSchedule },
     { href: '/meal-order', label: '訂餐', icon: Coffee, allowed: true },
     { href: '/shop-ops', label: '店務需求', icon: ClipboardList, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
-    { href: '/attendance/punch-admin', label: '打卡管理', icon: Clock, allowed: isManager },
-    { href: '/fixed-shifts', label: '固定班表', icon: Settings, allowed: isManager },
+    { href: '/attendance/punch-admin', label: '打卡管理', icon: Clock, allowed: allowPunchAdmin },
+    { href: '/fixed-shifts', label: '固定班表', icon: Settings, allowed: allowSchedule },
     {
       href: '/wednesday-shifts',
       label: storeConfig.rotationEvening.menuLabel,
@@ -139,11 +152,11 @@ export default function DashboardLayout({
     { href: '/applications/overtime', label: '加班申請', icon: Clock, allowed: true },
     { href: '/applications/punch-correction', label: '打卡補登', icon: ClipboardPen, allowed: true },
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
-    { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: isManager },
-    { href: '/employees', label: '員工管理', icon: UserPlus, allowed: isManager },
-    { href: '/store-settings', label: '店家設定', icon: Settings, allowed: isManager },
+    { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: allowPunchAdmin },
+    { href: '/employees', label: '員工管理', icon: UserPlus, allowed: allowEmployees },
+    { href: '/store-settings', label: '店家設定', icon: Settings, allowed: allowStoreSettings },
     { href: '/payroll-detail', label: '薪資查詢', icon: DollarSign, allowed: true },
-    { href: '/payroll', label: '薪資結算', icon: DollarSign, allowed: isManager },
+    { href: '/payroll', label: '薪資結算', icon: DollarSign, allowed: allowPayroll },
   ];
 
   const handleDeleteAllNotifications = async () => {

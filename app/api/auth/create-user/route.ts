@@ -60,6 +60,10 @@ export async function POST(req: NextRequest) {
         site_id: siteId,
         work_hours_regime: body.work_hours_regime || null,
         baseline_shift: body.baseline_shift || null,
+        capabilities:
+          body.capabilities && typeof body.capabilities === "object"
+            ? body.capabilities
+            : {},
       })
       .select()
       .single();
