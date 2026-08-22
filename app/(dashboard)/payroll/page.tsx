@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useApp } from "@/lib/context/AppContext";
-import { canManageSite } from "@/lib/auth/roles";
+import { canManagePayroll } from "@/lib/auth/permissions";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -195,7 +195,10 @@ export default function PayrollPage() {
     isDeduction: false,
   });
 
-  const isManager = canManageSite(currentUser?.role);
+  const isManager = canManagePayroll(
+    { role: currentUser?.role, capabilities: currentUser?.capabilities },
+    storeConfig.policies
+  );
   const displayEmployees = employees.filter((e) => e.role !== "owner");
 
   // ─── Load data ─────────────────────────────────────────────────────────────

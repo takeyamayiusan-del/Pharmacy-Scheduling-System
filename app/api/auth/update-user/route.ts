@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
       site_id,
       work_hours_regime,
       baseline_shift,
+      capabilities,
     } = body as {
       userId: string;
       password?: string;
@@ -43,6 +44,7 @@ export async function POST(req: NextRequest) {
       site_id?: string;
       work_hours_regime?: string | null;
       baseline_shift?: string | null;
+      capabilities?: Record<string, boolean> | null;
     };
 
     if (!userId) {
@@ -83,6 +85,10 @@ export async function POST(req: NextRequest) {
     }
     if (work_hours_regime !== undefined) updates.work_hours_regime = work_hours_regime || null;
     if (baseline_shift !== undefined) updates.baseline_shift = baseline_shift || null;
+    if (capabilities !== undefined) {
+      updates.capabilities =
+        capabilities && typeof capabilities === "object" ? capabilities : {};
+    }
 
     if (Object.keys(updates).length > 0) {
       const { error } = await admin.from("users").update(updates).eq("id", userId);

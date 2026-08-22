@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
-import { canManageSite } from "@/lib/auth/roles";
+import { canEditSchedule } from "@/lib/auth/permissions";
 import { isPastDate, isPastMonth } from "@/lib/schedule/monthAccess";
 import { isEmployeeActiveInMonth, isEmployeeActiveOnDate } from "@/lib/schedule/employeeActivePeriod";
 import { getDisplayedShiftInfo } from "@/lib/schedule/leaveSchedule";
@@ -38,7 +38,7 @@ export default function PersonSchedulePage() {
     overtimeRequests,
   } = useApp();
 
-  const isManager = canManageSite(currentUser?.role);
+  const isManager = canEditSchedule({ role: currentUser?.role, capabilities: currentUser?.capabilities }, storeConfig.policies);
   const [currentDate, setCurrentDate] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);

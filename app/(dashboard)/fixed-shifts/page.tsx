@@ -8,7 +8,7 @@ import {
   getShiftName,
   type StoreRuleTagId,
 } from "@/lib/store-config";
-import { canManageSite } from "@/lib/auth/roles";
+import { canEditSchedule } from "@/lib/auth/permissions";
 import {
   getScheduleShiftOptions,
   resolveShiftDisplay,
@@ -109,7 +109,7 @@ export default function FixedShiftsPage() {
   }, [shiftOptions, newShift]);
 
   const displayEmployees = employees.filter((e) => e.role !== "owner");
-  const canManage = canManageSite(currentUser?.role);
+  const canManage = canEditSchedule({ role: currentUser?.role, capabilities: currentUser?.capabilities }, storeConfig.policies);
 
   const handleAdd = async () => {
     if (!newEmployeeId) return;

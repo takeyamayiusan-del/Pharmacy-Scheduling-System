@@ -5,6 +5,11 @@ import {
   statutoryLeaveRulesMap,
   type LeaveRulesMap,
 } from "@/lib/attendance/leaveEntitlements";
+import {
+  DEFAULT_ROLE_CAPABILITY_POLICY,
+  parseRoleCapabilityPolicy,
+  type RoleCapabilityPolicy,
+} from "@/lib/auth/permissions";
 
 export type { LeaveRulesMap } from "@/lib/attendance/leaveEntitlements";
 
@@ -55,6 +60,11 @@ export type StorePolicies = {
    * 天數上限只警示、不硬擋。
    */
   leaveRules: LeaveRulesMap;
+  /**
+   * 職位預設權限與員工額外授權開關。
+   * 排班／薪資／員工管理等可調；員工職位可另開 capabilities。
+   */
+  roleCapabilities: RoleCapabilityPolicy;
 };
 
 export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolicies {
@@ -77,6 +87,12 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
     workHoursCycleFromHireDate: isJiji,
     leaveHoursPerDay: 8,
     leaveRules: statutoryLeaveRulesMap(),
+    roleCapabilities: {
+      ...DEFAULT_ROLE_CAPABILITY_POLICY,
+      scheduleRoles: [...DEFAULT_ROLE_CAPABILITY_POLICY.scheduleRoles],
+      payrollRoles: [...DEFAULT_ROLE_CAPABILITY_POLICY.payrollRoles],
+      adminRoles: [...DEFAULT_ROLE_CAPABILITY_POLICY.adminRoles],
+    },
   };
 }
 
@@ -184,5 +200,8 @@ export function parseStorePolicies(
       ...defaults.leaveRules,
       ...parseLeaveRulesMap(o.leaveRules),
     },
+    roleCapabilities: parseRoleCapabilityPolicy(
+      o.roleCapabilities ?? defaults.roleCapabilities
+    ),
   };
 }

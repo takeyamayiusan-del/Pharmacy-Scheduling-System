@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useApp, type PunchRecord, type ScheduleShiftCode } from "@/lib/context/AppContext";
-import { canManageSite } from "@/lib/auth/roles";
+import { canUsePunchAdmin } from "@/lib/auth/permissions";
 import { getPunchSlotsForRanges, minutesDiff, timeToMinutes } from "@/lib/attendance/punchSchedule";
 import { resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 import {
@@ -75,7 +75,7 @@ export default function PunchAdminPage() {
     activeSiteId,
   } = useApp();
 
-  const isManager = canManageSite(currentUser?.role);
+  const isManager = canUsePunchAdmin({ role: currentUser?.role, capabilities: currentUser?.capabilities }, storeConfig.policies);
 
   const today = new Date().toISOString().split("T")[0];
   const [selectedEmpId, setSelectedEmpId] = useState<string>("");

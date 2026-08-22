@@ -5,6 +5,7 @@ import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedTyp
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
 import { fromDbRole, canManageSite, type AppRole } from "@/lib/auth/roles";
+import { parseUserCapabilities, canEditSchedule } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 import {
   approvalPendingLabel,
@@ -139,6 +140,8 @@ export type Employee = {
   workHoursRegime?: import("@/lib/attendance/workHoursRegime").WorkHoursRegime | null;
   /** 本月基準班（播假用） */
   baselineShift?: string | null;
+  /** 員工額外授權（排班／薪資等）；店長副店仍以店規為主 */
+  capabilities?: import("@/lib/auth/permissions").UserCapabilities;
 };
 
 export type ShiftType = "A" | "B" | "C" | "D" | "E" | "X";
@@ -886,6 +889,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     site_id?: string | null;
     work_hours_regime?: string | null;
     baseline_shift?: string | null;
+    capabilities?: unknown;
   }): Employee => ({
     id: r.id,
     name: r.name,
@@ -900,13 +904,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     halfDayWorkShift: r.half_day_work_shift ?? null,
     workHoursRegime: isWorkHoursRegime(r.work_hours_regime) ? r.work_hours_regime : null,
     baselineShift: r.baseline_shift ?? null,
+    capabilities: parseUserCapabilities(r.capabilities),
   });
 
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase
       .from("users")
       .select(
-        "id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift"
+        "id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities"
       )
       .eq("is_active", true);
     if (data) {
@@ -1599,7 +1604,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const { data: userRow } = await supabase
               .from("users")
               .select(
-                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift"
+                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities"
               )
               .eq("id", session.user.id)
               .maybeSingle();
@@ -1670,7 +1675,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             const { data: userRow } = await supabase
               .from("users")
               .select(
-                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift"
+                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities"
               )
               .eq("id", session.user.id)
               .maybeSingle();
@@ -1746,7 +1751,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const { data: profile, error: profileError } = await supabase
         .from("users")
         .select(
-          "id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift"
+          "id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities"
         )
         .eq("id", data.user.id)
         .single();
@@ -1804,6 +1809,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         site_id: employee.siteId ?? activeSiteId,
         work_hours_regime: employee.workHoursRegime || null,
         baseline_shift: employee.baselineShift || null,
+        capabilities: employee.capabilities ?? {},
       }),
     });
     if (!res.ok) {
@@ -1834,6 +1840,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         work_hours_regime:
           updates.workHoursRegime === undefined ? undefined : updates.workHoursRegime || null,
         baseline_shift: updates.baselineShift === undefined ? undefined : updates.baselineShift || null,
+        capabilities: updates.capabilities,
       }),
     });
     if (!res.ok) {
@@ -1998,13 +2005,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const y = ym?.y ?? 0;
     const m = ym?.m ?? 0;
     const monthLocked = isLeaveMonthLocked(y, m);
-    const canOverrideLocked = canManageSite(currentUser?.role);
+    const canOverrideLocked = canEditSchedule(
+      { role: currentUser?.role, capabilities: currentUser?.capabilities },
+      storeConfig.policies
+    );
     if (monthLocked && !canOverrideLocked) {
-      throw new Error("本月份班表已鎖定，僅店長/老闆可修改");
+      throw new Error("本月份班表已鎖定，僅有排班權限者可修改");
     }
 
-    const isManagerEdit =
-      canManageSite(currentUser?.role);
+    const isManagerEdit = canEditSchedule(
+      { role: currentUser?.role, capabilities: currentUser?.capabilities },
+      storeConfig.policies
+    );
     const emp = employees.find((e) => e.id === employeeId);
     const alreadySelected = isLeaveSelectedOnDate(leaveSelections[employeeId], date);
     const dateKey = normalizeCalendarDate(date) || date;

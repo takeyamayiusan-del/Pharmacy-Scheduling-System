@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useApp, type TardinessRecord } from "@/lib/context/AppContext";
-import { canManageSite } from "@/lib/auth/roles";
+import { canUsePunchAdmin } from "@/lib/auth/permissions";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import {
   MonthFilterBar,
@@ -23,6 +23,7 @@ export default function TardinessPage() {
     deleteTardinessRecord,
     updatePunchRecord,
     activeSiteId,
+    storeConfig,
   } = useApp();
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
@@ -35,7 +36,7 @@ export default function TardinessPage() {
   const [filterYear, setFilterYear] = useState(initialPeriod.year);
   const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
 
-  const isManager = canManageSite(currentUser?.role);
+  const isManager = canUsePunchAdmin({ role: currentUser?.role, capabilities: currentUser?.capabilities }, storeConfig.policies);
 
   // 提交遲到記錄
   const handleSubmit = async (e: React.FormEvent) => {
