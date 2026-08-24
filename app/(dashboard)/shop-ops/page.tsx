@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ClipboardList, FileDown, ListChecks, Package, Pencil, Pill, Plus, Printer, ShoppingBag, Trash2, X } from "lucide-react";
 import { useApp } from "@/lib/context/AppContext";
 import { HelpTip } from "@/components/ui/HelpTip";
@@ -66,6 +66,26 @@ type ListFilter = "pending" | "closed" | "all";
 
 function formatWhen(iso: string): string {
   return formatCreatedStamp(iso);
+}
+
+/** 頁面實際捲動的是 layout 的 `.app-scroll-pane`，window.scrollTo 不會動到表單。 */
+function scrollToEditForm(node: HTMLElement | null) {
+  if (!node) return;
+  const run = () => {
+    const pane = node.closest(".app-scroll-pane");
+    if (pane instanceof HTMLElement) {
+      const offset = 12;
+      const nextTop =
+        pane.scrollTop +
+        node.getBoundingClientRect().top -
+        pane.getBoundingClientRect().top -
+        offset;
+      pane.scrollTo({ top: Math.max(0, nextTop), behavior: "smooth" });
+      return;
+    }
+    node.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  requestAnimationFrame(run);
 }
 
 export default function ShopOpsPage() {
@@ -435,6 +455,7 @@ function ProcurementPanel({
   });
   const [editingId, setEditingId] = useState<string | null>(null);
   const [newCat, setNewCat] = useState("");
+  const formRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!form.categoryId && categories[0]?.id) {
@@ -462,7 +483,7 @@ function ProcurementPanel({
       unit: row.unit,
       note: row.note,
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToEditForm(formRef.current);
   };
 
   const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
@@ -560,7 +581,7 @@ function ProcurementPanel({
 
   return (
     <div className="space-y-4">
-      <div className="app-card p-4 space-y-3">
+      <div ref={formRef} className="app-card p-4 space-y-3 scroll-mt-3">
         <h2 className="app-section-title">{editingId ? "修改日常採購" : "登記日常採購"}</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <label className="text-sm space-y-1">
@@ -940,6 +961,7 @@ function MedicinePanel({
     note: "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   const emptyMedicineForm = {
     kind: "shortage" as MedicineKind,
@@ -979,7 +1001,7 @@ function MedicinePanel({
       contactPhone: row.contactPhone,
       note: row.note,
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToEditForm(formRef.current);
   };
 
   const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
@@ -1053,7 +1075,7 @@ function MedicinePanel({
 
   return (
     <div className="space-y-4">
-      <div className="app-card p-4 space-y-3">
+      <div ref={formRef} className="app-card p-4 space-y-3 scroll-mt-3">
         <h2 className="app-section-title">{editingId ? "修改叫藥需求" : "登記叫藥需求"}</h2>
         <p className="text-sm text-slate-600">
           預包、欠藥可直接填數量，或改用第二次／第三次領藥（IC02／IC03）。欠藥請留電話，方便到貨後通知。
@@ -1565,6 +1587,7 @@ function CustomerPanel({
     note: "",
   });
   const [editingId, setEditingId] = useState<string | null>(null);
+  const formRef = useRef<HTMLDivElement>(null);
 
   const emptyCustomerForm = {
     customerName: "",
@@ -1600,7 +1623,7 @@ function CustomerPanel({
       wantedArriveDate: row.wantedArriveDate ?? "",
       note: row.note,
     });
-    window.scrollTo({ top: 0, behavior: "smooth" });
+    scrollToEditForm(formRef.current);
   };
 
   const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
@@ -1701,7 +1724,7 @@ function CustomerPanel({
 
   return (
     <div className="space-y-4">
-      <div className="app-card p-4 space-y-3">
+      <div ref={formRef} className="app-card p-4 space-y-3 scroll-mt-3">
         <h2 className="app-section-title">{editingId ? "修改客人訂購" : "登記客人訂購"}</h2>
         <p className="text-sm text-slate-600">
           接手人：<strong>{userName}</strong>
