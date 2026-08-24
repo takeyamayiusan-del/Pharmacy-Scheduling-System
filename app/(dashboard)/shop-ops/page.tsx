@@ -31,6 +31,7 @@ import {
   CUSTOMER_PAYMENT_LABELS,
   CUSTOMER_URGENCY_LABELS,
   FULFILLMENT_FILTER_LABELS,
+  MEDICINE_FULFILLMENT_FILTER_LABELS,
   DATE_PRESET_LABELS,
   datePresetRange,
   formatCreatedStamp,
@@ -40,6 +41,7 @@ import {
   isCustomerFulfillmentComplete,
   matchesCreatedDate,
   matchesFulfillmentFilter,
+  matchesMedicineFulfillmentFilter,
   MEDICINE_KIND_LABELS,
   MEDICINE_QTY_MODE_LABELS,
   SHOP_STATUS_LABELS,
@@ -50,6 +52,7 @@ import {
   type CustomerUrgency,
   type DatePreset,
   type FulfillmentFilter,
+  type MedicineFulfillmentFilter,
   type MedicineKind,
   type MedicineQtyMode,
   type MedicineRequest,
@@ -915,6 +918,7 @@ function MedicinePanel({
   onChanged: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState<ListFilter>("pending");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<MedicineFulfillmentFilter>("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -982,6 +986,7 @@ function MedicinePanel({
   const byStatus = items.filter((i) => filter === "all" || i.status === filter);
   const visible = sortByCreatedAtAsc(
     byStatus
+      .filter((i) => matchesMedicineFulfillmentFilter(i, fulfillmentFilter))
       .filter((i) => matchesCreatedDate(i.createdAt, dateRange))
       .filter((i) => kindFilter === "all" || i.kind === kindFilter)
   );
@@ -1213,6 +1218,28 @@ function MedicinePanel({
         pendingCount={items.filter((i) => i.status === "pending").length}
         closedCount={items.filter((i) => i.status === "closed").length}
       />
+      <div className="flex flex-wrap gap-2">
+        {(Object.keys(MEDICINE_FULFILLMENT_FILTER_LABELS) as MedicineFulfillmentFilter[]).map((key) => {
+          const count = byStatus.filter((row) => matchesMedicineFulfillmentFilter(row, key)).length;
+          return (
+            <button
+              key={key}
+              type="button"
+              className={`px-3 py-1.5 rounded-lg text-sm border ${
+                fulfillmentFilter === key
+                  ? "bg-sky-600 text-white border-sky-600"
+                  : "bg-white border-slate-200"
+              }`}
+              onClick={() => {
+                setFulfillmentFilter(key);
+                setSelected([]);
+              }}
+            >
+              {MEDICINE_FULFILLMENT_FILTER_LABELS[key]}（{count}）
+            </button>
+          );
+        })}
+      </div>
       <DateFilterBar
         preset={datePreset}
         onPreset={setDatePreset}
@@ -1517,6 +1544,7 @@ function CustomerPanel({
   onChanged: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState<ListFilter>("pending");
+  const [fulfillmentFilter, setFulfillmentFilter] = useState<FulfillmentFilter>("all");
   const [selected, setSelected] = useState<string[]>([]);
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [dateFrom, setDateFrom] = useState("");
@@ -1576,9 +1604,10 @@ function CustomerPanel({
   };
 
   const dateRange = datePresetRange(datePreset, dateFrom, dateTo);
+  const byStatus = items.filter((i) => filter === "all" || i.status === filter);
   const visible = sortCustomerOrders(
-    items
-      .filter((i) => filter === "all" || i.status === filter)
+    byStatus
+      .filter((i) => matchesFulfillmentFilter(i, fulfillmentFilter))
       .filter((i) => matchesCreatedDate(i.createdAt, dateRange))
       .filter((i) => urgencyFilter === "all" || i.urgency === urgencyFilter)
       .filter((i) => paymentFilter === "all" || i.paymentStatus === paymentFilter)
@@ -1801,6 +1830,28 @@ function CustomerPanel({
         pendingCount={items.filter((i) => i.status === "pending").length}
         closedCount={items.filter((i) => i.status === "closed").length}
       />
+      <div className="flex flex-wrap gap-2">
+        {(Object.keys(FULFILLMENT_FILTER_LABELS) as FulfillmentFilter[]).map((key) => {
+          const count = byStatus.filter((row) => matchesFulfillmentFilter(row, key)).length;
+          return (
+            <button
+              key={key}
+              type="button"
+              className={`px-3 py-1.5 rounded-lg text-sm border ${
+                fulfillmentFilter === key
+                  ? "bg-sky-600 text-white border-sky-600"
+                  : "bg-white border-slate-200"
+              }`}
+              onClick={() => {
+                setFulfillmentFilter(key);
+                setSelected([]);
+              }}
+            >
+              {FULFILLMENT_FILTER_LABELS[key]}（{count}）
+            </button>
+          );
+        })}
+      </div>
       <DateFilterBar
         preset={datePreset}
         onPreset={setDatePreset}
