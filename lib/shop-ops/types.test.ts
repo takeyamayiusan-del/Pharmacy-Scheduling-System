@@ -6,6 +6,8 @@ import {
   isCustomerFulfillmentComplete,
   matchesCreatedDate,
   matchesFulfillmentFilter,
+  matchesMedicineFulfillmentFilter,
+  medicineFulfillmentStage,
   datePresetRange,
   formatCreatedStamp,
   shiftDateKey,
@@ -215,6 +217,22 @@ describe("shop-ops validation", () => {
         { ...base, id: "old", urgency: "normal", createdAt: "2026-08-10T00:00:00.000Z" },
       ])[0].id
     ).toBe("old");
+  });
+
+  it("叫藥履約階段：未訂貨 → 已訂未到 → 已到貨未通知 → 已通知", () => {
+    const base = {
+      ordered: false,
+      goodsArrived: false,
+      notified: false,
+    };
+    expect(medicineFulfillmentStage(base)).toBe("not_ordered");
+    expect(medicineFulfillmentStage({ ...base, ordered: true })).toBe("not_arrived");
+    expect(
+      matchesMedicineFulfillmentFilter({ ...base, ordered: true, goodsArrived: true }, "arrived_unnotified")
+    ).toBe(true);
+    expect(
+      medicineFulfillmentStage({ ...base, ordered: true, goodsArrived: true, notified: true })
+    ).toBe("notified");
   });
 
   it("登記日以台北時區篩選，方便叫藥先後", () => {

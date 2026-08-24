@@ -155,6 +155,38 @@ export function matchesFulfillmentFilter(row: CustomerOrder, filter: Fulfillment
   return fulfillmentStage(row) === filter;
 }
 
+export type MedicineFulfillmentFilter =
+  | "all"
+  | "not_ordered"
+  | "not_arrived"
+  | "arrived_unnotified"
+  | "notified";
+
+export const MEDICINE_FULFILLMENT_FILTER_LABELS: Record<MedicineFulfillmentFilter, string> = {
+  all: "全部",
+  not_ordered: "未訂貨",
+  not_arrived: "已訂未到",
+  arrived_unnotified: "已到貨未通知",
+  notified: "已通知",
+};
+
+export function medicineFulfillmentStage(
+  row: Pick<MedicineRequest, "ordered" | "goodsArrived" | "notified">
+): Exclude<MedicineFulfillmentFilter, "all"> {
+  if (row.notified) return "notified";
+  if (row.goodsArrived) return "arrived_unnotified";
+  if (row.ordered) return "not_arrived";
+  return "not_ordered";
+}
+
+export function matchesMedicineFulfillmentFilter(
+  row: Pick<MedicineRequest, "ordered" | "goodsArrived" | "notified">,
+  filter: MedicineFulfillmentFilter
+): boolean {
+  if (filter === "all") return true;
+  return medicineFulfillmentStage(row) === filter;
+}
+
 export function formatFulfillmentMarks(row: CustomerOrder): string {
   return [
     row.ordered ? "已訂貨" : "未訂貨",
