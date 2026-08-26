@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
+import { canManageSite } from '@/lib/auth/roles';
 import { formatCompLeaveHours } from '@/lib/attendance/compLeaveDisplay';
 import {
   buildApprovedCompOvertimeInMonth,
@@ -42,9 +43,9 @@ export default function AttendancePage() {
   const month = currentDate.getMonth() + 1;
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  const canExport = currentUser?.role === 'owner' || currentUser?.role === 'manager';
+  const canViewAll = canManageSite(currentUser?.role);
   const targetEmployees = employees.filter((emp) => emp.role !== 'owner');
-  const displayEmployees = canExport
+  const displayEmployees = canViewAll
     ? targetEmployees
     : targetEmployees.filter((emp) => emp.id === currentUser?.id);
 
@@ -273,7 +274,7 @@ export default function AttendancePage() {
             ▶
           </button>
         </div>
-        {canExport && (
+        {canViewAll && (
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
@@ -298,7 +299,7 @@ export default function AttendancePage() {
         )}
       </div>
 
-      {canExport && (
+      {canViewAll && (
         <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-white p-4">
           <label htmlFor="attendance-employee-filter" className="text-sm font-medium text-gray-700">
             篩選員工
@@ -323,7 +324,7 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {canExport && (
+      {canViewAll && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div className="rounded-xl border bg-white p-4">
             <p className="text-xs text-gray-500">統計人數</p>
@@ -342,7 +343,7 @@ export default function AttendancePage() {
         </div>
       )}
 
-      {showMonthlyDetail && canExport && (
+      {showMonthlyDetail && canViewAll && (
         <div className="app-panel overflow-hidden">
           <div className="p-4 border-b bg-gray-50">
             <h3 className="font-semibold text-gray-900 flex items-center gap-2">
