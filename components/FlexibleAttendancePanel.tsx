@@ -6,12 +6,15 @@ import { canManageSite } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/client";
 import {
   FLEXIBLE_PERIOD_PRESETS,
+  FLEXIBLE_SETTLEMENT_POLICY_LABELS,
   getAttendeeShiftOptions,
   buildOriginalScheduleSnapshot,
   buildSettlementPreview,
   calculateAffectedShiftHours,
   resolveTyphoonScheduleShift,
   type FlexibleAttendanceDay,
+  type FlexibleEventKind,
+  type FlexibleSettlementPolicy,
   type OriginalScheduleEntry,
   type PendingMakeupHours,
   type FlexiblePeriodMode,
@@ -41,6 +44,15 @@ function mapDay(row: Record<string, unknown>): FlexibleAttendanceDay {
     note: row.note ? String(row.note) : undefined,
     status: row.status as FlexibleAttendanceDay["status"],
     bulletinId: row.bulletin_id ? String(row.bulletin_id) : undefined,
+    eventKind: (row.event_kind === "national_holiday"
+      ? "national_holiday"
+      : "typhoon") as FlexibleEventKind,
+    settlementPolicy: (
+      row.settlement_policy === "required_work" ||
+      row.settlement_policy === "day_off_no_penalty"
+        ? row.settlement_policy
+        : "typhoon_default"
+    ) as FlexibleSettlementPolicy,
     originalSchedule: original,
     expectedAttendeeIds: expected,
     attendeesConfirmedAt: row.attendees_confirmed_at
@@ -71,9 +83,11 @@ function mapPending(row: Record<string, unknown>): PendingMakeupHours {
 
 type Props = {
   onScheduleChanged?: () => void;
+  /** 外部建立彈性出勤日後遞增，觸發重新載入 */
+  reloadKey?: number;
 };
 
-export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
+export default function FlexibleAttendancePanel({ onScheduleChanged, reloadKey = 0 }: Props) {
   const {
     currentUser,
     employees,
@@ -178,7 +192,7 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
 
   useEffect(() => {
     void loadData();
-  }, [loadData]);
+  }, [loadData, reloadKey]);
 
   if (!isManager) return null;
 
@@ -199,6 +213,9 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
   };
 
   const openConfirm = (day: FlexibleAttendanceDay) => {
+    const allowOffVolunteers =
+      day.settlementPolicy === "required_work" ||
+      day.settlementPolicy === "day_off_no_penalty";
     const originallyOnEntries = day.originalSchedule.filter((e) => !isOff(e.shift));
     const originallyOn = originallyOnEntries.map((e) => e.userId);
     setSelectedAttendees(
@@ -207,6 +224,17 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
     const initialShifts: Record<string, ScheduleShiftCode> = {};
     for (const entry of originallyOnEntries) {
       initialShifts[entry.userId] = entry.shift;
+    }
+    if (allowOffVolunteers) {
+      const fallback =
+        (storeConfig.defaultWeekdayShift && storeConfig.defaultWeekdayShift !== "X"
+          ? storeConfig.defaultWeekdayShift
+          : attendeeShiftOptions[0]) ?? "B";
+      for (const entry of day.originalSchedule) {
+        if (isOff(entry.shift) && !initialShifts[entry.userId]) {
+          initialShifts[entry.userId] = fallback;
+        }
+      }
     }
     setAttendeeShifts(initialShifts);
     setConfirmDayId(day.id);
@@ -249,6 +277,8 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
           fromTime: periodMode === "from_time" ? fromTime : undefined,
           note: formNote || undefined,
           status: "announced",
+          eventKind: "typhoon",
+          settlementPolicy: "typhoon_default",
           originalSchedule,
           expectedAttendeeIds: originalSchedule
             .filter((e) => !isOff(e.shift))
@@ -308,16 +338,19 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
         shiftTimeConfig,
         punchRecords,
         storeConfig,
+        settlementPolicy: settleTarget.settlementPolicy,
       })
     : [];
 
   const handleSettle = async () => {
     if (!settleTarget) return;
-    if (
-      !confirm(
-        `確定結算 ${settleTarget.date}？\n只處理原本有排班的人：\n• 有打卡 → 核發補休\n• 應來未到 → 待補（擇日補／扣補休）\n• 原本休假 → 完全不動`
-      )
-    ) {
+    const policyHint =
+      settleTarget.settlementPolicy === "required_work"
+        ? `確定結算 ${settleTarget.date}（規定上班）？\n• 有打卡 → 核發補休（含本休有來）\n• 應來未到 → 待補（擇日補／扣補休）\n• 本休沒來 → 不動`
+        : settleTarget.settlementPolicy === "day_off_no_penalty"
+          ? `確定結算 ${settleTarget.date}（當天休）？\n• 有打卡 → 核發補休\n• 沒來 → 不罰、不補`
+          : `確定結算 ${settleTarget.date}？\n只處理原本有排班的人：\n• 有打卡 → 核發補休\n• 應來未到 → 待補（擇日補／扣補休）\n• 原本休假 → 完全不動`;
+    if (!confirm(policyHint)) {
       return;
     }
     setBusy(true);
@@ -408,12 +441,19 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
                   <div>
                     <p className="font-medium text-gray-900">
                       {day.date} · {day.title}
-                      <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-cyan-100 text-cyan-800">
-                        颱
+                      <span
+                        className={`ml-2 text-[10px] px-1.5 py-0.5 rounded ${
+                          day.eventKind === "national_holiday"
+                            ? "bg-amber-100 text-amber-800"
+                            : "bg-cyan-100 text-cyan-800"
+                        }`}
+                      >
+                        {day.eventKind === "national_holiday" ? "假" : "颱"}
                       </span>
                     </p>
                     <p className="text-xs text-gray-500">
                       {periodLabel(day)}
+                      {` · ${FLEXIBLE_SETTLEMENT_POLICY_LABELS[day.settlementPolicy]}`}
                       {day.note ? ` · ${day.note}` : ""}
                       {" · 原排班 "}
                       {onCount} 人
@@ -790,10 +830,66 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
               )}
               {confirmOriginallyOff.length > 0 && (
                 <div className="pt-2 border-t">
-                  <p className="text-xs text-gray-500 mb-1">原本休假（安全，不動作）</p>
-                  <p className="text-xs text-gray-400">
-                    {confirmOriginallyOff.map((e) => getEmpName(e.userId)).join("、")}
-                  </p>
+                  {(confirmTarget?.settlementPolicy === "required_work" ||
+                    confirmTarget?.settlementPolicy === "day_off_no_penalty") ? (
+                    <>
+                      <p className="text-xs text-amber-800 mb-2">
+                        原本休假：預設不算義務；若勾選「會來」仍可排班，結算有打卡才給補休。
+                      </p>
+                      <div className="space-y-2">
+                        {confirmOriginallyOff.map((entry) => {
+                          const checked = selectedAttendees.includes(entry.userId);
+                          const assigned = attendeeShifts[entry.userId] ?? attendeeShiftOptions[0] ?? "B";
+                          return (
+                            <div key={entry.userId} className="space-y-1">
+                              <label className="flex items-center gap-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(e) => {
+                                    setSelectedAttendees((prev) =>
+                                      e.target.checked
+                                        ? [...prev, entry.userId]
+                                        : prev.filter((id) => id !== entry.userId)
+                                    );
+                                  }}
+                                />
+                                <span>
+                                  {getEmpName(entry.userId)}
+                                  <span className="text-xs text-slate-400 ml-1">（本休）</span>
+                                </span>
+                              </label>
+                              {checked && (
+                                <select
+                                  value={assigned}
+                                  onChange={(e) =>
+                                    setAttendeeShifts((prev) => ({
+                                      ...prev,
+                                      [entry.userId]: e.target.value as ScheduleShiftCode,
+                                    }))
+                                  }
+                                  className="ml-6 border rounded px-2 py-1 text-xs"
+                                >
+                                  {attendeeShiftOptions.map((code) => (
+                                    <option key={code} value={code}>
+                                      {shiftLabel(code)}
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-xs text-gray-500 mb-1">原本休假（安全，不動作）</p>
+                      <p className="text-xs text-gray-400">
+                        {confirmOriginallyOff.map((e) => getEmpName(e.userId)).join("、")}
+                      </p>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -826,7 +922,11 @@ export default function FlexibleAttendancePanel({ onScheduleChanged }: Props) {
                 結算預覽 · {settleTarget.date}（{periodLabel(settleTarget)}）
               </h3>
               <p className="text-xs text-gray-500 mt-1">
-                依「發布當下原班表」結算。有打卡才發獎勵；應來未到進待補。原本休假者不在此清單。
+                {settleTarget.settlementPolicy === "required_work"
+                  ? "依實際打卡結算：有來給補休（含本休有來）；應來未到進待補；本休沒來不動。"
+                  : settleTarget.settlementPolicy === "day_off_no_penalty"
+                    ? "當天休：有打卡才發補休；沒來不罰、不進待補。"
+                    : "依「發布當下原班表」結算。有打卡才發獎勵；應來未到進待補。原本休假者不在此清單。"}
               </p>
             </div>
             <div className="overflow-y-auto p-4">

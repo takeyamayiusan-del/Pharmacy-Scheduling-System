@@ -94,6 +94,151 @@ describe("flexibleAttendance", () => {
     expect(rows.find((r) => r.userId === "b")?.outcome).toBe("pending_makeup");
   });
 
+  it("required_work：本休有打卡仍給補休；應來未到待補", () => {
+    const originalSchedule = [
+      { userId: "a", shift: "B" as const },
+      { userId: "b", shift: "B" as const },
+      { userId: "c", shift: "X" as const },
+      { userId: "d", shift: "X" as const },
+    ];
+    const punches: PunchRecord[] = [
+      {
+        id: "1",
+        employeeId: "a",
+        employeeName: "應來有到",
+        date: "2026-09-25",
+        action: "work_in",
+        segmentIndex: 0,
+        time: "08:30",
+        shift: "B",
+        lateMinutes: 0,
+        latitude: 0,
+        longitude: 0,
+        createdAt: "",
+      },
+      {
+        id: "2",
+        employeeId: "a",
+        employeeName: "應來有到",
+        date: "2026-09-25",
+        action: "work_out",
+        segmentIndex: 0,
+        time: "18:00",
+        shift: "B",
+        lateMinutes: 0,
+        latitude: 0,
+        longitude: 0,
+        createdAt: "",
+      },
+      {
+        id: "3",
+        employeeId: "c",
+        employeeName: "本休有來",
+        date: "2026-09-25",
+        action: "work_in",
+        segmentIndex: 0,
+        time: "09:00",
+        shift: "X",
+        lateMinutes: 0,
+        latitude: 0,
+        longitude: 0,
+        createdAt: "",
+      },
+      {
+        id: "4",
+        employeeId: "c",
+        employeeName: "本休有來",
+        date: "2026-09-25",
+        action: "work_out",
+        segmentIndex: 0,
+        time: "13:00",
+        shift: "X",
+        lateMinutes: 0,
+        latitude: 0,
+        longitude: 0,
+        createdAt: "",
+      },
+    ];
+
+    const rows = buildSettlementPreview({
+      employees: [
+        { id: "a", name: "應來有到", role: "staff" },
+        { id: "b", name: "應來未到", role: "staff" },
+        { id: "c", name: "本休有來", role: "staff" },
+        { id: "d", name: "本休沒來", role: "staff" },
+      ],
+      originalSchedule,
+      date: "2026-09-25",
+      periodMode: "full_day",
+      shiftTimeConfig: config,
+      punchRecords: punches,
+      settlementPolicy: "required_work",
+    });
+
+    expect(rows.map((r) => r.userId).sort()).toEqual(["a", "b", "c"]);
+    expect(rows.find((r) => r.userId === "a")?.outcome).toBe("comp_leave_granted");
+    expect(rows.find((r) => r.userId === "b")?.outcome).toBe("pending_makeup");
+    expect(rows.find((r) => r.userId === "c")?.outcome).toBe("comp_leave_granted");
+    expect(rows.find((r) => r.userId === "c")?.grantHours).toBe(4);
+    expect(rows.find((r) => r.userId === "d")).toBeUndefined();
+  });
+
+  it("day_off_no_penalty：有來給補休；沒來不罰（含原本有班）", () => {
+    const originalSchedule = [
+      { userId: "a", shift: "B" as const },
+      { userId: "b", shift: "B" as const },
+      { userId: "c", shift: "X" as const },
+    ];
+    const punches: PunchRecord[] = [
+      {
+        id: "1",
+        employeeId: "a",
+        employeeName: "有來",
+        date: "2026-09-28",
+        action: "work_in",
+        segmentIndex: 0,
+        time: "08:30",
+        shift: "B",
+        lateMinutes: 0,
+        latitude: 0,
+        longitude: 0,
+        createdAt: "",
+      },
+      {
+        id: "2",
+        employeeId: "a",
+        employeeName: "有來",
+        date: "2026-09-28",
+        action: "work_out",
+        segmentIndex: 0,
+        time: "12:30",
+        shift: "B",
+        lateMinutes: 0,
+        latitude: 0,
+        longitude: 0,
+        createdAt: "",
+      },
+    ];
+
+    const rows = buildSettlementPreview({
+      employees: [
+        { id: "a", name: "有來", role: "staff" },
+        { id: "b", name: "沒來", role: "staff" },
+        { id: "c", name: "本休沒來", role: "staff" },
+      ],
+      originalSchedule,
+      date: "2026-09-28",
+      periodMode: "full_day",
+      shiftTimeConfig: config,
+      punchRecords: punches,
+      settlementPolicy: "day_off_no_penalty",
+    });
+
+    expect(rows.map((r) => r.userId)).toEqual(["a"]);
+    expect(rows[0].outcome).toBe("comp_leave_granted");
+    expect(rows[0].grantHours).toBe(4);
+  });
+
   it("calculates punch hours overlapping typhoon window", () => {
     const punches: PunchRecord[] = [
       {

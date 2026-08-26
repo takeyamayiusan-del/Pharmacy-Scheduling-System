@@ -16,6 +16,7 @@ import {
   getHolidayWorkShiftOptions,
   type HolidayWorkShiftChoice,
 } from "@/lib/schedule/holidayOneClick";
+import { type FlexibleSettlementPolicy } from "@/lib/attendance/flexibleAttendance";
 import { createClient } from "@/lib/supabase/client";
 import BulletinBoard from "@/components/BulletinBoard";
 import PersonalPayslip from "@/components/PersonalPayslip";
@@ -58,6 +59,7 @@ export default function SchedulePage() {
     overtimeRequests,
     storeConfig,
     activeSiteId,
+    loadBulletinItems,
   } = useApp();
   
   const [currentDate, setCurrentDate] = useState(() => {
@@ -324,6 +326,81 @@ export default function SchedulePage() {
       );
     } catch (error) {
       alert(error instanceof Error ? error.message : "國定假日一鍵設定失敗");
+    } finally {
+      setHolidayOneClickBusy(null);
+    }
+  };
+
+  /** 國定假日彈性出勤：先套用上班／休假班表，再建立彈性出勤日供打卡後結算 */
+  const handleHolidayFlexibleAttendance = async (
+    date: string,
+    holidayName: string,
+    policy: Extract<FlexibleSettlementPolicy, "required_work" | "day_off_no_penalty">,
+    workShiftChoice?: HolidayWorkShiftChoice
+  ) => {
+    if (!isManager || holidayOneClickBusy) return;
+    const isRequired = policy === "required_work";
+    const label = isRequired
+      ? "彈性出勤（規定上班）：有來依打卡給補休；應來未到要待補／扣補休；本休有來仍給"
+      : "彈性出勤（當天休）：有來依打卡給補休；沒來不罰";
+    if (!window.confirm(`確定對 ${date} ${holidayName}\n${label}？`)) return;
+
+    setHolidayOneClickBusy(`${date}:${policy}`);
+    setHolidayOneClickMessage(null);
+    try {
+      const scheduleResult = await applyNationalHolidayOneClick(
+        date,
+        isRequired ? "work" : "off",
+        isRequired ? { workShiftChoice: workShiftChoice ?? "auto" } : undefined
+      );
+      await refreshSchedule();
+
+      // 以剛寫入 DB 的班表做快照（避免 React state 尚未更新）
+      const targets = employees.filter((e) => e.role !== "owner");
+      const { data: entries, error: entriesError } = await supabase
+        .from("schedule_entries")
+        .select("user_id, shift_code")
+        .eq("date", date)
+        .in(
+          "user_id",
+          targets.map((e) => e.id)
+        );
+      if (entriesError) throw new Error(entriesError.message);
+      const shiftByUser = new Map(
+        (entries ?? []).map((r) => [String(r.user_id), String(r.shift_code)])
+      );
+      const originalSchedule = targets.map((e) => ({
+        userId: e.id,
+        shift: (shiftByUser.get(e.id) ??
+          (isRequired ? storeConfig.defaultWeekdayShift || "B" : "X")) as ScheduleShiftCode,
+      }));
+
+      const res = await fetch("/api/attendance/flexible-day", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "create",
+          date,
+          title: `${holidayName}彈性出勤`,
+          periodMode: "full_day",
+          note: isRequired ? "規定上班日：依打卡結算補休／待補" : "當天休：有來給補休，沒來不罰",
+          publishBulletin: true,
+          originalSchedule,
+          site_id: activeSiteId,
+          eventKind: "national_holiday",
+          settlementPolicy: policy,
+        }),
+      });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error || "建立彈性出勤失敗");
+
+      await loadBulletinItems();
+      setTyphoonReloadKey((k) => k + 1);
+      setHolidayOneClickMessage(
+        `${date} 已更新班表 ${scheduleResult.updated} 人，並建立彈性出勤（請至上方面板確認預計出勤，打卡後再結算）`
+      );
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "國定假日彈性出勤設定失敗");
     } finally {
       setHolidayOneClickBusy(null);
     }
@@ -676,6 +753,7 @@ export default function SchedulePage() {
 
       {isManager && (
         <FlexibleAttendancePanel
+          reloadKey={typhoonReloadKey}
           onScheduleChanged={() => {
             void refreshSchedule();
             setTyphoonReloadKey((k) => k + 1);
@@ -691,14 +769,18 @@ export default function SchedulePage() {
         <div className="app-card p-4 border-amber-200 bg-amber-50/40">
           <h3 className="app-section-title text-amber-900 mb-1">國定假日一鍵設定</h3>
           <p className="text-sm text-amber-800/80 mb-3">
+            可直接設上班／休假，或改走「彈性出勤」（同颱風假：依打卡結算補休）。
+            規定上班：應來未到要待補／扣補休，本休有來仍給；當天休：有來給時數，沒來不罰。
             設為上班前可先選班別
             {useCatalog ? "（目錄班或依固定班）" : "（A–E，或依固定班）"}
-            。已排休或全日請假的人維持休假。設為休假則全員 X（不寫入排休選擇）。
+            。已排休或全日請假的人維持休假。
           </p>
           <div className="space-y-2">
             {monthNationalHolidays.map((h) => {
               const busyWork = holidayOneClickBusy === `${h.date}:work`;
               const busyOff = holidayOneClickBusy === `${h.date}:off`;
+              const busyFlexWork = holidayOneClickBusy === `${h.date}:required_work`;
+              const busyFlexOff = holidayOneClickBusy === `${h.date}:day_off_no_penalty`;
               const workShiftChoice = holidayWorkShiftByDate[h.date] ?? "auto";
               return (
                 <div
@@ -746,6 +828,31 @@ export default function SchedulePage() {
                       className="text-xs px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-white disabled:opacity-50"
                     >
                       {busyOff ? "處理中…" : "一鍵設為休假"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={h.isPast || Boolean(holidayOneClickBusy)}
+                      onClick={() =>
+                        void handleHolidayFlexibleAttendance(
+                          h.date,
+                          h.name,
+                          "required_work",
+                          workShiftChoice
+                        )
+                      }
+                      className="text-xs px-3 py-1.5 rounded-xl bg-cyan-700 text-white hover:bg-cyan-800 disabled:opacity-50"
+                    >
+                      {busyFlexWork ? "處理中…" : "彈性出勤（規定上班）"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={h.isPast || Boolean(holidayOneClickBusy)}
+                      onClick={() =>
+                        void handleHolidayFlexibleAttendance(h.date, h.name, "day_off_no_penalty")
+                      }
+                      className="text-xs px-3 py-1.5 rounded-xl border border-cyan-300 text-cyan-800 hover:bg-cyan-50 disabled:opacity-50"
+                    >
+                      {busyFlexOff ? "處理中…" : "彈性出勤（當天休）"}
                     </button>
                   </div>
                 </div>

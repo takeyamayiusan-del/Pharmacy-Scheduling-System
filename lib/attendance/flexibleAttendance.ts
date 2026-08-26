@@ -12,6 +12,26 @@ import {
 
 export type FlexiblePeriodMode = "full_day" | "from_time";
 
+/** 事件來源：颱風／天災，或國定假日彈性出勤 */
+export type FlexibleEventKind = "typhoon" | "national_holiday";
+
+/**
+ * 結算政策：
+ * - typhoon_default：原本休假完全跳過（現行颱風）
+ * - required_work：應來未到要待補／扣補休；本休有來仍給補休
+ * - day_off_no_penalty：有來給補休；沒來不罰
+ */
+export type FlexibleSettlementPolicy =
+  | "typhoon_default"
+  | "required_work"
+  | "day_off_no_penalty";
+
+export const FLEXIBLE_SETTLEMENT_POLICY_LABELS: Record<FlexibleSettlementPolicy, string> = {
+  typhoon_default: "颱風規則（本休跳過）",
+  required_work: "規定上班（未到待補；本休有來仍給）",
+  day_off_no_penalty: "當天休（有來給時數；沒來不罰）",
+};
+
 export type OriginalScheduleEntry = {
   userId: string;
   shift: ScheduleShiftCode;
@@ -26,6 +46,8 @@ export type FlexibleAttendanceDay = {
   note?: string;
   status: "announced" | "settled" | "cancelled";
   bulletinId?: string;
+  eventKind: FlexibleEventKind;
+  settlementPolicy: FlexibleSettlementPolicy;
   originalSchedule: OriginalScheduleEntry[];
   expectedAttendeeIds: string[];
   attendeesConfirmedAt?: string;
@@ -140,7 +162,10 @@ export function calculateActualPunchHoursInPeriod(
 }
 
 /**
- * 結算預覽：只處理「發布當下原本有排班」的人。
+ * 結算預覽。
+ * - typhoon_default：只處理原本有排班者；本休完全跳過
+ * - required_work：應來未到 → 待補；本休有打卡 → 仍給補休
+ * - day_off_no_penalty：有打卡才給；沒來不罰（含原本有班者）
  */
 export function buildSettlementPreview(params: {
   employees: Array<{ id: string; name: string; role: string }>;
@@ -151,22 +176,15 @@ export function buildSettlementPreview(params: {
   shiftTimeConfig: ShiftTimeConfig;
   punchRecords: PunchRecord[];
   storeConfig?: StoreConfig;
+  settlementPolicy?: FlexibleSettlementPolicy;
 }): SettlementPreviewRow[] {
+  const policy = params.settlementPolicy ?? "typhoon_default";
   const nameById = new Map(params.employees.map((e) => [e.id, e.name]));
   const rows: SettlementPreviewRow[] = [];
+  const volunteerCap = volunteerGrantCapHours(params.shiftTimeConfig, params.storeConfig);
 
   for (const entry of params.originalSchedule) {
-    if (isOff(entry.shift, params.storeConfig)) continue;
-
-    const affectedHours = calculateAffectedShiftHours(
-      entry.shift,
-      params.shiftTimeConfig,
-      params.periodMode,
-      params.fromTime,
-      params.storeConfig
-    );
-    if (affectedHours <= 0) continue;
-
+    const originallyOff = isOff(entry.shift, params.storeConfig);
     const dayPunches = params.punchRecords.filter(
       (p) => p.employeeId === entry.userId && p.date === params.date
     );
@@ -176,32 +194,83 @@ export function buildSettlementPreview(params: {
       params.fromTime
     );
 
-    if (actualPunchHours > 0) {
+    if (originallyOff) {
+      // 颱風預設：本休完全不動
+      if (policy === "typhoon_default") continue;
+      // 本休沒來：不算義務、不罰
+      if (actualPunchHours <= 0) continue;
+      // 本休有來：仍給補休（依實際打卡，上限為預設全日工時）
       rows.push({
         userId: entry.userId,
         employeeName: nameById.get(entry.userId) ?? entry.userId,
         scheduledShift: entry.shift,
-        affectedHours,
+        affectedHours: volunteerCap,
         actualPunchHours,
         outcome: "comp_leave_granted",
-        grantHours: roundHours(Math.min(actualPunchHours, affectedHours)),
+        grantHours: roundHours(Math.min(actualPunchHours, volunteerCap)),
         pendingHours: 0,
       });
-    } else {
+      continue;
+    }
+
+    const affectedHours = calculateAffectedShiftHours(
+      entry.shift,
+      params.shiftTimeConfig,
+      params.periodMode,
+      params.fromTime,
+      params.storeConfig
+    );
+    if (affectedHours <= 0 && actualPunchHours <= 0) continue;
+
+    if (actualPunchHours > 0) {
+      const cap = affectedHours > 0 ? affectedHours : volunteerCap;
       rows.push({
         userId: entry.userId,
         employeeName: nameById.get(entry.userId) ?? entry.userId,
         scheduledShift: entry.shift,
-        affectedHours,
-        actualPunchHours: 0,
-        outcome: "pending_makeup",
-        grantHours: 0,
-        pendingHours: affectedHours,
+        affectedHours: cap,
+        actualPunchHours,
+        outcome: "comp_leave_granted",
+        grantHours: roundHours(Math.min(actualPunchHours, cap)),
+        pendingHours: 0,
       });
+      continue;
     }
+
+    // 沒打卡
+    if (policy === "day_off_no_penalty") {
+      // 當天休：沒來不罰
+      continue;
+    }
+
+    // typhoon_default / required_work：應來未到 → 待補
+    if (affectedHours <= 0) continue;
+    rows.push({
+      userId: entry.userId,
+      employeeName: nameById.get(entry.userId) ?? entry.userId,
+      scheduledShift: entry.shift,
+      affectedHours,
+      actualPunchHours: 0,
+      outcome: "pending_makeup",
+      grantHours: 0,
+      pendingHours: affectedHours,
+    });
   }
 
   return rows;
+}
+
+/** 本休有來時，補休核發上限（預設平日班工時，否則 8） */
+export function volunteerGrantCapHours(
+  shiftTimeConfig: ShiftTimeConfig,
+  storeConfig?: StoreConfig
+): number {
+  const fallback =
+    storeConfig?.defaultWeekdayShift && storeConfig.defaultWeekdayShift !== "X"
+      ? storeConfig.defaultWeekdayShift
+      : "B";
+  const hours = getShiftWorkHours(fallback, shiftTimeConfig, storeConfig);
+  return hours > 0 ? hours : 8;
 }
 
 export function buildOriginalScheduleSnapshot(
