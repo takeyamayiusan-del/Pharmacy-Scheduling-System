@@ -4116,7 +4116,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           })()
         : null;
 
-    const managerLabel = currentUser.role === "owner" ? "老闆" : "店長";
+    const managerLabel =
+      currentUser.role === "owner"
+        ? "老闆"
+        : currentUser.role === "deputy"
+          ? "副店"
+          : "店長";
     const defaultNote =
       roundedHours > 0
         ? `${managerLabel}核發補休 ${roundedHours} 小時`
