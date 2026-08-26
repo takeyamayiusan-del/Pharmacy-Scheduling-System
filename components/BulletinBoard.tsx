@@ -148,7 +148,22 @@ export default function BulletinBoard() {
   };
 
   const handleTogglePin = async (item: BulletinItem) => {
-    await updateBulletinItem(item.id, { isPinned: !item.isPinned });
+    try {
+      await updateBulletinItem(item.id, { isPinned: !item.isPinned });
+    } catch (error) {
+      console.error("釘選失敗:", error);
+      alert(error instanceof Error ? error.message : "釘選失敗，請稍後再試");
+    }
+  };
+
+  const handleDelete = async (item: BulletinItem) => {
+    if (!window.confirm(`確定刪除公告「${item.title}」？`)) return;
+    try {
+      await deleteBulletinItem(item.id);
+    } catch (error) {
+      console.error("刪除失敗:", error);
+      alert(error instanceof Error ? error.message : "刪除失敗，請稍後再試");
+    }
   };
 
   const handleMarkAsRead = async (item: BulletinItem) => {
@@ -469,7 +484,7 @@ export default function BulletinBoard() {
                           </button>
                         )}
                         <button
-                          onClick={() => deleteBulletinItem(item.id)}
+                          onClick={() => void handleDelete(item)}
                           className="p-1 text-gray-400 hover:text-red-600 transition-colors"
                           title="刪除"
                         >

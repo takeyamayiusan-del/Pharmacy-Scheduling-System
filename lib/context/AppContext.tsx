@@ -4430,12 +4430,28 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
     if (updates.isPinned !== undefined) dbUpdates.is_pinned = updates.isPinned;
     if (updates.targetType !== undefined) dbUpdates.target_type = updates.targetType;
     if (updates.targetIds !== undefined) dbUpdates.target_ids = updates.targetIds;
-    await supabase.from("bulletin_board").update(dbUpdates).eq("id", id);
+    const { data, error } = await supabase
+      .from("bulletin_board")
+      .update(dbUpdates)
+      .eq("id", id)
+      .select("id");
+    if (error) throw error;
+    if (!data?.length) {
+      throw new Error("無法更新公告（權限不足或公告已不存在）");
+    }
     await loadBulletinItems();
   };
 
   const deleteBulletinItem = async (id: string): Promise<void> => {
-    await supabase.from("bulletin_board").delete().eq("id", id);
+    const { data, error } = await supabase
+      .from("bulletin_board")
+      .delete()
+      .eq("id", id)
+      .select("id");
+    if (error) throw error;
+    if (!data?.length) {
+      throw new Error("無法刪除公告（權限不足或公告已不存在）");
+    }
     await loadBulletinItems();
   };
 
