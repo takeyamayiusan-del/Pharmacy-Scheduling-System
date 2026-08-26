@@ -71,6 +71,10 @@ import {
 } from "@/lib/schedule/effectiveShift";
 import { roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
 import {
+  buildCompLeaveDebitNote,
+  resolveCompLeaveDebitHours,
+} from "@/lib/attendance/compLeaveDebit";
+import {
   resolveCompensationWithPolicy,
   validateOvertimeWithPolicy,
 } from "@/lib/attendance/overtimePolicy";
@@ -3241,17 +3245,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
         await restoreTardinessAfterLeaveCancelled(request);
       }
       if (status === "approved" && prevStatus !== "approved" && request.type === "補休假") {
-        const balanceBefore = getCompLeaveBalance(request.employeeId);
-        const isAdvance = balanceBefore < request.leaveHours;
-        await supabase.from("comp_leave_ledger").insert({
-          user_id: request.employeeId,
-          hours: -request.leaveHours,
-          source_type: "leave_debit",
-          source_id: id,
-          note: isAdvance
-            ? `先請補休（借支） ${request.startDate}～${request.endDate}`
-            : `請假使用補休 ${request.startDate}～${request.endDate}`,
+        const debitHours = resolveCompLeaveDebitHours({
+          leaveHours: request.leaveHours,
+          period: request.period,
+          leaveHoursPerDay: storeConfig.policies.leaveHoursPerDay,
         });
+        if (debitHours <= 0) {
+          throw new Error("補休假時數無效，無法扣補休帳本");
+        }
+
+        const { data: existingDebit, error: existingError } = await supabase
+          .from("comp_leave_ledger")
+          .select("id")
+          .eq("source_id", id)
+          .eq("source_type", "leave_debit")
+          .limit(1);
+        if (existingError) throw existingError;
+
+        if (!existingDebit?.length) {
+          const balanceBefore = getCompLeaveBalance(request.employeeId);
+          const isAdvance = balanceBefore < debitHours;
+          const { error: debitError } = await supabase.from("comp_leave_ledger").insert({
+            user_id: request.employeeId,
+            hours: -debitHours,
+            source_type: "leave_debit",
+            source_id: id,
+            note: buildCompLeaveDebitNote({
+              isAdvance,
+              startDate: request.startDate,
+              endDate: request.endDate,
+            }),
+          });
+          if (debitError) {
+            throw new Error(`補休假已核准，但扣補休失敗：${debitError.message}`);
+          }
+          if (
+            Number(request.leaveHours) <= 0 ||
+            !Number.isFinite(Number(request.leaveHours))
+          ) {
+            await supabase
+              .from("leave_applications")
+              .update({ leave_hours: debitHours })
+              .eq("id", id);
+          }
+        }
       }
       if (
         prevStatus === "approved" &&
