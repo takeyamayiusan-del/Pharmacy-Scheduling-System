@@ -20,3 +20,24 @@ CREATE POLICY "comp_leave_insert_system" ON public.comp_leave_ledger
       WHERE id = auth.uid() AND role IN ('boss', 'owner', 'manager', 'deputy')
     )
   );
+
+-- 彈性出勤結果／待補時數：副店需看全員（面板以 client 讀取）
+DROP POLICY IF EXISTS "flexible_results_select" ON public.flexible_attendance_results;
+CREATE POLICY "flexible_results_select" ON public.flexible_attendance_results
+  FOR SELECT TO authenticated USING (
+    user_id = auth.uid() OR
+    EXISTS (
+      SELECT 1 FROM public.users
+      WHERE id = auth.uid() AND role IN ('boss', 'owner', 'manager', 'deputy')
+    )
+  );
+
+DROP POLICY IF EXISTS "pending_makeup_select" ON public.pending_makeup_hours;
+CREATE POLICY "pending_makeup_select" ON public.pending_makeup_hours
+  FOR SELECT TO authenticated USING (
+    user_id = auth.uid() OR
+    EXISTS (
+      SELECT 1 FROM public.users
+      WHERE id = auth.uid() AND role IN ('boss', 'owner', 'manager', 'deputy')
+    )
+  );
