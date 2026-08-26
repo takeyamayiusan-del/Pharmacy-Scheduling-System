@@ -3,6 +3,8 @@ import { assertManagerAuth } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import type {
   AttendeeShiftChoice,
+  FlexibleEventKind,
+  FlexibleSettlementPolicy,
   OriginalScheduleEntry,
   SettlementPreviewRow,
 } from "@/lib/attendance/flexibleAttendance";
@@ -32,6 +34,8 @@ type CreateBody = {
   publishBulletin?: boolean;
   originalSchedule: OriginalScheduleEntry[];
   site_id?: string;
+  eventKind?: FlexibleEventKind;
+  settlementPolicy?: FlexibleSettlementPolicy;
 };
 
 type ConfirmAttendeesBody = {
@@ -226,7 +230,16 @@ export async function POST(req: NextRequest) {
         .eq("status", "cancelled");
 
       const storeConfig = await loadStoreConfig(admin, siteId);
-      const title = body.title?.trim() || "颱風／彈性出勤日";
+      const eventKind: FlexibleEventKind =
+        body.eventKind === "national_holiday" ? "national_holiday" : "typhoon";
+      const settlementPolicy: FlexibleSettlementPolicy =
+        body.settlementPolicy === "required_work" ||
+        body.settlementPolicy === "day_off_no_penalty"
+          ? body.settlementPolicy
+          : "typhoon_default";
+      const title =
+        body.title?.trim() ||
+        (eventKind === "national_holiday" ? "國定假日彈性出勤" : "颱風／彈性出勤日");
       const periodLabel =
         body.periodMode === "full_day"
           ? "全日"
@@ -238,14 +251,34 @@ export async function POST(req: NextRequest) {
 
       let bulletinId: string | null = null;
       if (body.publishBulletin !== false) {
+        const rules =
+          settlementPolicy === "required_work"
+            ? [
+                "規則（規定上班）：",
+                "1. 有來打卡者：結算後依實際打卡時數核發補休（含原本休假但有來的人）。",
+                "2. 原本應上班卻未到者：需擇日補班或扣補休結清。",
+                "3. 原本休假且沒來：不受影響。",
+              ]
+            : settlementPolicy === "day_off_no_penalty"
+              ? [
+                  "規則（當天休）：",
+                  "1. 有來打卡者：結算後依實際打卡時數核發補休。",
+                  "2. 沒來者：不扣、不補，不受影響。",
+                ]
+              : [
+                  "規則：",
+                  "1. 當天本來就休假的人：完全不受影響。",
+                  "2. 有來打卡的人：結算後依實際打卡時數核發補休獎勵。",
+                  "3. 原本有排班但因颱風無法來的人：可擇日補班，或扣補休結清。",
+                ];
+
         const content = [
           `日期：${body.date}`,
           `時段：${periodLabel}`,
-          "請回覆店長：你是否願意／能夠在該時段出勤？",
-          "規則：",
-          "1. 當天本來就休假的人：完全不受影響。",
-          "2. 有來打卡的人：結算後依實際打卡時數核發補休獎勵。",
-          "3. 原本有排班但因颱風無法來的人：可擇日補班，或扣補休結清。",
+          eventKind === "national_holiday"
+            ? "國定假日採彈性出勤，請依店長指示確認是否出勤。"
+            : "請回覆店長：你是否願意／能夠在該時段出勤？",
+          ...rules,
           body.note?.trim() ? `備註：${body.note.trim()}` : "",
         ]
           .filter(Boolean)
@@ -285,6 +318,8 @@ export async function POST(req: NextRequest) {
           note: body.note?.trim() || null,
           status: "announced",
           bulletin_id: bulletinId,
+          event_kind: eventKind,
+          settlement_policy: settlementPolicy,
           original_schedule: body.originalSchedule,
           expected_attendee_ids: originallyOn.map((e) => e.userId),
           created_by: auth.callerId,
@@ -330,9 +365,16 @@ export async function POST(req: NextRequest) {
 
       const storeConfig = await loadStoreConfig(admin, daySiteId);
       const original = (day.original_schedule ?? []) as OriginalScheduleEntry[];
+      const settlementPolicy = (day.settlement_policy ??
+        "typhoon_default") as FlexibleSettlementPolicy;
+      const allowOffVolunteers =
+        settlementPolicy === "required_work" || settlementPolicy === "day_off_no_penalty";
       const originallyOn = original.filter((e) => !isOffShiftCode(e.shift, storeConfig));
       const originallyOnIds = new Set(originallyOn.map((e) => e.userId));
-      const expected = body.expectedAttendeeIds.filter((id) => originallyOnIds.has(id));
+      const allIds = new Set(original.map((e) => e.userId));
+      const expected = body.expectedAttendeeIds.filter((id) =>
+        allowOffVolunteers ? allIds.has(id) : originallyOnIds.has(id)
+      );
       const periodMode = day.period_mode as "full_day" | "from_time";
       const fromTime = formatTime(day.from_time);
       const shiftTimeConfig = await loadShiftTimeConfig(admin);
@@ -340,8 +382,14 @@ export async function POST(req: NextRequest) {
       const attendeeShifts = body.attendeeShifts ?? {};
       const validShifts = new Set([...getScheduleShiftOptions(storeConfig), "X"]);
 
-      // 依班別 × 颱風時段 × 是否出席（可指定班別）更新班表
-      for (const entry of originallyOn) {
+      // 依班別 × 彈性時段 × 是否出席（可指定班別）更新班表
+      const entriesToUpdate = allowOffVolunteers
+        ? original.filter(
+            (e) => !isOffShiftCode(e.shift, storeConfig) || expected.includes(e.userId)
+          )
+        : originallyOn;
+
+      for (const entry of entriesToUpdate) {
         const willCome = expected.includes(entry.userId);
         const rawAssigned = attendeeShifts[entry.userId];
         const assignedOk =
@@ -420,19 +468,37 @@ export async function POST(req: NextRequest) {
 
       const storeConfig = await loadStoreConfig(admin, daySiteId);
       const original = (day.original_schedule ?? []) as OriginalScheduleEntry[];
-      const allowedIds = new Set(
+      const settlementPolicy = (day.settlement_policy ??
+        "typhoon_default") as FlexibleSettlementPolicy;
+      const originallyOnIds = new Set(
         original.filter((e) => !isOffShiftCode(e.shift, storeConfig)).map((e) => e.userId)
       );
+      const allSnapshotIds = new Set(original.map((e) => e.userId));
 
-      // 安全閘：只允許對「原本有排班」的人做核發／待補
-      const safeRows = body.rows.filter(
-        (row) =>
-          allowedIds.has(row.userId) &&
-          (row.outcome === "comp_leave_granted" || row.outcome === "pending_makeup")
-      );
+      // 安全閘：颱風預設僅原本有班；國定假日政策允許本休有來者核發補休
+      const safeRows = body.rows.filter((row) => {
+        if (row.outcome !== "comp_leave_granted" && row.outcome !== "pending_makeup") {
+          return false;
+        }
+        if (settlementPolicy === "typhoon_default") {
+          return originallyOnIds.has(row.userId);
+        }
+        if (row.outcome === "pending_makeup") {
+          // 待補僅限原本應上班者
+          return originallyOnIds.has(row.userId);
+        }
+        // 核發：快照內任何人（含本休有來）
+        return allSnapshotIds.has(row.userId);
+      });
 
       const expiresAt = new Date();
       expiresAt.setMonth(expiresAt.getMonth() + 6);
+      const creditLabel =
+        day.event_kind === "national_holiday" ? "國定假日彈性出勤" : "颱風日";
+      const pendingLabel =
+        day.event_kind === "national_holiday"
+          ? "國定假日規定上班未出勤"
+          : "原本有排班但因颱風未出勤";
 
       for (const row of safeRows) {
         const { error: resultError } = await admin.from("flexible_attendance_results").upsert(
@@ -448,7 +514,7 @@ export async function POST(req: NextRequest) {
             note:
               row.outcome === "comp_leave_granted"
                 ? `實際打卡後核發補休 ${row.grantHours} 小時`
-                : `原本有排班但未出勤，待補 ${row.pendingHours} 小時（可擇日補或扣補休）`,
+                : `應上班未出勤，待補 ${row.pendingHours} 小時（可擇日補或扣補休）`,
           },
           { onConflict: "day_id,user_id" }
         );
@@ -472,7 +538,7 @@ export async function POST(req: NextRequest) {
           await admin.from("notifications").insert({
             recipient_id: row.userId,
             type: "info",
-            title: "颱風日出勤補休已核發",
+            title: `${creditLabel}出勤補休已核發`,
             body: `${day.day_date} 已依實際打卡核發補休 ${row.grantHours} 小時。`,
             related_type: "overtime",
             related_id: body.dayId,
@@ -487,7 +553,7 @@ export async function POST(req: NextRequest) {
             source_date: day.day_date,
             hours: row.pendingHours,
             status: "pending",
-            note: `${day.title}：原本有排班但因颱風未出勤`,
+            note: `${day.title}：${pendingLabel}`,
           });
           if (pendingError) {
             return NextResponse.json({ error: pendingError.message }, { status: 500 });
@@ -496,8 +562,8 @@ export async function POST(req: NextRequest) {
           await admin.from("notifications").insert({
             recipient_id: row.userId,
             type: "warning",
-            title: "颱風日待補時數",
-            body: `${day.day_date} 原本有排班但未出勤，待補 ${row.pendingHours} 小時。請與店長確認：擇日補班或扣補休。`,
+            title: `${creditLabel}待補時數`,
+            body: `${day.day_date} 應上班未出勤，待補 ${row.pendingHours} 小時。請與店長確認：擇日補班或扣補休。`,
             related_type: "overtime",
             related_id: body.dayId,
             is_read: false,
