@@ -512,15 +512,21 @@ export async function markMealOrderOrdered(input: {
   if (error) throw error;
 
   if (input.bulletinId) {
-    await supabase
+    const { data, error: archiveError } = await supabase
       .from("bulletin_board")
       .update({ status: "archived" })
-      .eq("id", input.bulletinId);
+      .eq("id", input.bulletinId)
+      .select("id");
+    if (archiveError) throw archiveError;
+    if (!data?.length) {
+      throw new Error("訂餐已標記完成，但無法封存公告（可能權限不足）。請重新整理後再試刪除公告。");
+    }
   } else {
-    await supabase
+    const { error: archiveError } = await supabase
       .from("bulletin_board")
       .update({ status: "archived" })
       .eq("related_id", input.orderId)
       .eq("type", "meal_order");
+    if (archiveError) throw archiveError;
   }
 }
