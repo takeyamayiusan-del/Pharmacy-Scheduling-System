@@ -6,7 +6,7 @@ import {
   resolveCompLeaveDebitHours,
 } from "@/lib/attendance/compLeaveDebit";
 import { roundCompLeaveHours } from "@/lib/attendance/compLeaveDisplay";
-import { parseSiteId } from "@/lib/sites";
+import { parseSiteId, storeConfigSettingId } from "@/lib/sites";
 import { defaultStoreConfigForSite, parseStoreConfig } from "@/lib/store-config";
 
 /**
@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
     const { data: setting } = await admin
       .from("system_settings")
       .select("setting_value")
-      .eq("id", `store_config_${siteId}`)
+      .eq("id", storeConfigSettingId(siteId))
       .maybeSingle();
     const storeConfig = setting?.setting_value
       ? parseStoreConfig(setting.setting_value, siteId)
