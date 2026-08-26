@@ -90,7 +90,7 @@ function scrollToEditForm(node: HTMLElement | null) {
 
 export default function ShopOpsPage() {
   const { currentUser, employees, activeSiteId, storeConfig } = useApp();
-  const [tab, setTab] = useState<TabKey>("procurement");
+  const [tab, setTab] = useState<TabKey>("medicine");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [categories, setCategories] = useState<ProcurementCategory[]>([]);
@@ -150,7 +150,7 @@ export default function ShopOpsPage() {
             店務需求
           </h1>
           <p className="app-meta mt-1">
-            日常採購、叫藥、客人訂購、客訂管理。員工先登記，之後標記進度；完成後按已處理，之後仍可改回待處理或刪除。
+            叫藥、日常採購、客人訂購、客訂管理。員工先登記，之後標記進度；完成後按已處理，之後仍可改回待處理或刪除。
           </p>
         </div>
       </div>
@@ -161,10 +161,10 @@ export default function ShopOpsPage() {
         defaultOpen
         storageKey={`help:shop-ops:${storageScope}`}
       >
-        <p>1. <strong>日常採購</strong>：文具、影印紙、貼紙等。買好了按「已處理」即可。</p>
         <p>
-          2. <strong>叫藥需求</strong>：先登記，再標「已訂貨／已到貨」。欠藥請留電話並標「已通知」；客人來拿後按「已處理」。
+          1. <strong>叫藥需求</strong>：先登記，再標「已訂貨／已到貨」。欠藥請留電話並標「已通知」；客人來拿後按「已處理」。
         </p>
+        <p>2. <strong>日常採購</strong>：文具、影印紙、貼紙等。買好了按「已處理」即可。</p>
         <p>
           3. <strong>客人訂購</strong>：可選一般或緊急（緊急可填希望到貨日）。進度為訂貨 → 到貨 → 通知 → 已拿；四項齊了會詢問是否結案。
         </p>
@@ -177,8 +177,8 @@ export default function ShopOpsPage() {
       <div className="flex flex-wrap gap-2">
         {(
           [
-            ["procurement", "日常採購", ShoppingBag],
             ["medicine", "叫藥需求", Pill],
+            ["procurement", "日常採購", ShoppingBag],
             ["customer", "客人訂購", Package],
             ["fulfillment", "客訂管理", ListChecks],
           ] as const
