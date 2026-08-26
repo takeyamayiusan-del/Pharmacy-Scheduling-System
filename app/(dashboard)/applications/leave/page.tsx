@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useApp, type LeaveType } from '@/lib/context/AppContext';
 import { canManageSite } from '@/lib/auth/roles';
@@ -55,6 +55,7 @@ export default function LeaveApplicationPage() {
     shiftTimeConfig,
     getShiftForDate,
     getCompLeaveBalance,
+    loadCompLeaveLedger,
     getAnnualLeaveBalance,
     storeConfig,
     shiftDisplayConfig,
@@ -75,6 +76,37 @@ export default function LeaveApplicationPage() {
     }
     return opts;
   }, [storeConfig, shiftDisplayConfig]);
+
+  // 店長／副店／老闆進入請假頁時，依序補扣過去核准但漏扣的補休假
+  useEffect(() => {
+    if (!canManageSite(currentUser?.role)) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await fetch("/api/attendance/backfill-comp-leave-debits", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ site_id: activeSiteId }),
+        });
+        const data = (await res.json().catch(() => null)) as {
+          inserted?: number;
+          error?: string;
+        } | null;
+        if (!res.ok) {
+          console.warn("[leave] backfill comp leave debits failed", data?.error);
+          return;
+        }
+        if (!cancelled && (data?.inserted ?? 0) > 0) {
+          await loadCompLeaveLedger();
+        }
+      } catch (err) {
+        console.warn("[leave] backfill comp leave debits error", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser?.role, activeSiteId, loadCompLeaveLedger]);
 
   const [showForm, setShowForm] = useState(false);
   const [formData, setFormData] = useState({
