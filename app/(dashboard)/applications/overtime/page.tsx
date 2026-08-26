@@ -514,7 +514,7 @@ export default function OvertimePage() {
           <div className="p-4 border-b bg-emerald-50">
             <h3 className="font-medium text-gray-900">補休時數管理</h3>
             <p className="text-xs text-gray-600 mt-1">
-              店長／老闆可手動核發或扣回員工補休時數（半年內有效）。請假可先請補休（餘額可為負），之後加班轉補休會加回。
+              店長／副店／老闆可手動核發或扣回員工補休時數（半年內有效）。請假可先請補休（餘額可為負），之後加班轉補休會加回。
             </p>
           </div>
 
