@@ -1051,7 +1051,7 @@ function Get-Pm2AppsFromKnownNames {
         }
 
         $status = if (Get-Pm2OnlineFromList -Name $name) { "online" } else { "unknown" }
-        $apps += (New-Pm2AppStub -Name $name -Status $status -Pid $directPid)
+        $apps += (New-Pm2AppStub -Name $name -Status $status -ProcessId $directPid)
     }
     return $apps
 }
@@ -1115,12 +1115,12 @@ function New-Pm2AppStub {
     param(
         [string]$Name,
         [string]$Status = "online",
-        [int]$Pid = 0
+        [int]$ProcessId = 0
     )
 
     return [PSCustomObject]@{
         name    = $Name
-        pid     = $Pid
+        pid     = $ProcessId
         pm2_env = [PSCustomObject]@{ status = $Status }
     }
 }
