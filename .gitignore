@@ -100,4 +100,5 @@ node_modules
 # Machine-local PM2/Tailscale keepalive context (user paths)
 /data/ops/keepalive-context.json
 /data/ops/keepalive-health.json
+/data/ops/funnel-public-status.json
 
