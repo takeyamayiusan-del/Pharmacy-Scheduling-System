@@ -1292,6 +1292,49 @@ function Start-SiteViaPm2OrRunner {
     Start-SiteRunner -ProjectRoot $ProjectRoot
 }
 
+function Repair-Pm2SitesIfNeeded {
+    param(
+        [string]$ProjectRoot,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m }
+    )
+
+    if (-not (Get-Pm2Command)) {
+        & $WriteLog "pm2 not found — cannot adopt sites into PM2"
+        return $false
+    }
+
+    $allOk = $true
+    $cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+
+    if ((Test-SiteHealthy) -and -not (Test-PharmacyWebPm2OwningPort)) {
+        & $WriteLog "pharmacy HTTP OK but PM2 does not own :3000 — adopting into PM2"
+        if (-not (Repair-SiteIfNeeded -ProjectRoot $ProjectRoot -WriteLog $WriteLog)) {
+            $allOk = $false
+        }
+    }
+
+    $cashflowHealthy = Test-CashflowHealthy -ProjectRoot $ProjectRoot
+    $cashflowPm2Online = Get-Pm2Online -Name "cashflow"
+    if ($cashflowHealthy -and -not $cashflowPm2Online) {
+        & $WriteLog "cashflow HTTP OK but PM2 cashflow not online — adopting into PM2"
+        $listenerPid = Get-PortListenerPid -Port $cashflowPort
+        if ($listenerPid) {
+            & $WriteLog ("Port $cashflowPort occupied by orphan pid=$listenerPid, force cleanup")
+            [void](Stop-PortListenerForce -Port $cashflowPort -WriteLog $WriteLog)
+        }
+        if (-not (Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck {
+            Test-CashflowHealthy -ProjectRoot $ProjectRoot
+        } -WriteLog $WriteLog)) {
+            $allOk = $false
+        }
+    }
+
+    if ($allOk -and (Get-Pm2Command)) {
+        & (Get-Pm2Command) save 2>$null | Out-Null
+    }
+    return $allOk
+}
+
 function Repair-SiteIfNeeded {
     param(
         [string]$ProjectRoot,
@@ -1305,7 +1348,6 @@ function Repair-SiteIfNeeded {
     $lockFile = Get-BuildLockPath -ProjectRoot $ProjectRoot
     if (Test-Path -LiteralPath $lockFile) {
         if (Test-BuildInProgress -ProjectRoot $ProjectRoot) {
-            # 主動 build 進行中：本輪略過，不要等 4 分鐘卡死整支 watchdog
             & $WriteLog "Build in progress, skip repair this round"
             return $false
         }
@@ -1313,7 +1355,13 @@ function Repair-SiteIfNeeded {
         Remove-Item -LiteralPath $lockFile -Force -ErrorAction SilentlyContinue
     }
 
-    & $WriteLog "Site unhealthy, repairing..."
+    $siteHealthy = Test-SiteHealthy
+    $pm2Owns = Test-PharmacyWebPm2OwningPort
+    if ($siteHealthy -and -not $pm2Owns) {
+        & $WriteLog "Site HTTP OK but PM2 does not own :3000 — adopting into PM2"
+    } else {
+        & $WriteLog "Site unhealthy, repairing..."
+    }
     $listenerPid = Get-PortListenerPid -Port 3000
     $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
     if ($listenerPid -and ($pm2Pid -ne $listenerPid)) {
@@ -1342,8 +1390,8 @@ function Repair-SiteIfNeeded {
     # 最多等約 45 秒成為健康（每 5 秒用 curl 探一次）
     for ($i = 1; $i -le 9; $i++) {
         Start-Sleep -Seconds 5
-        if (Test-SiteHealthy) {
-            & $WriteLog "Site repaired"
+        if ((Test-SiteHealthy) -and (Test-PharmacyWebPm2OwningPort)) {
+            & $WriteLog "Site repaired under PM2"
             return $true
         }
     }

@@ -130,6 +130,15 @@ if ($pharmacyOk) {
     Write-Log ("pharmacy after repair: " + $(if ($pharmacyOk) { "OK" } else { "FAIL" }))
 }
 
+# HTTP 正常但非 PM2 程序（常見：手動 node 啟動）→ 收編到 PM2，否則自動重啟無效
+if ($pharmacyOk -and $pm2 -and -not (Test-PharmacyWebPm2OwningPort)) {
+    Write-Log "pharmacy HTTP OK but PM2 does not own :3000 — adopt via Repair-SiteIfNeeded"
+    if (Repair-SiteIfNeeded -ProjectRoot $ProjectRoot -WriteLog { param($m) Write-Log $m }) {
+        $pharmacyOk = Test-PharmacyLocalOk
+    }
+    Write-Log ("pharmacy after PM2 adopt: " + $(if ($pharmacyOk) { "OK" } else { "FAIL" }))
+}
+
 # --- cashflow :5000（必須與排班分開設 PORT）---
 $cashflowOk = Test-LocalOk "http://127.0.0.1:5000/"
 $cashflowListen = Test-PortListening 5000
@@ -163,6 +172,22 @@ if ($cashflowOk) {
     $cashflowOk = Test-LocalOk "http://127.0.0.1:5000/"
     $healthState.cashflowHttpFails = 0
     Write-Log ("cashflow after repair: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
+}
+
+$cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
+if ($cashflowOk -and $pm2 -and -not (Get-Pm2Online -Name "cashflow")) {
+    Write-Log "cashflow HTTP OK but PM2 cashflow not online — adopt"
+    $cfListenPid = Get-PortListenerPid -Port $cashflowPort
+    if ($cfListenPid) {
+        Write-Log ("cashflow orphan pid=$cfListenPid on :$cashflowPort — clearing")
+        [void](Stop-PortListenerForce -Port $cashflowPort -WriteLog { param($m) Write-Log $m })
+    }
+    if (Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck {
+        Test-CashflowHealthy -ProjectRoot $ProjectRoot
+    } -WriteLog { param($m) Write-Log $m }) {
+        $cashflowOk = Test-LocalOk "http://127.0.0.1:$cashflowPort/"
+    }
+    Write-Log ("cashflow after PM2 adopt: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
 }
 
 # --- funnel：一定檢查外網窗口。內網通但外網不通，連續 2 次才重宣告（不 reset）---

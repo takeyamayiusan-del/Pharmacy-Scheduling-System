@@ -17,9 +17,15 @@ Write-Host "Project: $ProjectRoot"
 Write-Host ""
 
 Write-Host "[1] PM2 apps" -ForegroundColor Cyan
+$pharmacyOnline = $false
+$cashflowOnline = $false
 if (-not (Get-Pm2Command)) {
     Bad "pm2 not found"
+    Info ("PM2_HOME={0}" -f $(if ($env:PM2_HOME) { $env:PM2_HOME } else { "(unset)" }))
 } else {
+    Info ("PM2_HOME={0}" -f $(if ($env:PM2_HOME) { $env:PM2_HOME } else { "(default)" }))
+    $pm2Apps = @(Get-Pm2Apps)
+    Info ("pm2 jlist apps={0}" -f $pm2Apps.Count)
     $pharmacyOnline = Get-Pm2Online -Name "pharmacy-web"
     $cashflowOnline = Get-Pm2Online -Name "cashflow"
     if ($pharmacyOnline) { Ok "pharmacy-web online" } else { Bad "pharmacy-web not online" }
@@ -49,6 +55,10 @@ if (Test-PharmacyWebPm2OwningPort) {
     $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
     $listenPid = Get-PortListenerPid -Port 3000
     Info ("pm2 pid={0} listen pid={1}" -f $(if ($pm2Pid) { $pm2Pid } else { "?" }), $(if ($listenPid) { $listenPid } else { "?" }))
+    if (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8) {
+        Info "HTTP OK but orphan process — auto-recover will fail until PM2 adopts :3000"
+        Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-fix-pm2-sites.ps1"
+    }
 }
 
 Write-Host ""
@@ -150,6 +160,16 @@ if (Test-HttpOk -Uri "http://127.0.0.1:54321/auth/v1/health" -TimeoutSec 5) {
 }
 
 Write-Host ""
+$localHttpOk = (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8) -and (Test-HttpOk -Uri "http://127.0.0.1:$cashflowPort/" -TimeoutSec 8)
+$funnelPublicOk = Test-FunnelPublicOk
+if ($localHttpOk -and $funnelPublicOk -and $fail -gt 0) {
+    Write-Host "Note: Local HTTP + external Funnel are OK — site is usable now." -ForegroundColor Cyan
+    Write-Host "      PM2 FAIL items affect automatic restart after reboot, not current access." -ForegroundColor Cyan
+    Write-Host "      Fix PM2 ownership:" -ForegroundColor Yellow
+    Write-Host "        powershell -ExecutionPolicy Bypass -File scripts\windows-fix-pm2-sites.ps1"
+    Write-Host ""
+}
+
 if ($fail -eq 0) {
     Write-Host "ALL CHECKS PASSED. Safe to leave." -ForegroundColor Green
     Write-Host "Updates:" -ForegroundColor Yellow
@@ -160,6 +180,7 @@ if ($fail -eq 0) {
 
 Write-Host ("FAILED checks: {0}" -f $fail) -ForegroundColor Red
 Write-Host "Fix with:" -ForegroundColor Yellow
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-fix-pm2-sites.ps1"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-register-keepalive-simple.ps1"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-tailscale-funnel-setup.ps1"
