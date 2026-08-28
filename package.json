@@ -16,6 +16,7 @@
     "data:export": "node scripts/export-cloud-data.mjs",
     "data:import": "node scripts/import-to-local.mjs",
     "data:seed-users": "node scripts/seed-local-users.mjs",
+    "data:cleanup-attachments": "node scripts/cleanup-expired-attachments.mjs",
     "data:pack-usb": "powershell -ExecutionPolicy Bypass -File scripts/pack-data-for-usb.ps1",
     "data:pack-branch-usb": "powershell -ExecutionPolicy Bypass -File scripts/pack-usb-for-branch.ps1"
   },
