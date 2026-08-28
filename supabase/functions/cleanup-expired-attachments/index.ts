@@ -1,6 +1,7 @@
 // ============================================================
 // 耀聖藥局智慧排班系統 - Cleanup Expired Attachments Edge Function
-// 用於定時清理超過 168 小時（7天）的附件
+// 請假附件：超過 168 小時（7 天）
+// 獎金佐證：超過 expires_at（預設 30 天）
 // ============================================================
 
 import { serve } from "https://deno.land/std@0.192.0/http/server.ts";
@@ -12,8 +13,120 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type",
 };
 
+type CleanupResult = {
+  bucket: string;
+  table: string;
+  successCount: number;
+  failCount: number;
+};
+
+async function cleanupLeaveAttachments(
+  supabaseAdmin: ReturnType<typeof createClient>,
+): Promise<CleanupResult> {
+  const expirationThreshold = new Date();
+  expirationThreshold.setHours(expirationThreshold.getHours() - 168);
+
+  const { data: expiredAttachments, error: selectError } = await supabaseAdmin
+    .from("leave_attachments")
+    .select("id, storage_path, file_name")
+    .eq("status", "active")
+    .lt("uploaded_at", expirationThreshold.toISOString());
+
+  if (selectError) {
+    throw new Error(`查詢請假附件失敗：${selectError.message}`);
+  }
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const attachment of expiredAttachments ?? []) {
+    try {
+      const { error: storageError } = await supabaseAdmin.storage
+        .from("leave-attachments")
+        .remove([attachment.storage_path]);
+
+      if (storageError) {
+        await supabaseAdmin
+          .from("leave_attachments")
+          .update({ status: "delete_failed" })
+          .eq("id", attachment.id);
+        failCount++;
+      } else {
+        await supabaseAdmin
+          .from("leave_attachments")
+          .update({ status: "expired", deleted_at: new Date().toISOString() })
+          .eq("id", attachment.id);
+        successCount++;
+      }
+    } catch {
+      await supabaseAdmin
+        .from("leave_attachments")
+        .update({ status: "delete_failed" })
+        .eq("id", attachment.id);
+      failCount++;
+    }
+  }
+
+  return {
+    bucket: "leave-attachments",
+    table: "leave_attachments",
+    successCount,
+    failCount,
+  };
+}
+
+async function cleanupPayrollBonusAttachments(
+  supabaseAdmin: ReturnType<typeof createClient>,
+): Promise<CleanupResult> {
+  const nowIso = new Date().toISOString();
+
+  const { data: expiredAttachments, error: selectError } = await supabaseAdmin
+    .from("payroll_adjustment_attachments")
+    .select("id, storage_path, file_name")
+    .lt("expires_at", nowIso);
+
+  if (selectError) {
+    throw new Error(`查詢獎金附件失敗：${selectError.message}`);
+  }
+
+  let successCount = 0;
+  let failCount = 0;
+
+  for (const attachment of expiredAttachments ?? []) {
+    try {
+      const { error: storageError } = await supabaseAdmin.storage
+        .from("payroll-bonus-attachments")
+        .remove([attachment.storage_path]);
+
+      if (storageError) {
+        failCount++;
+        continue;
+      }
+
+      const { error: deleteError } = await supabaseAdmin
+        .from("payroll_adjustment_attachments")
+        .delete()
+        .eq("id", attachment.id);
+
+      if (deleteError) {
+        failCount++;
+      } else {
+        successCount++;
+      }
+    } catch {
+      failCount++;
+    }
+  }
+
+  return {
+    bucket: "payroll-bonus-attachments",
+    table: "payroll_adjustment_attachments",
+    successCount,
+    failCount,
+  };
+}
+
 serve(async (req) => {
-  // 處理 CORS preflight 請求
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders });
   }
@@ -30,85 +143,13 @@ serve(async (req) => {
       },
     );
 
-    // 計算 168 小時前的時間
-    const expirationThreshold = new Date();
-    expirationThreshold.setHours(expirationThreshold.getHours() - 168);
+    const results = await Promise.all([
+      cleanupLeaveAttachments(supabaseAdmin),
+      cleanupPayrollBonusAttachments(supabaseAdmin),
+    ]);
 
-    console.log("開始清理附件，截止時間：", expirationThreshold.toISOString());
-
-    // 查詢所有超過期限且狀態為 active 的附件
-    const { data: expiredAttachments, error: selectError } = await supabaseAdmin
-      .from("leave_attachments")
-      .select("id, storage_path, file_name")
-      .eq("status", "active")
-      .lt("uploaded_at", expirationThreshold.toISOString());
-
-    if (selectError) {
-      console.error("查詢過期附件失敗：", selectError);
-      return new Response(
-        JSON.stringify({ error: "查詢失敗" }),
-        {
-          status: 500,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    if (!expiredAttachments || expiredAttachments.length === 0) {
-      console.log("無需清理的過期附件");
-      return new Response(
-        JSON.stringify({
-          success: true,
-          message: "無需清理的過期附件",
-        }),
-        {
-          status: 200,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        },
-      );
-    }
-
-    console.log(`找到 ${expiredAttachments.length} 個過期附件待清理`);
-
-    let successCount = 0;
-    let failCount = 0;
-
-    // 逐個處理附件
-    for (const attachment of expiredAttachments) {
-      try {
-        // 1. 從 Storage 中刪除檔案
-        const { error: storageError } = await supabaseAdmin.storage
-          .from("leave-attachments")
-          .remove([attachment.storage_path]);
-
-        if (storageError) {
-          console.error(`刪除 Storage 檔案失敗：`, attachment.file_name, storageError);
-          // 更新狀態為 delete_failed
-          await supabaseAdmin
-            .from("leave_attachments")
-            .update({ status: "delete_failed" })
-            .eq("id", attachment.id);
-          failCount++;
-        } else {
-            // 更新狀態為 expired
-            await supabaseAdmin
-              .from("leave_attachments")
-              .update({ status: "expired", deleted_at: new Date().toISOString() })
-              .eq("id", attachment.id);
-            successCount++;
-        }
-      } catch (error) {
-        console.error(`處理附件失敗：`, attachment.file_name, error);
-        // 更新狀態為 delete_failed
-        await supabaseAdmin
-          .from("leave_attachments")
-          .update({ status: "delete_failed" })
-          .eq("id", attachment.id);
-        failCount++;
-      }
-    }
-
-    console.log(`清理完成：成功 ${successCount} 個，失敗 ${failCount} 個`);
+    const successCount = results.reduce((sum, r) => sum + r.successCount, 0);
+    const failCount = results.reduce((sum, r) => sum + r.failCount, 0);
 
     return new Response(
       JSON.stringify({
@@ -116,6 +157,7 @@ serve(async (req) => {
         message: `清理完成：成功 ${successCount} 個，失敗 ${failCount} 個`,
         successCount,
         failCount,
+        results,
       }),
       {
         status: 200,

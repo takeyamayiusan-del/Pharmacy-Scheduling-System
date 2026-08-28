@@ -91,6 +91,7 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
       ...DEFAULT_ROLE_CAPABILITY_POLICY,
       scheduleRoles: [...DEFAULT_ROLE_CAPABILITY_POLICY.scheduleRoles],
       payrollRoles: [...DEFAULT_ROLE_CAPABILITY_POLICY.payrollRoles],
+      bonusSubmitRoles: [...DEFAULT_ROLE_CAPABILITY_POLICY.bonusSubmitRoles],
       adminRoles: [...DEFAULT_ROLE_CAPABILITY_POLICY.adminRoles],
     },
   };

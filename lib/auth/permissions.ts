@@ -35,8 +35,10 @@ export type RoleCapabilityPolicy = {
   deputyLikeManager: boolean;
   /** 哪些職位可做排班（預設老闆／店長／副店） */
   scheduleRoles: ManageRole[];
-  /** 哪些職位可做薪資結算（可改成只有店長／老闆；會計可另開員工授權） */
+  /** 哪些職位可做薪資結算試算／發布（預設僅老闆；會計請用員工＋薪資結算授權） */
   payrollRoles: ManageRole[];
+  /** 哪些職位可登錄本月獎金加扣項（店長依銷售報表填寫，不含試算發布） */
+  bonusSubmitRoles: ManageRole[];
   /** 哪些職位可管員工／店家設定／打卡管理 */
   adminRoles: ManageRole[];
   /** 是否允許對「員工」職位額外勾選授權 */
@@ -46,10 +48,24 @@ export type RoleCapabilityPolicy = {
 export const DEFAULT_ROLE_CAPABILITY_POLICY: RoleCapabilityPolicy = {
   deputyLikeManager: true,
   scheduleRoles: ["owner", "manager", "deputy"],
-  payrollRoles: ["owner", "manager", "deputy"],
+  payrollRoles: ["owner"],
+  bonusSubmitRoles: ["owner", "manager", "deputy"],
   adminRoles: ["owner", "manager", "deputy"],
   allowStaffGrants: true,
 };
+
+/** 店長／副店可代為勾選的員工授權（不可含薪資結算、員工管理、店家設定） */
+export const MANAGER_GRANTABLE_CAPABILITIES: CapabilityKey[] = [
+  "schedule",
+  "punch_admin",
+];
+
+/** 獎金登錄常用項目（仍可手打自訂名稱） */
+export const BONUS_ADJUSTMENT_PRESETS = [
+  "個人獎金",
+  "團體獎金",
+  "業績獎金",
+] as const;
 
 export function parseUserCapabilities(raw: unknown): UserCapabilities {
   if (!raw || typeof raw !== "object") return {};
@@ -70,12 +86,21 @@ function asManageRoles(raw: unknown, fallback: ManageRole[]): ManageRole[] {
 
 export function parseRoleCapabilityPolicy(raw: unknown): RoleCapabilityPolicy {
   const d = DEFAULT_ROLE_CAPABILITY_POLICY;
-  if (!raw || typeof raw !== "object") return { ...d, scheduleRoles: [...d.scheduleRoles], payrollRoles: [...d.payrollRoles], adminRoles: [...d.adminRoles] };
+  if (!raw || typeof raw !== "object") {
+    return {
+      ...d,
+      scheduleRoles: [...d.scheduleRoles],
+      payrollRoles: [...d.payrollRoles],
+      bonusSubmitRoles: [...d.bonusSubmitRoles],
+      adminRoles: [...d.adminRoles],
+    };
+  }
   const o = raw as Record<string, unknown>;
   return {
     deputyLikeManager: typeof o.deputyLikeManager === "boolean" ? o.deputyLikeManager : d.deputyLikeManager,
     scheduleRoles: asManageRoles(o.scheduleRoles, d.scheduleRoles),
     payrollRoles: asManageRoles(o.payrollRoles, d.payrollRoles),
+    bonusSubmitRoles: asManageRoles(o.bonusSubmitRoles, d.bonusSubmitRoles),
     adminRoles: asManageRoles(o.adminRoles, d.adminRoles),
     allowStaffGrants: typeof o.allowStaffGrants === "boolean" ? o.allowStaffGrants : d.allowStaffGrants,
   };
@@ -155,6 +180,51 @@ export function canManagePayroll(
   policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
 ): boolean {
   return hasCapability(actor, "payroll", policies);
+}
+
+/** 店長／副店登錄獎金加扣項（不含試算發布） */
+export function canSubmitBonus(
+  actor: PermissionActor | null | undefined,
+  policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
+): boolean {
+  if (canManagePayroll(actor, policies)) return true;
+  if (!actor?.role) return false;
+  const policy = roleCapabilityPolicyOf(policies);
+  return roleListAllows(policy.bonusSubmitRoles, actor.role, policy);
+}
+
+/** 老闆可授權全部；店長／副店僅能授權排班等非薪資能力 */
+export function filterDelegatableCapabilities(
+  granter: PermissionActor | null | undefined,
+  requested: UserCapabilities | null | undefined
+): UserCapabilities {
+  if (!requested) return {};
+  if (granter?.role === "owner") {
+    const next: UserCapabilities = {};
+    for (const key of CAPABILITY_KEYS) {
+      if (requested[key]) next[key] = true;
+    }
+    return next;
+  }
+  const next: UserCapabilities = {};
+  for (const key of MANAGER_GRANTABLE_CAPABILITIES) {
+    if (requested[key]) next[key] = true;
+  }
+  return next;
+}
+
+export function canEditPermissionPolicy(
+  actor: PermissionActor | null | undefined
+): boolean {
+  return actor?.role === "owner";
+}
+
+export function canSwitchSiteForPayroll(
+  actor: PermissionActor | null | undefined,
+  policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
+): boolean {
+  if (actor?.role === "owner") return true;
+  return canManagePayroll(actor, policies);
 }
 
 export function canManageEmployees(

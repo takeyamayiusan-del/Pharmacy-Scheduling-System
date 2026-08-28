@@ -1,5 +1,6 @@
 /**
  * 建立本機預設管理者帳號＋集集目錄落地
+ *   會計：sui / 123456（全店薪資結算授權，可切換竹山／集集）
  *   竹山店長：admin / admin123（site=zhushan）
  *   老闆：boss / boss123（site=zhushan，可跨店切換）
  *   集集店長：jiji / jiji123（site=jiji）
@@ -29,6 +30,14 @@ if (!serviceKey) {
 }
 
 const DEFAULT_ACCOUNTS = [
+  {
+    username: "sui",
+    password: "123456",
+    name: "會計",
+    role: "employee",
+    site_id: "zhushan",
+    capabilities: { payroll: true },
+  },
   {
     username: "admin",
     password: "admin123",
@@ -140,9 +149,10 @@ function buildJijiStoreConfig() {
   };
 }
 
-async function seedAccount({ username, password, name, role, site_id }) {
+async function seedAccount({ username, password, name, role, site_id, capabilities }) {
   const email = `${username}@${AUTH_EMAIL_DOMAIN}`;
   const siteId = site_id === "jiji" ? "jiji" : "zhushan";
+  const caps = capabilities && typeof capabilities === "object" ? capabilities : {};
 
   const { data: existingProfile } = await supabase
     .from("users")
@@ -152,13 +162,13 @@ async function seedAccount({ username, password, name, role, site_id }) {
 
   if (existingProfile) {
     await supabase.auth.admin.updateUserById(existingProfile.id, { password });
-    // 不覆寫 name：老闆可能已在員工管理改成真實姓名
     const { error: updateError } = await supabase
       .from("users")
       .update({
         role,
         is_active: true,
         site_id: siteId,
+        capabilities: caps,
       })
       .eq("id", existingProfile.id);
     if (updateError) throw new Error(`${username}：${updateError.message}`);
@@ -187,6 +197,7 @@ async function seedAccount({ username, password, name, role, site_id }) {
         is_active: true,
         hire_date: "2026-04-01",
         site_id: siteId,
+        capabilities: caps,
       });
       if (insertError) throw new Error(`${username}：${insertError.message}`);
       console.log(`  [修復資料] ${username} / ${password}（${name}，${siteId}）`);
@@ -203,6 +214,7 @@ async function seedAccount({ username, password, name, role, site_id }) {
     is_active: true,
     hire_date: "2026-04-01",
     site_id: siteId,
+    capabilities: caps,
   });
 
   if (insertError) {
@@ -281,6 +293,7 @@ async function main() {
 
   console.log("");
   console.log("完成！登入方式：");
+  console.log("  會計　　 → sui / 123456（員工分頁；可切換店別、薪資結算）");
   console.log("  竹山店長 → admin / admin123（店長/老闆分頁）");
   console.log("  老闆　　 → boss / boss123（可切換店別）");
   console.log("  集集店長 → jiji / jiji123（店長/老闆分頁）");

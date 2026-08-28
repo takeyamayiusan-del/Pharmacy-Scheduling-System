@@ -36,6 +36,7 @@ import {
   canEditStoreSettings,
   canManageEmployees,
   canManagePayroll,
+  canSubmitBonus,
   canUsePunchAdmin,
 } from '@/lib/auth/permissions';
 
@@ -121,6 +122,7 @@ export default function DashboardLayout({
   const policies = storeConfig.policies;
   const allowSchedule = canEditSchedule(actor, policies);
   const allowPayroll = canManagePayroll(actor, policies);
+  const allowBonusSubmit = canSubmitBonus(actor, policies) && !allowPayroll;
   const allowEmployees = canManageEmployees(actor, policies);
   const allowStoreSettings = canEditStoreSettings(actor, policies);
   const allowPunchAdmin = canUsePunchAdmin(actor, policies);
@@ -157,6 +159,7 @@ export default function DashboardLayout({
     { href: '/store-settings', label: '店家設定', icon: Settings, allowed: allowStoreSettings },
     { href: '/payroll-detail', label: '薪資查詢', icon: DollarSign, allowed: true },
     { href: '/payroll', label: '薪資結算', icon: DollarSign, allowed: allowPayroll },
+    { href: '/payroll', label: '獎金登錄', icon: DollarSign, allowed: allowBonusSubmit },
   ];
 
   const handleDeleteAllNotifications = async () => {

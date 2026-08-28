@@ -5,7 +5,7 @@ import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedTyp
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
 import { fromDbRole, canManageSite, type AppRole } from "@/lib/auth/roles";
-import { parseUserCapabilities, canEditSchedule } from "@/lib/auth/permissions";
+import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 import {
   approvalPendingLabel,
@@ -699,7 +699,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(() => defaultStoreConfig());
   const [activeSiteId, setActiveSiteIdState] = useState<SiteId>(DEFAULT_SITE_ID);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
-  const canSwitchSite = currentUser?.role === "owner";
+  const canSwitchSite = useMemo(() => {
+    if (!currentUser) return false;
+    return canSwitchSiteForPayroll(
+      { role: currentUser.role, capabilities: currentUser.capabilities },
+      storeConfig.policies
+    );
+  }, [currentUser, storeConfig.policies]);
 
   /** 畫面／排班只顯示目前店的員工（竹山既有資料預設都在 zhushan） */
   const employees = useMemo(
@@ -1320,8 +1326,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const setActiveSite = async (siteId: SiteId) => {
-    if (!currentUser || currentUser.role !== "owner") {
-      throw new Error("僅老闆可切換店別");
+    if (
+      !currentUser ||
+      !canSwitchSiteForPayroll(
+        { role: currentUser.role, capabilities: currentUser.capabilities },
+        storeConfig.policies
+      )
+    ) {
+      throw new Error("僅老闆或具薪資結算授權者可切換店別");
     }
     setActiveSiteIdState(siteId);
     writeActiveSiteToStorage(siteId);
