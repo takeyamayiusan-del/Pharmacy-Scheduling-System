@@ -479,7 +479,7 @@ function Restore-FunnelDualRoutes {
         return $false
     }
 
-    # 只補缺／重宣告，绝不 funnel reset（reset 會把 8443 一併清掉，也會掐斷正在用的外網連線）
+    # 只補缺／重宣告；平常不做 reset（reset 會短暫掐斷正在用的外網連線）
     $out1 = (& $ts funnel --bg --yes --https=443 3000 2>&1 | Out-String)
     & $WriteLog ("funnel 443->3000: " + $out1.Trim())
     Start-Sleep -Seconds 1
@@ -489,13 +489,32 @@ function Restore-FunnelDualRoutes {
     return $true
 }
 
+function Reset-FunnelDualRoutes {
+    param([scriptblock]$WriteLog = { param($m) Write-Host $m })
+
+    $ts = Get-TailscaleCommand
+    if (-not $ts) {
+        & $WriteLog "tailscale.exe not found"
+        return $false
+    }
+
+    & $WriteLog "funnel reset + dual routes (stale Funnel state)"
+    $resetOut = (& $ts funnel reset 2>&1 | Out-String)
+    if ($resetOut.Trim()) { & $WriteLog ("funnel reset: " + $resetOut.Trim()) }
+    $serveOut = (& $ts serve reset 2>&1 | Out-String)
+    if ($serveOut.Trim()) { & $WriteLog ("serve reset: " + $serveOut.Trim()) }
+    Start-Sleep -Seconds 1
+    return (Restore-FunnelDualRoutes -WriteLog $WriteLog)
+}
+
 function Get-FunnelCooldownRemainMinutes {
     param(
         $HealthState,
+        [string]$FieldName = "lastFunnelReapplyAt",
         [int]$CooldownMinutes = 8
     )
     if (-not $HealthState) { return 0 }
-    $raw = [string]$HealthState.lastFunnelReapplyAt
+    $raw = [string]$HealthState.$FieldName
     if ([string]::IsNullOrWhiteSpace($raw)) { return 0 }
     try {
         $at = [datetime]::Parse($raw)
@@ -511,9 +530,11 @@ function Repair-FunnelIfNeeded {
     param(
         [scriptblock]$WriteLog = { param($m) Write-Host $m },
         [switch]$ForceReapply,
+        [switch]$AllowReset,
         [bool]$LocalOk = $true,
         [int]$MinPublicFails = 2,
         [int]$CooldownMinutes = 8,
+        [int]$ResetCooldownMinutes = 20,
         $HealthState = $null
     )
 
@@ -543,13 +564,41 @@ function Repair-FunnelIfNeeded {
     & $WriteLog ("funnel check cfg443=$($routes.Pharmacy) cfg8443=$($routes.Cashflow) public=$publicOk localOk=$LocalOk fails=$publicFails/$MinPublicFails force=$([bool]$ForceReapply)")
 
     if ($publicOk -and $routes.Ok) {
-        if ($HealthState) { $HealthState.publicFails = 0 }
+        if ($HealthState) {
+            $HealthState.publicFails = 0
+            $HealthState.pendingFunnelReset = $false
+        }
         return $true
     }
 
     # 內網掛了先修網站，不要誤對 Funnel 動手
     if (-not $LocalOk -and -not $ForceReapply) {
         & $WriteLog "local site down - skip Funnel re-apply"
+        return $false
+    }
+
+    $pendingReset = $false
+    if ($HealthState -and $null -ne $HealthState.pendingFunnelReset) {
+        $pendingReset = [bool]$HealthState.pendingFunnelReset
+    }
+    $mayReset = [bool]$ForceReapply -or [bool]$AllowReset
+    if ($pendingReset -and $mayReset -and -not $ForceReapply) {
+        $resetCoolPending = Get-FunnelCooldownRemainMinutes -HealthState $HealthState -FieldName "lastFunnelResetAt" -CooldownMinutes $ResetCooldownMinutes
+        if ($resetCoolPending -le 0) {
+            & $WriteLog "pending funnel reset - retry reset now"
+            [void](Reset-FunnelDualRoutes -WriteLog $WriteLog)
+            if ($HealthState) {
+                $HealthState.publicFails = 0
+                $HealthState.pendingFunnelReset = $false
+                $HealthState.lastFunnelResetAt = (Get-Date).ToString("o")
+            }
+            Start-Sleep -Seconds 4
+            $routesPending = Test-FunnelRoutesConfigured
+            $publicPending = Test-FunnelPublicOk
+            & $WriteLog ("funnel after pending reset cfg443=$($routesPending.Pharmacy) cfg8443=$($routesPending.Cashflow) public=$publicPending url=" + (Get-FunnelPublicBaseUrl) + "/login")
+            return [bool]$publicPending
+        }
+        & $WriteLog ("pending funnel reset, cooldown {0} min" -f $resetCoolPending)
         return $false
     }
 
@@ -586,8 +635,36 @@ function Repair-FunnelIfNeeded {
     Start-Sleep -Seconds 3
     $routes2 = Test-FunnelRoutesConfigured
     $public2 = Test-FunnelPublicOk
-    & $WriteLog ("funnel after repair cfg443=$($routes2.Pharmacy) cfg8443=$($routes2.Cashflow) public=$public2 url=" + (Get-FunnelPublicBaseUrl) + "/login")
-    return [bool]$public2
+    & $WriteLog ("funnel after re-apply cfg443=$($routes2.Pharmacy) cfg8443=$($routes2.Cashflow) public=$public2 url=" + (Get-FunnelPublicBaseUrl) + "/login")
+    if ($public2) {
+        if ($HealthState) { $HealthState.pendingFunnelReset = $false }
+        return $true
+    }
+
+    if (-not $mayReset) {
+        & $WriteLog "public still down after re-apply - will try funnel reset on next eligible round"
+        return $false
+    }
+
+    $resetCool = Get-FunnelCooldownRemainMinutes -HealthState $HealthState -FieldName "lastFunnelResetAt" -CooldownMinutes $ResetCooldownMinutes
+    if ($resetCool -gt 0 -and -not $ForceReapply) {
+        & $WriteLog ("public still down, reset cooldown {0} min - will retry reset when ready" -f $resetCool)
+        if ($HealthState) { $HealthState.pendingFunnelReset = $true }
+        return $false
+    }
+
+    & $WriteLog "re-apply did not restore public window - funnel reset"
+    [void](Reset-FunnelDualRoutes -WriteLog $WriteLog)
+    if ($HealthState) {
+        $HealthState.publicFails = 0
+        $HealthState.pendingFunnelReset = $false
+        $HealthState.lastFunnelResetAt = (Get-Date).ToString("o")
+    }
+    Start-Sleep -Seconds 4
+    $routes3 = Test-FunnelRoutesConfigured
+    $public3 = Test-FunnelPublicOk
+    & $WriteLog ("funnel after reset cfg443=$($routes3.Pharmacy) cfg8443=$($routes3.Cashflow) public=$public3 url=" + (Get-FunnelPublicBaseUrl) + "/login")
+    return [bool]$public3
 }
 
 function Get-FunnelStatusJson {

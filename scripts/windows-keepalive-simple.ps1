@@ -1,5 +1,5 @@
-﻿# 簡單雙站保活：本機網站真的掛了才重開；外網窗口不通才重宣告 Funnel。
-# 不做 git／build／funnel reset。公開網址連續失敗 2 次才重宣告（避免單次誤殺）。
+﻿# 簡單雙站保活：本機網站真的掛了才重開；外網窗口不通才重宣告 Funnel，仍不通則 reset。
+# 不做 git／build。公開網址連續失敗 2 次才重宣告（避免單次誤殺），重宣告仍失敗才 reset。
 # 更新程式請用手拉。
 #
 # 這支是「檢查一次就結束」，不是常駐程式。排程每分鐘會再跑。
@@ -54,7 +54,9 @@ function Read-KeepaliveHealthState {
         pharmacyHttpFails    = 0
         cashflowHttpFails    = 0
         publicFails          = 0
+        pendingFunnelReset   = $false
         lastFunnelReapplyAt  = ""
+        lastFunnelResetAt    = ""
     }
     if (Test-Path -LiteralPath $path) {
         try {
@@ -63,7 +65,9 @@ function Read-KeepaliveHealthState {
             if ($null -ne $parsed.pharmacyHttpFails) { $obj.pharmacyHttpFails = [int]$parsed.pharmacyHttpFails }
             if ($null -ne $parsed.cashflowHttpFails) { $obj.cashflowHttpFails = [int]$parsed.cashflowHttpFails }
             if ($null -ne $parsed.publicFails) { $obj.publicFails = [int]$parsed.publicFails }
+            if ($null -ne $parsed.pendingFunnelReset) { $obj.pendingFunnelReset = [bool]$parsed.pendingFunnelReset }
             if ($parsed.lastFunnelReapplyAt) { $obj.lastFunnelReapplyAt = [string]$parsed.lastFunnelReapplyAt }
+            if ($parsed.lastFunnelResetAt) { $obj.lastFunnelResetAt = [string]$parsed.lastFunnelResetAt }
         } catch {}
     }
     return $obj
@@ -166,6 +170,7 @@ $funnelPublic = Repair-FunnelIfNeeded `
     -WriteLog { param($m) Write-Log $m } `
     -LocalOk $pharmacyOk `
     -MinPublicFails 2 `
+    -AllowReset `
     -HealthState $healthState
 
 if ($pm2) {
