@@ -1100,11 +1100,12 @@ function Ensure-CashflowPm2Registered {
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
 
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+    if (-not (Get-Pm2Command)) {
         & $WriteLog "pm2 not found, cannot register cashflow"
         return $false
     }
 
+    $pm2 = Get-Pm2Command
     if (Get-Pm2Online -Name "cashflow") { return $true }
 
     $configPath = Get-CashflowBootstrapConfigPath -ProjectRoot $ProjectRoot
@@ -1138,9 +1139,9 @@ function Ensure-CashflowPm2Registered {
         return $false
     }
 
-    $args = @()
+    $scriptArgs = @()
     if ($cfg.args) {
-        foreach ($a in $cfg.args) { $args += [string]$a }
+        foreach ($a in $cfg.args) { $scriptArgs += [string]$a }
     }
 
     $port = 5000
@@ -1150,24 +1151,24 @@ function Ensure-CashflowPm2Registered {
     }
     $env:PORT = [string]$port
 
-    $argLine = ""
-    if ($args.Count -gt 0) {
-        $argLine = ($args | ForEach-Object { '"{0}"' -f $_.Replace('"', '\"') }) -join " "
-    }
-    $cmd = if ($argLine) {
-        'pm2 start "{0}" --name cashflow --cwd "{1}" --update-env -- {2}' -f $scriptPath, $cwd, $argLine
-    } else {
-        'pm2 start "{0}" --name cashflow --cwd "{1}" --update-env' -f $scriptPath, $cwd
-    }
-
     & $WriteLog "Registering cashflow via bootstrap config"
-    cmd.exe /c $cmd 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    & $pm2 delete cashflow 2>$null | Out-Null
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    if ($scriptArgs.Count -gt 0) {
+        $out = (& $pm2 start $scriptPath --name cashflow --cwd $cwd --update-env -- @scriptArgs 2>&1 | Out-String)
+    } else {
+        $out = (& $pm2 start $scriptPath --name cashflow --cwd $cwd --update-env 2>&1 | Out-String)
+    }
+    $exitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEap
+    if ($exitCode -ne 0) {
+        if ($out.Trim()) { & $WriteLog $out.Trim() }
         & $WriteLog "cashflow pm2 start failed"
         return $false
     }
 
-    pm2 save 2>$null | Out-Null
+    & $pm2 save 2>$null | Out-Null
     Start-Sleep -Seconds 2
     return (Get-Pm2Online -Name "cashflow")
 }
@@ -1215,13 +1216,19 @@ function Ensure-PharmacyWebPm2Registered {
 
     & $WriteLog "Registering pharmacy-web via ecosystem.config.cjs"
     $env:PORT = "3000"
+    $pm2 = Get-Pm2Command
+    if (-not $pm2) {
+        & $WriteLog "pm2 not found"
+        return $false
+    }
+    & $pm2 delete pharmacy-web 2>$null | Out-Null
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
-    $output = & pm2 start $ecosystem --only pharmacy-web --update-env 2>&1
+    $output = (& $pm2 start $ecosystem --only pharmacy-web --update-env 2>&1 | Out-String)
     $exitCode = $LASTEXITCODE
     $ErrorActionPreference = $prevEap
     if ($exitCode -ne 0) {
-        $output | ForEach-Object { & $WriteLog $_ }
+        if ($output.Trim()) { & $WriteLog $output.Trim() }
         return $false
     }
     & pm2 save 2>$null | Out-Null
@@ -1252,6 +1259,11 @@ function Test-ProcessInTree {
     return $false
 }
 
+function Test-PharmacyWebHttpHealthy {
+    if (Test-HttpOk -Uri "http://127.0.0.1:3000/api/health" -TimeoutSec 8) { return $true }
+    return (Test-SiteHealthy)
+}
+
 function Test-PharmacyWebPm2OwningPort {
     if (-not (Get-Pm2Online -Name "pharmacy-web")) { return $false }
 
@@ -1271,7 +1283,7 @@ function Wait-PharmacyWebHealthy {
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
-        if ((Test-PharmacyWebPm2OwningPort) -and (Test-SiteHealthy)) { return $true }
+        if ((Test-PharmacyWebPm2OwningPort) -and (Test-PharmacyWebHttpHealthy)) { return $true }
         Start-Sleep -Seconds $IntervalSeconds
     }
     return $false
@@ -1295,7 +1307,17 @@ function Restart-PharmacyWebPm2 {
     }
 
     if (-not (Test-PharmacyWebBuildReady -ProjectRoot $ProjectRoot)) {
-        & $WriteLog "Build incomplete. Run: npm run build"
+        & $WriteLog "Build incomplete — running npm run build before PM2 start"
+        try {
+            Invoke-NpmBuild -ProjectRoot $ProjectRoot
+        } catch {
+            & $WriteLog ("npm run build failed: {0}" -f $_.Exception.Message)
+            return $false
+        }
+    }
+
+    if (-not (Test-PharmacyWebBuildReady -ProjectRoot $ProjectRoot)) {
+        & $WriteLog "Build still incomplete after npm run build"
         return $false
     }
 
@@ -1360,24 +1382,32 @@ function Restart-PharmacyWebPm2 {
             }
         }
 
-        # 自動自癒：Next 在 Windows 偶發 MODULE_NOT_FOUND（.next 或 node_modules 局部損壞）
-        if (-not $didDeepRepair -and (($pm2LogTail -match "MODULE_NOT_FOUND") -or ($errTail -match "MODULE_NOT_FOUND") -or ($errTail -match "Cannot find module"))) {
+        # 自動自癒：.next 損壞、缺 BUILD_ID、或 git pull 後 Server Action 不一致
+        $needsRebuild = ($errTail -match "production build|production-start-no-build-id|Failed to find Server Action") `
+            -or ($pm2LogTail -match "production build|production-start-no-build-id")
+        if (-not $didDeepRepair -and ($needsRebuild -or ($pm2LogTail -match "MODULE_NOT_FOUND") -or ($errTail -match "MODULE_NOT_FOUND") -or ($errTail -match "Cannot find module"))) {
             $didDeepRepair = $true
-            & $WriteLog "Detected MODULE_NOT_FOUND. Running deep repair: stop -> clear .next -> npm install -> build"
+            if ($needsRebuild) {
+                & $WriteLog "Detected stale/incomplete .next — rebuild then retry PM2"
+            } else {
+                & $WriteLog "Detected MODULE_NOT_FOUND. Running deep repair: stop -> clear .next -> npm install -> build"
+            }
             try {
                 & pm2 stop pharmacy-web 2>$null | Out-Null
                 Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
-                Clear-NextBuild -ProjectRoot $ProjectRoot
-                Push-Location $ProjectRoot
-                try {
-                    $npm = "C:\Program Files\nodejs\npm.cmd"
-                    & $npm install
-                    if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
-                } finally {
-                    Pop-Location
+                if (-not $needsRebuild) {
+                    Clear-NextBuild -ProjectRoot $ProjectRoot
+                    Push-Location $ProjectRoot
+                    try {
+                        $npm = "C:\Program Files\nodejs\npm.cmd"
+                        & $npm install
+                        if ($LASTEXITCODE -ne 0) { throw "npm install failed with exit code $LASTEXITCODE" }
+                    } finally {
+                        Pop-Location
+                    }
                 }
                 Invoke-NpmBuild -ProjectRoot $ProjectRoot
-                & $WriteLog "Deep repair completed; retrying startup"
+                & $WriteLog "Build completed; retrying startup"
             } catch {
                 & $WriteLog ("Deep repair failed: {0}" -f $_.Exception.Message)
             }
