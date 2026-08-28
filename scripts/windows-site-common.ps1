@@ -216,14 +216,22 @@ function Get-BuildLockPath {
 function Wait-BuildLockRelease {
     param(
         [string]$ProjectRoot,
-        [int]$TimeoutSeconds = 180
+        [int]$TimeoutSeconds = 180,
+        [scriptblock]$WriteLog = $null
     )
 
     $lockFile = Get-BuildLockPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $lockFile)) { return $true }
+
+    [void](Clear-StaleBuildLock -ProjectRoot $ProjectRoot -WriteLog $(if ($WriteLog) { $WriteLog } else { { param($m) } }))
+    if (-not (Test-Path -LiteralPath $lockFile)) { return $true }
+
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while (Test-Path -LiteralPath $lockFile) {
         if ((Get-Date) -ge $deadline) {
-            return $false
+            # 逾時再清一次殘留鎖（常見：update 中斷留下 data\logs\.building）
+            [void](Clear-StaleBuildLock -ProjectRoot $ProjectRoot -MaxAgeMinutes 0 -WriteLog $(if ($WriteLog) { $WriteLog } else { { param($m) } }))
+            return (-not (Test-Path -LiteralPath $lockFile))
         }
         Start-Sleep -Seconds 2
     }
@@ -238,7 +246,7 @@ function Invoke-NpmBuild {
     $logDir = Split-Path $lockFile -Parent
     if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 
-    if (-not (Wait-BuildLockRelease -ProjectRoot $ProjectRoot -TimeoutSeconds 300)) {
+    if (-not (Wait-BuildLockRelease -ProjectRoot $ProjectRoot -TimeoutSeconds 300 -WriteLog { param($m) Write-Host "  $m" })) {
         throw "Another build is already running for over 5 minutes."
     }
 
