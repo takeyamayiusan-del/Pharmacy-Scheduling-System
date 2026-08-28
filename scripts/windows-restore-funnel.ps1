@@ -46,10 +46,10 @@ Write-Host "=== Restore Funnel (external URL) ===" -ForegroundColor Cyan
 Write-Host ("Local pharmacy :3000 = " + $(if (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8) { "OK" } else { "DOWN - start the site first" }))
 Write-Host ("Tailscale state = " + (Get-TailscaleBackendState))
 
-$ok = Repair-FunnelIfNeeded -ForceReapply -WriteLog { param($m) Write-Host $m }
+$ok = Repair-FunnelIfNeeded -ForceReapply -AllowReset -WriteLog { param($m) Write-Host $m }
 if (-not $ok) {
-    Write-Host "Re-apply was not enough; trying direct funnel commands (no reset) ..." -ForegroundColor Yellow
-    [void](Invoke-DirectFunnelRestore)
+    Write-Host "Re-apply + reset were not enough; trying direct funnel commands ..." -ForegroundColor Yellow
+    [void](Reset-FunnelDualRoutes -WriteLog { param($m) Write-Host $m })
     $ok = Test-FunnelPublicOk
 }
 

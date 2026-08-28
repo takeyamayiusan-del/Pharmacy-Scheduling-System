@@ -96,7 +96,7 @@ if ($siteOk) {
 if (-not $SkipFunnel) {
     if (Get-TailscaleCommand) {
         Write-BootLog "Tailscale Funnel repair (probe public window; no reset unless routes missing)"
-        $funnelOk = Repair-FunnelIfNeeded -WriteLog { param($m) Write-BootLog $m } -LocalOk $siteOk -MinPublicFails 1
+        $funnelOk = Repair-FunnelIfNeeded -WriteLog { param($m) Write-BootLog $m } -LocalOk $siteOk -MinPublicFails 1 -AllowReset
         if (-not $funnelOk) {
             $routes = Test-FunnelRoutesConfigured
             if ($routes.Ok) {

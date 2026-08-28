@@ -85,7 +85,7 @@ if (Test-FunnelPublicOk) {
     Ok "public $publicUrl"
 } else {
     Bad "public URL not reachable: $publicUrl (local OK does not mean Funnel OK)"
-    Info "keepalive re-applies after 2 public misses. Restore now:"
+    Info "keepalive re-applies after 2 public misses, then funnel reset if still down. Restore now:"
     Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
 }
 Info "Verify :8443 with a phone on 4G (not store Wi-Fi)"
