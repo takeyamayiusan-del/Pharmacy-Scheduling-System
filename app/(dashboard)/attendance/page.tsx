@@ -2,7 +2,8 @@
 
 import { useMemo, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
-import { canManageSite } from '@/lib/auth/roles';
+import { canViewTeamAttendance, canSwitchSiteForPayroll } from '@/lib/auth/permissions';
+import { SITES } from '@/lib/sites';
 import { formatCompLeaveHours } from '@/lib/attendance/compLeaveDisplay';
 import {
   buildApprovedCompOvertimeInMonth,
@@ -29,7 +30,13 @@ export default function AttendancePage() {
     compLeaveLedger,
     getCompLeaveBalance,
     storeConfig,
+    activeSiteId,
+    canSwitchSite,
   } = useApp();
+
+  const actor = { role: currentUser?.role, capabilities: currentUser?.capabilities };
+  const canViewAll = canViewTeamAttendance(actor, storeConfig.policies);
+  const isPayrollViewer = canSwitchSiteForPayroll(actor, storeConfig.policies);
 
   const [currentDate, setCurrentDate] = useState(() => {
     const { year, month } = getDefaultPayrollPeriod();
@@ -43,7 +50,6 @@ export default function AttendancePage() {
   const month = currentDate.getMonth() + 1;
   const daysInMonth = new Date(year, month, 0).getDate();
 
-  const canViewAll = canManageSite(currentUser?.role);
   const targetEmployees = employees.filter((emp) => emp.role !== 'owner');
   const displayEmployees = canViewAll
     ? targetEmployees
@@ -268,12 +274,23 @@ export default function AttendancePage() {
             </h2>
             <p className="text-xs text-gray-500 mt-0.5">
               預設顯示上個月（方便結薪）；上班時數與薪資試算同一套計算
+              {canViewAll && (
+                <>
+                  {' '}
+                  · 目前店別：{SITES[activeSiteId].displayName}
+                </>
+              )}
             </p>
           </div>
           <button onClick={nextMonth} className="p-2 border rounded hover:bg-gray-50" type="button">
             ▶
           </button>
         </div>
+        {canViewAll && isPayrollViewer && canSwitchSite && (
+          <p className="w-full text-sm text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+            會計試算薪資：請用畫面上方切換「竹山／集集」，即可查看該店全員工時（與薪資結算相同）。
+          </p>
+        )}
         {canViewAll && (
           <div className="flex flex-wrap gap-2">
             <button
