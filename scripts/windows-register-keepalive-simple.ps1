@@ -31,8 +31,9 @@ if (-not (Test-Path -LiteralPath $KeepaliveScript)) {
     throw "Missing: $KeepaliveScript"
 }
 
-Write-Host "=== Register simple keepalive ===" -ForegroundColor Cyan
-Write-Host "This replaces the old heavy watchdog (no git/build/funnel reset)."
+Write-Host "=== Register simple keepalive + funnel monitor ===" -ForegroundColor Cyan
+Write-Host "Keepalive: PM2 pharmacy + cashflow every 1 min."
+Write-Host "Funnel monitor: resident public probe every 30s (auto re-apply / reset)."
 Write-Host "Run as: $runAs (Interactive — SYSTEM has no user pm2 / PM2_HOME)"
 Write-Host "PM2 context: $ctxPath"
 Write-Host ""
@@ -68,6 +69,8 @@ Register-ScheduledTask `
 Enable-ScheduledTask -TaskName $KeepaliveTaskName | Out-Null
 Start-ScheduledTask -TaskName $KeepaliveTaskName -ErrorAction SilentlyContinue
 
+Register-YaoshengFunnelMonitorTask -ProjectRoot $ProjectRoot -RunAs $runAs
+
 # 開機任務若已存在就啟用；不存在才註冊（仍用 docker-boot，但日常監控用簡單腳本）
 $startExisting = Get-ScheduledTask -TaskName $StartTaskName -ErrorAction SilentlyContinue
 if (-not $startExisting) {
@@ -97,9 +100,14 @@ if (-not $startExisting) {
 Write-Host ""
 Write-Host "Registered:" -ForegroundColor Green
 Write-Host "  $KeepaliveTaskName  → windows-keepalive-simple.ps1 as $runAs (Daily/1min + boot/logon)"
+Write-Host "  YaoshengPharmacyFunnelMonitor → windows-funnel-public-monitor.ps1 resident 30s"
 Write-Host "  $StartTaskName     → boot (if present)"
 Write-Host ""
-Write-Host "Test now (prints OK/FAIL, then exits):"
+Write-Host "Test funnel monitor once:"
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-funnel-public-monitor.ps1 -Once"
+Write-Host "Funnel status snapshot:"
+Write-Host "  $ProjectRoot\data\ops\funnel-public-status.json"
+Write-Host "Test keepalive (prints OK/FAIL, then exits):"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-keepalive-simple.ps1"
 Write-Host "Full check:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-health-check.ps1"

@@ -1,6 +1,5 @@
-﻿# 簡單雙站保活：本機網站真的掛了才重開；外網窗口不通才重宣告 Funnel，仍不通則 reset。
-# 不做 git／build。公開網址連續失敗 2 次才重宣告（避免單次誤殺），重宣告仍失敗才 reset。
-# 更新程式請用手拉。
+﻿# 簡單雙站保活：本機網站真的掛了才重開；外網由 funnel-public-monitor 常駐監測（30 秒）。
+# 本腳本仍會檢查外網作為備援。外網不通：重宣告 → reset。更新程式請用手拉。
 #
 # 這支是「檢查一次就結束」，不是常駐程式。排程每分鐘會再跑。
 # 手動測一次（會印結果；細節在 data\logs\keepalive-simple.log）：
@@ -44,48 +43,13 @@ function Test-PharmacyLocalOk {
     return (Test-LocalOk "http://127.0.0.1:3000/login")
 }
 
-function Get-KeepaliveHealthStatePath {
-    return Join-Path $ProjectRoot "data\ops\keepalive-health.json"
-}
-
-function Read-KeepaliveHealthState {
-    $path = Get-KeepaliveHealthStatePath
-    $obj = [ordered]@{
-        pharmacyHttpFails    = 0
-        cashflowHttpFails    = 0
-        publicFails          = 0
-        pendingFunnelReset   = $false
-        lastFunnelReapplyAt  = ""
-        lastFunnelResetAt    = ""
-    }
-    if (Test-Path -LiteralPath $path) {
-        try {
-            $raw = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
-            $parsed = $raw | ConvertFrom-Json
-            if ($null -ne $parsed.pharmacyHttpFails) { $obj.pharmacyHttpFails = [int]$parsed.pharmacyHttpFails }
-            if ($null -ne $parsed.cashflowHttpFails) { $obj.cashflowHttpFails = [int]$parsed.cashflowHttpFails }
-            if ($null -ne $parsed.publicFails) { $obj.publicFails = [int]$parsed.publicFails }
-            if ($null -ne $parsed.pendingFunnelReset) { $obj.pendingFunnelReset = [bool]$parsed.pendingFunnelReset }
-            if ($parsed.lastFunnelReapplyAt) { $obj.lastFunnelReapplyAt = [string]$parsed.lastFunnelReapplyAt }
-            if ($parsed.lastFunnelResetAt) { $obj.lastFunnelResetAt = [string]$parsed.lastFunnelResetAt }
-        } catch {}
-    }
-    return $obj
-}
-
-function Save-KeepaliveHealthState($state) {
-    $path = Get-KeepaliveHealthStatePath
-    $dir = Split-Path $path -Parent
-    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
-    ($state | ConvertTo-Json) | Set-Content -LiteralPath $path -Encoding UTF8
-}
-
 Write-Log "keepalive start"
 Write-Host "=== Keepalive (one check, then exit) ===" -ForegroundColor Cyan
 Write-Host "Not a resident process. Task Scheduler runs this every minute."
+Write-Host "External Funnel: resident monitor every 30s (YaoshengPharmacyFunnelMonitor)."
 Write-Host "Log: $LogFile"
 Write-Host ""
-$healthState = Read-KeepaliveHealthState
+$healthState = Read-KeepaliveHealthState -ProjectRoot $ProjectRoot
 
 $pm2 = Get-Pm2Command
 if (-not $pm2) {
@@ -165,20 +129,19 @@ if ($cashflowOk) {
     Write-Log ("cashflow after repair: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
 }
 
-# --- funnel：一定檢查外網窗口。內網通但外網不通，連續 2 次才重宣告（不 reset）---
+# --- funnel：備援檢查外網窗口（常駐監測由 funnel-public-monitor 負責）---
 $funnelPublic = Repair-FunnelIfNeeded `
     -WriteLog { param($m) Write-Log $m } `
     -LocalOk $pharmacyOk `
-    -MinPublicFails 2 `
     -AllowReset `
     -HealthState $healthState
+
+Save-KeepaliveHealthState -ProjectRoot $ProjectRoot -State $healthState
+Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnelPublic=$funnelPublic"
 
 if ($pm2) {
     & $pm2 save 2>$null | Out-Null
 }
-
-Save-KeepaliveHealthState $healthState
-Write-Log "done pharmacyOk=$pharmacyOk cashflowOk=$cashflowOk funnelPublic=$funnelPublic"
 
 Write-Host ""
 Write-Host "Result:" -ForegroundColor Cyan
