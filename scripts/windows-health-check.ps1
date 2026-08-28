@@ -23,7 +23,9 @@ if (-not (Get-Pm2Command)) {
     Bad "pm2 not found"
     Info ("PM2_HOME={0}" -f $(if ($env:PM2_HOME) { $env:PM2_HOME } else { "(unset)" }))
 } else {
+    $pm2Path = Get-Pm2Command
     Info ("PM2_HOME={0}" -f $(if ($env:PM2_HOME) { $env:PM2_HOME } else { "(default)" }))
+    if ($pm2Path) { Info ("pm2 cmd={0}" -f $pm2Path) }
     $pm2Apps = @(Get-Pm2Apps)
     Info ("pm2 jlist apps={0}" -f $pm2Apps.Count)
     $pharmacyOnline = Get-Pm2Online -Name "pharmacy-web"

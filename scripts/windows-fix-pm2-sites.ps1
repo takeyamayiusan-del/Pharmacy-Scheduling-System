@@ -48,15 +48,30 @@ Write-Host "Pausing watchdog + funnel monitor during PM2 adopt ..." -ForegroundC
 Stop-ScheduledTask -TaskName $WatchdogTaskName -ErrorAction SilentlyContinue
 Stop-ScheduledTask -TaskName $FunnelMonitorTaskName -ErrorAction SilentlyContinue
 
+[void](Clear-StaleBuildLock -ProjectRoot $ProjectRoot -WriteLog { param($m) Write-Host $m })
+
 try {
     if (-not $SkipBuild -and -not (Test-PharmacyWebBuildReady -ProjectRoot $ProjectRoot)) {
         Write-Host "Building pharmacy site (.next incomplete) ..." -ForegroundColor Cyan
         try {
             Invoke-NpmBuild -ProjectRoot $ProjectRoot
         } catch {
-            Write-Host ("Build failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
-            Write-Host "Try: powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1 -NoPull"
-            exit 1
+            if ($_.Exception.Message -like "*Another build is already running*") {
+                Write-Host "Stale build lock detected — clearing and retrying once ..." -ForegroundColor Yellow
+                [void](Clear-StaleBuildLock -ProjectRoot $ProjectRoot -MaxAgeMinutes 0 -WriteLog { param($m) Write-Host $m })
+                try {
+                    Invoke-NpmBuild -ProjectRoot $ProjectRoot
+                } catch {
+                    Write-Host ("Build failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+                    Write-Host "Manual: Remove-Item data\logs\.building -Force -ErrorAction SilentlyContinue"
+                    Write-Host "Then:   powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1 -NoPull"
+                    exit 1
+                }
+            } else {
+                Write-Host ("Build failed: {0}" -f $_.Exception.Message) -ForegroundColor Red
+                Write-Host "Try: powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1 -NoPull"
+                exit 1
+            }
         }
     }
 
