@@ -85,13 +85,44 @@ if (Test-FunnelPublicOk) {
     Ok "public $publicUrl"
 } else {
     Bad "public URL not reachable: $publicUrl (local OK does not mean Funnel OK)"
-    Info "keepalive re-applies after 2 public misses, then funnel reset if still down. Restore now:"
+    Info "keepalive re-applies on 1st public miss; resident monitor every 30s; reset if still down. Restore now:"
     Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
 }
 Info "Verify :8443 with a phone on 4G (not store Wi-Fi)"
 
 Write-Host ""
-Write-Host "[6] Scheduled tasks (boot + watchdog)" -ForegroundColor Cyan
+Write-Host "[6b] Funnel public monitor (resident 30s)" -ForegroundColor Cyan
+$funnelMonitorName = "YaoshengPharmacyFunnelMonitor"
+$funnelTask = Get-ScheduledTask -TaskName $funnelMonitorName -ErrorAction SilentlyContinue
+if (-not $funnelTask) {
+    Bad "$funnelMonitorName not registered"
+    Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-register-keepalive-simple.ps1"
+} elseif ($funnelTask.State -eq "Disabled") {
+    Bad "$funnelMonitorName is Disabled"
+} else {
+    Ok ("{0} state={1}" -f $funnelMonitorName, $funnelTask.State)
+    $finfo = Get-ScheduledTaskInfo -TaskName $funnelMonitorName -ErrorAction SilentlyContinue
+    if ($finfo -and $finfo.LastRunTime) {
+        Info ("last run: {0}  last result: {1}" -f $finfo.LastRunTime, $finfo.LastTaskResult)
+    }
+}
+$funnelStatusPath = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
+if (Test-Path -LiteralPath $funnelStatusPath) {
+    try {
+        $fs = (Get-Content -LiteralPath $funnelStatusPath -Raw) | ConvertFrom-Json
+        Info ("snapshot: publicOk=$($fs.publicOk) checkedAt=$($fs.checkedAt) incidents=$($fs.totalIncidents)")
+        if (-not $fs.publicOk) {
+            Bad "funnel-public-status.json reports public DOWN"
+        }
+    } catch {
+        Bad "funnel-public-status.json invalid"
+    }
+} else {
+    Info "no funnel-public-status.json yet — run funnel monitor once"
+}
+
+Write-Host ""
+Write-Host "[7] Scheduled tasks (boot + watchdog)" -ForegroundColor Cyan
 foreach ($name in @("YaoshengPharmacyStart", "YaoshengPharmacyWatchdog")) {
     $t = Get-ScheduledTask -TaskName $name -ErrorAction SilentlyContinue
     if (-not $t) {
@@ -142,7 +173,7 @@ foreach ($name in @("YaoshengPharmacyStart", "YaoshengPharmacyWatchdog")) {
 }
 
 Write-Host ""
-Write-Host "[7] Auth (optional but needed for pharmacy login)" -ForegroundColor Cyan
+Write-Host "[8] Auth (optional but needed for pharmacy login)" -ForegroundColor Cyan
 if (Test-HttpOk -Uri "http://127.0.0.1:54321/auth/v1/health" -TimeoutSec 5) {
     Ok "Supabase Auth :54321"
 } else {

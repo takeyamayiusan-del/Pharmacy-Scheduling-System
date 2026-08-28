@@ -507,11 +507,179 @@ function Reset-FunnelDualRoutes {
     return (Restore-FunnelDualRoutes -WriteLog $WriteLog)
 }
 
+function Get-KeepaliveHealthStatePath {
+    param([string]$ProjectRoot)
+    return Join-Path $ProjectRoot "data\ops\keepalive-health.json"
+}
+
+function Read-KeepaliveHealthState {
+    param([string]$ProjectRoot)
+
+    $path = Get-KeepaliveHealthStatePath -ProjectRoot $ProjectRoot
+    $obj = [ordered]@{
+        pharmacyHttpFails    = 0
+        cashflowHttpFails    = 0
+        publicFails          = 0
+        pendingFunnelReset   = $false
+        lastFunnelReapplyAt  = ""
+        lastFunnelResetAt    = ""
+    }
+    if (Test-Path -LiteralPath $path) {
+        try {
+            $raw = Get-Content -LiteralPath $path -Raw -ErrorAction Stop
+            $parsed = $raw | ConvertFrom-Json
+            if ($null -ne $parsed.pharmacyHttpFails) { $obj.pharmacyHttpFails = [int]$parsed.pharmacyHttpFails }
+            if ($null -ne $parsed.cashflowHttpFails) { $obj.cashflowHttpFails = [int]$parsed.cashflowHttpFails }
+            if ($null -ne $parsed.publicFails) { $obj.publicFails = [int]$parsed.publicFails }
+            if ($null -ne $parsed.pendingFunnelReset) { $obj.pendingFunnelReset = [bool]$parsed.pendingFunnelReset }
+            if ($parsed.lastFunnelReapplyAt) { $obj.lastFunnelReapplyAt = [string]$parsed.lastFunnelReapplyAt }
+            if ($parsed.lastFunnelResetAt) { $obj.lastFunnelResetAt = [string]$parsed.lastFunnelResetAt }
+        } catch {}
+    }
+    return $obj
+}
+
+function Save-KeepaliveHealthState {
+    param(
+        [string]$ProjectRoot,
+        $State
+    )
+
+    $path = Get-KeepaliveHealthStatePath -ProjectRoot $ProjectRoot
+    $dir = Split-Path $path -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+    ($State | ConvertTo-Json) | Set-Content -LiteralPath $path -Encoding UTF8
+}
+
+function Get-FunnelPublicStatusPath {
+    param([string]$ProjectRoot)
+    return Join-Path $ProjectRoot "data\ops\funnel-public-status.json"
+}
+
+function Save-FunnelPublicStatus {
+    param(
+        [string]$ProjectRoot,
+        [bool]$PublicOk,
+        [bool]$RoutesOk,
+        [bool]$LocalOk,
+        [int]$PublicFails = 0,
+        [string]$RepairAction = "none",
+        [bool]$Recovered = $false
+    )
+
+    $path = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
+    $dir = Split-Path $path -Parent
+    if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Out-Null }
+
+    $prev = $null
+    if (Test-Path -LiteralPath $path) {
+        try {
+            $prev = (Get-Content -LiteralPath $path -Raw) | ConvertFrom-Json
+        } catch {}
+    }
+
+    $now = (Get-Date).ToString("o")
+    $status = [ordered]@{
+        checkedAt              = $now
+        publicOk               = [bool]$PublicOk
+        routesOk               = [bool]$RoutesOk
+        localOk                = [bool]$LocalOk
+        publicUrl              = (Get-FunnelPublicBaseUrl) + "/login"
+        consecutivePublicFails = [int]$PublicFails
+        lastPublicOkAt         = if ($PublicOk) { $now } else { $(if ($prev -and $prev.lastPublicOkAt) { [string]$prev.lastPublicOkAt } else { "" }) }
+        lastPublicDownAt       = if (-not $PublicOk) { $now } else { $(if ($prev -and $prev.lastPublicDownAt) { [string]$prev.lastPublicDownAt } else { "" }) }
+        lastRepairAction       = [string]$RepairAction
+        lastRepairAt           = if ($RepairAction -ne "none") { $now } else { $(if ($prev -and $prev.lastRepairAt) { [string]$prev.lastRepairAt } else { "" }) }
+        totalIncidents         = [int]($(if ($prev -and $null -ne $prev.totalIncidents) { $prev.totalIncidents } else { 0 }))
+        recentIncidents        = @()
+    }
+
+    $wasPublicOk = $false
+    if ($prev -and $null -ne $prev.publicOk) { $wasPublicOk = [bool]$prev.publicOk }
+    if ($wasPublicOk -and -not $PublicOk) {
+        $status.totalIncidents = [int]$status.totalIncidents + 1
+    }
+
+    $recent = @()
+    if ($prev -and $prev.recentIncidents) {
+        foreach ($item in @($prev.recentIncidents)) { $recent += $item }
+    }
+    if ($RepairAction -ne "none") {
+        $recent += [ordered]@{
+            at        = $now
+            action    = [string]$RepairAction
+            recovered = [bool]$Recovered
+            publicOk  = [bool]$PublicOk
+        }
+    } elseif ($wasPublicOk -and -not $PublicOk) {
+        $recent += [ordered]@{
+            at        = $now
+            action    = "detected_down"
+            recovered = $false
+            publicOk  = $false
+        }
+    }
+    if ($recent.Count -gt 30) {
+        $recent = @($recent | Select-Object -Last 30)
+    }
+    $status.recentIncidents = $recent
+
+    ($status | ConvertTo-Json -Depth 5) | Set-Content -LiteralPath $path -Encoding UTF8
+    return $status
+}
+
+function Register-YaoshengFunnelMonitorTask {
+    param(
+        [string]$ProjectRoot,
+        [string]$RunAs,
+        [string]$TaskName = "YaoshengPharmacyFunnelMonitor"
+    )
+
+    $monitorScript = Join-Path $ProjectRoot "scripts\windows-funnel-public-monitor.ps1"
+    if (-not (Test-Path -LiteralPath $monitorScript)) {
+        throw "Missing: $monitorScript"
+    }
+
+    Stop-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
+
+    $principal = New-ScheduledTaskPrincipal `
+        -UserId $RunAs `
+        -LogonType Interactive `
+        -RunLevel Highest
+
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" `
+        -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$monitorScript`""
+
+    $settings = New-ScheduledTaskSettingsSet `
+        -AllowStartIfOnBatteries `
+        -DontStopIfGoingOnBatteries `
+        -StartWhenAvailable `
+        -MultipleInstances IgnoreNew `
+        -ExecutionTimeLimit ([TimeSpan]::Zero)
+
+    $startup = New-ScheduledTaskTrigger -AtStartup
+    $startup.Delay = "PT4M"
+    $logon = New-ScheduledTaskTrigger -AtLogOn
+    $logon.Delay = "PT1M"
+
+    Register-ScheduledTask `
+        -TaskName $TaskName `
+        -Action $action `
+        -Trigger @($startup, $logon) `
+        -Principal $principal `
+        -Settings $settings `
+        -Description "Resident Tailscale Funnel public monitor (30s probe + auto repair)" | Out-Null
+
+    Enable-ScheduledTask -TaskName $TaskName | Out-Null
+    Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+}
+
 function Get-FunnelCooldownRemainMinutes {
     param(
         $HealthState,
         [string]$FieldName = "lastFunnelReapplyAt",
-        [int]$CooldownMinutes = 8
+        [int]$CooldownMinutes = 3
     )
     if (-not $HealthState) { return 0 }
     $raw = [string]$HealthState.$FieldName
@@ -532,9 +700,9 @@ function Repair-FunnelIfNeeded {
         [switch]$ForceReapply,
         [switch]$AllowReset,
         [bool]$LocalOk = $true,
-        [int]$MinPublicFails = 2,
-        [int]$CooldownMinutes = 8,
-        [int]$ResetCooldownMinutes = 20,
+        [int]$MinPublicFails = 1,
+        [int]$CooldownMinutes = 3,
+        [int]$ResetCooldownMinutes = 10,
         $HealthState = $null
     )
 
