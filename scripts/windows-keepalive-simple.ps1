@@ -43,6 +43,7 @@ function Test-PharmacyLocalOk {
     return (Test-LocalOk "http://127.0.0.1:3000/login")
 }
 
+
 Write-Log "keepalive start"
 Write-Host "=== Keepalive (one check, then exit) ===" -ForegroundColor Cyan
 Write-Host "Not a resident process. Task Scheduler runs this every minute."
