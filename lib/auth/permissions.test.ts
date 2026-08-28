@@ -3,6 +3,7 @@ import {
   canEditSchedule,
   canManagePayroll,
   canSubmitBonus,
+  canViewTeamAttendance,
   parseRoleCapabilityPolicy,
   parseUserCapabilities,
 } from "@/lib/auth/permissions";
@@ -62,6 +63,16 @@ describe("permissions", () => {
     expect(canManagePayroll({ role: "deputy" }, noDeputyLike)).toBe(false);
     expect(
       canManagePayroll({ role: "staff", capabilities: { payroll: true } }, noDeputyLike)
+    ).toBe(true);
+  });
+
+  it("staff accountant can view team attendance with payroll grant", () => {
+    expect(canViewTeamAttendance({ role: "staff" }, policies)).toBe(false);
+    expect(
+      canViewTeamAttendance(
+        { role: "staff", capabilities: { payroll: true } },
+        policies
+      )
     ).toBe(true);
   });
 });

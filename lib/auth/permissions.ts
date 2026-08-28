@@ -227,6 +227,15 @@ export function canSwitchSiteForPayroll(
   return canManagePayroll(actor, policies);
 }
 
+/** 工時統計可看全店員工（店長／副店／老闆／會計薪資結算） */
+export function canViewTeamAttendance(
+  actor: PermissionActor | null | undefined,
+  policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
+): boolean {
+  if (canManageSite(actor?.role)) return true;
+  return canManagePayroll(actor, policies);
+}
+
 export function canManageEmployees(
   actor: PermissionActor | null | undefined,
   policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
