@@ -246,8 +246,8 @@ function Invoke-NpmBuild {
         New-Item -ItemType File -Path $lockFile -ErrorAction Stop | Out-Null
 
         # 先停 PM2，避免 build 期間 autorestart 或與 next start 同時讀寫 .next
-        if (Get-Command pm2 -ErrorAction SilentlyContinue) {
-            & pm2 stop pharmacy-web 2>$null | Out-Null
+        if (Get-Pm2Command) {
+            [void](Invoke-Pm2Safe -Pm2Args @("stop", "pharmacy-web") -OnlyIfAppExists "pharmacy-web")
         }
         Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
 
@@ -1037,6 +1037,42 @@ function Get-Pm2Pid([string]$Name) {
     return $null
 }
 
+<#
+  安全呼叫 PM2：一律用 pm2.cmd（避開 pm2.ps1 的 NativeCommandError），
+  並在 $ErrorActionPreference=Stop 的更新腳本中也不會因 stderr 中斷。
+  -OnlyIfAppExists：stop/delete/restart 在 app 尚未註冊時略過（PM2 會回 not found）。
+#>
+function Invoke-Pm2Safe {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$Pm2Args,
+        [string]$OnlyIfAppExists = "",
+        [switch]$CaptureOutput
+    )
+
+    $pm2 = Get-Pm2Command
+    if (-not $pm2) {
+        if ($CaptureOutput) { return @{ ExitCode = -1; Output = "pm2 not found" } }
+        return -1
+    }
+
+    if ($OnlyIfAppExists -and -not (Test-Pm2AppExists -Name $OnlyIfAppExists)) {
+        if ($CaptureOutput) { return @{ ExitCode = 0; Output = "" } }
+        return 0
+    }
+
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $output = (& $pm2 @Pm2Args 2>&1 | Out-String)
+        $exitCode = $LASTEXITCODE
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+
+    if ($CaptureOutput) { return @{ ExitCode = $exitCode; Output = $output } }
+    return $exitCode
+}
+
 function Stop-PortListenerForce {
     param(
         [int]$Port,
@@ -1105,7 +1141,6 @@ function Ensure-CashflowPm2Registered {
         return $false
     }
 
-    $pm2 = Get-Pm2Command
     if (Get-Pm2Online -Name "cashflow") { return $true }
 
     $configPath = Get-CashflowBootstrapConfigPath -ProjectRoot $ProjectRoot
@@ -1152,23 +1187,23 @@ function Ensure-CashflowPm2Registered {
     $env:PORT = [string]$port
 
     & $WriteLog "Registering cashflow via bootstrap config"
-    & $pm2 delete cashflow 2>$null | Out-Null
-    $prevEap = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
+    [void](Invoke-Pm2Safe -Pm2Args @("delete", "cashflow") -OnlyIfAppExists "cashflow")
     if ($scriptArgs.Count -gt 0) {
-        $out = (& $pm2 start $scriptPath --name cashflow --cwd $cwd --update-env -- @scriptArgs 2>&1 | Out-String)
+        $startResult = Invoke-Pm2Safe -Pm2Args @(
+            "start", $scriptPath, "--name", "cashflow", "--cwd", $cwd, "--update-env", "--"
+        ) + $scriptArgs -CaptureOutput
     } else {
-        $out = (& $pm2 start $scriptPath --name cashflow --cwd $cwd --update-env 2>&1 | Out-String)
+        $startResult = Invoke-Pm2Safe -Pm2Args @(
+            "start", $scriptPath, "--name", "cashflow", "--cwd", $cwd, "--update-env"
+        ) -CaptureOutput
     }
-    $exitCode = $LASTEXITCODE
-    $ErrorActionPreference = $prevEap
-    if ($exitCode -ne 0) {
-        if ($out.Trim()) { & $WriteLog $out.Trim() }
+    if ($startResult.ExitCode -ne 0) {
+        if ($startResult.Output.Trim()) { & $WriteLog $startResult.Output.Trim() }
         & $WriteLog "cashflow pm2 start failed"
         return $false
     }
 
-    & $pm2 save 2>$null | Out-Null
+    [void](Invoke-Pm2Safe -Pm2Args @("save"))
     Start-Sleep -Seconds 2
     return (Get-Pm2Online -Name "cashflow")
 }
@@ -1182,7 +1217,7 @@ function Clear-PharmacyWebPort {
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "Continue"
     try {
-        pm2 stop pharmacy-web 2>$null | Out-Null
+        [void](Invoke-Pm2Safe -Pm2Args @("stop", "pharmacy-web") -OnlyIfAppExists "pharmacy-web")
         Start-Sleep -Seconds 1
         for ($i = 1; $i -le $MaxRounds; $i++) {
             $listenerPid = Get-PortListenerPid -Port 3000
@@ -1203,7 +1238,8 @@ function Ensure-PharmacyWebPm2Registered {
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
 
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+    $pm2 = Get-Pm2Command
+    if (-not $pm2) {
         & $WriteLog "pm2 not found"
         return $false
     }
@@ -1216,22 +1252,15 @@ function Ensure-PharmacyWebPm2Registered {
 
     & $WriteLog "Registering pharmacy-web via ecosystem.config.cjs"
     $env:PORT = "3000"
-    $pm2 = Get-Pm2Command
-    if (-not $pm2) {
-        & $WriteLog "pm2 not found"
+    [void](Invoke-Pm2Safe -Pm2Args @("delete", "pharmacy-web") -OnlyIfAppExists "pharmacy-web")
+    $startResult = Invoke-Pm2Safe -Pm2Args @(
+        "start", $ecosystem, "--only", "pharmacy-web", "--update-env"
+    ) -CaptureOutput
+    if ($startResult.ExitCode -ne 0) {
+        if ($startResult.Output.Trim()) { & $WriteLog $startResult.Output.Trim() }
         return $false
     }
-    & $pm2 delete pharmacy-web 2>$null | Out-Null
-    $prevEap = $ErrorActionPreference
-    $ErrorActionPreference = "Continue"
-    $output = (& $pm2 start $ecosystem --only pharmacy-web --update-env 2>&1 | Out-String)
-    $exitCode = $LASTEXITCODE
-    $ErrorActionPreference = $prevEap
-    if ($exitCode -ne 0) {
-        if ($output.Trim()) { & $WriteLog $output.Trim() }
-        return $false
-    }
-    & pm2 save 2>$null | Out-Null
+    [void](Invoke-Pm2Safe -Pm2Args @("save"))
     return $true
 }
 
@@ -1297,7 +1326,7 @@ function Restart-PharmacyWebPm2 {
         [int]$MaxAttempts = 3
     )
 
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+    if (-not (Get-Pm2Command)) {
         & $WriteLog "pm2 not found"
         return $false
     }
@@ -1349,7 +1378,7 @@ function Restart-PharmacyWebPm2 {
             }
         }
 
-        & pm2 delete pharmacy-web 2>$null | Out-Null
+        [void](Invoke-Pm2Safe -Pm2Args @("delete", "pharmacy-web") -OnlyIfAppExists "pharmacy-web")
         if (-not (Ensure-PharmacyWebPm2Registered -ProjectRoot $ProjectRoot -WriteLog $WriteLog)) {
             if ($attempt -ge $MaxAttempts) { return $false }
             Start-Sleep -Seconds 3
@@ -1357,7 +1386,7 @@ function Restart-PharmacyWebPm2 {
         }
 
         if (Wait-PharmacyWebHealthy -TimeoutSeconds 50) {
-            & pm2 save 2>$null | Out-Null
+            [void](Invoke-Pm2Safe -Pm2Args @("save"))
             $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
             $listenPid = Get-PortListenerPid -Port 3000
             & $WriteLog ("pharmacy-web online pm2={0} port={1}" -f $pm2Pid, $listenPid)
@@ -1365,7 +1394,7 @@ function Restart-PharmacyWebPm2 {
         }
 
         & $WriteLog "pharmacy-web not healthy after start"
-        $pm2LogTail = (& pm2 logs pharmacy-web --lines 20 --nostream 2>$null | Out-String)
+        $pm2LogTail = (Invoke-Pm2Safe -Pm2Args @("logs", "pharmacy-web", "--lines", "20", "--nostream") -OnlyIfAppExists "pharmacy-web" -CaptureOutput).Output
         if ($pm2LogTail) {
             $pm2LogTail -split "`r?`n" | ForEach-Object {
                 if ($_ -and $_.Trim().Length -gt 0) { & $WriteLog $_ }
@@ -1393,7 +1422,7 @@ function Restart-PharmacyWebPm2 {
                 & $WriteLog "Detected MODULE_NOT_FOUND. Running deep repair: stop -> clear .next -> npm install -> build"
             }
             try {
-                & pm2 stop pharmacy-web 2>$null | Out-Null
+                [void](Invoke-Pm2Safe -Pm2Args @("stop", "pharmacy-web") -OnlyIfAppExists "pharmacy-web")
                 Stop-ProjectWebProcesses -ProjectRoot $ProjectRoot
                 if (-not $needsRebuild) {
                     Clear-NextBuild -ProjectRoot $ProjectRoot
@@ -1435,7 +1464,7 @@ function Repair-Pm2AppIfNeeded {
 
     if ($healthy -and (Get-Pm2Online -Name $Name)) { return $true }
 
-    if (-not (Get-Command pm2 -ErrorAction SilentlyContinue)) {
+    if (-not (Get-Pm2Command)) {
         & $WriteLog "pm2 not found, cannot repair $Name"
         return $false
     }
@@ -1452,8 +1481,8 @@ function Repair-Pm2AppIfNeeded {
     }
 
     & $WriteLog "Repairing pm2 app: $Name"
-    & pm2 resurrect 2>$null | Out-Null
-    & pm2 restart $Name --update-env 2>$null | Out-Null
+    [void](Invoke-Pm2Safe -Pm2Args @("resurrect"))
+    [void](Invoke-Pm2Safe -Pm2Args @("restart", $Name, "--update-env") -OnlyIfAppExists $Name)
     Start-Sleep -Seconds 4
 
     if ($HealthyCheck) {
@@ -1472,7 +1501,7 @@ function Start-SiteViaPm2OrRunner {
         [scriptblock]$WriteLog = { param($m) Write-Host $m }
     )
 
-    if (Get-Command pm2 -ErrorAction SilentlyContinue) {
+    if (Get-Pm2Command) {
         & $WriteLog "Restarting pharmacy-web via pm2 (cashflow left alone if healthy)..."
         if (Restart-PharmacyWebPm2 -ProjectRoot $ProjectRoot -WriteLog $WriteLog) {
             if (Test-Pm2AppExists -Name "cashflow") {
@@ -1528,7 +1557,7 @@ function Repair-Pm2SitesIfNeeded {
     }
 
     if ($allOk -and (Get-Pm2Command)) {
-        & (Get-Pm2Command) save 2>$null | Out-Null
+        [void](Invoke-Pm2Safe -Pm2Args @("save"))
     }
     return $allOk
 }
