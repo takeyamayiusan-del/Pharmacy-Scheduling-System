@@ -1024,21 +1024,34 @@ function Get-Pm2AppsFromKnownNames {
 
     $apps = @()
     foreach ($name in @("pharmacy-web", "cashflow")) {
+        $directPid = Get-Pm2PidDirect -Name $name
+        if ($directPid -le 0) { continue }
+
+        $parsed = $null
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         try {
-            $raw = (& $pm2 describe $name --json 2>&1 | Out-String)
+            $raw = (& $pm2 describe $name --json 2>&1 | Out-String).Trim()
         } finally {
             $ErrorActionPreference = $prevEap
         }
-        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
-        try {
-            $parsed = ConvertFrom-Json -InputObject $raw.Trim() -ErrorAction Stop
-            if ($null -eq $parsed) { continue }
-            foreach ($item in @($parsed)) {
-                if ($item.name -eq $name) { $apps += $item }
+        if (-not [string]::IsNullOrWhiteSpace($raw)) {
+            try {
+                $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+            } catch {
+                $parsed = $null
             }
-        } catch {}
+        }
+
+        if ($null -ne $parsed) {
+            foreach ($item in @($parsed)) {
+                if ($item.name -eq $name) { $apps += $item; break }
+            }
+            continue
+        }
+
+        $status = if (Get-Pm2OnlineFromList -Name $name) { "online" } else { "unknown" }
+        $apps += (New-Pm2AppStub -Name $name -Status $status -Pid $directPid)
     }
     return $apps
 }
@@ -1083,11 +1096,42 @@ function Get-Pm2PidDirect {
     return $null
 }
 
+function Get-Pm2OnlineFromList {
+    param([string]$Name)
+
+    $result = Invoke-Pm2Safe -Pm2Args @("list") -CaptureOutput
+    if ($result.ExitCode -ne 0) { return $false }
+
+    $escaped = [regex]::Escape($Name)
+    foreach ($line in ($result.Output -split "`r?`n")) {
+        if ($line -match "\|\s*\d+\s*\|\s*$escaped\s*\|" -and $line -match "\|\s*online\s*\|") {
+            return $true
+        }
+    }
+    return $false
+}
+
+function New-Pm2AppStub {
+    param(
+        [string]$Name,
+        [string]$Status = "online",
+        [int]$Pid = 0
+    )
+
+    return [PSCustomObject]@{
+        name    = $Name
+        pid     = $Pid
+        pm2_env = [PSCustomObject]@{ status = $Status }
+    }
+}
+
 function Get-Pm2Online([string]$Name) {
     foreach ($app in (Get-Pm2Apps)) {
         if ($app.name -eq $Name -and $app.pm2_env.status -eq "online") { return $true }
     }
-    return $false
+    if (Get-Pm2OnlineFromList -Name $Name) { return $true }
+    $directPid = Get-Pm2PidDirect -Name $Name
+    return ($directPid -gt 0)
 }
 
 function Test-Pm2AppExists([string]$Name) {
@@ -1366,12 +1410,10 @@ function Test-PharmacyWebHttpHealthy {
 }
 
 function Test-PharmacyWebPm2OwningPort {
-    if (-not (Get-Pm2Online -Name "pharmacy-web")) { return $false }
-
     $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
     $listenPid = Get-PortListenerPid -Port 3000
-    if (-not $listenPid) { return $false }
-    if (-not $pm2Pid) { return $false }
+    if (-not $listenPid -or -not $pm2Pid) { return $false }
+    if ($pm2Pid -eq $listenPid) { return $true }
     # ecosystem 用 wrapper 啟動 next；聽埠的是子進程，不可要求 PID 完全相等
     return (Test-ProcessInTree -AncestorPid $pm2Pid -CandidatePid $listenPid)
 }

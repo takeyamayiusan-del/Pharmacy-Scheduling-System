@@ -37,10 +37,10 @@ if (-not (Get-Pm2Command)) {
 Write-Host ""
 Write-Host "[2] Local HTTP" -ForegroundColor Cyan
 $cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
-if (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8) {
-    Ok "pharmacy http://127.0.0.1:3000/login"
+if (Test-PharmacyWebHttpHealthy) {
+    Ok "pharmacy http://127.0.0.1:3000/login (or /api/health)"
 } else {
-    Bad "pharmacy :3000/login not 200"
+    Bad "pharmacy :3000 not healthy (/api/health and /login)"
 }
 if (Test-HttpOk -Uri "http://127.0.0.1:$cashflowPort/" -TimeoutSec 8) {
     Ok "cashflow http://127.0.0.1:$cashflowPort/"
@@ -57,9 +57,8 @@ if (Test-PharmacyWebPm2OwningPort) {
     $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
     $listenPid = Get-PortListenerPid -Port 3000
     Info ("pm2 pid={0} listen pid={1}" -f $(if ($pm2Pid) { $pm2Pid } else { "?" }), $(if ($listenPid) { $listenPid } else { "?" }))
-    if (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8) {
-        Info "HTTP OK but orphan process — auto-recover will fail until PM2 adopts :3000"
-        Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-fix-pm2-sites.ps1"
+    if (Test-PharmacyWebHttpHealthy) {
+        Info "HTTP OK but listener pid differs from pm2 wrapper — checking process tree"
     }
 }
 
