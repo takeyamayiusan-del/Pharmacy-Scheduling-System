@@ -7,6 +7,7 @@ import { APP_ROLE_LABELS, type AppRole } from "@/lib/auth/roles";
 import {
   CAPABILITY_KEYS,
   CAPABILITY_LABELS,
+  MANAGER_GRANTABLE_CAPABILITIES,
   canManageEmployees,
   describeCapabilityGrants,
   type UserCapabilities,
@@ -223,6 +224,11 @@ export default function EmployeesPage() {
     }
   };
   
+  const grantableCapabilityKeys =
+    currentUser?.role === "owner"
+      ? CAPABILITY_KEYS
+      : MANAGER_GRANTABLE_CAPABILITIES;
+
   // 店長／老闆／有員工管理授權者
   if (
     !canManageEmployees(
@@ -385,10 +391,10 @@ export default function EmployeesPage() {
                 <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
                   <p className="text-sm font-medium text-slate-800">額外授權（非店長職位）</p>
                   <p className="text-xs text-slate-500">
-                    例如會計只開「薪資結算」、資深員工只開「排班」。可多選。
+                    例如會計只開「薪資結算」、資深員工只開「排班」。店長僅能授權排班／打卡管理，薪資結算請由老闆設定。
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {CAPABILITY_KEYS.map((key) => (
+                    {grantableCapabilityKeys.map((key) => (
                       <label key={key} className="inline-flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"

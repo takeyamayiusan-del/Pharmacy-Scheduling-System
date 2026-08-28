@@ -2,7 +2,11 @@
 
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { useApp } from "@/lib/context/AppContext";
-import { canManagePayroll } from "@/lib/auth/permissions";
+import {
+  canManagePayroll,
+  canSubmitBonus,
+  BONUS_ADJUSTMENT_PRESETS,
+} from "@/lib/auth/permissions";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -77,6 +81,14 @@ type Adjustment = {
   label: string;
   amount: number;
   isDeduction: boolean;
+  bonusCategory?: string | null;
+};
+
+type AdjustmentAttachment = {
+  id: string;
+  adjustmentId: string;
+  fileName: string;
+  expiresAt: string;
 };
 
 type EmployeePayroll = {
@@ -174,6 +186,10 @@ export default function PayrollPage() {
   const [salaryItemsByUser, setSalaryItemsByUser] = useState<Record<string, EmployeeSalaryItem[]>>({});
   const [rateConfigs, setRateConfigs] = useState<RateConfig[]>([]);
   const [adjustments, setAdjustments] = useState<Adjustment[]>([]);
+  const [attachmentsByAdjId, setAttachmentsByAdjId] = useState<
+    Record<string, AdjustmentAttachment[]>
+  >({});
+  const [uploadingAdjId, setUploadingAdjId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const [editingSalary, setEditingSalary] = useState<string | null>(null);
@@ -195,10 +211,9 @@ export default function PayrollPage() {
     isDeduction: false,
   });
 
-  const isManager = canManagePayroll(
-    { role: currentUser?.role, capabilities: currentUser?.capabilities },
-    storeConfig.policies
-  );
+  const actor = { role: currentUser?.role, capabilities: currentUser?.capabilities };
+  const canSettle = canManagePayroll(actor, storeConfig.policies);
+  const canBonus = canSubmitBonus(actor, storeConfig.policies);
   const displayEmployees = employees.filter((e) => e.role !== "owner");
 
   // ─── Load data ─────────────────────────────────────────────────────────────
@@ -297,10 +312,37 @@ export default function PayrollPage() {
         }
       }
       if (adjRes.data) {
-        setAdjustments(adjRes.data.map((r) => ({
-          id: r.id, userId: r.user_id, label: r.label,
-          amount: Number(r.amount), isDeduction: r.is_deduction,
-        })));
+        const mapped = adjRes.data.map((r) => ({
+          id: r.id,
+          userId: r.user_id,
+          label: r.label,
+          amount: Number(r.amount),
+          isDeduction: r.is_deduction,
+          bonusCategory: r.bonus_category ?? null,
+        }));
+        setAdjustments(mapped);
+        const adjIds = mapped.map((a) => a.id);
+        if (adjIds.length > 0) {
+          const { data: attachRows } = await supabase
+            .from("payroll_adjustment_attachments")
+            .select("id, adjustment_id, file_name, expires_at")
+            .in("adjustment_id", adjIds)
+            .gte("expires_at", new Date().toISOString());
+          const grouped: Record<string, AdjustmentAttachment[]> = {};
+          (attachRows ?? []).forEach((row) => {
+            const item: AdjustmentAttachment = {
+              id: row.id,
+              adjustmentId: row.adjustment_id,
+              fileName: row.file_name,
+              expiresAt: row.expires_at,
+            };
+            if (!grouped[item.adjustmentId]) grouped[item.adjustmentId] = [];
+            grouped[item.adjustmentId].push(item);
+          });
+          setAttachmentsByAdjId(grouped);
+        } else {
+          setAttachmentsByAdjId({});
+        }
       }
     } finally {
       setIsLoading(false);
@@ -308,11 +350,11 @@ export default function PayrollPage() {
   }, [supabase, year, month]);
 
   useEffect(() => { 
-    if (isManager) {
+    if (canSettle || canBonus) {
       loadData(); 
-      loadPayrollRecords(year, month);
+      if (canSettle) loadPayrollRecords(year, month);
     }
-  }, [isManager, loadData, loadPayrollRecords, year, month]);
+  }, [canSettle, canBonus, loadData, loadPayrollRecords, year, month]);
 
   // ─── Compute payroll ────────────────────────────────────────────────────────
 
@@ -738,6 +780,11 @@ export default function PayrollPage() {
       alert("請填寫有效金額。");
       return;
     }
+    const bonusCategory = BONUS_ADJUSTMENT_PRESETS.includes(
+      newAdjForm.label.trim() as (typeof BONUS_ADJUSTMENT_PRESETS)[number]
+    )
+      ? newAdjForm.label.trim()
+      : null;
     const rows = selectedIds.map((userId) => ({
       user_id: userId,
       year,
@@ -745,6 +792,7 @@ export default function PayrollPage() {
       label: newAdjForm.label.trim(),
       amount,
       is_deduction: newAdjForm.isDeduction,
+      bonus_category: bonusCategory,
       created_by: currentUser?.id,
     }));
     const { data, error } = await supabase.from("payroll_adjustments").insert(rows).select();
@@ -761,6 +809,7 @@ export default function PayrollPage() {
           label: row.label,
           amount: Number(row.amount),
           isDeduction: row.is_deduction,
+          bonusCategory: row.bonus_category ?? null,
         })),
       ]);
     }
@@ -781,6 +830,67 @@ export default function PayrollPage() {
   const deleteAdjustment = async (id: string) => {
     await supabase.from("payroll_adjustments").delete().eq("id", id);
     setAdjustments((prev) => prev.filter((a) => a.id !== id));
+    setAttachmentsByAdjId((prev) => {
+      const next = { ...prev };
+      delete next[id];
+      return next;
+    });
+  };
+
+  const uploadAdjustmentAttachment = async (adjustmentId: string, file: File) => {
+    setUploadingAdjId(adjustmentId);
+    try {
+      const form = new FormData();
+      form.append("adjustmentId", adjustmentId);
+      form.append("file", file);
+      const res = await fetch("/api/payroll/adjustments/attachments", {
+        method: "POST",
+        body: form,
+      });
+      const json = (await res.json()) as {
+        error?: string;
+        attachment?: {
+          id: string;
+          adjustment_id: string;
+          file_name: string;
+          expires_at: string;
+        };
+      };
+      if (!res.ok || !json.attachment) {
+        alert(json.error || "上傳失敗");
+        return;
+      }
+      const item: AdjustmentAttachment = {
+        id: json.attachment.id,
+        adjustmentId: json.attachment.adjustment_id,
+        fileName: json.attachment.file_name,
+        expiresAt: json.attachment.expires_at,
+      };
+      setAttachmentsByAdjId((prev) => ({
+        ...prev,
+        [adjustmentId]: [...(prev[adjustmentId] ?? []), item],
+      }));
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "上傳失敗");
+    } finally {
+      setUploadingAdjId(null);
+    }
+  };
+
+  const openAdjustmentAttachment = async (attachmentId: string) => {
+    try {
+      const res = await fetch(
+        `/api/payroll/adjustments/attachments?id=${encodeURIComponent(attachmentId)}`
+      );
+      const json = (await res.json()) as { error?: string; url?: string };
+      if (!res.ok || !json.url) {
+        alert(json.error || "無法開啟附件");
+        return;
+      }
+      window.open(json.url, "_blank", "noopener,noreferrer");
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "無法開啟附件");
+    }
   };
 
   // ─── Export Excel（附圖格式，每人一 sheet，民國年）──────────────────────────
@@ -945,10 +1055,10 @@ export default function PayrollPage() {
 
   // ─── Guard ──────────────────────────────────────────────────────────────────
 
-  if (!isManager) {
+  if (!canSettle && !canBonus) {
     return (
       <div className="flex items-center justify-center min-h-[40vh]">
-        <p className="text-gray-500">僅店長/老闆可查看薪資結算</p>
+        <p className="text-gray-500">您沒有薪資結算或獎金登錄權限</p>
       </div>
     );
   }
@@ -960,10 +1070,11 @@ export default function PayrollPage() {
       {/* 頁頭 */}
       <div className="app-toolbar justify-between">
         <div>
-          <h1 className="app-page-title">月底薪資結算</h1>
+          <h1 className="app-page-title">{canSettle ? "月底薪資結算" : "本月獎金登錄"}</h1>
           <p className="app-meta mt-1">
-            預設為上個月（本月結上月薪）。可先「試算」確認出勤時數與金額，再發布薪資單。
-            店長／副店／老闆直接操作即可，不走請假那種多關審核。
+            {canSettle
+              ? "預設為上個月（本月結上月薪）。店長登錄獎金後，由會計試算、核對出勤並發布。"
+              : "依各店銷售報表登錄個人／團體獎金；會計將於月底統一試算薪資。"}
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -975,6 +1086,8 @@ export default function PayrollPage() {
           <select value={month} onChange={(e) => { setMonth(Number(e.target.value)); setShowTrial(false); }} className="border border-slate-200 rounded-xl px-3 py-2 text-sm bg-white/90">
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => <option key={m} value={m}>{m}月</option>)}
           </select>
+          {canSettle && (
+            <>
           <button
             type="button"
             onClick={runTrial}
@@ -985,11 +1098,15 @@ export default function PayrollPage() {
           <button onClick={exportExcel} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium">
             匯出 Excel（每人一份）
           </button>
+            </>
+          )}
         </div>
       </div>
 
       {isLoading ? <div className="text-center py-12 text-gray-500">載入中...</div> : (
         <>
+          {canSettle && (
+          <>
           {/* ── 費率設定 ── */}
           <div className="app-panel p-6">
             <h2 className="font-semibold text-gray-900 mb-4">計算費率設定</h2>
@@ -1336,22 +1453,74 @@ export default function PayrollPage() {
               })}
             </div>
           </div>
+          </>
+          )}
 
           {/* ── 本月異動項目 ── */}
           <div className="app-panel p-6">
-            <h2 className="font-semibold text-gray-900 mb-4">本月異動項目（民國{toROC(year)}年{month}月）</h2>
+            <h2 className="font-semibold text-gray-900 mb-4">
+              {canSettle ? "本月異動項目" : "本月獎金／加扣項"}（民國{toROC(year)}年{month}月）
+            </h2>
+            {!canSettle && (
+              <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 mb-4">
+                店長僅登錄獎金；月底由會計統一試算、核對打卡／加班／請假並發布薪資。
+              </p>
+            )}
             {adjustments.length > 0 && (
               <div className="space-y-2 mb-4">
                 {adjustments.map((adj) => {
                   const emp = employees.find((e) => e.id === adj.userId);
+                  const attachments = attachmentsByAdjId[adj.id] ?? [];
                   return (
-                    <div key={adj.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                      <span className="font-medium w-16">{emp?.name}</span>
-                      <span className="flex-1 text-sm">{adj.label}</span>
-                      <span className={`text-sm font-medium ${adj.isDeduction ? "text-red-600" : "text-green-600"}`}>
-                        {adj.isDeduction ? "-" : "+"}${adj.amount.toLocaleString()}
-                      </span>
-                      <button onClick={() => deleteAdjustment(adj.id)} className="text-red-500 text-xs">刪除</button>
+                    <div key={adj.id} className="p-3 bg-gray-50 rounded-lg space-y-2">
+                      <div className="flex items-center gap-3 flex-wrap">
+                        <span className="font-medium w-16">{emp?.name}</span>
+                        <span className="flex-1 text-sm">
+                          {adj.label}
+                          {adj.bonusCategory ? (
+                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">
+                              {adj.bonusCategory}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span className={`text-sm font-medium ${adj.isDeduction ? "text-red-600" : "text-green-600"}`}>
+                          {adj.isDeduction ? "-" : "+"}${adj.amount.toLocaleString()}
+                        </span>
+                        <button onClick={() => deleteAdjustment(adj.id)} className="text-red-500 text-xs">刪除</button>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 pl-16">
+                        {attachments.map((att) => (
+                          <button
+                            key={att.id}
+                            type="button"
+                            onClick={() => void openAdjustmentAttachment(att.id)}
+                            className="text-xs text-sky-700 hover:underline"
+                          >
+                            📎 {att.fileName}
+                          </button>
+                        ))}
+                        <label className="inline-flex items-center gap-1 text-xs text-gray-600 cursor-pointer">
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,application/pdf"
+                            className="hidden"
+                            disabled={uploadingAdjId === adj.id}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = "";
+                              if (file) void uploadAdjustmentAttachment(adj.id, file);
+                            }}
+                          />
+                          <span className="px-2 py-0.5 rounded border border-slate-200 bg-white hover:border-blue-300">
+                            {uploadingAdjId === adj.id ? "上傳中…" : "附加佐證"}
+                          </span>
+                        </label>
+                        {attachments.length > 0 && (
+                          <span className="text-[10px] text-gray-400">
+                            附件約 30 天後自動刪除
+                          </span>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1415,10 +1584,23 @@ export default function PayrollPage() {
                   人；新增後每人各一筆相同項目與金額
                 </p>
               </div>
+              <div className="flex flex-wrap gap-2 items-center">
+                <span className="text-xs text-gray-500">快速帶入：</span>
+                {BONUS_ADJUSTMENT_PRESETS.map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setNewAdjForm({ ...newAdjForm, label: preset, isDeduction: false })}
+                    className="px-2 py-1 text-xs rounded border border-slate-200 bg-white hover:border-blue-300"
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
               <div className="flex flex-wrap gap-2">
                 <input
                   type="text"
-                  placeholder="項目名稱（如：業績獎金）"
+                  placeholder="項目名稱（可自訂）"
                   value={newAdjForm.label}
                   onChange={(e) => setNewAdjForm({ ...newAdjForm, label: e.target.value })}
                   className="border rounded px-3 py-1.5 text-sm w-44"
@@ -1451,6 +1633,8 @@ export default function PayrollPage() {
             </div>
           </div>
 
+          {canSettle && (
+          <>
           {/* ── 薪資試算結果 ── */}
           <div className="app-panel overflow-hidden">
             <div className="p-6 border-b flex items-center justify-between flex-wrap gap-3">
@@ -1603,6 +1787,8 @@ export default function PayrollPage() {
             </div>
             )}
           </div>
+          </>
+          )}
         </>
       )}
     </div>

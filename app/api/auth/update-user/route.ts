@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { assertManagerAuth } from "@/lib/auth/server";
 import { PROTECTED_USERNAMES, toAuthEmail, toDbRole } from "@/lib/auth/constants";
+import { filterDelegatableCapabilities, parseUserCapabilities } from "@/lib/auth/permissions";
+import { fromDbRole } from "@/lib/auth/roles";
 
 // POST /api/auth/update-user
 // Body: { userId, password?, name?, role?, username?, ... }
@@ -53,6 +55,13 @@ export async function POST(req: NextRequest) {
 
     const admin = createAdminClient();
 
+    const { data: callerProfile } = await admin
+      .from("users")
+      .select("role, site_id, capabilities")
+      .eq("id", auth.callerId)
+      .single();
+    const callerRole = fromDbRole(String(callerProfile?.role ?? ""));
+
     const { data: existing } = await admin
       .from("users")
       .select("username")
@@ -72,7 +81,13 @@ export async function POST(req: NextRequest) {
 
     const updates: Record<string, unknown> = {};
     if (name !== undefined) updates.name = name;
-    if (role !== undefined) updates.role = toDbRole(role);
+    if (role !== undefined) {
+      const nextRole = toDbRole(role);
+      if (callerRole !== "owner" && nextRole === "boss") {
+        return NextResponse.json({ error: "僅老闆可設定老闆角色" }, { status: 403 });
+      }
+      updates.role = nextRole;
+    }
     if (isWednesdayRotation !== undefined) updates.is_wednesday_rotation = isWednesdayRotation;
     if (isWeekdayOffRule !== undefined) updates.is_weekday_off_rule = isWeekdayOffRule;
     if (isHalfDayLeaveRule !== undefined) updates.is_half_day_leave_rule = isHalfDayLeaveRule;
@@ -86,8 +101,13 @@ export async function POST(req: NextRequest) {
     if (work_hours_regime !== undefined) updates.work_hours_regime = work_hours_regime || null;
     if (baseline_shift !== undefined) updates.baseline_shift = baseline_shift || null;
     if (capabilities !== undefined) {
-      updates.capabilities =
-        capabilities && typeof capabilities === "object" ? capabilities : {};
+      updates.capabilities = filterDelegatableCapabilities(
+        {
+          role: callerRole,
+          capabilities: parseUserCapabilities(callerProfile?.capabilities),
+        },
+        capabilities && typeof capabilities === "object" ? capabilities : {}
+      );
     }
 
     if (Object.keys(updates).length > 0) {

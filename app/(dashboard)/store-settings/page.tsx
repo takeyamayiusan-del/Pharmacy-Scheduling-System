@@ -27,7 +27,7 @@ import {
   type StoreShiftCode,
   type WorkHoursRegime,
 } from "@/lib/store-config";
-import { canEditStoreSettings } from "@/lib/auth/permissions";
+import { canEditPermissionPolicy, canEditStoreSettings } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS, type ApprovalStepRole } from "@/lib/auth/roles";
 import type { ManageRole, RoleCapabilityPolicy } from "@/lib/auth/permissions";
 import type { StorePolicies } from "@/lib/store-policies";
@@ -68,7 +68,9 @@ export default function StoreSettingsPage() {
     setMessage(null);
   }, [storeConfig, activeSiteId]);
 
-  const canManage = canEditStoreSettings({ role: currentUser?.role, capabilities: currentUser?.capabilities }, draft?.policies ?? storeConfig.policies);
+  const actor = { role: currentUser?.role, capabilities: currentUser?.capabilities };
+  const canManage = canEditStoreSettings(actor, draft?.policies ?? storeConfig.policies);
+  const canEditPolicy = canEditPermissionPolicy(actor);
   const siteMeta = SITES[activeSiteId];
   const useCatalog = draft.features.customShiftCatalog;
 
@@ -300,7 +302,17 @@ export default function StoreSettingsPage() {
           if (!check.ok) throw new Error(check.message);
         }
       }
-      await saveStoreConfig(normalized);
+      const toSave =
+        canEditPolicy
+          ? normalized
+          : {
+              ...normalized,
+              policies: {
+                ...normalized.policies,
+                roleCapabilities: storeConfig.policies.roleCapabilities,
+              },
+            };
+      await saveStoreConfig(toSave);
       setMessage("已儲存店家設定");
     } catch (err) {
       setMessage(err instanceof Error ? err.message : "儲存失敗");
@@ -1157,6 +1169,12 @@ export default function StoreSettingsPage() {
 
       <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">權限設定（排班／薪資／管理）</h2>
+        {!canEditPolicy ? (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+            僅老闆可調整權限設定。若要新增會計薪資結算，請到「員工管理」建立帳號並勾選「薪資結算」。
+          </p>
+        ) : (
+        <>
         <p className="text-sm text-gray-500">
           控制誰能排班、誰能看薪資結算、誰能管員工。竹山換店長請到「員工管理」把新人改成店長（可一併把舊店長降職）。
           若要讓「會計」看薪資：角色維持員工，到員工管理勾「薪資結算」授權即可。
@@ -1202,7 +1220,8 @@ export default function StoreSettingsPage() {
         {(
           [
             ["scheduleRoles", "可排班（月曆／固定班／單人排班）"],
-            ["payrollRoles", "可薪資結算"],
+            ["bonusSubmitRoles", "可登錄獎金加扣項（不含試算發布）"],
+            ["payrollRoles", "可薪資結算試算／發布"],
             ["adminRoles", "可管員工／店家設定／打卡管理"],
           ] as const
         ).map(([field, label]) => {
@@ -1243,6 +1262,8 @@ export default function StoreSettingsPage() {
             </div>
           );
         })}
+        </>
+        )}
       </section>
 
       <section className="app-panel p-6 space-y-4">

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canEditSchedule,
   canManagePayroll,
+  canSubmitBonus,
   parseRoleCapabilityPolicy,
   parseUserCapabilities,
 } from "@/lib/auth/permissions";
@@ -17,10 +18,21 @@ describe("permissions", () => {
     });
   });
 
-  it("manager can schedule and payroll by default", () => {
+  it("manager can schedule but not settle payroll by default", () => {
     const actor = { role: "manager" as const };
     expect(canEditSchedule(actor, policies)).toBe(true);
-    expect(canManagePayroll(actor, policies)).toBe(true);
+    expect(canManagePayroll(actor, policies)).toBe(false);
+  });
+
+  it("manager can submit bonus by default", () => {
+    expect(canSubmitBonus({ role: "manager" }, policies)).toBe(true);
+  });
+
+  it("staff accountant needs payroll grant", () => {
+    expect(canManagePayroll({ role: "staff" }, policies)).toBe(false);
+    expect(
+      canManagePayroll({ role: "staff", capabilities: { payroll: true } }, policies)
+    ).toBe(true);
   });
 
   it("staff needs grant for schedule", () => {
