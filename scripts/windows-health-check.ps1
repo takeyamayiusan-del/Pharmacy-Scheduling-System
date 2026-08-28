@@ -28,6 +28,12 @@ if (-not (Get-Pm2Command)) {
     if ($pm2Path) { Info ("pm2 cmd={0}" -f $pm2Path) }
     $pm2Apps = @(Get-Pm2Apps)
     Info ("pm2 jlist apps={0}" -f $pm2Apps.Count)
+    if ($pm2Apps.Count -eq 0) {
+        $listHint = (Invoke-Pm2Safe -Pm2Args @("list") -CaptureOutput).Output
+        if ($listHint -match "pharmacy-web" -or $listHint -match "cashflow") {
+            Info "pm2 list shows apps — jlist JSON parse failed; using list/pid fallback"
+        }
+    }
     $pharmacyOnline = Get-Pm2Online -Name "pharmacy-web"
     $cashflowOnline = Get-Pm2Online -Name "cashflow"
     if ($pharmacyOnline) { Ok "pharmacy-web online" } else { Bad "pharmacy-web not online" }
@@ -58,7 +64,12 @@ if (Test-PharmacyWebPm2OwningPort) {
     $listenPid = Get-PortListenerPid -Port 3000
     Info ("pm2 pid={0} listen pid={1}" -f $(if ($pm2Pid) { $pm2Pid } else { "?" }), $(if ($listenPid) { $listenPid } else { "?" }))
     if (Test-PharmacyWebHttpHealthy) {
-        Info "HTTP OK but listener pid differs from pm2 wrapper — checking process tree"
+        if ($pm2Pid -and $listenPid -and (Test-ProcessInTree -AncestorPid $pm2Pid -CandidatePid $listenPid)) {
+            Info "process tree matches but PM2 status check failed — re-run after git pull"
+        } else {
+            Info "HTTP OK but orphan may hold :3000 — auto-recover will fail until PM2 adopts"
+            Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-fix-pm2-sites.ps1 -SkipBuild"
+        }
     }
 }
 
