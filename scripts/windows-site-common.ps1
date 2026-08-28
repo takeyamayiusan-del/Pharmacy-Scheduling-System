@@ -896,17 +896,19 @@ function Test-FunnelProxyConfigured {
 }
 
 function Get-Pm2Command {
-    $cmd = Get-Command pm2 -ErrorAction SilentlyContinue
-    if ($cmd) { return $cmd.Source }
+    # 優先 pm2.cmd：pm2.ps1 在 Stop 模式會 NativeCommandError，且 jlist 輸出常解析失敗
     $candidates = @(
         "$env:APPDATA\npm\pm2.cmd",
+        "$env:USERPROFILE\AppData\Roaming\npm\pm2.cmd",
         "$env:LOCALAPPDATA\npm\pm2.cmd",
-        "C:\Program Files\nodejs\pm2.cmd",
-        "$env:USERPROFILE\AppData\Roaming\npm\pm2.cmd"
+        "C:\Program Files\nodejs\pm2.cmd"
     )
     foreach ($p in $candidates) {
         if ($p -and (Test-Path -LiteralPath $p)) { return $p }
     }
+    $cmd = Get-Command pm2 -ErrorAction SilentlyContinue
+    if ($cmd -and $cmd.Source -like "*.cmd") { return $cmd.Source }
+    if ($cmd) { return $cmd.Source }
     return $null
 }
 
@@ -992,23 +994,85 @@ function Import-Pm2Environment {
     }
 }
 
-function Get-Pm2Apps {
-    $pm2 = Get-Pm2Command
-    if (-not $pm2) { return @() }
+function Convert-Pm2JlistToApps {
+    param([string]$Raw)
+
+    if ([string]::IsNullOrWhiteSpace($Raw)) { return @() }
+    $start = $Raw.IndexOf("[")
+    $end = $Raw.LastIndexOf("]")
+    if ($start -lt 0 -or $end -le $start) { return @() }
+    $json = $Raw.Substring($start, $end - $start + 1)
     try {
-        # PowerShell 會把 pm2 jlist 拆成多行；必須先拼成字串再 Parse，否則健康檢查會誤報 not online
-        $raw = (& $pm2 jlist 2>$null | Out-String)
-        if ([string]::IsNullOrWhiteSpace($raw)) { return @() }
-        $start = $raw.IndexOf("[")
-        $end = $raw.LastIndexOf("]")
-        if ($start -lt 0 -or $end -le $start) { return @() }
-        $json = $raw.Substring($start, $end - $start + 1)
-        $apps = ConvertFrom-Json -InputObject $json
+        $apps = ConvertFrom-Json -InputObject $json -ErrorAction Stop
         if ($null -eq $apps) { return @() }
         return @($apps)
     } catch {
         return @()
     }
+}
+
+function Get-Pm2AppsFromKnownNames {
+    param([string]$Pm2)
+
+    $apps = @()
+    foreach ($name in @("pharmacy-web", "cashflow")) {
+        $prevEap = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        try {
+            $raw = (& $pm2 describe $name --json 2>&1 | Out-String)
+        } finally {
+            $ErrorActionPreference = $prevEap
+        }
+        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
+        try {
+            $parsed = ConvertFrom-Json -InputObject $raw.Trim() -ErrorAction Stop
+            if ($null -eq $parsed) { continue }
+            foreach ($item in @($parsed)) {
+                if ($item.name -eq $name) { $apps += $item }
+            }
+        } catch {}
+    }
+    return $apps
+}
+
+function Get-Pm2Apps {
+    $pm2 = Get-Pm2Command
+    if (-not $pm2) { return @() }
+
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        # 2>&1：部分環境 jlist 會寫到 stderr；2>$null 會讓 health-check 誤報 apps=0
+        $raw = (& $pm2 jlist 2>&1 | Out-String)
+        $apps = Convert-Pm2JlistToApps -Raw $raw
+        if ($apps.Count -gt 0) { return $apps }
+
+        # 備援：繞過 pm2.ps1 的輸出處理
+        $rawViaCmd = (cmd.exe /c "`"$pm2`" jlist 2>&1" | Out-String)
+        $apps = Convert-Pm2JlistToApps -Raw $rawViaCmd
+        if ($apps.Count -gt 0) { return $apps }
+
+        return @(Get-Pm2AppsFromKnownNames -Pm2 $pm2)
+    } catch {
+        return @(Get-Pm2AppsFromKnownNames -Pm2 $pm2)
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
+function Get-Pm2PidDirect {
+    param([string]$Name)
+
+    $result = Invoke-Pm2Safe -Pm2Args @("pid", $Name) -CaptureOutput
+    if ($result.ExitCode -ne 0) { return $null }
+    foreach ($line in ($result.Output -split "`r?`n")) {
+        $line = $line.Trim()
+        if ($line -match '^\d+$') {
+            $processId = [int]$line
+            if ($processId -gt 0) { return $processId }
+        }
+    }
+    return $null
 }
 
 function Get-Pm2Online([string]$Name) {
@@ -1022,7 +1086,7 @@ function Test-Pm2AppExists([string]$Name) {
     foreach ($app in (Get-Pm2Apps)) {
         if ($app.name -eq $Name) { return $true }
     }
-    return $false
+    return [bool](Get-Pm2PidDirect -Name $Name)
 }
 
 function Get-Pm2Pid([string]$Name) {
@@ -1034,7 +1098,7 @@ function Get-Pm2Pid([string]$Name) {
             }
         }
     }
-    return $null
+    return (Get-Pm2PidDirect -Name $Name)
 }
 
 <#
