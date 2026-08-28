@@ -26,11 +26,12 @@ import {
   CalendarRange,
   ClipboardPen,
   ClipboardList,
+  GraduationCap,
 } from 'lucide-react';
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
 import { SITE_IDS, SITES, SYSTEM_NAME, type SiteId } from '@/lib/sites';
-import { APP_ROLE_LABELS } from '@/lib/auth/roles';
+import { APP_ROLE_LABELS, canManageSite } from '@/lib/auth/roles';
 import {
   canEditSchedule,
   canEditStoreSettings,
@@ -126,6 +127,7 @@ export default function DashboardLayout({
   const allowEmployees = canManageEmployees(actor, policies);
   const allowStoreSettings = canEditStoreSettings(actor, policies);
   const allowPunchAdmin = canUsePunchAdmin(actor, policies);
+  const allowTrainingManage = canManageSite(currentUser?.role);
   
   const unreadCount = notifications.filter(
     (n) => n.userId === currentUser.id && !n.read
@@ -137,6 +139,8 @@ export default function DashboardLayout({
     { href: '/my-schedule', label: '我的班表', icon: Calendar, allowed: true },
     { href: '/schedule/person', label: '單人排班', icon: CalendarRange, allowed: allowSchedule },
     { href: '/meal-order', label: '訂餐', icon: Coffee, allowed: true },
+    { href: '/training', label: '教育訓練', icon: GraduationCap, allowed: true },
+    { href: '/training/manage', label: '訓練管理', icon: GraduationCap, allowed: allowTrainingManage },
     { href: '/shop-ops', label: '店務需求', icon: ClipboardList, allowed: true },
     { href: '/leave-selection', label: '排休選擇', icon: Layout, allowed: true },
     { href: '/attendance/punch', label: '上下班打卡', icon: Fingerprint, allowed: currentUser.role !== 'owner' },
