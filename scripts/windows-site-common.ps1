@@ -1024,21 +1024,34 @@ function Get-Pm2AppsFromKnownNames {
 
     $apps = @()
     foreach ($name in @("pharmacy-web", "cashflow")) {
+        $directPid = Get-Pm2PidDirect -Name $name
+        if ($directPid -le 0) { continue }
+
+        $parsed = $null
         $prevEap = $ErrorActionPreference
         $ErrorActionPreference = "Continue"
         try {
-            $raw = (& $pm2 describe $name --json 2>&1 | Out-String)
+            $raw = (& $pm2 describe $name --json 2>&1 | Out-String).Trim()
         } finally {
             $ErrorActionPreference = $prevEap
         }
-        if ([string]::IsNullOrWhiteSpace($raw)) { continue }
-        try {
-            $parsed = ConvertFrom-Json -InputObject $raw.Trim() -ErrorAction Stop
-            if ($null -eq $parsed) { continue }
-            foreach ($item in @($parsed)) {
-                if ($item.name -eq $name) { $apps += $item }
+        if (-not [string]::IsNullOrWhiteSpace($raw)) {
+            try {
+                $parsed = ConvertFrom-Json -InputObject $raw -ErrorAction Stop
+            } catch {
+                $parsed = $null
             }
-        } catch {}
+        }
+
+        if ($null -ne $parsed) {
+            foreach ($item in @($parsed)) {
+                if ($item.name -eq $name) { $apps += $item; break }
+            }
+            continue
+        }
+
+        $status = if (Get-Pm2OnlineFromList -Name $name) { "online" } else { "unknown" }
+        $apps += (New-Pm2AppStub -Name $name -Status $status -Pid $directPid)
     }
     return $apps
 }
@@ -1083,11 +1096,42 @@ function Get-Pm2PidDirect {
     return $null
 }
 
+function Get-Pm2OnlineFromList {
+    param([string]$Name)
+
+    $result = Invoke-Pm2Safe -Pm2Args @("list") -CaptureOutput
+    if ($result.ExitCode -ne 0) { return $false }
+
+    $escaped = [regex]::Escape($Name)
+    foreach ($line in ($result.Output -split "`r?`n")) {
+        if ($line -match "\|\s*\d+\s*\|\s*$escaped\s*\|" -and $line -match "\|\s*online\s*\|") {
+            return $true
+        }
+    }
+    return $false
+}
+
+function New-Pm2AppStub {
+    param(
+        [string]$Name,
+        [string]$Status = "online",
+        [int]$Pid = 0
+    )
+
+    return [PSCustomObject]@{
+        name    = $Name
+        pid     = $Pid
+        pm2_env = [PSCustomObject]@{ status = $Status }
+    }
+}
+
 function Get-Pm2Online([string]$Name) {
     foreach ($app in (Get-Pm2Apps)) {
         if ($app.name -eq $Name -and $app.pm2_env.status -eq "online") { return $true }
     }
-    return $false
+    if (Get-Pm2OnlineFromList -Name $Name) { return $true }
+    $directPid = Get-Pm2PidDirect -Name $Name
+    return ($directPid -gt 0)
 }
 
 function Test-Pm2AppExists([string]$Name) {
@@ -1366,12 +1410,10 @@ function Test-PharmacyWebHttpHealthy {
 }
 
 function Test-PharmacyWebPm2OwningPort {
-    if (-not (Get-Pm2Online -Name "pharmacy-web")) { return $false }
-
     $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
     $listenPid = Get-PortListenerPid -Port 3000
-    if (-not $listenPid) { return $false }
-    if (-not $pm2Pid) { return $false }
+    if (-not $listenPid -or -not $pm2Pid) { return $false }
+    if ($pm2Pid -eq $listenPid) { return $true }
     # ecosystem 用 wrapper 啟動 next；聽埠的是子進程，不可要求 PID 完全相等
     return (Test-ProcessInTree -AncestorPid $pm2Pid -CandidatePid $listenPid)
 }
@@ -1547,8 +1589,15 @@ function Repair-Pm2AppIfNeeded {
     }
 
     if ($Name -eq "cashflow" -and $ProjectRoot) {
-        if (-not (Test-Pm2AppExists -Name "cashflow")) {
-            [void](Ensure-CashflowPm2Registered -ProjectRoot $ProjectRoot -WriteLog $WriteLog)
+        if (-not (Get-Pm2Online -Name "cashflow")) {
+            if (Ensure-CashflowPm2Registered -ProjectRoot $ProjectRoot -WriteLog $WriteLog) {
+                Start-Sleep -Seconds 3
+                if ($HealthyCheck) {
+                    if (& $HealthyCheck) { return $true }
+                } else {
+                    return $true
+                }
+            }
         }
     }
 
@@ -1605,8 +1654,13 @@ function Repair-Pm2SitesIfNeeded {
     $allOk = $true
     $cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
 
-    if ((Test-SiteHealthy) -and -not (Test-PharmacyWebPm2OwningPort)) {
-        & $WriteLog "pharmacy HTTP OK but PM2 does not own :3000 — adopting into PM2"
+    # pharmacy：HTTP 掛了也要啟動，不可只在 HTTP OK 時才收編
+    if (-not ((Test-SiteHealthy) -and (Test-PharmacyWebPm2OwningPort))) {
+        if ((Test-SiteHealthy) -and -not (Test-PharmacyWebPm2OwningPort)) {
+            & $WriteLog "pharmacy HTTP OK but PM2 does not own :3000 — adopting into PM2"
+        } else {
+            & $WriteLog "pharmacy down or not under PM2 — starting via PM2"
+        }
         if (-not (Repair-SiteIfNeeded -ProjectRoot $ProjectRoot -WriteLog $WriteLog)) {
             $allOk = $false
         }
@@ -1614,7 +1668,26 @@ function Repair-Pm2SitesIfNeeded {
 
     $cashflowHealthy = Test-CashflowHealthy -ProjectRoot $ProjectRoot
     $cashflowPm2Online = Get-Pm2Online -Name "cashflow"
-    if ($cashflowHealthy -and -not $cashflowPm2Online) {
+    if (-not $cashflowPm2Online) {
+        if ($cashflowHealthy) {
+            & $WriteLog "cashflow HTTP OK but PM2 cashflow not online — adopting into PM2"
+        } else {
+            & $WriteLog "cashflow not under PM2 — registering/restarting"
+        }
+        $listenerPid = Get-PortListenerPid -Port $cashflowPort
+        if ($listenerPid -and -not $cashflowPm2Online) {
+            & $WriteLog ("Port $cashflowPort occupied by orphan pid=$listenerPid, force cleanup")
+            [void](Stop-PortListenerForce -Port $cashflowPort -WriteLog $WriteLog)
+            Start-Sleep -Seconds 2
+        }
+        if (-not (Ensure-CashflowPm2Registered -ProjectRoot $ProjectRoot -WriteLog $WriteLog)) {
+            if (-not (Repair-Pm2AppIfNeeded -Name "cashflow" -ProjectRoot $ProjectRoot -HealthyCheck {
+                Test-CashflowHealthy -ProjectRoot $ProjectRoot
+            } -WriteLog $WriteLog)) {
+                $allOk = $false
+            }
+        }
+    } elseif ($cashflowHealthy -and -not $cashflowPm2Online) {
         & $WriteLog "cashflow HTTP OK but PM2 cashflow not online — adopting into PM2"
         $listenerPid = Get-PortListenerPid -Port $cashflowPort
         if ($listenerPid) {

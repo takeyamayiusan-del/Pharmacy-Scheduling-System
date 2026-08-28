@@ -28,6 +28,12 @@ if (-not (Get-Pm2Command)) {
     if ($pm2Path) { Info ("pm2 cmd={0}" -f $pm2Path) }
     $pm2Apps = @(Get-Pm2Apps)
     Info ("pm2 jlist apps={0}" -f $pm2Apps.Count)
+    if ($pm2Apps.Count -eq 0) {
+        $listHint = (Invoke-Pm2Safe -Pm2Args @("list") -CaptureOutput).Output
+        if ($listHint -match "pharmacy-web" -or $listHint -match "cashflow") {
+            Info "pm2 list shows apps — jlist JSON parse failed; using list/pid fallback"
+        }
+    }
     $pharmacyOnline = Get-Pm2Online -Name "pharmacy-web"
     $cashflowOnline = Get-Pm2Online -Name "cashflow"
     if ($pharmacyOnline) { Ok "pharmacy-web online" } else { Bad "pharmacy-web not online" }
@@ -37,10 +43,10 @@ if (-not (Get-Pm2Command)) {
 Write-Host ""
 Write-Host "[2] Local HTTP" -ForegroundColor Cyan
 $cashflowPort = Get-CashflowHealthPort -ProjectRoot $ProjectRoot
-if (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8) {
-    Ok "pharmacy http://127.0.0.1:3000/login"
+if (Test-PharmacyWebHttpHealthy) {
+    Ok "pharmacy http://127.0.0.1:3000/login (or /api/health)"
 } else {
-    Bad "pharmacy :3000/login not 200"
+    Bad "pharmacy :3000 not healthy (/api/health and /login)"
 }
 if (Test-HttpOk -Uri "http://127.0.0.1:$cashflowPort/" -TimeoutSec 8) {
     Ok "cashflow http://127.0.0.1:$cashflowPort/"
@@ -57,9 +63,13 @@ if (Test-PharmacyWebPm2OwningPort) {
     $pm2Pid = Get-Pm2Pid -Name "pharmacy-web"
     $listenPid = Get-PortListenerPid -Port 3000
     Info ("pm2 pid={0} listen pid={1}" -f $(if ($pm2Pid) { $pm2Pid } else { "?" }), $(if ($listenPid) { $listenPid } else { "?" }))
-    if (Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 8) {
-        Info "HTTP OK but orphan process — auto-recover will fail until PM2 adopts :3000"
-        Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-fix-pm2-sites.ps1"
+    if (Test-PharmacyWebHttpHealthy) {
+        if ($pm2Pid -and $listenPid -and (Test-ProcessInTree -AncestorPid $pm2Pid -CandidatePid $listenPid)) {
+            Info "process tree matches but PM2 status check failed — re-run after git pull"
+        } else {
+            Info "HTTP OK but orphan may hold :3000 — auto-recover will fail until PM2 adopts"
+            Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-fix-pm2-sites.ps1 -SkipBuild"
+        }
     }
 }
 
