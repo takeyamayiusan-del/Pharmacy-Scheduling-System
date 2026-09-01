@@ -33,7 +33,7 @@ if (-not (Test-Path -LiteralPath $KeepaliveScript)) {
 
 Write-Host "=== Register simple keepalive + funnel monitor ===" -ForegroundColor Cyan
 Write-Host "Keepalive: PM2 pharmacy + cashflow every 1 min."
-Write-Host "Funnel monitor: resident public probe every 30s (auto re-apply / reset)."
+Write-Host "Funnel monitor: resident public probe every 15s (auto re-apply / reset)."
 Write-Host "Run as: $runAs (Interactive — SYSTEM has no user pm2 / PM2_HOME)"
 Write-Host "PM2 context: $ctxPath"
 Write-Host ""
@@ -100,9 +100,11 @@ if (-not $startExisting) {
 Write-Host ""
 Write-Host "Registered:" -ForegroundColor Green
 Write-Host "  $KeepaliveTaskName  → windows-keepalive-simple.ps1 as $runAs (Daily/1min + boot/logon)"
-Write-Host "  YaoshengPharmacyFunnelMonitor → windows-funnel-public-monitor.ps1 resident 30s"
+Write-Host "  YaoshengPharmacyFunnelMonitor → windows-funnel-public-monitor.ps1 resident 15s"
 Write-Host "  $StartTaskName     → boot (if present)"
 Write-Host ""
+Write-Host "Quick funnel monitor status:"
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-funnel-monitor-status.ps1"
 Write-Host "Test funnel monitor once:"
 Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-funnel-public-monitor.ps1 -Once"
 Write-Host "Funnel status snapshot:"

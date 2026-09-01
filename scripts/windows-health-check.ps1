@@ -107,14 +107,14 @@ if (Test-FunnelPublicOk) {
     Ok "public $publicUrl"
 } else {
     Bad "public URL not reachable: $publicUrl (local OK does not mean Funnel OK)"
-    Info "keepalive re-applies on 1st public miss; resident monitor every 30s; reset if still down. Restore now:"
+    Info "keepalive re-applies on 1st public miss; resident monitor every 15s; reset if still down. Restore now:"
     Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
 }
 Info "Verify :8443 with a phone on 4G (not store Wi-Fi)"
 
 Write-Host ""
-Write-Host "[6b] Funnel public monitor (resident 30s)" -ForegroundColor Cyan
-$funnelMonitorName = "YaoshengPharmacyFunnelMonitor"
+Write-Host "[6b] Funnel public monitor (resident 15s)" -ForegroundColor Cyan
+$funnelMonitorName = Get-FunnelMonitorTaskName
 $funnelTask = Get-ScheduledTask -TaskName $funnelMonitorName -ErrorAction SilentlyContinue
 if (-not $funnelTask) {
     Bad "$funnelMonitorName not registered"
@@ -128,13 +128,29 @@ if (-not $funnelTask) {
         Info ("last run: {0}  last result: {1}" -f $finfo.LastRunTime, $finfo.LastTaskResult)
     }
 }
+$monitorAlive = Test-FunnelMonitorAlive -ProjectRoot $ProjectRoot
+if ($monitorAlive.Alive) {
+    Ok ("monitor alive ({0}, pid={1}, statusAge={2}s)" -f $monitorAlive.Reason, $(if ($monitorAlive.MonitorPid) { $monitorAlive.MonitorPid } else { "?" }), $(if ($null -ne $monitorAlive.StatusAgeSec) { $monitorAlive.StatusAgeSec } else { "?" }))
+} else {
+    Bad ("monitor NOT alive ({0}, task={1})" -f $monitorAlive.Reason, $monitorAlive.TaskState)
+    Info "  keepalive will restart monitor each minute after git pull; or run:"
+    Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-register-keepalive-simple.ps1"
+    Info "  powershell -ExecutionPolicy Bypass -File scripts\windows-funnel-monitor-status.ps1"
+}
 $funnelStatusPath = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
 if (Test-Path -LiteralPath $funnelStatusPath) {
     try {
         $fs = (Get-Content -LiteralPath $funnelStatusPath -Raw) | ConvertFrom-Json
-        Info ("snapshot: publicOk=$($fs.publicOk) checkedAt=$($fs.checkedAt) incidents=$($fs.totalIncidents)")
+        Info ("snapshot: publicOk=$($fs.publicOk) checkedAt=$($fs.checkedAt) monitorPid=$($fs.monitorPid) incidents=$($fs.totalIncidents)")
         if (-not $fs.publicOk) {
             Bad "funnel-public-status.json reports public DOWN"
+        }
+        if ($fs.checkedAt) {
+            $ageSec = [int]((Get-Date) - [datetime]::Parse([string]$fs.checkedAt)).TotalSeconds
+            $maxStale = Get-FunnelMonitorMaxStaleSeconds
+            if ($ageSec -gt $maxStale) {
+                Bad ("funnel status stale ({0}s > {1}s) — monitor may have stopped" -f $ageSec, $maxStale)
+            }
         }
     } catch {
         Bad "funnel-public-status.json invalid"

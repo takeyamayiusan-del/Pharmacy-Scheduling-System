@@ -1,12 +1,14 @@
-# 外網 Funnel 專用常駐監測：每 30 秒探測公開網址，內網通但外網不通時自動重宣告／reset。
+# 外網 Funnel 專用常駐監測：每 15 秒探測公開網址，內網通但外網不通時自動重宣告／reset。
 # 預設常駐執行（開機／登入排程啟動）。單次測試：
 #   powershell -ExecutionPolicy Bypass -File scripts\windows-funnel-public-monitor.ps1 -Once
+# 快速診斷：
+#   powershell -ExecutionPolicy Bypass -File scripts\windows-funnel-monitor-status.ps1
 # 狀態快照：data\ops\funnel-public-status.json
 # 紀錄：data\logs\funnel-public-monitor.log
 
 param(
     [switch]$Once,
-    [int]$IntervalSec = 30
+    [int]$IntervalSec = 15
 )
 
 $ErrorActionPreference = "Continue"
@@ -33,6 +35,8 @@ function Test-PharmacyLocalQuick {
 }
 
 function Invoke-FunnelPublicMonitorOnce {
+    param([int]$Loop = 0)
+
     $healthState = Read-KeepaliveHealthState -ProjectRoot $ProjectRoot
     $localOk = Test-PharmacyLocalQuick
     $routesBefore = Test-FunnelRoutesConfigured
@@ -49,8 +53,8 @@ function Invoke-FunnelPublicMonitorOnce {
         } `
         -LocalOk $localOk `
         -MinPublicFails 1 `
-        -CooldownMinutes 3 `
-        -ResetCooldownMinutes 10 `
+        -CooldownMinutes 1 `
+        -ResetCooldownMinutes 5 `
         -AllowReset `
         -HealthState $healthState
 
@@ -73,7 +77,9 @@ function Invoke-FunnelPublicMonitorOnce {
         -LocalOk $localOk `
         -PublicFails ([int]$healthState.publicFails) `
         -RepairAction $repairAction `
-        -Recovered ($publicOk -and -not $publicBefore)
+        -Recovered ($publicOk -and -not $publicBefore) `
+        -MonitorPid $PID `
+        -MonitorLoop $Loop
 
     if ($Once) {
         Write-Host "=== Funnel public monitor (once) ===" -ForegroundColor Cyan
@@ -96,13 +102,13 @@ if ($Once) {
     exit (Invoke-FunnelPublicMonitorOnce)
 }
 
-Write-MonitorLog "resident start interval=${IntervalSec}s" -Always
+Write-MonitorLog "resident start pid=$PID interval=${IntervalSec}s" -Always
 $heartbeatEvery = [Math]::Max(1, [int](300 / $IntervalSec))
 $tick = 0
 while ($true) {
     $tick++
     try {
-        $code = Invoke-FunnelPublicMonitorOnce
+        $code = Invoke-FunnelPublicMonitorOnce -Loop $tick
         if ($code -ne 0 -or ($tick % $heartbeatEvery) -eq 0) {
             Write-MonitorLog ("heartbeat tick=$tick exit=$code")
         }
