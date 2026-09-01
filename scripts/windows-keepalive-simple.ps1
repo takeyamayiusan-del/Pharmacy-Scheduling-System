@@ -1,5 +1,5 @@
-﻿# 簡單雙站保活：本機網站真的掛了才重開；外網由 funnel-public-monitor 常駐監測（30 秒）。
-# 本腳本仍會檢查外網作為備援。外網不通：重宣告 → reset。更新程式請用手拉。
+﻿# 簡單雙站保活：本機網站真的掛了才重開；外網由 funnel-public-monitor 常駐監測（15 秒）。
+# 本腳本仍會檢查外網作為備援，並確保 monitor 程序存活。外網不通：重宣告 → reset。
 #
 # 這支是「檢查一次就結束」，不是常駐程式。排程每分鐘會再跑。
 # 手動測一次（會印結果；細節在 data\logs\keepalive-simple.log）：
@@ -47,7 +47,7 @@ function Test-PharmacyLocalOk {
 Write-Log "keepalive start"
 Write-Host "=== Keepalive (one check, then exit) ===" -ForegroundColor Cyan
 Write-Host "Not a resident process. Task Scheduler runs this every minute."
-Write-Host "External Funnel: resident monitor every 30s (YaoshengPharmacyFunnelMonitor)."
+Write-Host "External Funnel: resident monitor every 15s (YaoshengPharmacyFunnelMonitor)."
 Write-Host "Log: $LogFile"
 Write-Host ""
 $healthState = Read-KeepaliveHealthState -ProjectRoot $ProjectRoot
@@ -155,11 +155,24 @@ if ($cashflowOk -and $pm2 -and -not (Get-Pm2Online -Name "cashflow")) {
     Write-Log ("cashflow after PM2 adopt: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
 }
 
-# --- funnel：備援檢查外網窗口（常駐監測由 funnel-public-monitor 負責）---
+# --- 確保外網 monitor 常駐程序在跑（status 過期也會重啟）---
+[void](Ensure-FunnelMonitorRunning -ProjectRoot $ProjectRoot -WriteLog { param($m) Write-Log $m })
+
+# --- funnel：外網 DOWN 時強制修復（略過冷卻）---
+$publicProbeNow = Test-FunnelPublicOk -NoRetry
+$forceFunnel = -not $publicProbeNow
+if ($forceFunnel) {
+    Write-Log "public URL probe FAIL — escalating funnel repair (force reapply)"
+}
 $funnelPublic = Repair-FunnelIfNeeded `
     -WriteLog { param($m) Write-Log $m } `
     -LocalOk $pharmacyOk `
+    -ProjectRoot $ProjectRoot `
     -AllowReset `
+    -CooldownMinutes 1 `
+    -ResetCooldownMinutes 5 `
+    -ForceReapply:$forceFunnel `
+    -ForceReset:(Test-FunnelShouldForceReset -ProjectRoot $ProjectRoot -PublicOk $publicProbeNow) `
     -HealthState $healthState
 
 Save-KeepaliveHealthState -ProjectRoot $ProjectRoot -State $healthState

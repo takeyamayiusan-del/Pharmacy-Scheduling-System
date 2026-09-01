@@ -564,6 +564,157 @@ function Get-FunnelPublicStatusPath {
     return Join-Path $ProjectRoot "data\ops\funnel-public-status.json"
 }
 
+function Get-FunnelMonitorTaskName {
+    return "YaoshengPharmacyFunnelMonitor"
+}
+
+function Get-FunnelMonitorMaxStaleSeconds {
+    return 90
+}
+
+function Get-FunnelMonitorProcess {
+    param([string]$ProjectRoot = "")
+
+    $needle = "windows-funnel-public-monitor.ps1"
+    return @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.CommandLine -and $_.CommandLine -like "*$needle*"
+        })
+}
+
+function Test-FunnelMonitorAlive {
+    param(
+        [string]$ProjectRoot,
+        [int]$MaxStaleSeconds = 0
+    )
+
+    if ($MaxStaleSeconds -le 0) {
+        $MaxStaleSeconds = Get-FunnelMonitorMaxStaleSeconds
+    }
+
+    $taskName = Get-FunnelMonitorTaskName
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    $taskState = if ($task) { [string]$task.State } else { "missing" }
+
+    if (-not $task) {
+        return [pscustomobject]@{
+            Alive        = $false
+            Reason       = "task_missing"
+            TaskState    = $taskState
+            StatusAgeSec = $null
+            MonitorPid   = $null
+            PublicOk     = $null
+        }
+    }
+    if ($task.State -eq "Disabled") {
+        return [pscustomobject]@{
+            Alive        = $false
+            Reason       = "task_disabled"
+            TaskState    = $taskState
+            StatusAgeSec = $null
+            MonitorPid   = $null
+            PublicOk     = $null
+        }
+    }
+
+    $statusAgeSec = $null
+    $monitorPid = $null
+    $publicOk = $null
+    $statusPath = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
+    if (Test-Path -LiteralPath $statusPath) {
+        try {
+            $fs = (Get-Content -LiteralPath $statusPath -Raw -ErrorAction Stop) | ConvertFrom-Json
+            if ($fs.checkedAt) {
+                $statusAgeSec = [int]((Get-Date) - [datetime]::Parse([string]$fs.checkedAt)).TotalSeconds
+            }
+            if ($null -ne $fs.monitorPid) {
+                $parsedPid = 0
+                if ([int]::TryParse([string]$fs.monitorPid, [ref]$parsedPid) -and $parsedPid -gt 0) {
+                    $monitorPid = $parsedPid
+                }
+            }
+            if ($null -ne $fs.publicOk) { $publicOk = [bool]$fs.publicOk }
+        } catch {}
+    }
+
+    $procs = @(Get-FunnelMonitorProcess -ProjectRoot $ProjectRoot)
+    $processRunning = ($procs.Count -gt 0)
+    if (-not $monitorPid -and $processRunning) {
+        $monitorPid = [int]$procs[0].ProcessId
+    } elseif ($monitorPid -gt 0) {
+        $processRunning = [bool](Get-Process -Id $monitorPid -ErrorAction SilentlyContinue)
+        if (-not $processRunning) {
+            foreach ($p in $procs) {
+                if ([int]$p.ProcessId -eq $monitorPid) { $processRunning = $true; break }
+            }
+        }
+    }
+
+    $alive = $false
+    $reason = "unknown"
+    if ($statusAgeSec -ne $null -and $statusAgeSec -le $MaxStaleSeconds) {
+        $alive = $true
+        $reason = "status_fresh"
+    } elseif ($processRunning) {
+        $alive = $true
+        $reason = "process_running"
+    } elseif ($statusAgeSec -eq $null) {
+        $reason = "no_status_file"
+    } else {
+        $reason = "status_stale"
+    }
+
+    return [pscustomobject]@{
+        Alive        = [bool]$alive
+        Reason       = [string]$reason
+        TaskState    = [string]$taskState
+        StatusAgeSec = $statusAgeSec
+        MonitorPid   = $monitorPid
+        PublicOk     = $publicOk
+        ProcessCount = [int]$procs.Count
+    }
+}
+
+function Ensure-FunnelMonitorRunning {
+    param(
+        [string]$ProjectRoot,
+        [scriptblock]$WriteLog = { param($m) Write-Host $m },
+        [int]$MaxStaleSeconds = 0
+    )
+
+    if ($MaxStaleSeconds -le 0) {
+        $MaxStaleSeconds = Get-FunnelMonitorMaxStaleSeconds
+    }
+
+    $check = Test-FunnelMonitorAlive -ProjectRoot $ProjectRoot -MaxStaleSeconds $MaxStaleSeconds
+    if ($check.Alive) { return $true }
+
+    $taskName = Get-FunnelMonitorTaskName
+    & $WriteLog ("Funnel monitor not alive ({0}, task={1}, statusAge={2}s) — restarting" -f `
+        $check.Reason, $check.TaskState, $(if ($null -ne $check.StatusAgeSec) { $check.StatusAgeSec } else { "?" }))
+
+    $task = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if (-not $task) {
+        & $WriteLog "Missing scheduled task $taskName — run scripts\windows-register-keepalive-simple.ps1"
+        return $false
+    }
+
+    Enable-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue | Out-Null
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+    Start-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+
+    Start-Sleep -Seconds 4
+    $check2 = Test-FunnelMonitorAlive -ProjectRoot $ProjectRoot -MaxStaleSeconds $MaxStaleSeconds
+    if ($check2.Alive) {
+        & $WriteLog ("Funnel monitor restarted (pid={0}, reason={1})" -f $check2.MonitorPid, $check2.Reason)
+        return $true
+    }
+
+    & $WriteLog ("Funnel monitor restart incomplete (reason={0})" -f $check2.Reason)
+    return $false
+}
+
 function Save-FunnelPublicStatus {
     param(
         [string]$ProjectRoot,
@@ -572,7 +723,9 @@ function Save-FunnelPublicStatus {
         [bool]$LocalOk,
         [int]$PublicFails = 0,
         [string]$RepairAction = "none",
-        [bool]$Recovered = $false
+        [bool]$Recovered = $false,
+        [int]$MonitorPid = 0,
+        [int]$MonitorLoop = 0
     )
 
     $path = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
@@ -589,6 +742,8 @@ function Save-FunnelPublicStatus {
     $now = (Get-Date).ToString("o")
     $status = [ordered]@{
         checkedAt              = $now
+        monitorPid             = if ($MonitorPid -gt 0) { [int]$MonitorPid } else { $(if ($prev -and $null -ne $prev.monitorPid) { [int]$prev.monitorPid } else { 0 }) }
+        monitorLoop            = if ($MonitorLoop -gt 0) { [int]$MonitorLoop } else { $(if ($prev -and $null -ne $prev.monitorLoop) { [int]$prev.monitorLoop } else { 0 }) }
         publicOk               = [bool]$PublicOk
         routesOk               = [bool]$RoutesOk
         localOk                = [bool]$LocalOk
@@ -636,6 +791,79 @@ function Save-FunnelPublicStatus {
     return $status
 }
 
+function Test-FunnelShouldForceRepair {
+    param(
+        [string]$ProjectRoot,
+        [bool]$PublicOk,
+        [int]$ConsecutiveDown = 0
+    )
+
+    if ($PublicOk) { return $false }
+    if ($ConsecutiveDown -ge 2) { return $true }
+
+    $path = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $path)) { return ($ConsecutiveDown -ge 1) }
+
+    try {
+        $fs = (Get-Content -LiteralPath $path -Raw -ErrorAction Stop) | ConvertFrom-Json
+        if ($fs.lastPublicDownAt) {
+            $downSec = ((Get-Date) - [datetime]::Parse([string]$fs.lastPublicDownAt)).TotalSeconds
+            if ($downSec -ge 90) { return $true }
+        }
+        if ($fs.recentIncidents) {
+            $stillDown = @($fs.recentIncidents | Where-Object { $_.action -eq "still_down" })
+            if ($stillDown.Count -ge 3) { return $true }
+        }
+    } catch {}
+
+    return $false
+}
+
+function Test-FunnelShouldForceReset {
+    param(
+        [string]$ProjectRoot,
+        [bool]$PublicOk,
+        [int]$ConsecutiveDown = 0
+    )
+
+    if ($PublicOk) { return $false }
+    if ($ConsecutiveDown -ge 8) { return $true }
+
+    $path = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $path)) { return $false }
+
+    try {
+        $fs = (Get-Content -LiteralPath $path -Raw -ErrorAction Stop) | ConvertFrom-Json
+        if ($fs.lastPublicDownAt) {
+            $downMin = ((Get-Date) - [datetime]::Parse([string]$fs.lastPublicDownAt)).TotalMinutes
+            if ($downMin -ge 5) { return $true }
+        }
+        if ($fs.recentIncidents) {
+            $stillDown = @($fs.recentIncidents | Where-Object { $_.action -eq "still_down" })
+            if ($stillDown.Count -ge 10) { return $true }
+        }
+    } catch {}
+
+    return $false
+}
+
+function Enable-YaoshengFunnelMonitorTask {
+    param(
+        [string]$TaskName = "YaoshengPharmacyFunnelMonitor",
+        [scriptblock]$WriteLog = $null
+    )
+
+    $t = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $t) {
+        if ($WriteLog) { & $WriteLog "Funnel monitor task missing: $TaskName" }
+        return $false
+    }
+    Enable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
+    Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($WriteLog) { & $WriteLog "Funnel monitor task enabled/started: $TaskName (state=$($t.State))" }
+    return $true
+}
+
 function Register-YaoshengFunnelMonitorTask {
     param(
         [string]$ProjectRoot,
@@ -677,7 +905,7 @@ function Register-YaoshengFunnelMonitorTask {
         -Trigger @($startup, $logon) `
         -Principal $principal `
         -Settings $settings `
-        -Description "Resident Tailscale Funnel public monitor (30s probe + auto repair)" | Out-Null
+        -Description "Resident Tailscale Funnel public monitor (15s probe + auto repair)" | Out-Null
 
     Enable-ScheduledTask -TaskName $TaskName | Out-Null
     Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
@@ -706,13 +934,21 @@ function Repair-FunnelIfNeeded {
     param(
         [scriptblock]$WriteLog = { param($m) Write-Host $m },
         [switch]$ForceReapply,
+        [switch]$ForceReset,
         [switch]$AllowReset,
         [bool]$LocalOk = $true,
         [int]$MinPublicFails = 1,
-        [int]$CooldownMinutes = 3,
-        [int]$ResetCooldownMinutes = 10,
+        [int]$CooldownMinutes = 1,
+        [int]$ResetCooldownMinutes = 5,
+        [int]$ConsecutiveDown = 0,
+        [string]$ProjectRoot = "",
         $HealthState = $null
     )
+
+    if ($ForceReset) {
+        $ForceReapply = $true
+        $AllowReset = $true
+    }
 
     $ts = Get-TailscaleCommand
     if (-not $ts) {
@@ -737,7 +973,23 @@ function Repair-FunnelIfNeeded {
     if ($HealthState -and $null -ne $HealthState.publicFails) {
         $publicFails = [int]$HealthState.publicFails
     }
-    & $WriteLog ("funnel check cfg443=$($routes.Pharmacy) cfg8443=$($routes.Cashflow) public=$publicOk localOk=$LocalOk fails=$publicFails/$MinPublicFails force=$([bool]$ForceReapply)")
+
+    if (-not $ForceReapply -and -not $publicOk -and $ProjectRoot) {
+        if (Test-FunnelShouldForceRepair -ProjectRoot $ProjectRoot -PublicOk $publicOk -ConsecutiveDown $ConsecutiveDown) {
+            $ForceReapply = $true
+            & $WriteLog "public down long enough — force reapply (bypass cooldown)"
+        }
+    }
+    if (-not $ForceReset -and -not $publicOk -and $ProjectRoot) {
+        if (Test-FunnelShouldForceReset -ProjectRoot $ProjectRoot -PublicOk $publicOk -ConsecutiveDown $ConsecutiveDown) {
+            $ForceReset = $true
+            $ForceReapply = $true
+            $AllowReset = $true
+            & $WriteLog "public down persistently — force funnel reset"
+        }
+    }
+
+    & $WriteLog ("funnel check cfg443=$($routes.Pharmacy) cfg8443=$($routes.Cashflow) public=$publicOk localOk=$LocalOk fails=$publicFails/$MinPublicFails force=$([bool]$ForceReapply) reset=$([bool]$ForceReset)")
 
     if ($publicOk -and $routes.Ok) {
         if ($HealthState) {
@@ -758,9 +1010,9 @@ function Repair-FunnelIfNeeded {
         $pendingReset = [bool]$HealthState.pendingFunnelReset
     }
     $mayReset = [bool]$ForceReapply -or [bool]$AllowReset
-    if ($pendingReset -and $mayReset -and -not $ForceReapply) {
+    if ($pendingReset -and $mayReset) {
         $resetCoolPending = Get-FunnelCooldownRemainMinutes -HealthState $HealthState -FieldName "lastFunnelResetAt" -CooldownMinutes $ResetCooldownMinutes
-        if ($resetCoolPending -le 0) {
+        if ($ForceReset -or $ForceReapply -or $resetCoolPending -le 0) {
             & $WriteLog "pending funnel reset - retry reset now"
             [void](Reset-FunnelDualRoutes -WriteLog $WriteLog)
             if ($HealthState) {
@@ -793,7 +1045,7 @@ function Repair-FunnelIfNeeded {
             & $WriteLog ("public window fail {0}/{1} - skip re-apply this round" -f $publicFails, $MinPublicFails)
             return $false
         }
-        if ($cool -gt 0) {
+        if ($cool -gt 0 -and -not $ForceReapply) {
             & $WriteLog ("public window still down, cooldown {0} min" -f $cool)
             return $false
         }
@@ -823,7 +1075,7 @@ function Repair-FunnelIfNeeded {
     }
 
     $resetCool = Get-FunnelCooldownRemainMinutes -HealthState $HealthState -FieldName "lastFunnelResetAt" -CooldownMinutes $ResetCooldownMinutes
-    if ($resetCool -gt 0 -and -not $ForceReapply) {
+    if ($resetCool -gt 0 -and -not $ForceReapply -and -not $ForceReset) {
         & $WriteLog ("public still down, reset cooldown {0} min - will retry reset when ready" -f $resetCool)
         if ($HealthState) { $HealthState.pendingFunnelReset = $true }
         return $false
