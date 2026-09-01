@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  assertManagerAuth,
+  assertManagerOrCapability,
   assertManagerCanAccessEmployee,
 } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -31,7 +31,7 @@ type PunchRecordUpdate = {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrCapability(req, "punch_admin");
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
@@ -79,7 +79,7 @@ export async function POST(req: NextRequest) {
 
 export async function PATCH(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrCapability(req, "punch_admin");
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
@@ -130,7 +130,7 @@ export async function PATCH(req: NextRequest) {
 
 export async function DELETE(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrCapability(req, "punch_admin");
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

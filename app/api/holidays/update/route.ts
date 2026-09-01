@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import { assertManagerOrCapability } from "@/lib/auth/server";
 
 const holidayNameMap: Record<string, string> = {
   "Republic Day": "元旦",
@@ -89,7 +89,7 @@ function parseICSHolidays(ics: string, year: number) {
 }
 
 export async function POST(req: NextRequest) {
-  const auth = await assertManagerAuth(req);
+  const auth = await assertManagerOrCapability(req, "schedule");
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

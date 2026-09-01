@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import { assertManagerOrCapability } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { parseSiteId } from "@/lib/sites";
 
@@ -9,7 +9,7 @@ type LockAction = "lock" | "unlock";
 // Body: { year, month, action, site_id? }
 export async function POST(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrCapability(req, "schedule");
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

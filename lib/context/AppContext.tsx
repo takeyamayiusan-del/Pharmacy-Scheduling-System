@@ -5,7 +5,7 @@ import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedTyp
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
 import { fromDbRole, canManageSite, type AppRole } from "@/lib/auth/roles";
-import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll } from "@/lib/auth/permissions";
+import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll, canEditStoreSettings, canUsePunchAdmin } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 import {
   approvalPendingLabel,
@@ -1280,8 +1280,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [supabase, activeSiteId]);
 
   const saveStoreConfig = async (next: StoreConfig) => {
-    if (!currentUser || !canManageSite(currentUser.role)) {
-      throw new Error("僅店長、副店或老闆可調整店家設定");
+    if (
+      !currentUser ||
+      !canEditStoreSettings(
+        { role: currentUser.role, capabilities: currentUser.capabilities },
+        storeConfig.policies
+      )
+    ) {
+      throw new Error("您沒有店家設定權限");
     }
     const siteId = activeSiteId;
     const normalized = parseStoreConfig({ ...next, siteId }, siteId);
@@ -1353,8 +1359,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const saveGeofenceLocations = async (locations: GeofenceLocation[]) => {
-    if (!currentUser || !canManageSite(currentUser.role)) {
-      throw new Error("僅店長、副店或老闆可調整打卡圍籬");
+    if (
+      !currentUser ||
+      !canUsePunchAdmin(
+        { role: currentUser.role, capabilities: currentUser.capabilities },
+        storeConfig.policies
+      )
+    ) {
+      throw new Error("您沒有打卡管理權限");
     }
     const normalized = parseGeofenceSettings({ locations });
     if (normalized.length === 0) {
