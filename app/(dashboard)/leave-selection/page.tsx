@@ -236,7 +236,7 @@ export default function LeaveSelectionPage() {
     year,
     month,
     daysInMonth,
-    scheduleEmployees,
+    employees: scheduleEmployees,
     shiftDisplayConfig,
     getShiftForDate,
     storeConfig,
