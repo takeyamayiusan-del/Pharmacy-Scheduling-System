@@ -44,6 +44,15 @@ function Invoke-FunnelPublicMonitorOnce {
     $beforeReapply = [string]$healthState.lastFunnelReapplyAt
     $beforeReset = [string]$healthState.lastFunnelResetAt
 
+    if (-not $publicBefore) {
+        $script:ConsecutivePublicDown = [int]$script:ConsecutivePublicDown + 1
+    } else {
+        $script:ConsecutivePublicDown = 0
+    }
+
+    $forceReapply = Test-FunnelShouldForceRepair -ProjectRoot $ProjectRoot -PublicOk $publicBefore -ConsecutiveDown $script:ConsecutivePublicDown
+    $forceReset = Test-FunnelShouldForceReset -ProjectRoot $ProjectRoot -PublicOk $publicBefore -ConsecutiveDown $script:ConsecutivePublicDown
+
     $publicOk = Repair-FunnelIfNeeded `
         -WriteLog {
             param($m)
@@ -52,11 +61,17 @@ function Invoke-FunnelPublicMonitorOnce {
             Write-MonitorLog $m
         } `
         -LocalOk $localOk `
+        -ProjectRoot $ProjectRoot `
+        -ConsecutiveDown $script:ConsecutivePublicDown `
         -MinPublicFails 1 `
         -CooldownMinutes 1 `
         -ResetCooldownMinutes 5 `
         -AllowReset `
+        -ForceReapply:$forceReapply `
+        -ForceReset:$forceReset `
         -HealthState $healthState
+
+    if ($publicOk) { $script:ConsecutivePublicDown = 0 }
 
     $repairAction = "none"
     if ([string]$healthState.lastFunnelResetAt -and [string]$healthState.lastFunnelResetAt -ne $beforeReset) {
@@ -103,6 +118,7 @@ if ($Once) {
 }
 
 Write-MonitorLog "resident start pid=$PID interval=${IntervalSec}s" -Always
+$script:ConsecutivePublicDown = 0
 $heartbeatEvery = [Math]::Max(1, [int](300 / $IntervalSec))
 $tick = 0
 while ($true) {

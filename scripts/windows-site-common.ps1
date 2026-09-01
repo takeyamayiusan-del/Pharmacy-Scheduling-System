@@ -791,6 +791,79 @@ function Save-FunnelPublicStatus {
     return $status
 }
 
+function Test-FunnelShouldForceRepair {
+    param(
+        [string]$ProjectRoot,
+        [bool]$PublicOk,
+        [int]$ConsecutiveDown = 0
+    )
+
+    if ($PublicOk) { return $false }
+    if ($ConsecutiveDown -ge 2) { return $true }
+
+    $path = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $path)) { return ($ConsecutiveDown -ge 1) }
+
+    try {
+        $fs = (Get-Content -LiteralPath $path -Raw -ErrorAction Stop) | ConvertFrom-Json
+        if ($fs.lastPublicDownAt) {
+            $downSec = ((Get-Date) - [datetime]::Parse([string]$fs.lastPublicDownAt)).TotalSeconds
+            if ($downSec -ge 90) { return $true }
+        }
+        if ($fs.recentIncidents) {
+            $stillDown = @($fs.recentIncidents | Where-Object { $_.action -eq "still_down" })
+            if ($stillDown.Count -ge 3) { return $true }
+        }
+    } catch {}
+
+    return $false
+}
+
+function Test-FunnelShouldForceReset {
+    param(
+        [string]$ProjectRoot,
+        [bool]$PublicOk,
+        [int]$ConsecutiveDown = 0
+    )
+
+    if ($PublicOk) { return $false }
+    if ($ConsecutiveDown -ge 8) { return $true }
+
+    $path = Get-FunnelPublicStatusPath -ProjectRoot $ProjectRoot
+    if (-not (Test-Path -LiteralPath $path)) { return $false }
+
+    try {
+        $fs = (Get-Content -LiteralPath $path -Raw -ErrorAction Stop) | ConvertFrom-Json
+        if ($fs.lastPublicDownAt) {
+            $downMin = ((Get-Date) - [datetime]::Parse([string]$fs.lastPublicDownAt)).TotalMinutes
+            if ($downMin -ge 5) { return $true }
+        }
+        if ($fs.recentIncidents) {
+            $stillDown = @($fs.recentIncidents | Where-Object { $_.action -eq "still_down" })
+            if ($stillDown.Count -ge 10) { return $true }
+        }
+    } catch {}
+
+    return $false
+}
+
+function Enable-YaoshengFunnelMonitorTask {
+    param(
+        [string]$TaskName = "YaoshengPharmacyFunnelMonitor",
+        [scriptblock]$WriteLog = $null
+    )
+
+    $t = Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if (-not $t) {
+        if ($WriteLog) { & $WriteLog "Funnel monitor task missing: $TaskName" }
+        return $false
+    }
+    Enable-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue | Out-Null
+    Start-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue
+    if ($WriteLog) { & $WriteLog "Funnel monitor task enabled/started: $TaskName (state=$($t.State))" }
+    return $true
+}
+
 function Register-YaoshengFunnelMonitorTask {
     param(
         [string]$ProjectRoot,
@@ -861,13 +934,21 @@ function Repair-FunnelIfNeeded {
     param(
         [scriptblock]$WriteLog = { param($m) Write-Host $m },
         [switch]$ForceReapply,
+        [switch]$ForceReset,
         [switch]$AllowReset,
         [bool]$LocalOk = $true,
         [int]$MinPublicFails = 1,
         [int]$CooldownMinutes = 1,
         [int]$ResetCooldownMinutes = 5,
+        [int]$ConsecutiveDown = 0,
+        [string]$ProjectRoot = "",
         $HealthState = $null
     )
+
+    if ($ForceReset) {
+        $ForceReapply = $true
+        $AllowReset = $true
+    }
 
     $ts = Get-TailscaleCommand
     if (-not $ts) {
@@ -892,7 +973,23 @@ function Repair-FunnelIfNeeded {
     if ($HealthState -and $null -ne $HealthState.publicFails) {
         $publicFails = [int]$HealthState.publicFails
     }
-    & $WriteLog ("funnel check cfg443=$($routes.Pharmacy) cfg8443=$($routes.Cashflow) public=$publicOk localOk=$LocalOk fails=$publicFails/$MinPublicFails force=$([bool]$ForceReapply)")
+
+    if (-not $ForceReapply -and -not $publicOk -and $ProjectRoot) {
+        if (Test-FunnelShouldForceRepair -ProjectRoot $ProjectRoot -PublicOk $publicOk -ConsecutiveDown $ConsecutiveDown) {
+            $ForceReapply = $true
+            & $WriteLog "public down long enough — force reapply (bypass cooldown)"
+        }
+    }
+    if (-not $ForceReset -and -not $publicOk -and $ProjectRoot) {
+        if (Test-FunnelShouldForceReset -ProjectRoot $ProjectRoot -PublicOk $publicOk -ConsecutiveDown $ConsecutiveDown) {
+            $ForceReset = $true
+            $ForceReapply = $true
+            $AllowReset = $true
+            & $WriteLog "public down persistently — force funnel reset"
+        }
+    }
+
+    & $WriteLog ("funnel check cfg443=$($routes.Pharmacy) cfg8443=$($routes.Cashflow) public=$publicOk localOk=$LocalOk fails=$publicFails/$MinPublicFails force=$([bool]$ForceReapply) reset=$([bool]$ForceReset)")
 
     if ($publicOk -and $routes.Ok) {
         if ($HealthState) {
@@ -913,9 +1010,9 @@ function Repair-FunnelIfNeeded {
         $pendingReset = [bool]$HealthState.pendingFunnelReset
     }
     $mayReset = [bool]$ForceReapply -or [bool]$AllowReset
-    if ($pendingReset -and $mayReset -and -not $ForceReapply) {
+    if ($pendingReset -and $mayReset) {
         $resetCoolPending = Get-FunnelCooldownRemainMinutes -HealthState $HealthState -FieldName "lastFunnelResetAt" -CooldownMinutes $ResetCooldownMinutes
-        if ($resetCoolPending -le 0) {
+        if ($ForceReset -or $ForceReapply -or $resetCoolPending -le 0) {
             & $WriteLog "pending funnel reset - retry reset now"
             [void](Reset-FunnelDualRoutes -WriteLog $WriteLog)
             if ($HealthState) {
@@ -948,7 +1045,7 @@ function Repair-FunnelIfNeeded {
             & $WriteLog ("public window fail {0}/{1} - skip re-apply this round" -f $publicFails, $MinPublicFails)
             return $false
         }
-        if ($cool -gt 0) {
+        if ($cool -gt 0 -and -not $ForceReapply) {
             & $WriteLog ("public window still down, cooldown {0} min" -f $cool)
             return $false
         }
@@ -978,7 +1075,7 @@ function Repair-FunnelIfNeeded {
     }
 
     $resetCool = Get-FunnelCooldownRemainMinutes -HealthState $HealthState -FieldName "lastFunnelResetAt" -CooldownMinutes $ResetCooldownMinutes
-    if ($resetCool -gt 0 -and -not $ForceReapply) {
+    if ($resetCool -gt 0 -and -not $ForceReapply -and -not $ForceReset) {
         & $WriteLog ("public still down, reset cooldown {0} min - will retry reset when ready" -f $resetCool)
         if ($HealthState) { $HealthState.pendingFunnelReset = $true }
         return $false

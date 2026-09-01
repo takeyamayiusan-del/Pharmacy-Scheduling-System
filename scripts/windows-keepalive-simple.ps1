@@ -155,16 +155,24 @@ if ($cashflowOk -and $pm2 -and -not (Get-Pm2Online -Name "cashflow")) {
     Write-Log ("cashflow after PM2 adopt: " + $(if ($cashflowOk) { "OK" } else { "FAIL" }))
 }
 
-# --- 確保外網 monitor 常駐程序在跑 ---
+# --- 確保外網 monitor 常駐程序在跑（status 過期也會重啟）---
 [void](Ensure-FunnelMonitorRunning -ProjectRoot $ProjectRoot -WriteLog { param($m) Write-Log $m })
 
-# --- funnel：備援檢查外網窗口（常駐監測由 funnel-public-monitor 負責）---
+# --- funnel：外網 DOWN 時強制修復（略過冷卻）---
+$publicProbeNow = Test-FunnelPublicOk -NoRetry
+$forceFunnel = -not $publicProbeNow
+if ($forceFunnel) {
+    Write-Log "public URL probe FAIL — escalating funnel repair (force reapply)"
+}
 $funnelPublic = Repair-FunnelIfNeeded `
     -WriteLog { param($m) Write-Log $m } `
     -LocalOk $pharmacyOk `
+    -ProjectRoot $ProjectRoot `
     -AllowReset `
     -CooldownMinutes 1 `
     -ResetCooldownMinutes 5 `
+    -ForceReapply:$forceFunnel `
+    -ForceReset:(Test-FunnelShouldForceReset -ProjectRoot $ProjectRoot -PublicOk $publicProbeNow) `
     -HealthState $healthState
 
 Save-KeepaliveHealthState -ProjectRoot $ProjectRoot -State $healthState
