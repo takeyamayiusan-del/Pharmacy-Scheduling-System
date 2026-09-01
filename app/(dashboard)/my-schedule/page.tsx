@@ -8,6 +8,10 @@ import { getDisplayedShiftInfo } from "@/lib/schedule/leaveSchedule";
 
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
+/** 與桌面版相同的最小寬度，手機可橫向捲動；匯出圖片亦以此寬度渲染 */
+const SCHEDULE_MIN_WIDTH = "min-w-[56rem]";
+const SCHEDULE_GRID = "grid grid-cols-[repeat(7,minmax(7.5rem,1fr))] gap-2";
+
 export default function MySchedulePage() {
   const {
     currentUser,
@@ -45,9 +49,14 @@ export default function MySchedulePage() {
     setExportingImage(true);
     try {
       const html2canvas = (await import("html2canvas")).default;
-      const canvas = await html2canvas(exportRef.current, {
+      const el = exportRef.current;
+      const canvas = await html2canvas(el, {
         backgroundColor: "#ffffff",
         scale: 3,
+        width: el.scrollWidth,
+        height: el.scrollHeight,
+        windowWidth: el.scrollWidth,
+        windowHeight: el.scrollHeight,
       });
       const link = document.createElement("a");
       link.href = canvas.toDataURL("image/png");
@@ -95,14 +104,19 @@ export default function MySchedulePage() {
       {viewingPast && (
         <p className="text-sm text-slate-600">已過去的月份僅供查閱。</p>
       )}
-      <div ref={exportRef} className="rounded-2xl border border-slate-200 shadow-sm bg-white overflow-hidden">
-        <div className="bg-gradient-to-r from-sky-600 to-sky-500 px-6 py-4">
-          <h3 className="text-lg font-bold text-white tracking-wide">
+      <p className="text-sm text-slate-500 sm:hidden">班表以桌面版寬度顯示，可左右滑動查看；匯出圖片與電腦版相同。</p>
+      <div className="overflow-x-auto overscroll-x-contain -mx-4 px-4 sm:mx-0 sm:px-0">
+        <div
+          ref={exportRef}
+          className={`rounded-2xl border border-slate-200 shadow-sm bg-white ${SCHEDULE_MIN_WIDTH}`}
+        >
+        <div className="bg-gradient-to-r from-sky-600 to-sky-500 px-6 py-4 rounded-t-2xl">
+          <h3 className="text-lg font-bold text-white tracking-wide whitespace-nowrap">
             {year}年{month}月　{currentUser.name}　班表
           </h3>
         </div>
         <div className="px-4 pt-4 pb-5">
-          <div className="grid grid-cols-7 gap-2 mb-3">
+          <div className={`${SCHEDULE_GRID} mb-3`}>
             {dayLabels.map((d, i) => (
               <div
                 key={d}
@@ -118,7 +132,7 @@ export default function MySchedulePage() {
               </div>
             ))}
           </div>
-          <div className="grid grid-cols-7 gap-2">
+          <div className={SCHEDULE_GRID}>
             {Array.from({ length: firstDayOffset }).map((_, i) => (
               <div key={`pad-${i}`} />
             ))}
@@ -194,6 +208,7 @@ export default function MySchedulePage() {
             <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-amber-100 border border-amber-200" />國定假日</span>
             <span className="inline-flex items-center gap-1"><span className="w-3 h-3 rounded bg-violet-500" /><span className="text-violet-700">休假</span></span>
           </div>
+        </div>
         </div>
       </div>
     </div>
