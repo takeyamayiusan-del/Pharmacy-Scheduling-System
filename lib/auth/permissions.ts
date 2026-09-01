@@ -1,5 +1,5 @@
 import type { AppRole } from "@/lib/auth/roles";
-import { canManageSite } from "@/lib/auth/roles";
+import { canManageSite, isStaffLikeRole } from "@/lib/auth/roles";
 import type { StorePolicies } from "@/lib/store-policies";
 
 /** 可額外授權給員工的能力（店長／副店／老闆仍依店規） */
@@ -158,7 +158,7 @@ export function hasCapability(
     if (roleListAllows(policy.adminRoles, role, policy)) return true;
   }
 
-  if (role === "staff" && policy.allowStaffGrants && actor.capabilities?.[key] === true) {
+  if (isStaffLikeRole(role) && policy.allowStaffGrants && actor.capabilities?.[key] === true) {
     return true;
   }
   // 副店關閉「等同店長」時，仍可用個人授權補上

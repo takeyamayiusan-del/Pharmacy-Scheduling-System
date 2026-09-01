@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useApp, type Employee } from "@/lib/context/AppContext";
 import { SITE_IDS, SITES, type SiteId } from "@/lib/sites";
-import { APP_ROLE_LABELS, type AppRole } from "@/lib/auth/roles";
+import { APP_ROLE_LABELS, isStaffLikeRole, type AppRole } from "@/lib/auth/roles";
 import {
   CAPABILITY_KEYS,
   CAPABILITY_LABELS,
@@ -95,7 +95,7 @@ export default function EmployeesPage() {
     
     try {
       const caps =
-        formData.role === "staff" || formData.role === "deputy"
+        isStaffLikeRole(formData.role) || formData.role === "deputy"
           ? formData.capabilities
           : emptyCaps();
 
@@ -197,6 +197,7 @@ export default function EmployeesPage() {
       case "owner": return "bg-purple-100 text-purple-800";
       case "manager": return "bg-blue-100 text-blue-800";
       case "deputy": return "bg-cyan-100 text-cyan-800";
+      case "director": return "bg-amber-100 text-amber-800";
       case "staff": return "bg-green-100 text-green-800";
     }
   };
@@ -268,7 +269,7 @@ export default function EmployeesPage() {
       </div>
       
       {/* 員工統計 */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="app-panel p-4">
           <h3 className="app-meta mb-2">總員工數</h3>
           <p className="text-2xl font-semibold text-sky-600">
@@ -285,6 +286,12 @@ export default function EmployeesPage() {
           <h3 className="app-meta mb-2">副店</h3>
           <p className="text-2xl font-semibold text-cyan-600">
             {employees.filter(e => e.role === "deputy").length}人
+          </p>
+        </div>
+        <div className="app-panel p-4">
+          <h3 className="app-meta mb-2">主任</h3>
+          <p className="text-2xl font-semibold text-amber-600">
+            {employees.filter(e => e.role === "director").length}人
           </p>
         </div>
         <div className="app-panel p-4">
@@ -376,20 +383,22 @@ export default function EmployeesPage() {
                   className="w-full px-3 py-2 border rounded-lg"
                 >
                   <option value="staff">員工</option>
+                  <option value="director">主任</option>
                   <option value="deputy">副店</option>
                   <option value="manager">店長</option>
                 </select>
                 <p className="mt-1 text-xs text-gray-500">
-                  換店長：把新任改成「店長」，儲存時可選擇把舊店長降為員工。不用的帳號可按停用（刪除）。
-                  細部誰能排班／看薪資請到「店家設定 → 權限設定」，或下方替員工勾選額外授權。
+                  主任：權限同員工，但請用「管理端登入」；可勾選額外授權（如薪資、排班）。
+                  換店長：把新任改成「店長」，儲存時可選擇把舊店長降為員工。
+                  細部誰能排班／看薪資請到「店家設定 → 權限設定」。
                 </p>
               </div>
-              {(formData.role === "staff" ||
+              {(isStaffLikeRole(formData.role) ||
                 (formData.role === "deputy" &&
                   !storeConfig.policies.roleCapabilities.deputyLikeManager)) &&
                 storeConfig.policies.roleCapabilities.allowStaffGrants && (
                 <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                  <p className="text-sm font-medium text-slate-800">額外授權（非店長職位）</p>
+                  <p className="text-sm font-medium text-slate-800">額外授權（員工／主任／非店長副店）</p>
                   <p className="text-xs text-slate-500">
                     例如會計只開「薪資結算」、資深員工只開「排班」。店長僅能授權排班／打卡管理，薪資結算請由老闆設定。
                   </p>

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useApp, type ScheduleShiftCode } from "@/lib/context/AppContext";
 import { canEditSchedule } from "@/lib/auth/permissions";
+import { isStaffLikeRole } from "@/lib/auth/roles";
 import { exportSchedulePdf, type ExportLayout } from "@/lib/schedule/exportSchedulePdf";
 import { buildScheduleWarnings } from "@/lib/schedule/scheduleWarnings";
 import { buildDeformedHoursSoftWarnings } from "@/lib/attendance/deformedHoursSoftWarnings";
@@ -947,7 +948,7 @@ export default function SchedulePage() {
           {currentUser?.role === "owner" && <span className="app-chip text-sky-800 border-sky-100 bg-sky-50">可編輯所有人班表</span>}
           {currentUser?.role === "manager" && <span className="app-chip text-emerald-800 border-emerald-100 bg-emerald-50">可編輯班表與審核</span>}
           {currentUser?.role === "deputy" && <span className="app-chip text-cyan-800 border-cyan-100 bg-cyan-50">副店：功能同店長</span>}
-          {currentUser?.role === "staff" && <span className="app-chip">僅檢視班表</span>}
+          {isStaffLikeRole(currentUser?.role) && <span className="app-chip">僅檢視班表</span>}
           {monthLocked && <span className="app-chip text-rose-700 border-rose-100 bg-rose-50">本月已鎖定</span>}
           {viewingPastMonth && <span className="app-chip">過去月份僅供查閱</span>}
         </div>

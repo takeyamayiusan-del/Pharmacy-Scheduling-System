@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedType } from "@/lib/applications/statusMaps";
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
-import { fromDbRole, canManageSite, type AppRole } from "@/lib/auth/roles";
+import { fromDbRole, canManageSite, managerPortalDbRoles, type AppRole } from "@/lib/auth/roles";
 import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll, canEditStoreSettings, canUsePunchAdmin } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 import {
@@ -1831,7 +1831,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const loginManager = async (username: string, password: string): Promise<boolean> => {
-    return loginWithRole(username, password, ["manager", "boss", "deputy"]);
+    return loginWithRole(username, password, managerPortalDbRoles());
   };
 
   const logout = async () => {

@@ -1,10 +1,11 @@
-/** App 角色：副店與店長功能相同，審核關卡可分開。 */
-export type AppRole = "owner" | "manager" | "deputy" | "staff";
+/** App 角色：副店與店長功能相同，審核關卡可分開。主任同員工權限，但走管理端登入。 */
+export type AppRole = "owner" | "manager" | "deputy" | "director" | "staff";
 
 export const APP_ROLE_LABELS: Record<AppRole, string> = {
   owner: "老闆",
   manager: "店長",
   deputy: "副店",
+  director: "主任",
   staff: "員工",
 };
 
@@ -29,6 +30,11 @@ export function canManageSite(role?: string | null): boolean {
   return role === "owner" || role === "manager" || role === "deputy";
 }
 
+/** 員工／主任：預設無管理權，可經 capabilities 額外授權 */
+export function isStaffLikeRole(role?: string | null): boolean {
+  return role === "staff" || role === "director";
+}
+
 export function isOwnerRole(role?: string | null): boolean {
   return role === "owner";
 }
@@ -36,6 +42,7 @@ export function isOwnerRole(role?: string | null): boolean {
 export function toDbRole(role: string): string {
   if (role === "staff") return "employee";
   if (role === "owner") return "boss";
+  if (role === "director") return "director";
   return role;
 }
 
@@ -43,7 +50,13 @@ export function fromDbRole(role: string): AppRole {
   if (role === "boss" || role === "owner") return "owner";
   if (role === "manager") return "manager";
   if (role === "deputy") return "deputy";
+  if (role === "director") return "director";
   return "staff";
+}
+
+/** 可走「店長／老闆登入」分頁的 DB 角色 */
+export function managerPortalDbRoles(): string[] {
+  return ["boss", "owner", "manager", "deputy", "director"];
 }
 
 export function dbManagerRoles(): string[] {
