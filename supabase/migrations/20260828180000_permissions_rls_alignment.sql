@@ -260,15 +260,15 @@ CREATE POLICY "punch_delete_manager" ON public.punch_records
 
 DROP POLICY IF EXISTS "tardiness_insert_manager" ON public.tardiness_records;
 CREATE POLICY "tardiness_insert_manager" ON public.tardiness_records
-  FOR INSERT WITH CHECK (public.is_site_punch_admin_for(employee_id));
+  FOR INSERT WITH CHECK (public.is_site_punch_admin_for(user_id));
 
 DROP POLICY IF EXISTS "tardiness_update_manager" ON public.tardiness_records;
 CREATE POLICY "tardiness_update_manager" ON public.tardiness_records
-  FOR UPDATE USING (public.is_site_punch_admin_for(employee_id));
+  FOR UPDATE USING (public.is_site_punch_admin_for(user_id));
 
 DROP POLICY IF EXISTS "tardiness_delete_manager" ON public.tardiness_records;
 CREATE POLICY "tardiness_delete_manager" ON public.tardiness_records
-  FOR DELETE USING (public.is_site_punch_admin_for(employee_id));
+  FOR DELETE USING (public.is_site_punch_admin_for(user_id));
 
 -- ─── 請假附件（副店可更新）──────────────────────────────────
 
