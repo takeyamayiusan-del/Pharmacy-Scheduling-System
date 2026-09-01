@@ -167,7 +167,6 @@ export default function MealOrderPage() {
       <HelpTip
         title="訂餐怎麼用"
         hint="開活動 → 大家點選 → 負責人按已訂購"
-        defaultOpen
         storageKey={`help:meal-order:${storageScope}`}
       >
         <p>1. 先在「店家」新增店家（名稱、電話、菜單網址即可）。<strong>不必建品項</strong>，員工看菜單自己填。</p>

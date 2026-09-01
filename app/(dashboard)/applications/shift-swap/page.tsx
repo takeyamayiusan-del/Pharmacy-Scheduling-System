@@ -178,7 +178,6 @@ export default function ShiftSwapPage() {
       <HelpTip
         title="換班流程說明"
         hint="發起 → 對方確認 → 審核"
-        defaultOpen
         storageKey={`help:shift-swap-flow:${storageScope}`}
       >
         <p><span className="font-medium text-sky-800">換班流程：</span>發起申請 → 對方確認 → 依店規關卡審核（預設店長→副店→老闆）→ 最後一關才寫入班表</p>
@@ -189,7 +188,7 @@ export default function ShiftSwapPage() {
         </p>
       </HelpTip>
 
-      <LeaveOrderGuide compact defaultOpen />
+      <LeaveOrderGuide compact />
 
       {source === "wednesday_conflict" && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-800">

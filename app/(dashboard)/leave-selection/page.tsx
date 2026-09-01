@@ -275,12 +275,11 @@ export default function LeaveSelectionPage() {
         </div>
       </div>
 
-      <LeaveOrderGuide defaultOpen />
+      <LeaveOrderGuide />
 
       <HelpTip
         title="排休規則說明"
         hint="點選日期即時儲存，無需確認"
-        defaultOpen
         storageKey={`help:leave-selection-rules:${storageScope}`}
       >
         <p>• {leaveQuotaHint(storeConfig.policies, saturdayCount, weekdayOffOnly)}</p>

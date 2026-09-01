@@ -350,7 +350,6 @@ export default function OvertimePage() {
       <HelpTip
         title="加班申請說明"
         hint="時段、加班費／補休"
-        defaultOpen
         storageKey={`help:overtime-apply:${storageScope}`}
       >
         <p>• 點「新申請」填寫加班日期與起迄時間，送出後由店長／老闆審核。</p>

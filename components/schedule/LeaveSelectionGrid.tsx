@@ -5,7 +5,8 @@ import { createClient } from '@/lib/supabase/client';
 import { ShiftCell } from './ShiftCell';
 import { validateLeaveSelection } from '@/lib/scheduling/rules';
 import type { Database, LeaveSelectionContext, SchedulingRules } from '@/lib/types';
-import { ChevronLeft, ChevronRight, Info } from 'lucide-react';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { HelpTip } from '@/components/ui/HelpTip';
 
 type User = Database['public']['Tables']['users']['Row'];
 type ScheduleEntry = Database['public']['Tables']['schedule_entries']['Row'];
@@ -225,22 +226,17 @@ export function LeaveSelectionGrid() {
         </div>
       )}
 
-      {/* 使用說明 */}
-      <div className="p-4 border-b bg-blue-50">
-        <div className="flex items-start gap-2">
-          <Info className="h-5 w-5 text-blue-600 mt-0.5" />
-          <div className="text-sm text-blue-800">
-            <p className="font-medium">排休規則：</p>
-            <ul className="list-disc list-inside mt-1">
-              <li>週日為固定休假，無法選擇</li>
-              <li>每月可選擇 2 天週六休假</li>
-              <li>每月可選擇 2 天平日休假</li>
-              {(currentUser as { is_weekday_off_rule?: boolean } | null)?.is_weekday_off_rule && (
-                <li>平日不排休：僅能選擇週六休假</li>
-              )}
-            </ul>
-          </div>
-        </div>
+      <div className="p-4 border-b">
+        <HelpTip title="排休規則" hint="週日固定休、週六／平日配額">
+          <ul className="list-disc list-inside space-y-1">
+            <li>週日為固定休假，無法選擇</li>
+            <li>每月可選擇 2 天週六休假</li>
+            <li>每月可選擇 2 天平日休假</li>
+            {(currentUser as { is_weekday_off_rule?: boolean } | null)?.is_weekday_off_rule && (
+              <li>平日不排休：僅能選擇週六休假</li>
+            )}
+          </ul>
+        </HelpTip>
       </div>
 
       <div className="overflow-x-auto">
