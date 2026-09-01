@@ -158,7 +158,6 @@ export default function ShopOpsPage() {
       <HelpTip
         title="怎麼用"
         hint="先寫下來 → 訂貨／到貨／通知 → 已處理（紀錄仍在）"
-        defaultOpen
         storageKey={`help:shop-ops:${storageScope}`}
       >
         <p>

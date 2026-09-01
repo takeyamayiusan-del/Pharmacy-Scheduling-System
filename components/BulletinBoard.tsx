@@ -69,7 +69,7 @@ export default function BulletinBoard() {
     storeConfig,
   } = useApp();
   const [showAddForm, setShowAddForm] = useState(false);
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(true);
   const [formData, setFormData] = useState(DEFAULT_FORM);
 
   const isManager = canManageSite(currentUser?.role);

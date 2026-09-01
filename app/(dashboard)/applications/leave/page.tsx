@@ -438,7 +438,6 @@ export default function LeaveApplicationPage() {
       <HelpTip
         title="請假申請說明"
         hint="如何送出與審核"
-        defaultOpen
         storageKey={`help:leave-apply:${storageScope}`}
       >
         <p>• 點「新增申請」填寫日期、時段與假別後送出，店長／老闆審核後才會生效。</p>

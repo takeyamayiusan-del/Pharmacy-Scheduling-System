@@ -7,7 +7,7 @@ type HelpTipProps = {
   title?: string;
   children: ReactNode;
   className?: string;
-  /** 預設收合；三大申請／排休等重要操作請設 true */
+  /** 預設收合 */
   defaultOpen?: boolean;
   /** 收合時按鈕旁的簡短提示（可選） */
   hint?: string;
@@ -15,7 +15,7 @@ type HelpTipProps = {
   storageKey?: string;
 };
 
-/** 說明區塊：重要流程可預設展開，其餘可預設收合 */
+/** 說明區塊：預設收合；使用者展開後可經 storageKey 記住狀態 */
 export function HelpTip({
   title = "說明",
   children,

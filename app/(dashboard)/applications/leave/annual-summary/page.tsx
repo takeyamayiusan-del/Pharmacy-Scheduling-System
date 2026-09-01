@@ -5,6 +5,7 @@ import { useApp } from '@/lib/context/AppContext';
 import { canManageSite } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
 import { CollapsibleCard } from '@/components/ui/CollapsibleCard';
+import { HelpTip } from '@/components/ui/HelpTip';
 import { useRouter } from 'next/navigation';
 import { Settings, Plus, Trash2, Save } from 'lucide-react';
 import {
@@ -408,9 +409,8 @@ export default function AnnualLeaveSummaryPage() {
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-4">
-        <h3 className="text-sm font-semibold text-blue-800 mb-2">特休計算規則說明：</h3>
-        <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
+      <HelpTip title="特休計算規則說明" hint="勞基法第38條級距">
+        <ul className="text-sm space-y-1 list-disc list-inside">
           <li>本店<strong>不必自設級距</strong>：依入職日自動套勞基法第38條。</li>
           <li>未滿 6 個月：0 天；滿 6 個月：3 天；滿 1 年：7 天；滿 2 年：10 天；滿 3 年：14 天；滿 5 年：15 天。</li>
           <li>滿 10 年起每年加 1 天，加至 30 天。</li>
@@ -418,7 +418,7 @@ export default function AnnualLeaveSummaryPage() {
           <li>若要遞延至次年，請走店規開放的「假別遞延」申請。</li>
           <li>某人要加減天數：用個別「調整」。進階級距表僅在要比法定不同時才需要。</li>
         </ul>
-      </div>
+      </HelpTip>
     </div>
   );
 }
