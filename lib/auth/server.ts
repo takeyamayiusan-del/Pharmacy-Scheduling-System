@@ -2,12 +2,18 @@ import { createServerClient } from "@supabase/ssr";
 import { NextRequest } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { parseSiteId, type SiteId } from "@/lib/sites";
+import {
+  type CapabilityKey,
+  parseUserCapabilities,
+  type UserCapabilities,
+} from "@/lib/auth/permissions";
 
 export type UserAuthOk = {
   callerId: string;
   role: string;
   siteId: SiteId;
   name: string;
+  capabilities: UserCapabilities;
 };
 export type UserAuthResult = UserAuthOk | { error: string; status: 401 | 403 };
 
@@ -56,7 +62,7 @@ async function readSessionProfile(
 
   const { data: profile, error } = await admin
     .from("users")
-    .select("role, is_active, site_id, name")
+    .select("role, is_active, site_id, name, capabilities")
     .eq("id", userId)
     .single();
 
@@ -69,6 +75,7 @@ async function readSessionProfile(
     role: profile.role,
     siteId: parseSiteId(profile.site_id),
     name: String(profile.name ?? ""),
+    capabilities: parseUserCapabilities(profile.capabilities),
   };
 }
 
@@ -93,6 +100,33 @@ export async function assertManagerAuth(req: NextRequest): Promise<ManagerAuthRe
     role: auth.role,
     siteId: auth.siteId,
   };
+}
+
+/** 店長／副店／老闆，或具指定 capabilities 的員工 */
+export async function assertManagerOrCapability(
+  req: NextRequest,
+  capability: CapabilityKey
+): Promise<ManagerAuthResult> {
+  const auth = await readSessionProfile(req);
+  if ("error" in auth) return auth;
+
+  if (["boss", "manager", "owner", "deputy"].includes(auth.role)) {
+    return {
+      callerId: auth.callerId,
+      role: auth.role,
+      siteId: auth.siteId,
+    };
+  }
+
+  if (auth.capabilities?.[capability] === true) {
+    return {
+      callerId: auth.callerId,
+      role: auth.role,
+      siteId: auth.siteId,
+    };
+  }
+
+  return { error: "此帳號沒有管理權限", status: 403 };
 }
 
 /** 老闆可跨店；店長僅能操作本店員工 */

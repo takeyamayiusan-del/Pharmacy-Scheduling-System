@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import {
-  assertManagerAuth,
+  assertManagerOrCapability,
   assertManagerCanAccessEmployee,
 } from "@/lib/auth/server";
 
 export async function DELETE(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrCapability(req, "punch_admin");
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

@@ -3,6 +3,7 @@ import {
   canEditSchedule,
   canManagePayroll,
   canSubmitBonus,
+  canSwitchSiteForPayroll,
   canViewTeamAttendance,
   parseRoleCapabilityPolicy,
   parseUserCapabilities,
@@ -70,6 +71,17 @@ describe("permissions", () => {
     expect(canViewTeamAttendance({ role: "staff" }, policies)).toBe(false);
     expect(
       canViewTeamAttendance(
+        { role: "staff", capabilities: { payroll: true } },
+        policies
+      )
+    ).toBe(true);
+  });
+
+  it("owner and payroll accountant can switch site for payroll", () => {
+    expect(canSwitchSiteForPayroll({ role: "owner" }, policies)).toBe(true);
+    expect(canSwitchSiteForPayroll({ role: "manager" }, policies)).toBe(false);
+    expect(
+      canSwitchSiteForPayroll(
         { role: "staff", capabilities: { payroll: true } },
         policies
       )

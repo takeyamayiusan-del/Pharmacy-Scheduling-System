@@ -57,6 +57,7 @@ export default function DashboardLayout({
     isLoading,
     storeConfig,
     activeSiteId,
+    workSiteId,
     setActiveSite,
     canSwitchSite,
   } = useApp();
@@ -210,6 +211,9 @@ export default function DashboardLayout({
 
   const storeLabel =
     storeConfig.storeName?.trim() || SITES[activeSiteId].displayName;
+  const homeStoreLabel = SITES[workSiteId].displayName;
+  const isPayrollSiteSwitcher =
+    canSwitchSite && currentUser.role !== "owner";
 
   return (
     <div className="h-dvh flex flex-col app-shell relative overflow-hidden">
@@ -247,22 +251,47 @@ export default function DashboardLayout({
                 </p>
               </div>
               {canSwitchSite ? (
-                <label className="hidden sm:flex items-center gap-2 shrink-0 ml-1">
-                  <Store className="h-4 w-4 text-sky-700" aria-hidden />
-                  <select
-                    value={activeSiteId}
-                    disabled={switchingSite}
-                    onChange={(e) => void handleSiteChange(e.target.value as SiteId)}
-                    className="text-sm border border-sky-200/80 bg-white/80 text-sky-900 rounded-xl px-2.5 py-1.5 font-medium disabled:opacity-60"
-                    aria-label="選擇店別"
-                  >
-                    {SITE_IDS.map((id) => (
-                      <option key={id} value={id}>
-                        {SITES[id].displayName}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                isPayrollSiteSwitcher ? (
+                  <div className="hidden sm:flex items-center gap-2 shrink-0 ml-1">
+                    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-sky-800 bg-sky-50/90 border border-sky-100 rounded-full px-3 py-1">
+                      <Store className="h-3.5 w-3.5" aria-hidden />
+                      所屬 {homeStoreLabel}
+                    </span>
+                    <label className="flex items-center gap-2">
+                      <span className="text-xs text-slate-500">薪資</span>
+                      <select
+                        value={activeSiteId}
+                        disabled={switchingSite}
+                        onChange={(e) => void handleSiteChange(e.target.value as SiteId)}
+                        className="text-sm border border-sky-200/80 bg-white/80 text-sky-900 rounded-xl px-2.5 py-1.5 font-medium disabled:opacity-60"
+                        aria-label="選擇薪資結算店別"
+                      >
+                        {SITE_IDS.map((id) => (
+                          <option key={id} value={id}>
+                            {SITES[id].displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+                ) : (
+                  <label className="hidden sm:flex items-center gap-2 shrink-0 ml-1">
+                    <Store className="h-4 w-4 text-sky-700" aria-hidden />
+                    <select
+                      value={activeSiteId}
+                      disabled={switchingSite}
+                      onChange={(e) => void handleSiteChange(e.target.value as SiteId)}
+                      className="text-sm border border-sky-200/80 bg-white/80 text-sky-900 rounded-xl px-2.5 py-1.5 font-medium disabled:opacity-60"
+                      aria-label="選擇店別"
+                    >
+                      {SITE_IDS.map((id) => (
+                        <option key={id} value={id}>
+                          {SITES[id].displayName}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )
               ) : (
                 <span className="hidden sm:inline-flex items-center gap-1.5 text-xs font-medium text-sky-800 bg-sky-50/90 border border-sky-100 rounded-full px-3 py-1 shrink-0">
                   <Store className="h-3.5 w-3.5" aria-hidden />
@@ -272,13 +301,16 @@ export default function DashboardLayout({
             </div>
             <div className="flex items-center gap-2 sm:gap-3">
               {canSwitchSite && (
-                <label className="sm:hidden flex items-center shrink-0">
+                <label className="sm:hidden flex items-center shrink-0 gap-1.5">
+                  {isPayrollSiteSwitcher && (
+                    <span className="text-[11px] text-sky-800 whitespace-nowrap">所屬{homeStoreLabel}</span>
+                  )}
                   <select
                     value={activeSiteId}
                     disabled={switchingSite}
                     onChange={(e) => void handleSiteChange(e.target.value as SiteId)}
                     className="max-w-[7.5rem] text-xs border border-sky-200 bg-white/90 text-sky-900 rounded-xl px-2 py-1.5 font-medium"
-                    aria-label="選擇店別"
+                    aria-label={isPayrollSiteSwitcher ? "選擇薪資結算店別" : "選擇店別"}
                   >
                     {SITE_IDS.map((id) => (
                       <option key={id} value={id}>

@@ -219,6 +219,7 @@ export function canEditPermissionPolicy(
   return actor?.role === "owner";
 }
 
+/** 老闆或具薪資結算授權者可切換店別（檢視／結算各店薪資） */
 export function canSwitchSiteForPayroll(
   actor: PermissionActor | null | undefined,
   policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined

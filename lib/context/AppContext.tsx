@@ -5,7 +5,7 @@ import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedTyp
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
 import { fromDbRole, canManageSite, type AppRole } from "@/lib/auth/roles";
-import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll } from "@/lib/auth/permissions";
+import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll, canEditStoreSettings, canUsePunchAdmin } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 import {
   approvalPendingLabel,
@@ -532,11 +532,15 @@ interface AppContextType {
   saveStoreConfig: (next: StoreConfig) => Promise<void>;
   /** 該日是否為店家設定的輪值晚班日 */
   isRotationEveningDate: (dateStr: string) => boolean;
-  /** 目前檢視的店（老闆可切換；店長／員工固定所屬店） */
+  /** 目前檢視的店（老闆／會計薪資可切換；排班／打卡仍以 workSiteId 為準） */
   activeSiteId: SiteId;
+  /** 登入者所屬店（排班、打卡、圍籬） */
+  workSiteId: SiteId;
   setActiveSite: (siteId: SiteId) => Promise<void>;
-  /** 是否老闆（可跨店） */
+  /** 是否可切換店別（老闆或薪資結算） */
   canSwitchSite: boolean;
+  /** 排班／固定班等用：老闆依 activeSiteId；其餘固定 workSiteId */
+  scheduleEmployees: Employee[];
   getLeaveSummary: (employeeId: string, year: number, month: number) => LeaveSummary;
   /** 排休勾選已從資料庫載入過（避免尚未載入時誤跳「下個月排休」提醒） */
   leaveSelectionsReady: boolean;
@@ -699,6 +703,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [storeConfig, setStoreConfig] = useState<StoreConfig>(() => defaultStoreConfig());
   const [activeSiteId, setActiveSiteIdState] = useState<SiteId>(DEFAULT_SITE_ID);
   const [allEmployees, setAllEmployees] = useState<Employee[]>([]);
+  const workSiteId = useMemo(
+    () => (currentUser ? parseSiteId(currentUser.siteId) : DEFAULT_SITE_ID),
+    [currentUser]
+  );
+  const scheduleSiteId = useMemo(
+    () => (currentUser?.role === "owner" ? activeSiteId : workSiteId),
+    [currentUser?.role, activeSiteId, workSiteId]
+  );
   const canSwitchSite = useMemo(() => {
     if (!currentUser) return false;
     return canSwitchSiteForPayroll(
@@ -707,10 +719,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
   }, [currentUser, storeConfig.policies]);
 
-  /** 畫面／排班只顯示目前店的員工（竹山既有資料預設都在 zhushan） */
+  /** 薪資／工時等依目前檢視店別 */
   const employees = useMemo(
     () => allEmployees.filter((e) => parseSiteId(e.siteId) === activeSiteId),
     [allEmployees, activeSiteId]
+  );
+
+  /** 排班僅顯示所屬店員工（會計切店算薪資時不會誤排他店） */
+  const scheduleEmployees = useMemo(
+    () => allEmployees.filter((e) => parseSiteId(e.siteId) === scheduleSiteId),
+    [allEmployees, scheduleSiteId]
   );
 
   const siteEmployeeIds = useMemo(
@@ -1280,8 +1298,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [supabase, activeSiteId]);
 
   const saveStoreConfig = async (next: StoreConfig) => {
-    if (!currentUser || !canManageSite(currentUser.role)) {
-      throw new Error("僅店長、副店或老闆可調整店家設定");
+    if (
+      !currentUser ||
+      !canEditStoreSettings(
+        { role: currentUser.role, capabilities: currentUser.capabilities },
+        storeConfig.policies
+      )
+    ) {
+      throw new Error("您沒有店家設定權限");
     }
     const siteId = activeSiteId;
     const normalized = parseStoreConfig({ ...next, siteId }, siteId);
@@ -1335,16 +1359,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ) {
       throw new Error("僅老闆或具薪資結算授權者可切換店別");
     }
+    const isOwner = currentUser.role === "owner";
     setActiveSiteIdState(siteId);
-    writeActiveSiteToStorage(siteId);
-    // 先清空再載入，避免切店瞬間仍顯示上一店公告／圍籬
-    setBulletinItems([]);
-    setGeofenceLocations(defaultGeofenceLocationsForSite(siteId));
-    await Promise.all([
-      loadStoreConfig(siteId),
-      loadGeofenceConfig(siteId),
-      loadBulletinItems(siteId),
-    ]);
+    if (isOwner) {
+      writeActiveSiteToStorage(siteId);
+      setBulletinItems([]);
+      setGeofenceLocations(defaultGeofenceLocationsForSite(siteId));
+      await Promise.all([
+        loadStoreConfig(siteId),
+        loadGeofenceConfig(siteId),
+        loadBulletinItems(siteId),
+      ]);
+      return;
+    }
+    // 會計：切店僅供薪資／工時檢視；排班、打卡、圍籬仍固定所屬店
+    await loadBulletinItems(siteId);
   };
 
   const isRotationEveningDate = useCallback(
@@ -1353,8 +1382,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const saveGeofenceLocations = async (locations: GeofenceLocation[]) => {
-    if (!currentUser || !canManageSite(currentUser.role)) {
-      throw new Error("僅店長、副店或老闆可調整打卡圍籬");
+    if (
+      !currentUser ||
+      !canUsePunchAdmin(
+        { role: currentUser.role, capabilities: currentUser.capabilities },
+        storeConfig.policies
+      )
+    ) {
+      throw new Error("您沒有打卡管理權限");
     }
     const normalized = parseGeofenceSettings({ locations });
     if (normalized.length === 0) {
@@ -2008,9 +2043,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
       throw new Error(codeCheck.message);
     }
 
-    const empForActive = employees.find((e) => e.id === employeeId);
+    const empForActive = scheduleEmployees.find((e) => e.id === employeeId);
     if (empForActive && !isEmployeeActiveOnDate(empForActive, date)) {
       throw new Error("該日尚未到職或已過到期日，僅能顯示休假");
+    }
+    if (
+      !scheduleEmployees.some((e) => e.id === employeeId) &&
+      allEmployees.some((e) => e.id === employeeId)
+    ) {
+      throw new Error("此人員不屬於您的排班店別，無法在此修改班表");
     }
 
     if (isPastDate(date)) {
@@ -2033,7 +2074,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       { role: currentUser?.role, capabilities: currentUser?.capabilities },
       storeConfig.policies
     );
-    const emp = employees.find((e) => e.id === employeeId);
+    const emp = scheduleEmployees.find((e) => e.id === employeeId);
     const alreadySelected = isLeaveSelectedOnDate(leaveSelections[employeeId], date);
     const dateKey = normalizeCalendarDate(date) || date;
     const keepHalfDayLeave =
@@ -4706,8 +4747,10 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         saveStoreConfig,
         isRotationEveningDate,
         activeSiteId,
+        workSiteId,
         setActiveSite,
         canSwitchSite,
+        scheduleEmployees,
         getLeaveSummary,
         leaveSelectionsReady,
         getLeaveSelectionDetail,

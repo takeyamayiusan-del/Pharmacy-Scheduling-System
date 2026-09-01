@@ -28,7 +28,7 @@ const RULE_FIELD: Record<
 export default function FixedShiftsPage() {
   const {
     currentUser,
-    employees,
+    scheduleEmployees,
     fixedShifts,
     addFixedShift,
     updateFixedShift,
@@ -55,11 +55,11 @@ export default function FixedShiftsPage() {
   const activeRuleTags = useMemo(() => getActiveRuleTags(storeConfig), [storeConfig]);
   /** 僅目前店員工的固定班（避免集集看到竹山列） */
   const siteFixedEntries = useMemo(() => {
-    const ids = new Set(employees.map((e) => e.id));
+    const ids = new Set(scheduleEmployees.map((e) => e.id));
     return fixedShifts
       .map((fs, index) => ({ fs, index }))
       .filter(({ fs }) => ids.has(fs.employeeId));
-  }, [fixedShifts, employees]);
+  }, [fixedShifts, scheduleEmployees]);
   const canEditSharedShiftMeta = activeSiteId === "zhushan";
   const useCatalog = storeConfig.features.customShiftCatalog;
 
@@ -108,7 +108,7 @@ export default function FixedShiftsPage() {
     }
   }, [shiftOptions, newShift]);
 
-  const displayEmployees = employees.filter((e) => e.role !== "owner");
+  const displayEmployees = scheduleEmployees.filter((e) => e.role !== "owner");
   const canManage = canEditSchedule({ role: currentUser?.role, capabilities: currentUser?.capabilities }, storeConfig.policies);
 
   const handleAdd = async () => {
@@ -523,7 +523,7 @@ export default function FixedShiftsPage() {
           ) : (
             <div className="space-y-3">
               {siteFixedEntries.map(({ fs, index }) => {
-                const emp = employees.find((e) => e.id === fs.employeeId);
+                const emp = scheduleEmployees.find((e) => e.id === fs.employeeId);
                 return (
                   <div
                     key={`${fs.employeeId}-${fs.dayOfWeek}-${index}`}
