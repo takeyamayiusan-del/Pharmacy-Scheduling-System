@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useApp } from '@/lib/context/AppContext';
-import { canViewTeamAttendance, canSwitchSiteForPayroll } from '@/lib/auth/permissions';
+import { canViewTeamAttendance } from '@/lib/auth/permissions';
 import { SITES } from '@/lib/sites';
 import { formatCompLeaveHours } from '@/lib/attendance/compLeaveDisplay';
 import {
@@ -36,7 +36,7 @@ export default function AttendancePage() {
 
   const actor = { role: currentUser?.role, capabilities: currentUser?.capabilities };
   const canViewAll = canViewTeamAttendance(actor, storeConfig.policies);
-  const isPayrollViewer = canSwitchSiteForPayroll(actor, storeConfig.policies);
+  const isPayrollViewer = canViewTeamAttendance(actor, storeConfig.policies);
 
   const [currentDate, setCurrentDate] = useState(() => {
     const { year, month } = getDefaultPayrollPeriod();

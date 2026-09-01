@@ -219,12 +219,12 @@ export function canEditPermissionPolicy(
   return actor?.role === "owner";
 }
 
+/** 僅老闆可切換店別檢視／結算；會計僅能操作所屬店 */
 export function canSwitchSiteForPayroll(
   actor: PermissionActor | null | undefined,
-  policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
+  _policies?: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
 ): boolean {
-  if (actor?.role === "owner") return true;
-  return canManagePayroll(actor, policies);
+  return actor?.role === "owner";
 }
 
 /** 工時統計可看全店員工（店長／副店／老闆／會計薪資結算） */
