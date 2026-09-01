@@ -34,7 +34,7 @@ export default function LoginPage() {
       } else {
         setError(
           activeTab === "manager"
-            ? "帳號或密碼錯誤（店長／副店／老闆請確認已選「店長／副店／老闆登入」分頁）"
+            ? "帳號或密碼錯誤（店長／副店／老闆／主任請確認已選「管理端登入」分頁）"
             : "帳號或密碼錯誤（員工請確認已選「員工登入」分頁）"
         );
       }
@@ -56,7 +56,7 @@ export default function LoginPage() {
       } else {
         setError(
           activeTab === "manager"
-            ? "帳號或密碼錯誤（店長／副店／老闆請確認已選「店長／副店／老闆登入」分頁）"
+            ? "帳號或密碼錯誤（店長／副店／老闆／主任請確認已選「管理端登入」分頁）"
             : "帳號或密碼錯誤（員工請確認已選「員工登入」分頁）"
         );
       }
@@ -108,7 +108,7 @@ export default function LoginPage() {
                   : "text-slate-500 hover:text-slate-700"
               }`}
             >
-              店長／副店／老闆登入
+              管理端登入
             </button>
           </div>
 

@@ -36,12 +36,14 @@ export function usernameFromEmail(email: string | undefined | null): string | un
 export function toDbRole(role: string): string {
   if (role === "staff") return "employee";
   if (role === "owner") return "boss";
+  if (role === "director") return "director";
   return role;
 }
 
-export function fromDbRole(role: string): "owner" | "manager" | "deputy" | "staff" {
+export function fromDbRole(role: string): "owner" | "manager" | "deputy" | "director" | "staff" {
   if (role === "boss") return "owner";
   if (role === "manager") return "manager";
   if (role === "deputy") return "deputy";
+  if (role === "director") return "director";
   return "staff";
 }
