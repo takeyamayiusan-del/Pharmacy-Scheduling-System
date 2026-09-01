@@ -70,8 +70,16 @@ Write-Row "Routes 443/8443" ("{0}/{1}" -f $(if ($routes.Pharmacy) { "OK" } else 
 $localOk = Test-HttpOk -Uri "http://127.0.0.1:3000/api/health" -TimeoutSec 5
 if (-not $localOk) { $localOk = Test-HttpOk -Uri "http://127.0.0.1:3000/login" -TimeoutSec 5 }
 Write-Row "Local pharmacy" $(if ($localOk) { "OK" } else { "DOWN" }) $(if ($localOk) { "Green" } else { "Red" })
-$publicOk = Test-FunnelPublicOk
-Write-Row "Public URL now" $(if ($publicOk) { "OK" } else { "DOWN" }) $(if ($publicOk) { "Green" } else { "Red" })
+$publicLocalOnly = Test-FunnelPublicLocalProbeOnly
+$publicEdge = Test-FunnelPublicOkViaEdge -NoRetry
+Write-Row "Public (local curl)" $(if ($publicLocalOnly) { "OK" } else { "DOWN" }) $(if ($publicLocalOnly) { "DarkGray" } else { "Yellow" })
+Write-Row "Public (edge/4G path)" $(if ($publicEdge) { "OK" } else { "DOWN" }) $(if ($publicEdge) { "Green" } else { "Red" })
+if ($publicLocalOnly -and -not $publicEdge) {
+    Write-Host ""
+    Write-Host "  WARNING: local curl OK but edge path FAIL — employees on 4G cannot connect." -ForegroundColor Red
+    Write-Host "  Run: powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1" -ForegroundColor Yellow
+}
+$publicOk = $publicEdge
 
 $logFile = Join-Path $ProjectRoot "data\logs\funnel-public-monitor.log"
 Write-Host ""
@@ -93,7 +101,7 @@ if (-not $alive.Alive) {
     exit 1
 }
 if (-not $publicOk) {
-    Write-Host "Monitor is running but public URL is DOWN." -ForegroundColor Yellow
+    Write-Host "Monitor is running but external URL is DOWN (edge path)." -ForegroundColor Yellow
     Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1"
     exit 1
 }
