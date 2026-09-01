@@ -416,6 +416,37 @@ function Get-TailscaleBackendState {
     }
 }
 
+function Get-FunnelPublicHostname {
+    $base = Get-FunnelPublicBaseUrl
+    if (-not $base) { return $null }
+    try {
+        return ([uri]$base).Host
+    } catch {
+        return $null
+    }
+}
+
+function Get-FunnelEdgeIpv4Addresses {
+    param([string]$Hostname)
+
+    if ([string]::IsNullOrWhiteSpace($Hostname)) { return @() }
+    $ips = @()
+    try {
+        $records = @(Resolve-DnsName -Name $Hostname -Type A -ErrorAction Stop)
+        foreach ($r in $records) {
+            if ($r.IPAddress) { $ips += [string]$r.IPAddress }
+        }
+    } catch {}
+    return @($ips | Select-Object -Unique)
+}
+
+function Test-FunnelPublicHttpCode {
+    param([string]$Code)
+
+    $code = ("$Code").Trim()
+    return ($code -eq "200" -or $code -eq "204" -or $code -eq "301" -or $code -eq "302" -or $code -eq "304" -or $code -eq "307" -or $code -eq "308")
+}
+
 function Invoke-FunnelPublicProbe {
     param(
         [string]$Path = "/login",
@@ -432,40 +463,98 @@ function Invoke-FunnelPublicProbe {
     try {
         $out = & curl.exe -s -o NUL -w "%{http_code}" --connect-timeout 5 --max-time $TimeoutSec --http1.1 $uri 2>$null
         if ($LASTEXITCODE -ne 0) { return $false }
-        $code = ("$out").Trim()
-        return ($code -eq "200" -or $code -eq "204" -or $code -eq "301" -or $code -eq "302" -or $code -eq "304" -or $code -eq "307" -or $code -eq "308")
+        return (Test-FunnelPublicHttpCode -Code $out)
     } catch {
         return $false
     }
 }
 
-# Lightweight public probe: /api/health first, then /login. Retry once on failure.
-function Test-FunnelPublicOk {
+# 從 Funnel 主機 curl 公開網址常「本機捷徑」而誤判 OK；改走 Tailscale edge IP（模擬員工 4G 路徑）
+function Invoke-FunnelPublicProbeViaEdge {
+    param(
+        [string]$Path = "/login",
+        [int]$HttpsPort = 443,
+        [int]$TimeoutSec = 12
+    )
+
+    $base = Get-FunnelPublicBaseUrl
+    if (-not $base) { return $false }
+    $hostName = Get-FunnelPublicHostname
+    if (-not $hostName) { return $false }
+
+    $ips = @(Get-FunnelEdgeIpv4Addresses -Hostname $hostName)
+    if ($ips.Count -eq 0) { return $false }
+
+    if ($HttpsPort -eq 443) {
+        $uri = "$base$Path"
+    } else {
+        $uri = "{0}:{1}{2}" -f $base, $HttpsPort, $Path
+    }
+
+    foreach ($ip in $ips) {
+        $resolve = "{0}:{1}:{2}" -f $hostName, $HttpsPort, $ip
+        try {
+            $out = & curl.exe -s -o NUL -w "%{http_code}" --connect-timeout 5 --max-time $TimeoutSec --http1.1 --resolve $resolve $uri 2>$null
+            if ($LASTEXITCODE -ne 0) { continue }
+            if (Test-FunnelPublicHttpCode -Code $out) { return $true }
+        } catch {}
+    }
+    return $false
+}
+
+function Test-FunnelPublicOkViaEdge {
     param(
         [string]$Path = "",
         [int]$HttpsPort = 443,
-        [int]$TimeoutSec = 10,
+        [int]$TimeoutSec = 12,
         [switch]$NoRetry
     )
 
+    $timeout = [Math]::Max($TimeoutSec, 12)
     $ok = $false
     if ($Path) {
-        $ok = Invoke-FunnelPublicProbe -Path $Path -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec
+        $ok = Invoke-FunnelPublicProbeViaEdge -Path $Path -HttpsPort $HttpsPort -TimeoutSec $timeout
     } else {
-        $ok = Invoke-FunnelPublicProbe -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec
+        $ok = Invoke-FunnelPublicProbeViaEdge -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $timeout
         if (-not $ok) {
-            $ok = Invoke-FunnelPublicProbe -Path "/login" -HttpsPort $HttpsPort -TimeoutSec ([Math]::Max($TimeoutSec, 12))
+            $ok = Invoke-FunnelPublicProbeViaEdge -Path "/login" -HttpsPort $HttpsPort -TimeoutSec $timeout
         }
     }
     if ($ok) { return $true }
     if ($NoRetry) { return $false }
     Start-Sleep -Seconds 2
     if ($Path) {
+        return [bool](Invoke-FunnelPublicProbeViaEdge -Path $Path -HttpsPort $HttpsPort -TimeoutSec $timeout)
+    }
+    $ok = Invoke-FunnelPublicProbeViaEdge -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $timeout
+    if ($ok) { return $true }
+    return [bool](Invoke-FunnelPublicProbeViaEdge -Path "/login" -HttpsPort $HttpsPort -TimeoutSec $timeout)
+}
+
+function Test-FunnelPublicLocalProbeOnly {
+    param(
+        [string]$Path = "",
+        [int]$HttpsPort = 443,
+        [int]$TimeoutSec = 10
+    )
+
+    if ($Path) {
         return [bool](Invoke-FunnelPublicProbe -Path $Path -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec)
     }
-    $ok = Invoke-FunnelPublicProbe -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec
-    if ($ok) { return $true }
+    if (Invoke-FunnelPublicProbe -Path "/api/health" -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec) { return $true }
     return [bool](Invoke-FunnelPublicProbe -Path "/login" -HttpsPort $HttpsPort -TimeoutSec ([Math]::Max($TimeoutSec, 12)))
+}
+
+# Public probe uses edge path so auto-repair matches real employee access (4G / external).
+function Test-FunnelPublicOk {
+    param(
+        [string]$Path = "",
+        [int]$HttpsPort = 443,
+        [int]$TimeoutSec = 12,
+        [switch]$NoRetry
+    )
+
+    return (Test-FunnelPublicOkViaEdge -Path $Path -HttpsPort $HttpsPort -TimeoutSec $TimeoutSec -NoRetry:$NoRetry)
 }
 
 function Test-FunnelRoutesConfigured {
