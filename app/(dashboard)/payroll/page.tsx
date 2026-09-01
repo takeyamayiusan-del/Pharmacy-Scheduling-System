@@ -43,6 +43,8 @@ import {
 } from "@/lib/payroll/salaryItems";
 import EmployeeSalaryItemsEditor from "@/components/payroll/EmployeeSalaryItemsEditor";
 import { buildPayslipWorksheet } from "@/lib/payroll/payslipExcelLayout";
+import { parseStoreConfig } from "@/lib/store-config";
+import { storeConfigSettingId } from "@/lib/sites";
 import XLSX from "xlsx-js-style";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -173,9 +175,38 @@ export default function PayrollPage() {
     publishPayrollRecord,
     unpublishPayrollRecord,
     loadPayrollRecords,
-    storeConfig,
+    storeConfig: homeStoreConfig,
+    activeSiteId,
+    workSiteId,
   } = useApp();
   const supabase = createClient();
+  const [payrollStoreConfig, setPayrollStoreConfig] = useState(homeStoreConfig);
+
+  useEffect(() => {
+    setPayrollStoreConfig(homeStoreConfig);
+  }, [homeStoreConfig]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (currentUser?.role === "owner" || activeSiteId === workSiteId) {
+      return;
+    }
+    void (async () => {
+      const { data } = await supabase
+        .from("app_settings")
+        .select("value")
+        .eq("id", storeConfigSettingId(activeSiteId))
+        .maybeSingle();
+      if (!cancelled) {
+        setPayrollStoreConfig(parseStoreConfig(data?.value ?? null, activeSiteId));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSiteId, workSiteId, currentUser?.role, supabase]);
+
+  const storeConfig = payrollStoreConfig;
 
   const defaultPeriod = getDefaultPayrollPeriod();
   const [year, setYear] = useState(defaultPeriod.year);

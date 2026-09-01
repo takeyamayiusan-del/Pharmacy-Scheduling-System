@@ -33,11 +33,11 @@ import {
 const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 
 export default function SchedulePage() {
-  const { 
-    currentUser, 
-    employees,
-    updateShift, 
-    isSunday, 
+  const {
+    currentUser,
+    scheduleEmployees,
+    updateShift,
+    isSunday,
     isSaturday,
     getHolidayInfo,
     refreshHolidayCalendar,
@@ -185,7 +185,7 @@ export default function SchedulePage() {
   const monthLocked = isLeaveMonthLocked(year, month);
   const viewingPastMonth = isPastMonth(year, month);
   // 過濾老闆，以及尚未到職／已過到期日的員工（依當月）
-  const displayEmployees = employees.filter(
+  const displayEmployees = scheduleEmployees.filter(
     (e) => e.role !== "owner" && isEmployeeActiveInMonth(e, year, month)
   );
   const scheduleWarnings = buildScheduleWarnings({
@@ -266,7 +266,7 @@ export default function SchedulePage() {
     }
   };
 
-  const rotationEmployees = employees.filter((e) => e.isWednesdayRotation);
+  const rotationEmployees = scheduleEmployees.filter((e) => e.isWednesdayRotation);
   const rotationLabel =
     rotationEmployees.length > 0
       ? rotationEmployees.map((e) => e.name).join("/")
@@ -356,7 +356,7 @@ export default function SchedulePage() {
       await refreshSchedule();
 
       // 以剛寫入 DB 的班表做快照（避免 React state 尚未更新）
-      const targets = employees.filter((e) => e.role !== "owner");
+      const targets = scheduleEmployees.filter((e) => e.role !== "owner");
       const { data: entries, error: entriesError } = await supabase
         .from("schedule_entries")
         .select("user_id, shift_code")
@@ -1007,7 +1007,7 @@ export default function SchedulePage() {
       >
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 text-sm">
             {fixedShifts.map((fs, idx) => {
-              const emp = employees.find(e => e.id === fs.employeeId);
+              const emp = scheduleEmployees.find(e => e.id === fs.employeeId);
               return (
                 <div key={idx} className="rounded-xl border border-slate-200/80 bg-slate-50/60 p-3">
                   <span className="font-medium text-slate-800">{emp?.name}</span>
@@ -1034,7 +1034,7 @@ export default function SchedulePage() {
           {wednesdayNightShifts
             .filter((s) => isLocalDateInMonth(s.date, year, month))
             .map((s) => {
-              const emp = employees.find(e => e.id === s.employeeId);
+              const emp = scheduleEmployees.find(e => e.id === s.employeeId);
               const parts = parseLocalDateParts(s.date);
               return (
                 <div key={s.date} className="rounded-xl border border-pink-100 bg-pink-50/80 p-2.5 min-w-[5.5rem]">

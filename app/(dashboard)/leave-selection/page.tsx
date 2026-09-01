@@ -37,7 +37,7 @@ export default function LeaveSelectionPage() {
   const router = useRouter();
   const {
     currentUser,
-    employees,
+    scheduleEmployees,
     isSunday,
     isSaturday,
     countSaturdaysInMonth,
@@ -236,7 +236,7 @@ export default function LeaveSelectionPage() {
     year,
     month,
     daysInMonth,
-    employees,
+    scheduleEmployees,
     shiftDisplayConfig,
     getShiftForDate,
     storeConfig,

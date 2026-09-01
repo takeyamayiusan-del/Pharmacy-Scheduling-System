@@ -23,7 +23,7 @@ const dayLabels = ["日", "一", "二", "三", "四", "五", "六"];
 export default function PersonSchedulePage() {
   const {
     currentUser,
-    employees,
+    scheduleEmployees,
     storeConfig,
     shiftDisplayConfig,
     shiftTimeConfig,
@@ -55,10 +55,10 @@ export default function PersonSchedulePage() {
 
   const staff = useMemo(
     () =>
-      employees.filter(
+      scheduleEmployees.filter(
         (e) => e.role !== "owner" && isEmployeeActiveInMonth(e, year, month)
       ),
-    [employees, year, month]
+    [scheduleEmployees, year, month]
   );
   const emp = staff.find((e) => e.id === employeeId) ?? staff[0];
   const selectedId = emp?.id ?? "";

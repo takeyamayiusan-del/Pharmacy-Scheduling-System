@@ -77,7 +77,7 @@ describe("permissions", () => {
     ).toBe(true);
   });
 
-  it("only owner can switch site for payroll", () => {
+  it("owner and payroll accountant can switch site for payroll", () => {
     expect(canSwitchSiteForPayroll({ role: "owner" }, policies)).toBe(true);
     expect(canSwitchSiteForPayroll({ role: "manager" }, policies)).toBe(false);
     expect(
@@ -85,6 +85,6 @@ describe("permissions", () => {
         { role: "staff", capabilities: { payroll: true } },
         policies
       )
-    ).toBe(false);
+    ).toBe(true);
   });
 });

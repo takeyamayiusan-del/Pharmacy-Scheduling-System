@@ -16,7 +16,7 @@ export default function WednesdayShiftsPage() {
   const router = useRouter();
   const {
     currentUser,
-    employees,
+    scheduleEmployees,
     getWednesdayOffDates,
     getWednesdayOffLimit,
     toggleWednesdayOff,
@@ -39,7 +39,7 @@ export default function WednesdayShiftsPage() {
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
   const weekdaysLabel = formatWeekdaysLabel(storeConfig.rotationEvening.weekdays);
 
-  const rotationEmployees = employees.filter((e) => e.isWednesdayRotation);
+  const rotationEmployees = scheduleEmployees.filter((e) => e.isWednesdayRotation);
   const isParticipant = rotationEmployees.some((e) => e.id === currentUser?.id);
 
   const rotationDates = useMemo(
