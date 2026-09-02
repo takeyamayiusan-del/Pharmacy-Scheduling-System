@@ -60,6 +60,8 @@ export async function POST(req: NextRequest) {
         site_id: siteId,
         work_hours_regime: body.work_hours_regime || null,
         baseline_shift: body.baseline_shift || null,
+        is_half_day_leave_rule: Boolean(body.is_half_day_leave_rule),
+        half_day_work_shift: body.half_day_work_shift || null,
         capabilities:
           body.capabilities && typeof body.capabilities === "object"
             ? body.capabilities

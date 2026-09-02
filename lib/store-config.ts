@@ -151,8 +151,8 @@ const DEFAULT_RULE_TAGS: StoreRuleTag[] = [
   },
   {
     id: "half_day_leave",
-    label: "只能休半天",
-    description: "排休不可選全日，每次自選休上午或下午，剩下半天上自選班別",
+    label: "排休變特定班別",
+    description: "排休選擇不排全日休假，點日期後班表改為指定班別（集集常用）",
   },
 ];
 

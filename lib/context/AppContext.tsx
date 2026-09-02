@@ -24,7 +24,7 @@ import {
 } from "@/lib/schedule/leaveQuotas";
 import {
   halfDayLeaveNote,
-  isHalfDayLeavePeriod,
+  leaveSelectionUsesWorkShift,
   parseLeaveSelectionPeriod,
   type LeaveSelectionDetail,
   type LeaveSelectionMetaMap,
@@ -1862,6 +1862,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         site_id: employee.siteId ?? activeSiteId,
         work_hours_regime: employee.workHoursRegime || null,
         baseline_shift: employee.baselineShift || null,
+        is_half_day_leave_rule: employee.isHalfDayLeaveRule ?? false,
+        half_day_work_shift: employee.halfDayWorkShift || null,
         capabilities: employee.capabilities ?? {},
       }),
     });
@@ -1986,8 +1988,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const dateKey = normalizeCalendarDate(date);
     const halfDayWorkShift = (() => {
       const detail = leaveSelectionMeta[employeeId]?.[dateKey || date];
-      if (isHalfDayLeavePeriod(detail?.period) && detail.workShift && detail.workShift !== "X") {
-        return detail.workShift;
+      if (leaveSelectionUsesWorkShift(detail)) {
+        return detail!.workShift;
       }
       return null;
     })();
@@ -2013,7 +2015,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       leaveSelected: isLeaveSelectedOnDate(leaveSelections[employeeId], date),
       halfDayWorkShift: (() => {
         const detail = leaveSelectionMeta[employeeId]?.[dateKey];
-        if (isHalfDayLeavePeriod(detail?.period) && detail.workShift) return detail.workShift;
+        if (leaveSelectionUsesWorkShift(detail)) return detail!.workShift;
         return null;
       })(),
       override: schedule[dateKey]?.[employeeId] ?? null,
@@ -2081,7 +2083,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const dateKey = normalizeCalendarDate(date) || date;
     const keepHalfDayLeave =
       alreadySelected &&
-      isHalfDayLeavePeriod(leaveSelectionMeta[employeeId]?.[dateKey]?.period);
+      leaveSelectionUsesWorkShift(leaveSelectionMeta[employeeId]?.[dateKey]);
     const syncAction = shouldSyncLeaveSelection(date, shift, {
       keepHalfDayLeave,
       sundayFixedRest: storeConfig.policies.sundayFixedRest,
@@ -2673,11 +2675,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     const period: LeaveSelectionPeriod = isHalfDayLeaveRule
-      ? parseLeaveSelectionPeriod(options?.period)
+      ? options?.period
+        ? parseLeaveSelectionPeriod(options.period)
+        : "shift_rest"
       : "full_day";
     const workShift =
-      isHalfDayLeaveRule && options?.workShift && options.workShift !== "X"
-        ? options.workShift
+      isHalfDayLeaveRule
+        ? options?.workShift && options.workShift !== "X"
+          ? options.workShift
+          : emp?.halfDayWorkShift && emp.halfDayWorkShift !== "X"
+            ? emp.halfDayWorkShift
+            : null
         : null;
 
     const blocked = leaveAddBlockedMessage({
@@ -2705,8 +2713,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }));
     persistSelection(period, workShift);
 
-    if (isHalfDayLeavePeriod(period) && workShift) {
-      writeScheduleCell(workShift, halfDayLeaveNote(period), "half_day_leave");
+    if (leaveSelectionUsesWorkShift({ period, workShift })) {
+      writeScheduleCell(workShift!, halfDayLeaveNote(period), "half_day_leave");
     } else {
       writeScheduleCell("X", null, null);
     }

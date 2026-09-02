@@ -16,6 +16,8 @@ import { getLocalDayOfWeek } from "@/lib/schedule/sundayRest";
 import { getScheduleShiftOptions } from "@/lib/shift-catalog/resolve";
 import {
   halfDayLeaveLabel,
+  isShiftRestLeavePeriod,
+  leaveSelectionUsesWorkShift,
   type LeaveSelectionPeriod,
 } from "@/lib/schedule/leaveSelectionPeriod";
 import { PersonalMonthScheduleGrid } from "@/components/schedule/PersonalMonthScheduleGrid";
@@ -24,14 +26,7 @@ type PendingEveningLeave = {
   dateStr: string;
   day: number;
   shiftLabel: string;
-  halfDay?: { period: LeaveSelectionPeriod; workShift: string };
-};
-
-type PendingHalfDayLeave = {
-  dateStr: string;
-  day: number;
-  period: "morning" | "afternoon";
-  workShift: string;
+  shiftRest?: { period: LeaveSelectionPeriod; workShift: string };
 };
 
 export default function LeaveSelectionPage() {
@@ -60,7 +55,6 @@ export default function LeaveSelectionPage() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [pendingEveningLeave, setPendingEveningLeave] = useState<PendingEveningLeave | null>(null);
-  const [pendingHalfDayLeave, setPendingHalfDayLeave] = useState<PendingHalfDayLeave | null>(null);
   const [isSubmittingLeaveAction, setIsSubmittingLeaveAction] = useState(false);
   const [showSchedulePreview, setShowSchedulePreview] = useState(true);
 
@@ -74,7 +68,7 @@ export default function LeaveSelectionPage() {
   const monthLocked = isLeaveMonthLocked(year, month);
   const viewingPastMonth = isPastMonth(year, month);
   const weekdayOffOnly = currentUser?.isWeekdayOffRule ?? false;
-  const halfDayOnly = currentUser?.isHalfDayLeaveRule ?? false;
+  const shiftRestMode = currentUser?.isHalfDayLeaveRule ?? false;
   const monthPool = leaveSummary?.monthPool ?? false;
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
   const workShiftOptions = useMemo(
@@ -93,10 +87,12 @@ export default function LeaveSelectionPage() {
     if (!currentUser) return "";
     const detail = getLeaveSelectionDetail(currentUser.id, dateStr);
     const shift = getShiftForDate(dateStr, currentUser.id);
-    if (detail && detail.period !== "full_day" && shift !== "X") {
-      return `${halfDayLeaveLabel(detail.period)}·${formatShiftName(shiftDisplayConfig, shift, storeConfig)}`;
+    if (detail && leaveSelectionUsesWorkShift(detail)) {
+      const name = formatShiftName(shiftDisplayConfig, shift, storeConfig);
+      if (isShiftRestLeavePeriod(detail.period)) return `→ ${name}`;
+      return `${halfDayLeaveLabel(detail.period)}·${name}`;
     }
-    if (shift === "X") return "休假";
+    if (shift === "X") return "→ 休假";
     return formatShiftName(shiftDisplayConfig, shift, storeConfig);
   };
 
@@ -136,11 +132,11 @@ export default function LeaveSelectionPage() {
     if (!pendingEveningLeave || !currentUser || isSubmittingLeaveAction) return;
     setIsSubmittingLeaveAction(true);
     try {
-      const { dateStr, day, shiftLabel, halfDay } = pendingEveningLeave;
+      const { dateStr, day, shiftLabel, shiftRest } = pendingEveningLeave;
       const result = applyLeaveSelection(
         dateStr,
-        halfDay
-          ? { period: halfDay.period, workShift: halfDay.workShift }
+        shiftRest
+          ? { period: shiftRest.period, workShift: shiftRest.workShift }
           : undefined
       );
       if (!result.success) {
@@ -199,13 +195,18 @@ export default function LeaveSelectionPage() {
       return;
     }
 
-    if (halfDayOnly) {
-      setPendingHalfDayLeave({
-        dateStr,
-        day,
-        period: "morning",
-        workShift: defaultHalfWorkShift,
-      });
+    if (shiftRestMode) {
+      const targetShift = defaultHalfWorkShift;
+      if (isEveningOrFullCoverageShift(targetShift, storeConfig, shiftTimeConfig)) {
+        setPendingEveningLeave({
+          dateStr,
+          day,
+          shiftLabel: formatShiftName(shiftDisplayConfig, targetShift, storeConfig),
+          shiftRest: { period: "shift_rest", workShift: targetShift },
+        });
+        return;
+      }
+      applyLeaveSelection(dateStr, { period: "shift_rest", workShift: targetShift });
       return;
     }
 
@@ -220,23 +221,6 @@ export default function LeaveSelectionPage() {
     }
 
     applyLeaveSelection(dateStr);
-  };
-
-  const confirmHalfDayLeave = () => {
-    if (!pendingHalfDayLeave || !currentUser) return;
-    const { dateStr, day, period, workShift } = pendingHalfDayLeave;
-    if (isEveningOrFullCoverageShift(workShift, storeConfig, shiftTimeConfig)) {
-      setPendingEveningLeave({
-        dateStr,
-        day,
-        shiftLabel: formatShiftName(shiftDisplayConfig, workShift, storeConfig),
-        halfDay: { period, workShift },
-      });
-      setPendingHalfDayLeave(null);
-      return;
-    }
-    applyLeaveSelection(dateStr, { period, workShift });
-    setPendingHalfDayLeave(null);
   };
 
   const canSelectDate = (day: number) => {
@@ -330,9 +314,11 @@ export default function LeaveSelectionPage() {
             • 您套用「平日不排休」規則，排休只能選擇禮拜六（請至固定班表由店長設定）
           </p>
         )}
-        {halfDayOnly && (
+        {shiftRestMode && (
           <p className="text-teal-800 font-medium">
-            • 您套用「只能休半天」：點日期後請選休上午或休下午，並自選剩下半天要上的班別（不是固定某一班）
+            • 您套用「排休變特定班別」：點日期後班表會排成{" "}
+            {formatShiftName(shiftDisplayConfig, defaultHalfWorkShift, storeConfig)}
+            （非全日休假）；班別由店長在員工管理設定
           </p>
         )}
       </HelpTip>
@@ -519,81 +505,6 @@ export default function LeaveSelectionPage() {
               </div>
             </div>
           )}
-        </div>
-      )}
-
-      {pendingHalfDayLeave && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="app-panel shadow-xl max-w-md w-full p-6">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">選擇半天排休</h3>
-            <p className="text-sm text-gray-600 mb-4">
-              {month}/{pendingHalfDayLeave.day} 日只能休半天。請選要休的時段，以及剩下半天要上的班別。
-            </p>
-            <div className="space-y-4">
-              <div>
-                <p className="text-sm font-medium text-gray-800 mb-2">要休哪一段？</p>
-                <div className="grid grid-cols-2 gap-2">
-                  {(["morning", "afternoon"] as const).map((period) => (
-                    <button
-                      key={period}
-                      type="button"
-                      onClick={() =>
-                        setPendingHalfDayLeave((prev) =>
-                          prev ? { ...prev, period } : prev
-                        )
-                      }
-                      className={`px-3 py-2 rounded-lg border text-sm font-medium ${
-                        pendingHalfDayLeave.period === period
-                          ? "bg-teal-600 text-white border-teal-600"
-                          : "bg-white hover:bg-gray-50"
-                      }`}
-                    >
-                      {halfDayLeaveLabel(period)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <label className="block text-sm">
-                <span className="font-medium text-gray-800">剩下半天上</span>
-                <select
-                  value={pendingHalfDayLeave.workShift}
-                  onChange={(e) =>
-                    setPendingHalfDayLeave((prev) =>
-                      prev ? { ...prev, workShift: e.target.value } : prev
-                    )
-                  }
-                  className="mt-1 w-full border rounded-lg px-3 py-2"
-                >
-                  {workShiftOptions.map((code) => (
-                    <option key={code} value={code}>
-                      {formatShiftName(shiftDisplayConfig, code, storeConfig)}
-                    </option>
-                  ))}
-                  {!workShiftOptions.includes(pendingHalfDayLeave.workShift) && (
-                    <option value={pendingHalfDayLeave.workShift}>
-                      {pendingHalfDayLeave.workShift}
-                    </option>
-                  )}
-                </select>
-              </label>
-            </div>
-            <div className="flex flex-col gap-2 mt-5">
-              <button
-                type="button"
-                onClick={confirmHalfDayLeave}
-                className="w-full px-4 py-2.5 bg-teal-600 text-white rounded-lg hover:bg-teal-700"
-              >
-                確定排休
-              </button>
-              <button
-                type="button"
-                onClick={() => setPendingHalfDayLeave(null)}
-                className="w-full px-4 py-2 text-gray-500 hover:text-gray-700"
-              >
-                取消
-              </button>
-            </div>
-          </div>
         </div>
       )}
 

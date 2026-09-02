@@ -67,7 +67,7 @@ export function checkManagerLeaveAssignment(
   if (employee?.isHalfDayLeaveRule) {
     return {
       shouldWarn: true,
-      message: `${employeeName} 套用「只能休半天」。班表改全日休假會算一次排休機會；若要休上午或下午，請改由排休選擇指定。是否仍要將 ${month}/${day} 排為全日休假？`,
+      message: `${employeeName} 套用「排休變特定班別」。班表改全日休假會與排休模式不同；建議由排休選擇操作。是否仍要將 ${month}/${day} 排為全日休假？`,
     };
   }
 

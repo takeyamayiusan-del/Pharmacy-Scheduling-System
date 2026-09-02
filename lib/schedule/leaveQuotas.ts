@@ -136,11 +136,18 @@ export function leaveAddBlockedMessage(input: {
     return "此員工套用平日不排休規則，排休只能選擇週六";
   }
   if (isHalfDayLeaveRule) {
-    if (period !== "morning" && period !== "afternoon") {
-      return "此員工套用「只能休半天」，請選擇休上午或休下午";
+    const effectivePeriod = period ?? "shift_rest";
+    if (effectivePeriod === "shift_rest") {
+      if (!workShift || workShift === "X") {
+        return "請先在員工管理設定此員工的「排休班別」";
+      }
+      return null;
+    }
+    if (effectivePeriod !== "morning" && effectivePeriod !== "afternoon") {
+      return "此員工排休須指定特定班別";
     }
     if (!workShift || workShift === "X") {
-      return "請選擇剩下半天要上的班別";
+      return "請選擇排休日的上班班別";
     }
   }
 
