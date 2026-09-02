@@ -18,6 +18,7 @@ import {
   halfDayLeaveLabel,
   type LeaveSelectionPeriod,
 } from "@/lib/schedule/leaveSelectionPeriod";
+import { PersonalMonthScheduleGrid } from "@/components/schedule/PersonalMonthScheduleGrid";
 
 type PendingEveningLeave = {
   dateStr: string;
@@ -46,6 +47,7 @@ export default function LeaveSelectionPage() {
     getLeaveSelectionDetail,
     toggleLeaveDate,
     getShiftForDate,
+    getPlannedShiftForDate,
     isLeaveMonthLocked,
     shiftDisplayConfig,
     shiftTimeConfig,
@@ -60,6 +62,7 @@ export default function LeaveSelectionPage() {
   const [pendingEveningLeave, setPendingEveningLeave] = useState<PendingEveningLeave | null>(null);
   const [pendingHalfDayLeave, setPendingHalfDayLeave] = useState<PendingHalfDayLeave | null>(null);
   const [isSubmittingLeaveAction, setIsSubmittingLeaveAction] = useState(false);
+  const [showSchedulePreview, setShowSchedulePreview] = useState(true);
 
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth() + 1;
@@ -84,7 +87,25 @@ export default function LeaveSelectionPage() {
       : null) ??
     (workShiftOptions.includes(storeConfig.defaultWeekdayShift)
       ? storeConfig.defaultWeekdayShift
-      : workShiftOptions[0] ?? "B");
+      :     workShiftOptions[0] ?? "B");
+
+  const formatResultShiftLabel = (dateStr: string) => {
+    if (!currentUser) return "";
+    const detail = getLeaveSelectionDetail(currentUser.id, dateStr);
+    const shift = getShiftForDate(dateStr, currentUser.id);
+    if (detail && detail.period !== "full_day" && shift !== "X") {
+      return `${halfDayLeaveLabel(detail.period)}·${formatShiftName(shiftDisplayConfig, shift, storeConfig)}`;
+    }
+    if (shift === "X") return "休假";
+    return formatShiftName(shiftDisplayConfig, shift, storeConfig);
+  };
+
+  const formatPlannedShiftLabel = (dateStr: string) => {
+    if (!currentUser) return "";
+    const planned = getPlannedShiftForDate(dateStr, currentUser.id);
+    if (planned === "X") return "原休假";
+    return formatShiftName(shiftDisplayConfig, planned, storeConfig);
+  };
 
   const remaining = {
     weekend: Math.max(0, (leaveSummary?.saturdayLimit ?? 0) - (leaveSummary?.saturdayUsed ?? 0)),
@@ -295,6 +316,7 @@ export default function LeaveSelectionPage() {
         <p>
           • <strong>點選日期即會儲存或取消</strong>，沒有確認鍵，也無需另外提交；選取後會同步到月曆式班表當日為休假
         </p>
+        <p>• 下方「排休後班表預覽」會即時顯示選完後的個人班表；綠框日期代表因排休而變更的班別</p>
         <p>• 月曆表頭為「日～六」，與「我的班表」相同，格子也標示星期，避免對錯日期</p>
         <p>• 已核准的請假以月曆式班表為準，「我的班表」會顯示相同結果（全日假／半日假）</p>
         <p>• 若選到您原為含晚班（或全天覆蓋）的日期，系統會提示：優先換班（指定人）或不公告；有需要才可公開徵求代班</p>
@@ -400,11 +422,12 @@ export default function LeaveSelectionPage() {
               const isSat = isSaturday(dateStr);
               const canSelect = canSelectDate(day);
               const isSelected = selectedDates.includes(dateStr);
-              const leaveDetail = currentUser
-                ? getLeaveSelectionDetail(currentUser.id, dateStr)
-                : null;
               const holidayInfo = getHolidayInfo(dateStr);
               const weekday = ["日", "一", "二", "三", "四", "五", "六"][getLocalDayOfWeek(dateStr)] ?? "";
+              const plannedLabel = !isSelected && canSelect && !isSun
+                ? formatPlannedShiftLabel(dateStr)
+                : null;
+              const resultLabel = isSelected ? formatResultShiftLabel(dateStr) : null;
 
               return (
                 <div
@@ -423,10 +446,13 @@ export default function LeaveSelectionPage() {
                     {weekday}
                   </span>
                   {isSelected && (
-                    <span className="text-[10px] sm:text-xs leading-tight text-center px-0.5">
-                      {leaveDetail && leaveDetail.period !== "full_day"
-                        ? halfDayLeaveLabel(leaveDetail.period)
-                        : "已選"}
+                    <span className="text-[10px] sm:text-xs leading-tight text-center px-0.5 font-medium">
+                      → {resultLabel}
+                    </span>
+                  )}
+                  {!isSelected && plannedLabel && (
+                    <span className="text-[9px] sm:text-[10px] leading-tight text-slate-500 text-center px-0.5">
+                      {plannedLabel}
                     </span>
                   )}
                   {isSun && !isSelected && <span className="text-[10px] sm:text-xs leading-tight">固定</span>}
@@ -444,7 +470,11 @@ export default function LeaveSelectionPage() {
         <div className="p-3 sm:p-4 border-t bg-gray-50 flex flex-wrap gap-3 sm:gap-4 text-sm">
           <span className="flex items-center gap-2">
             <span className="w-6 h-6 bg-green-500 rounded flex items-center justify-center text-white text-xs">選</span>
-            已選擇
+            已選擇（顯示排休後班別）
+          </span>
+          <span className="flex items-center gap-2 text-slate-600">
+            <span className="text-xs px-1.5 py-0.5 bg-gray-100 rounded">B</span>
+            灰字為選休前的原班
           </span>
           <span className="flex items-center gap-2">
             <span className="w-6 h-6 bg-red-50 rounded flex items-center justify-center text-red-600 text-xs">固</span>
@@ -456,6 +486,41 @@ export default function LeaveSelectionPage() {
           </span>
         </div>
       </div>
+
+      {currentUser && (
+        <div className="app-panel overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowSchedulePreview((v) => !v)}
+            className="w-full flex items-center justify-between gap-3 p-4 sm:p-5 text-left hover:bg-slate-50/80 transition-colors"
+            aria-expanded={showSchedulePreview}
+          >
+            <div>
+              <h3 className="app-section-title">排休後班表預覽</h3>
+              <p className="text-sm text-slate-500 mt-1">
+                依您目前的排休選擇即時更新，與「我的班表」顯示相同；綠框為因排休而變更的日期
+              </p>
+            </div>
+            <span className="text-slate-400 text-lg shrink-0" aria-hidden>
+              {showSchedulePreview ? "▾" : "▸"}
+            </span>
+          </button>
+          {showSchedulePreview && (
+            <div className="px-3 sm:px-5 pb-5 border-t border-slate-100 pt-4 overflow-x-auto overscroll-x-contain">
+              <div className="min-w-[48rem]">
+                <PersonalMonthScheduleGrid
+                  year={year}
+                  month={month}
+                  employeeId={currentUser.id}
+                  employeeName={currentUser.name}
+                  compact
+                  highlightLeaveChanges
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {pendingHalfDayLeave && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">

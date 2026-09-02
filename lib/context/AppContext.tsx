@@ -503,6 +503,8 @@ interface AppContextType {
     options?: { note?: string | null; noteKind?: string | null }
   ) => Promise<void>;
   getShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
+  /** 排休勾選前的基準班別（用於排休預覽：原班 vs 排休後） */
+  getPlannedShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   getScheduleNote: (date: string, employeeId: string) => ScheduleCellNote | null;
   getBaseShiftForDate: (date: string, employeeId: string) => ScheduleShiftCode;
   /** 國定假日一鍵設為上班／休假；已排休或全日請假者維持休假。不寫入排休選擇。 */
@@ -4724,6 +4726,7 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
         schedule,
         updateShift,
         getShiftForDate,
+        getPlannedShiftForDate: getWorkShiftIgnoringLeave,
         getScheduleNote,
         getBaseShiftForDate,
         applyNationalHolidayOneClick,
