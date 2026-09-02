@@ -294,7 +294,7 @@ export default function FixedShiftsPage() {
                           )}
                           {tag.id === "half_day_leave" && enabled && (
                             <label className="mt-2 flex flex-col items-center gap-1 text-xs text-slate-600">
-                              <span>預設剩下半天上</span>
+                              <span>排休班別</span>
                               <select
                                 value={defaultHalfShift}
                                 onChange={(e) => {

@@ -117,7 +117,7 @@ describe("leaveQuotas", () => {
     ).toBe(false);
   });
 
-  it("半天規則必須指定上午或下午與剩下半天班別", () => {
+  it("特定班別排休須設定班碼", () => {
     const p = defaultStorePoliciesForSite("jiji");
     expect(
       leaveAddBlockedMessage({
@@ -127,8 +127,9 @@ describe("leaveQuotas", () => {
         isWeekdayOffRule: false,
         saturdaysInMonth: 5,
         isHalfDayLeaveRule: true,
+        period: "shift_rest",
       })
-    ).toContain("只能休半天");
+    ).toContain("排休班別");
     expect(
       leaveAddBlockedMessage({
         date: "2026-08-03",
@@ -137,18 +138,7 @@ describe("leaveQuotas", () => {
         isWeekdayOffRule: false,
         saturdaysInMonth: 5,
         isHalfDayLeaveRule: true,
-        period: "morning",
-      })
-    ).toContain("剩下半天");
-    expect(
-      leaveAddBlockedMessage({
-        date: "2026-08-03",
-        selectedDates: [],
-        policies: p,
-        isWeekdayOffRule: false,
-        saturdaysInMonth: 5,
-        isHalfDayLeaveRule: true,
-        period: "afternoon",
+        period: "shift_rest",
         workShift: "白班5",
       })
     ).toBeNull();

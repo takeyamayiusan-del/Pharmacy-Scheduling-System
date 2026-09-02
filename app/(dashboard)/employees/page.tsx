@@ -53,6 +53,8 @@ export default function EmployeesPage() {
     siteId: activeSiteId as SiteId,
     workHoursRegime: "" as "" | WorkHoursRegime,
     baselineShift: "",
+    leaveSelectionMode: "full_day" as "full_day" | "shift_rest",
+    halfDayWorkShift: "",
     capabilities: emptyCaps(),
   });
   
@@ -68,6 +70,8 @@ export default function EmployeesPage() {
       siteId: employee.siteId ?? activeSiteId,
       workHoursRegime: employee.workHoursRegime ?? "",
       baselineShift: employee.baselineShift ?? "",
+      leaveSelectionMode: employee.isHalfDayLeaveRule ? "shift_rest" : "full_day",
+      halfDayWorkShift: employee.halfDayWorkShift ?? "",
       capabilities: { ...emptyCaps(), ...employee.capabilities },
     });
     setShowForm(true);
@@ -84,6 +88,8 @@ export default function EmployeesPage() {
       siteId: activeSiteId,
       workHoursRegime: "",
       baselineShift: "",
+      leaveSelectionMode: "full_day",
+      halfDayWorkShift: "",
       capabilities: emptyCaps(),
     });
     setEditingId(null);
@@ -131,6 +137,11 @@ export default function EmployeesPage() {
           siteId: formData.siteId,
           workHoursRegime: formData.workHoursRegime || null,
           baselineShift: formData.baselineShift.trim() || null,
+          isHalfDayLeaveRule: formData.leaveSelectionMode === "shift_rest",
+          halfDayWorkShift:
+            formData.leaveSelectionMode === "shift_rest"
+              ? formData.halfDayWorkShift.trim() || null
+              : null,
           capabilities: caps,
         };
         if (formData.password) {
@@ -159,6 +170,11 @@ export default function EmployeesPage() {
           siteId: formData.siteId,
           workHoursRegime: formData.workHoursRegime || null,
           baselineShift: formData.baselineShift.trim() || null,
+          isHalfDayLeaveRule: formData.leaveSelectionMode === "shift_rest",
+          halfDayWorkShift:
+            formData.leaveSelectionMode === "shift_rest"
+              ? formData.halfDayWorkShift.trim() || null
+              : null,
           capabilities: caps,
         });
         if (formData.siteId !== activeSiteId) {
@@ -398,6 +414,60 @@ export default function EmployeesPage() {
                   換店長：把新任改成「店長」，儲存時可選擇把舊店長降為員工。
                   細部誰能排班／看薪資請到「店家設定 → 權限設定」。
                 </p>
+              </div>
+              <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-3">
+                <p className="text-sm font-medium text-slate-800">排休選擇模式</p>
+                <p className="text-xs text-slate-500">
+                  員工在「排休選擇」點日期時：整天休會變休假（X）；特定班別會直接排成指定班（集集店常用，非休上午／下午）。
+                </p>
+                <div className="flex flex-wrap gap-4 text-sm">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="leaveSelectionMode"
+                      checked={formData.leaveSelectionMode === "full_day"}
+                      onChange={() =>
+                        setFormData({ ...formData, leaveSelectionMode: "full_day" })
+                      }
+                    />
+                    整天休（休假 X）
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="leaveSelectionMode"
+                      checked={formData.leaveSelectionMode === "shift_rest"}
+                      onChange={() =>
+                        setFormData({ ...formData, leaveSelectionMode: "shift_rest" })
+                      }
+                    />
+                    特定班別（點日期排成指定班）
+                  </label>
+                </div>
+                {formData.leaveSelectionMode === "shift_rest" && (
+                  <label className="block text-sm">
+                    <span className="font-medium text-gray-800">排休日班別</span>
+                    <select
+                      value={
+                        formData.halfDayWorkShift ||
+                        getScheduleShiftOptions(storeConfig).find((c) => c !== "X") ||
+                        storeConfig.defaultWeekdayShift
+                      }
+                      onChange={(e) =>
+                        setFormData({ ...formData, halfDayWorkShift: e.target.value })
+                      }
+                      className="mt-1 w-full px-3 py-2 border rounded-lg"
+                    >
+                      {getScheduleShiftOptions(storeConfig)
+                        .filter((c) => c !== "X")
+                        .map((code) => (
+                          <option key={code} value={code}>
+                            {getShiftName(storeConfig, code)}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                )}
               </div>
               {(isStaffLikeRole(formData.role) ||
                 (formData.role === "deputy" &&

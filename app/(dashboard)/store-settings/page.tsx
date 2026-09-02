@@ -1430,7 +1430,7 @@ export default function StoreSettingsPage() {
             }
           />
           <span>
-            <span className="font-medium text-gray-900">只能休半天規則</span>
+            <span className="font-medium text-gray-900">排休可選特定班別</span>
             <span className="block text-gray-500">
               開啟後可在固定班表為個別員工勾選。該員工排休只能選休上午或下午，剩下半天自選班別。
               {activeSiteId === "jiji" && "（集集預設開啟，給店長等需要休半天的人用）"}
