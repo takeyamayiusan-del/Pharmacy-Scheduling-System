@@ -4,6 +4,12 @@ import { assertManagerOrCapability } from "@/lib/auth/server";
 import { PROTECTED_USERNAMES, toAuthEmail, toDbRole } from "@/lib/auth/constants";
 import { filterDelegatableCapabilities, parseUserCapabilities } from "@/lib/auth/permissions";
 import { fromDbRole } from "@/lib/auth/roles";
+import {
+  profileUpdatesFromBody,
+  upsertEmployeeDependents,
+  upsertEmployeeEmergencyContacts,
+} from "@/lib/employees/profileServer";
+import type { EmergencyContact, EmployeeDependent } from "@/lib/employees/profile";
 
 // POST /api/auth/update-user
 // Body: { userId, password?, name?, role?, username?, ... }
@@ -31,6 +37,8 @@ export async function POST(req: NextRequest) {
       work_hours_regime,
       baseline_shift,
       capabilities,
+      emergency_contacts,
+      dependents,
     } = body as {
       userId: string;
       password?: string;
@@ -47,6 +55,15 @@ export async function POST(req: NextRequest) {
       work_hours_regime?: string | null;
       baseline_shift?: string | null;
       capabilities?: Record<string, boolean> | null;
+      national_id?: string | null;
+      birth_date?: string | null;
+      gender?: string | null;
+      registered_address?: string | null;
+      mailing_address?: string | null;
+      mailing_same_as_registered?: boolean;
+      phone?: string | null;
+      emergency_contacts?: EmergencyContact[];
+      dependents?: EmployeeDependent[];
     };
 
     if (!userId) {
@@ -109,12 +126,23 @@ export async function POST(req: NextRequest) {
         capabilities && typeof capabilities === "object" ? capabilities : {}
       );
     }
+    Object.assign(updates, profileUpdatesFromBody(body as Record<string, unknown>));
 
     if (Object.keys(updates).length > 0) {
       const { error } = await admin.from("users").update(updates).eq("id", userId);
       if (error) {
         return NextResponse.json({ error: error.message }, { status: 500 });
       }
+    }
+
+    try {
+      await upsertEmployeeEmergencyContacts(admin, userId, emergency_contacts);
+      await upsertEmployeeDependents(admin, userId, dependents);
+    } catch (relErr) {
+      return NextResponse.json(
+        { error: relErr instanceof Error ? relErr.message : "儲存聯絡人／眷屬失敗" },
+        { status: 500 }
+      );
     }
 
     const authUpdates: { password?: string; email?: string } = {};

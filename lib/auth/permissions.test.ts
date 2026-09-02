@@ -77,6 +77,12 @@ describe("permissions", () => {
     ).toBe(true);
   });
 
+  it("accountant role can manage and switch payroll sites", () => {
+    expect(canManagePayroll({ role: "accountant" }, policies)).toBe(true);
+    expect(canSwitchSiteForPayroll({ role: "accountant" }, policies)).toBe(true);
+    expect(canViewTeamAttendance({ role: "accountant" }, policies)).toBe(true);
+  });
+
   it("owner and payroll accountant can switch site for payroll", () => {
     expect(canSwitchSiteForPayroll({ role: "owner" }, policies)).toBe(true);
     expect(canSwitchSiteForPayroll({ role: "manager" }, policies)).toBe(false);

@@ -2,9 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { assertManagerOrCapability } from "@/lib/auth/server";
 import { toAuthEmail, toDbRole } from "@/lib/auth/constants";
+import { filterDelegatableCapabilities, parseUserCapabilities } from "@/lib/auth/permissions";
+import { fromDbRole } from "@/lib/auth/roles";
+import {
+  profileUpdatesFromBody,
+  upsertEmployeeDependents,
+  upsertEmployeeEmergencyContacts,
+} from "@/lib/employees/profileServer";
+import type { EmergencyContact, EmployeeDependent } from "@/lib/employees/profile";
 
 // POST /api/auth/create-user
-// Body: { username, password, name, role, hire_date? }
 export async function POST(req: NextRequest) {
   try {
     const auth = await assertManagerOrCapability(req, "employees");
@@ -21,6 +28,8 @@ export async function POST(req: NextRequest) {
       hire_date?: string;
       end_date?: string | null;
       site_id?: string;
+      emergency_contacts?: EmergencyContact[];
+      dependents?: EmployeeDependent[];
     };
 
     if (!username || !password || !name || !role) {
@@ -35,6 +44,13 @@ export async function POST(req: NextRequest) {
     const admin = createAdminClient();
     const dbRole = toDbRole(role);
 
+    const { data: callerProfile } = await admin
+      .from("users")
+      .select("role, capabilities")
+      .eq("id", auth.callerId)
+      .single();
+    const callerRole = fromDbRole(String(callerProfile?.role ?? ""));
+
     const { data: authData, error: authError } = await admin.auth.admin.createUser({
       email,
       password,
@@ -46,6 +62,16 @@ export async function POST(req: NextRequest) {
     }
 
     const siteId = site_id === "jiji" ? "jiji" : "zhushan";
+    const capabilities =
+      body.capabilities && typeof body.capabilities === "object"
+        ? filterDelegatableCapabilities(
+            {
+              role: callerRole,
+              capabilities: parseUserCapabilities(callerProfile?.capabilities),
+            },
+            body.capabilities
+          )
+        : {};
 
     const { data: userRow, error: insertError } = await admin
       .from("users")
@@ -62,10 +88,8 @@ export async function POST(req: NextRequest) {
         baseline_shift: body.baseline_shift || null,
         is_half_day_leave_rule: Boolean(body.is_half_day_leave_rule),
         half_day_work_shift: body.half_day_work_shift || null,
-        capabilities:
-          body.capabilities && typeof body.capabilities === "object"
-            ? body.capabilities
-            : {},
+        capabilities,
+        ...profileUpdatesFromBody(body),
       })
       .select()
       .single();
@@ -73,6 +97,18 @@ export async function POST(req: NextRequest) {
     if (insertError) {
       await admin.auth.admin.deleteUser(authData.user.id);
       return NextResponse.json({ error: insertError.message }, { status: 500 });
+    }
+
+    try {
+      await upsertEmployeeEmergencyContacts(admin, authData.user.id, body.emergency_contacts);
+      await upsertEmployeeDependents(admin, authData.user.id, body.dependents);
+    } catch (relErr) {
+      await admin.auth.admin.deleteUser(authData.user.id);
+      await admin.from("users").delete().eq("id", authData.user.id);
+      return NextResponse.json(
+        { error: relErr instanceof Error ? relErr.message : "儲存聯絡人／眷屬失敗" },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ user: userRow }, { status: 201 });

@@ -1171,13 +1171,13 @@ export default function StoreSettingsPage() {
         <h2 className="font-semibold text-gray-900">權限設定（排班／薪資／管理）</h2>
         {!canEditPolicy ? (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-            僅老闆可調整權限設定。若要新增會計薪資結算，請到「員工管理」建立帳號並勾選「薪資結算」。
+            僅老闆可調整權限設定。若要指派會計，請到「員工管理」將角色設為「會計」（跨店薪資、仍屬單店上班）。
           </p>
         ) : (
         <>
         <p className="text-sm text-gray-500">
           控制誰能排班、誰能看薪資結算、誰能管員工。竹山換店長請到「員工管理」把新人改成店長（可一併把舊店長降職）。
-          若要讓「會計」看薪資：角色維持員工，到員工管理勾「薪資結算」授權即可。
+          若要讓某人負責跨店薪資：到員工管理設「會計」職位；若只需部分能力，也可維持員工並勾選對應授權。
         </p>
         <label className="flex items-start gap-3 text-sm">
           <input
