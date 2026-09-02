@@ -41,4 +41,5 @@ export function mapOffboardingRow(row: Record<string, unknown>): OffboardingReco
   };
 }
 
-export const OFFBOARDING_SELECT = "*, users(name)";
+/** 明確指定 user_id 外鍵，避免與 created_by 混淆 */
+export const OFFBOARDING_SELECT = "*, users!user_id(name)";
