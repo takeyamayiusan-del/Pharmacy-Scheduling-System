@@ -23,6 +23,10 @@ import {
   adjustPunchSlotsForApprovedLeave,
   resolvePunchLateMinutes,
 } from "@/lib/attendance/punchLeaveAdjust";
+import {
+  getDisplayedShiftInfo,
+  type DisplayedShiftInfo,
+} from "@/lib/schedule/leaveSchedule";
 import { calcOvertimeHours, type OvertimeCompensationType } from "@/lib/attendance/overtimeCompensation";
 import {
   canChooseOvertimePayWithPolicy,
@@ -39,11 +43,28 @@ function punchKey(slot: PunchSlot) {
   return `${slot.action}-${slot.segmentIndex}`;
 }
 
+function isRestDayOvertimePunch(p: PunchRecord) {
+  return p.shift === "X" || (p.reason?.includes("無班表") ?? false);
+}
+
+function formatTodayLeaveLabel(info: DisplayedShiftInfo): string {
+  if (!info.hasLeave) return "";
+  if (!info.isPartialLeave && info.effectiveShift === "X") {
+    return info.leaveType ? `全日${info.leaveType}` : "全日請假";
+  }
+  if (info.leaveStartTime && info.leaveEndTime) {
+    const partial = info.isPartialLeave ? "（半日假）" : "";
+    return `${info.leaveStartTime}–${info.leaveEndTime}${partial}`;
+  }
+  return info.effectiveShiftDetails || "請假";
+}
+
 export default function PunchPage() {
   const router = useRouter();
   const {
     currentUser,
     getShiftForDate,
+    getBaseShiftForDate,
     shiftTimeConfig,
     addPunchRecord,
     addTardinessRecord,
@@ -51,6 +72,7 @@ export default function PunchPage() {
     punchRecordsReady,
     refreshTodayPunchRecords,
     leaveRequests,
+    overtimeRequests,
     geofenceLocations,
     addOvertimeRequest,
     storeConfig,
@@ -121,6 +143,25 @@ export default function PunchPage() {
     ? getShiftForDate(today, currentUser.id)
     : "X";
 
+  const todayLeaveInfo = useMemo(() => {
+    if (!currentUser) return null;
+    return getDisplayedShiftInfo({
+      date: today,
+      employeeId: currentUser.id,
+      originalShift: getShiftForDate(today, currentUser.id),
+      leaveRequests,
+      overtimeRequests,
+      getBaseShiftForDate,
+    });
+  }, [
+    currentUser,
+    today,
+    getShiftForDate,
+    leaveRequests,
+    overtimeRequests,
+    getBaseShiftForDate,
+  ]);
+
   const slots = useMemo(() => {
     if (shift === "X" || !currentUser) return [];
     const ranges = resolveShiftTimeRanges(shift, storeConfig, shiftTimeConfig);
@@ -128,7 +169,19 @@ export default function PunchPage() {
     return adjustPunchSlotsForApprovedLeave(raw, currentUser.id, today, leaveRequests);
   }, [shift, shiftTimeConfig, storeConfig, currentUser, today, leaveRequests]);
 
+  /** 休假日或全日請假：走加班打卡流程 */
+  const showOvertimePunchUi = useMemo(() => {
+    if (shift === "X") return true;
+    if (!todayLeaveInfo?.hasLeave || todayLeaveInfo.isPartialLeave) return false;
+    return slots.length === 0;
+  }, [shift, todayLeaveInfo, slots.length]);
+
   const todayPunches = currentUser ? getTodayPunchRecords(currentUser.id, today) : [];
+  const restDayPunches = todayPunches.filter(isRestDayOvertimePunch);
+  const restDayWorkIn = restDayPunches.find((p) => p.action === "work_in");
+  const restDayWorkOut = restDayPunches.find((p) => p.action === "work_out");
+  const leaveLabel = todayLeaveInfo ? formatTodayLeaveLabel(todayLeaveInfo) : "";
+  const onApprovedLeave = todayLeaveInfo?.hasLeave ?? false;
   const completedKeys = new Set(
     todayPunches.map((p) => `${p.action}-${p.segmentIndex}`)
   );
@@ -299,12 +352,16 @@ export default function PunchPage() {
             ? `無班表加班（上班 ${lastIn.time} ～ 下班 ${punchTime}）`
             : `無班表加班（下班打卡 ${punchTime}）`,
           message:
-            "打卡成功！今日無排班。已帶入打卡時間，請確認起迄並選擇補休或加班費後送出。",
+            "打卡成功！" +
+            (onApprovedLeave ? "今日已請假但需出勤。" : "今日無排班。") +
+            "已帶入打卡時間，請確認起迄並選擇補休或加班費後送出。",
           segmentIndex: 0,
         });
       } else {
         setSuccessModal({
-          message: "上班打卡成功！今日無排班，下班打卡後可一鍵申請加班。",
+          message: onApprovedLeave
+            ? "上班打卡成功！今日已請假但需出勤，下班打卡後可一鍵申請加班。"
+            : "上班打卡成功！今日無排班，下班打卡後可一鍵申請加班。",
           askLeave: false,
           askOvertime: false,
         });
@@ -650,44 +707,142 @@ export default function PunchPage() {
           </span>
         </div>
         <p className="text-sm text-slate-600">
-          班別：<span className="font-semibold text-slate-900">{shift === "X" ? "休假" : shift}</span>
+          班別：
+          <span className="font-semibold text-slate-900">
+            {shift === "X"
+              ? onApprovedLeave
+                ? "休假（已請假）"
+                : "休假"
+              : shift}
+          </span>
+          {onApprovedLeave && leaveLabel && (
+            <span className="ml-2 text-violet-700 font-medium">{leaveLabel}</span>
+          )}
           {shift !== "X" && (
             <span className="ml-2 text-slate-500">
               （{breakCount === 2 ? "全天班，2 次休息" : breakCount === 1 ? "白天班，1 次休息" : "單段班"}）
             </span>
           )}
         </p>
-        {shift !== "X" && (
+        {onApprovedLeave && todayLeaveInfo?.isPartialLeave && (
+          <p className="text-sm text-violet-800 mt-2 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2">
+            今日已核准請假 {leaveLabel}，其餘時段請依下方班表打卡。
+          </p>
+        )}
+        {shift !== "X" && !onApprovedLeave && (
           <p className="text-xs text-slate-500 mt-2 leading-relaxed">
             可提早 10 分鐘打卡；遲到第 6 分鐘起算；遲到 30 分鐘仍可打卡但建議請假；下班後第 10 分鐘起建議申請加班
           </p>
         )}
       </div>
 
-      {shift === "X" ? (
+      {showOvertimePunchUi ? (
         <div className="space-y-4">
-          <div className="app-card p-6 text-center text-slate-600">今日為休假，無需打卡</div>
+          <div
+            className={`app-card p-5 ${
+              onApprovedLeave
+                ? "bg-violet-50/80 border-violet-200"
+                : "bg-slate-50 border-slate-200"
+            }`}
+          >
+            <p className="font-semibold text-slate-900 text-center">
+              {onApprovedLeave
+                ? "今日已請假，正常班不需打卡"
+                : "今日排休，無需打卡"}
+            </p>
+            <p className="text-sm text-slate-600 text-center mt-2 leading-relaxed">
+              {onApprovedLeave
+                ? "若請假但仍需到店出勤，請使用下方「加班打卡」按鈕；下班後可一鍵申請加班。"
+                : "若臨時到店支援，請使用下方「加班打卡」按鈕。"}
+            </p>
+          </div>
+
+          {(restDayWorkIn || restDayWorkOut) && (
+            <div className="app-card p-4">
+              <h3 className="app-section-title mb-3 text-sm">今日加班打卡進度</h3>
+              <ul className="space-y-2">
+                {[
+                  { label: "上班（加班）", punch: restDayWorkIn },
+                  { label: "下班（加班）", punch: restDayWorkOut },
+                ].map(({ label, punch }) => (
+                  <li
+                    key={label}
+                    className={`flex justify-between items-center rounded-xl px-3 py-2.5 text-sm ${
+                      punch ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
+                    }`}
+                  >
+                    <span className="font-medium">{label}</span>
+                    <span className="font-mono tabular-nums">
+                      {punch ? punch.time : "尚未打卡"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {restDayWorkIn && !restDayWorkOut && (
+                <p className="text-sm text-amber-800 mt-3 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+                  已打上班卡（{restDayWorkIn.time}），離店時請按「下班打卡（加班）」。
+                </p>
+              )}
+              {restDayWorkIn && restDayWorkOut && (
+                <p className="text-sm text-emerald-800 mt-3 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
+                  加班打卡已完成。若尚未申請加班，下班時應已跳出申請視窗。
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="app-card p-4">
-            <p className="text-sm text-slate-600 mb-3">如需上班打卡（加班），請使用下方按鈕：</p>
+            <p className="text-sm font-medium text-slate-800 mb-1">加班出勤打卡</p>
+            <p className="text-sm text-slate-600 mb-3">
+              {!restDayWorkIn
+                ? "請先按上班，離店時再按下班。"
+                : !restDayWorkOut
+                  ? `已上班 ${restDayWorkIn.time}，請在離店時打下班。`
+                  : "今日加班上下班皆已打卡。"}
+            </p>
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => handleNoShiftPunch("work_in")}
-                disabled={!canPunch}
+                disabled={!canPunch || !!restDayWorkIn}
                 className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isPunching ? "打卡中..." : "上班打卡（加班）"}
+                {isPunching ? "打卡中..." : restDayWorkIn ? `已上班 ${restDayWorkIn.time}` : "上班打卡（加班）"}
               </button>
               <button
                 type="button"
                 onClick={() => handleNoShiftPunch("work_out")}
-                disabled={!canPunch}
+                disabled={!canPunch || !restDayWorkIn || !!restDayWorkOut}
                 className="flex-1 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isPunching ? "打卡中..." : "下班打卡（加班）"}
+                {isPunching ? "打卡中..." : restDayWorkOut ? `已下班 ${restDayWorkOut.time}` : "下班打卡（加班）"}
               </button>
             </div>
           </div>
+
+          {restDayPunches.length > 0 && (
+            <div className="app-card p-4">
+              <h3 className="app-section-title mb-2">打卡紀錄</h3>
+              <ul className="space-y-2 text-sm text-slate-700">
+                {restDayPunches.map((p: PunchRecord) => (
+                  <li
+                    key={p.id}
+                    className="flex items-start justify-between border-b border-slate-100 pb-2 last:border-0"
+                  >
+                    <div>
+                      <span className="font-medium">
+                        {p.action === "work_in" ? "上班（加班）" : "下班（加班）"}
+                      </span>
+                      {p.reason && (
+                        <div className="text-sky-600 text-xs mt-0.5">{p.reason}</div>
+                      )}
+                    </div>
+                    <span className="font-mono tabular-nums text-slate-900">{p.time}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       ) : (
         <>
@@ -707,6 +862,13 @@ export default function PunchPage() {
                     {punchRecordsReady ? `預定 ${nextSlot.scheduledTime}` : "載入打卡資料中..."}
                   </span>
                 </button>
+              ) : slots.length === 0 && onApprovedLeave ? (
+                <div className="app-card p-6 text-center space-y-2">
+                  <p className="text-violet-800 font-medium">今日請假時段內無需打卡</p>
+                  <p className="text-sm text-slate-600">
+                    若仍需出勤，請聯絡店長或使用打卡補登。
+                  </p>
+                </div>
               ) : (
                 <div className="app-card p-6 text-center text-emerald-700 font-medium">
                   今日打卡已完成
@@ -1071,9 +1233,10 @@ export default function PunchPage() {
             <div className="flex items-start gap-2 text-blue-800 mb-4">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
               <div>
-                <p className="font-bold">确認加班</p>
+                <p className="font-bold">確認加班</p>
                 <p className="text-sm mt-1">
-                  今日無排班但你要{noShiftOvertimeModal.action === "work_in" ? "上" : "下"}班，是否確認為加班？
+                  {onApprovedLeave ? "今日已請假但你要" : "今日無排班但你要"}
+                  {noShiftOvertimeModal.action === "work_in" ? "上" : "下"}班，是否確認為加班？
                 </p>
               </div>
             </div>
