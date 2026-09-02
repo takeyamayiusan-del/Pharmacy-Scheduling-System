@@ -27,6 +27,7 @@ import {
   ClipboardPen,
   ClipboardList,
   GraduationCap,
+  UserMinus,
 } from 'lucide-react';
 import Link from 'next/link';
 import LoginPopupStack from '@/components/LoginPopupStack';
@@ -161,6 +162,7 @@ export default function DashboardLayout({
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
     { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: allowPunchAdmin },
     { href: '/employees', label: '員工管理', icon: UserPlus, allowed: allowEmployees },
+    { href: '/employees/offboarding', label: '離職結清', icon: UserMinus, allowed: allowEmployees },
     { href: '/store-settings', label: '店家設定', icon: Settings, allowed: allowStoreSettings },
     { href: '/payroll-detail', label: '薪資查詢', icon: DollarSign, allowed: true },
     { href: '/payroll', label: '薪資結算', icon: DollarSign, allowed: allowPayroll },

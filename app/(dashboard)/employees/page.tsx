@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { useApp, type Employee } from "@/lib/context/AppContext";
 import { SITE_IDS, SITES, type SiteId } from "@/lib/sites";
@@ -257,15 +258,20 @@ export default function EmployeesPage() {
             目前店別：{SITES[activeSiteId].displayName}（僅顯示此店人員）
           </p>
         </div>
-        <button
-          onClick={() => {
-            setFormData((prev) => ({ ...prev, siteId: activeSiteId }));
-            setShowForm(true);
-          }}
-          className="app-btn-primary"
-        >
-          新增員工
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <Link href="/employees/offboarding" className="app-btn-outline">
+            離職結清
+          </Link>
+          <button
+            onClick={() => {
+              setFormData((prev) => ({ ...prev, siteId: activeSiteId }));
+              setShowForm(true);
+            }}
+            className="app-btn-primary"
+          >
+            新增員工
+          </button>
+        </div>
       </div>
       
       {/* 員工統計 */}
