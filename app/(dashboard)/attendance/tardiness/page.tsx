@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useApp, type TardinessRecord } from "@/lib/context/AppContext";
-import { canUsePunchAdmin } from "@/lib/auth/permissions";
+import { canUsePunchAdmin, canViewTeamAttendance } from "@/lib/auth/permissions";
 import { buildEffectiveTardinessRecords } from "@/lib/tardiness";
 import {
   MonthFilterBar,
@@ -36,7 +36,9 @@ export default function TardinessPage() {
   const [filterYear, setFilterYear] = useState(initialPeriod.year);
   const [filterMonth, setFilterMonth] = useState(initialPeriod.month);
 
-  const isManager = canUsePunchAdmin({ role: currentUser?.role, capabilities: currentUser?.capabilities }, storeConfig.policies);
+  const actor = { role: currentUser?.role, capabilities: currentUser?.capabilities };
+  const canManageTardiness = canUsePunchAdmin(actor, storeConfig.policies);
+  const canViewTardiness = canViewTeamAttendance(actor, storeConfig.policies);
 
   // 提交遲到記錄
   const handleSubmit = async (e: React.FormEvent) => {
@@ -132,12 +134,12 @@ export default function TardinessPage() {
     }
   };
 
-  if (!isManager) {
+  if (!canViewTardiness) {
     return (
       <div className="min-h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
-          <p className="text-gray-600">僅店長、副店與老闆可以管理遲到記錄</p>
+          <p className="text-gray-600">僅店長、副店、老闆、會計或具薪資／打卡管理授權者可查閱遲到記錄</p>
         </div>
       </div>
     );
@@ -148,9 +150,12 @@ export default function TardinessPage() {
       {/* 頁頭 */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900">遲到管理</h2>
+          <h2 className="text-2xl font-bold text-gray-900">
+            {canManageTardiness ? "遲到管理" : "遲到查詢"}
+          </h2>
           <p className="text-sm text-gray-500 mt-1">
             目前店別：{SITES[activeSiteId].displayName}（僅顯示此店員工）
+            {!canManageTardiness ? " · 僅供查閱，新增／刪除請由店長或打卡管理授權者操作" : ""}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
@@ -161,7 +166,7 @@ export default function TardinessPage() {
             onMonthChange={setFilterMonth}
             count={monthRecords.length}
           />
-          {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
+          {canManageTardiness && (
             <button
               onClick={() => setShowForm(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -314,13 +319,15 @@ export default function TardinessPage() {
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">日期</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">遲到分鐘</th>
                 <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">備註</th>
-                <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">動作</th>
+                {canManageTardiness ? (
+                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700">動作</th>
+                ) : null}
               </tr>
             </thead>
             <tbody className="divide-y">
               {monthRecords.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-gray-500">
+                  <td colSpan={canManageTardiness ? 5 : 4} className="px-4 py-8 text-center text-gray-500">
                     本月沒有遲到記錄
                   </td>
                 </tr>
@@ -333,16 +340,16 @@ export default function TardinessPage() {
                       <span className="text-red-600 font-medium">{record.minutes}分鐘</span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">{record.notes}</td>
-                    <td className="px-4 py-3 text-sm">
-                      {(currentUser?.role === "owner" || currentUser?.role === "manager") && (
+                    {canManageTardiness ? (
+                      <td className="px-4 py-3 text-sm">
                         <button
                           onClick={() => void handleDeleteRecord(record)}
                           className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
                         >
                           刪除
                         </button>
-                      )}
-                    </td>
+                      </td>
+                    ) : null}
                   </tr>
                 ))
               )}
