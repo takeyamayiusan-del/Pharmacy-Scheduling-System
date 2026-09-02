@@ -18,7 +18,8 @@
     "data:seed-users": "node scripts/seed-local-users.mjs",
     "data:cleanup-attachments": "node scripts/cleanup-expired-attachments.mjs",
     "data:pack-usb": "powershell -ExecutionPolicy Bypass -File scripts/pack-data-for-usb.ps1",
-    "data:pack-branch-usb": "powershell -ExecutionPolicy Bypass -File scripts/pack-usb-for-branch.ps1"
+    "data:pack-branch-usb": "powershell -ExecutionPolicy Bypass -File scripts/pack-usb-for-branch.ps1",
+    "sop:print": "node scripts/open-sop-for-print.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

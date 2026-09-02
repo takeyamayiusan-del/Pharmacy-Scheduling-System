@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>家禾體系排班系統 — 操作教學 SOP</title>
+  <style>
+    :root {
+      --ink: #1e293b;
+      --muted: #64748b;
+      --accent: #0369a1;
+      --border: #e2e8f0;
+      --bg: #f8fafc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Noto Sans TC", "Microsoft JhengHei", "PingFang TC", sans-serif;
+      color: var(--ink);
+      line-height: 1.65;
+      font-size: 11pt;
+      max-width: 210mm;
+      margin: 0 auto;
+      padding: 12mm 14mm;
+      background: #fff;
+    }
+    h1 { font-size: 22pt; color: var(--accent); margin: 0 0 6px; }
+    h2 { font-size: 14pt; color: var(--accent); border-bottom: 2px solid var(--accent); padding-bottom: 4px; margin-top: 24px; page-break-after: avoid; }
+    h3 { font-size: 12pt; margin-top: 16px; page-break-after: avoid; }
+    p { margin: 8px 0; }
+    .subtitle { color: var(--muted); font-size: 10pt; margin-bottom: 20px; }
+    .cover { text-align: center; padding: 40px 0 30px; page-break-after: always; }
+    .cover .meta { margin-top: 30px; font-size: 10pt; color: var(--muted); }
+    table { width: 100%; border-collapse: collapse; margin: 10px 0 16px; font-size: 10pt; }
+    th, td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; }
+    th { background: var(--bg); font-weight: 600; }
+    ul, ol { margin: 6px 0 12px; padding-left: 22px; }
+    li { margin: 4px 0; }
+    .checklist { list-style: none; padding-left: 0; }
+    .checklist li::before { content: "☐ "; font-weight: bold; }
+    .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 10px 12px; font-size: 10pt; margin: 12px 0; }
+    .warn { background: #fef2f2; border: 1px solid #fecaca; }
+    .tip { background: #eff6ff; border: 1px solid #bfdbfe; }
+    .page-break { page-break-before: always; }
+    .toc a { color: var(--accent); text-decoration: none; }
+    .toc li { margin: 6px 0; }
+    @media print {
+      body { padding: 0; max-width: none; }
+      a { color: inherit; text-decoration: none; }
+      .no-print { display: none; }
+    }
+    .no-print {
+      position: fixed; top: 12px; right: 12px;
+      background: var(--accent); color: #fff;
+      border: none; padding: 10px 16px; border-radius: 8px;
+      cursor: pointer; font-size: 11pt; z-index: 99;
+    }
+  </style>
+</head>
+<body>
+  <button class="no-print" onclick="window.print()">🖨 列印 / 存成 PDF</button>
+
+  <section class="cover">
+    <h1>家禾體系排班系統</h1>
+    <p class="subtitle">操作教學標準作業程序（SOP）</p>
+    <p>耀聖藥局（竹山）／家禾藥局（集集）</p>
+    <p class="meta">版本：2026-09　｜　列印說明：Chrome / Edge → Ctrl+P → 另存為 PDF</p>
+  </section>
+
+  <section>
+    <h2>目錄</h2>
+    <ol class="toc">
+      <li><a href="#s1">系統簡介與網址</a></li>
+      <li><a href="#s2">登入方式（員工／管理端）</a></li>
+      <li><a href="#s3">角色與權限一覽</a></li>
+      <li><a href="#s4">竹山店 vs 集集店 — 設定差異</a></li>
+      <li><a href="#s5">兩店上線前檢查表（必勾）</a></li>
+      <li><a href="#s6">每月固定作業流程</a></li>
+      <li><a href="#s7">班表與排休</a></li>
+      <li><a href="#s8">上下班打卡</a></li>
+      <li><a href="#s9">請假／換班／加班／補登</a></li>
+      <li><a href="#s10">工時統計與遲到</a></li>
+      <li><a href="#s11">薪資結算與查詢</a></li>
+      <li><a href="#s12">員工管理與離職結清</a></li>
+      <li><a href="#s13">店務需求、訂餐、公告板</a></li>
+      <li><a href="#s14">教育訓練</a></li>
+      <li><a href="#s15">日常維護與更新</a></li>
+      <li><a href="#s16">常見問題</a></li>
+    </ol>
+  </section>
+
+  <section id="s1" class="page-break">
+    <h2>1. 系統簡介與網址</h2>
+    <p>本系統供<strong>排班、打卡、請假、薪資、店務</strong>等人事作業。竹山與集集共用同一套程式，資料依<strong>店別</strong>隔離。</p>
+    <table>
+      <tr><th>項目</th><th>說明</th></tr>
+      <tr><td>店內網址</td><td>http://localhost:3000（主機開機後）</td></tr>
+      <tr><td>外網網址</td><td>Tailscale Funnel（固定 *.ts.net，詳見部署 SOP）</td></tr>
+      <tr><td>建議瀏覽器</td><td>Chrome、Edge（手機打卡需允許 GPS）</td></tr>
+      <tr><td>切換店別</td><td>老闆／會計：畫面上方可切「竹山／集集」</td></tr>
+    </table>
+    <div class="note tip">手機使用外網時請用 <strong>4G</strong> 測試打卡，店內 Wi‑Fi 有時無法模擬外網情境。</div>
+  </section>
+
+  <section id="s2">
+    <h2>2. 登入方式</h2>
+    <h3>2.1 員工登入</h3>
+    <ol>
+      <li>開啟登入頁 → 選「<strong>員工登入</strong>」</li>
+      <li>輸入帳號、密碼 → 成功後進入「<strong>上下班打卡</strong>」</li>
+    </ol>
+    <h3>2.2 管理端登入（店長／副店／主任／老闆）</h3>
+    <ol>
+      <li>選「<strong>管理端登入</strong>」</li>
+      <li>成功後進入「<strong>月曆式班表</strong>」</li>
+    </ol>
+    <div class="note warn">主任職位權限同員工，但必須用<strong>管理端登入</strong>。帳密由店長在員工管理建立。</div>
+    <h3>2.3 登入後可能跳出的視窗</h3>
+    <ul>
+      <li><strong>公告</strong>（店長發布的重要訊息）</li>
+      <li><strong>薪資通知</strong>（薪資已發布時）</li>
+      <li><strong>排休提醒</strong>（每月 20 日起，若下月尚未選排休）</li>
+    </ul>
+  </section>
+
+  <section id="s3" class="page-break">
+    <h2>3. 角色與權限一覽</h2>
+    <table>
+      <tr><th>角色</th><th>登入分頁</th><th>主要能做什麼</th></tr>
+      <tr><td>老闆</td><td>管理端</td><td>兩店切換、權限政策、薪資結算、全部管理功能（不打卡）</td></tr>
+      <tr><td>店長</td><td>管理端</td><td>本店排班、審核、員工管理、獎金登錄、打卡管理</td></tr>
+      <tr><td>副店</td><td>管理端</td><td>預設同店長（可於店家設定關閉「副店等同店長」）</td></tr>
+      <tr><td>主任</td><td>管理端</td><td>權限同員工，可額外勾選排班等能力</td></tr>
+      <tr><td>員工</td><td>員工</td><td>打卡、請假、看班表、薪資查詢</td></tr>
+      <tr><td>會計</td><td>管理端</td><td>員工身分 + 勾選「薪資結算」→ 可切店結算薪資；排班打卡仍限所屬店</td></tr>
+    </table>
+    <h3>額外授權（Capabilities）</h3>
+    <table>
+      <tr><th>授權項目</th><th>開啟後可進入</th></tr>
+      <tr><td>排班</td><td>單人排班、固定班表、編輯班表</td></tr>
+      <tr><td>薪資結算</td><td>薪資結算頁（通常僅老闆／會計）</td></tr>
+      <tr><td>員工管理</td><td>員工管理、離職結清</td></tr>
+      <tr><td>店家設定</td><td>店規、班別、權限政策</td></tr>
+      <tr><td>打卡管理</td><td>打卡管理、遲到管理</td></tr>
+    </table>
+  </section>
+
+  <section id="s4">
+    <h2>4. 竹山店 vs 集集店 — 設定差異</h2>
+    <table>
+      <tr><th>項目</th><th>竹山（耀聖）</th><th>集集（家禾）</th></tr>
+      <tr><td>班別</td><td>A–E 傳統班別</td><td>進階班別目錄（多段休息）</td></tr>
+      <tr><td>禮三輪值晚班</td><td>預設開啟</td><td>預設關閉</td></tr>
+      <tr><td>平日排休額度</td><td>每月 2 天</td><td>0（以週六池為主）</td></tr>
+      <tr><td>週六排休</td><td>固定額度 2 天</td><td>月池模式</td></tr>
+      <tr><td>只能休半天</td><td>關</td><td>開</td></tr>
+      <tr><td>假別遞延</td><td>關</td><td>開</td></tr>
+      <tr><td>審核關卡</td><td>店長任一可結案</td><td>店長→副店→老闆 順序</td></tr>
+      <tr><td>變形工時</td><td>兩週變形</td><td>八週變形</td></tr>
+      <tr><td>打卡補登上限</td><td>不限</td><td>每月 2 次</td></tr>
+      <tr><td>GPS 圍籬設定鍵</td><td>geofence</td><td>geofence:jiji</td></tr>
+    </table>
+    <div class="note">兩店設定在「店家設定」頁，請用上方<strong>切店</strong>後分別檢查，不可共用一份設定。</div>
+  </section>
+
+  <section id="s5" class="page-break">
+    <h2>5. 兩店上線前檢查表（店長／老闆逐項勾選）</h2>
+    <h3>5.1 帳號與權限</h3>
+    <ul class="checklist">
+      <li>每位員工已建立帳號，所屬店別正確（竹山／集集）</li>
+      <li>已改掉預設密碼（不可再用 admin123、boss123）</li>
+      <li>店長、副店、會計角色與授權正確</li>
+      <li>老闆可切換兩店並看到正確人員</li>
+    </ul>
+    <h3>5.2 店家設定（每店各做一次）</h3>
+    <ul class="checklist">
+      <li>店名、預設班、班別時段已確認</li>
+      <li>GPS 打卡圍籬座標正確（打卡管理或店家設定）</li>
+      <li>排休規則（週六池／平日額度／週日公休）符合店規</li>
+      <li>審核關卡（任一結案／順序審核）已設定</li>
+      <li>假別上限與給薪（特休、病假等）已核對</li>
+    </ul>
+    <h3>5.3 班表與打卡</h3>
+    <ul class="checklist">
+      <li>當月班表已排定或可排</li>
+      <li>員工可登入打卡，GPS 在圍籬內顯示綠燈</li>
+      <li>店內、外網（4G）皆可開啟系統</li>
+      <li>請假／加班／換班可送出，店長可審核</li>
+    </ul>
+    <h3>5.4 薪資（如有使用）</h3>
+    <ul class="checklist">
+      <li>員工薪資結構（底薪、津貼）已登錄</li>
+      <li>會計可切店試算上月薪資</li>
+      <li>發布後員工可在「薪資查詢」看到</li>
+    </ul>
+    <h3>5.5 資料庫權限（資訊／部署時）</h3>
+    <ul class="checklist">
+      <li>已執行 <code>supabase db push</code> 至最新 migration</li>
+      <li>離職結清頁可正常開啟（無 permission denied）</li>
+    </ul>
+  </section>
+
+  <section id="s6" class="page-break">
+    <h2>6. 每月固定作業流程</h2>
+    <table>
+      <tr><th>時點</th><th>負責</th><th>動作</th></tr>
+      <tr><td>每月 1～15 日</td><td>店長</td><td>排定當月班表；維護固定班表</td></tr>
+      <tr><td>每月 20 日起</td><td>員工</td><td>「排休選擇」填下月休假日</td></tr>
+      <tr><td>排休截止前</td><td>店長</td><td>檢視排休是否額度正確 → 鎖定排休月</td></tr>
+      <tr><td>每月日常</td><td>員工</td><td>上下班打卡；請假／加班依規定申請</td></tr>
+      <tr><td>每月 1～5 日</td><td>店長</td><td>「獎金登錄」輸入上月獎金（如有）</td></tr>
+      <tr><td>每月 1～10 日</td><td>會計／老闆</td><td>「薪資結算」試算上月 → 核對工時 → 發布</td></tr>
+      <tr><td>發布後</td><td>員工</td><td>「薪資查詢」下載薪資單 PDF</td></tr>
+    </table>
+  </section>
+
+  <section id="s7">
+    <h2>7. 班表與排休</h2>
+    <h3>7.1 月曆式班表（/schedule）</h3>
+    <ul>
+      <li><strong>全員</strong>：查看班表、公告板、個人薪資條預覽</li>
+      <li><strong>店長</strong>：點格子改班別；鎖定／解鎖排休月；國定假日一鍵；匯出 PDF</li>
+    </ul>
+    <h3>7.2 我的班表（/my-schedule）</h3>
+    <p>個人月曆；手機可左右滑動；可「匯出圖片」存檔。</p>
+    <h3>7.3 排休選擇（/leave-selection）</h3>
+    <ol>
+      <li>選下個月</li>
+      <li>點日期切換排休（即時儲存）</li>
+      <li>注意週六／平日額度；集集可能有「只能休半天」</li>
+    </ol>
+    <h3>7.4 固定班表／單人排班</h3>
+    <p>店長於「固定班表」設每週固定班；「單人排班」可一次套用預設班填滿整月。</p>
+  </section>
+
+  <section id="s8" class="page-break">
+    <h2>8. 上下班打卡</h2>
+    <h3>8.1 一般流程</h3>
+    <ol>
+      <li>進入「上下班打卡」→ 等待 GPS 顯示「已在打卡範圍內」</li>
+      <li>按畫面大按鈕打卡（依班表顯示上班／下班時段）</li>
+      <li>遲到會要求填原因；下班逾時可一鍵申請加班</li>
+    </ol>
+    <h3>8.2 休假日來店加班</h3>
+    <p>班別顯示「休假」時，使用下方「<strong>上班打卡（加班）</strong>」「<strong>下班打卡（加班）</strong>」；畫面會顯示進度與紀錄。</p>
+    <h3>8.3 漏打卡</h3>
+    <p>員工：「打卡補登」申請 → 店長審核。<br/>店長：「打卡管理」可直接代登（不計入員工補登次數）。</p>
+  </section>
+
+  <section id="s9">
+    <h2>9. 請假／換班／加班</h2>
+    <table>
+      <tr><th>功能</th><th>路徑</th><th>重點</th></tr>
+      <tr><td>請假</td><td>請假申請</td><td>選假別、時段；特休會扣餘額；核准後班表顯示休假</td></tr>
+      <tr><td>特休總表</td><td>請假申請內連結</td><td>查年度配額與已休天數</td></tr>
+      <tr><td>換班</td><td>換班申請</td><td>選對象與互換日期；週日公休日不可換</td></tr>
+      <tr><td>加班</td><td>加班申請</td><td>選補休或加班費；店長審核</td></tr>
+      <tr><td>假別遞延</td><td>假別遞延</td><td>僅集集預設開啟</td></tr>
+    </table>
+    <div class="note">審核：竹山通常店長直接核准；集集依關卡順序（店長→副店→老闆）。</div>
+  </section>
+
+  <section id="s10" class="page-break">
+    <h2>10. 工時統計與遲到</h2>
+    <h3>工時統計（/attendance）</h3>
+    <ul>
+      <li>預設顯示<strong>上個月</strong>（方便結薪）</li>
+      <li>員工只看自己；店長／會計可看全店（會計可切店）</li>
+      <li>可匯出 CSV、打卡 PDF</li>
+    </ul>
+    <h3>遲到管理（/attendance/tardiness）</h3>
+    <p>店長檢視遲到紀錄；已請假覆蓋時段不計遲到。</p>
+  </section>
+
+  <section id="s11">
+    <h2>11. 薪資結算與查詢</h2>
+    <h3>店長 — 獎金登錄</h3>
+    <p>有獎金權、無結算權者進入「薪資結算」頁會看到<strong>獎金登錄</strong>，輸入個人／團體獎金。</p>
+    <h3>會計／老闆 — 薪資結算</h3>
+    <ol>
+      <li>切換正確店別</li>
+      <li>選擇結算月份（預設上月）</li>
+      <li>核對工時、請假扣款、加班、遲到</li>
+      <li>按「發布」→ 員工即可查詢</li>
+    </ol>
+    <h3>員工 — 薪資查詢</h3>
+    <p>僅能看<strong>已發布</strong>月份；可匯出 PDF／Excel。</p>
+  </section>
+
+  <section id="s12" class="page-break">
+    <h2>12. 員工管理與離職結清</h2>
+    <h3>員工管理</h3>
+    <ul>
+      <li>新增：帳號、密碼、角色、所屬店、入職日</li>
+      <li>到期日：最後工作日；到期後班表不顯示</li>
+      <li>停用：無法登入，歷史資料保留</li>
+    </ul>
+    <h3>離職結清（/employees/offboarding）</h3>
+    <ol>
+      <li>選員工、離職類型（資遣／自離／退休）</li>
+      <li>填最後工作日、結算月份</li>
+      <li>系統試算：資遣費、未休特休、補休、當月打卡</li>
+      <li>儲存草稿 → 確認後「結案」（寫入到期日、可停用帳號）</li>
+    </ol>
+    <div class="note warn">試算僅供內部參考；正式金額請會計／勞檢確認。最後月薪資仍至「薪資結算」處理。</div>
+  </section>
+
+  <section id="s13">
+    <h2>13. 店務需求、訂餐、公告板</h2>
+    <h3>店務需求（/shop-ops）</h3>
+    <p>叫藥、日常採購、客人訂購、客訂管理（匯出 Excel／PDF）。</p>
+    <h3>訂餐（/meal-order）</h3>
+    <p>發起訂餐活動 → 員工填單 → 負責人標記已訂購；可發公告。</p>
+    <h3>公告板（班表頁上方）</h3>
+    <p>店長可發公告、公休通知；員工可發代班需求、交班留言。</p>
+  </section>
+
+  <section id="s14">
+    <h2>14. 教育訓練</h2>
+    <ul>
+      <li><strong>教育訓練</strong>：員工學習課程、測驗</li>
+      <li><strong>訓練管理</strong>：店長建立課程、上傳教材、追蹤進度</li>
+    </ul>
+  </section>
+
+  <section id="s15" class="page-break">
+    <h2>15. 日常維護與更新</h2>
+    <h3>更新網站（不需重啟外網）</h3>
+    <pre style="background:#f1f5f9;padding:10px;border-radius:6px;font-size:9pt;">powershell -ExecutionPolicy Bypass -File scripts\windows-update-site.ps1</pre>
+    <p>完成後瀏覽器 <strong>Ctrl+F5</strong> 強制重新整理。</p>
+    <h3>外網打不開時</h3>
+    <pre style="background:#f1f5f9;padding:10px;border-radius:6px;font-size:9pt;">powershell -ExecutionPolicy Bypass -File scripts\windows-restore-funnel.ps1</pre>
+    <h3>資料庫更新</h3>
+    <pre style="background:#f1f5f9;padding:10px;border-radius:6px;font-size:9pt;">supabase db push --local</pre>
+  </section>
+
+  <section id="s16">
+    <h2>16. 常見問題</h2>
+    <table>
+      <tr><th>問題</th><th>處理</th></tr>
+      <tr><td>打卡顯示不在範圍內</td><td>確認 GPS 已開啟；請店長檢查圍籬座標</td></tr>
+      <tr><td>外網能開但登入失敗</td><td>Supabase 須允許外網網址（部署 SOP E-5）</td></tr>
+      <tr><td>看不到其他店資料</td><td>正常；僅老闆／會計（薪資）可切店</td></tr>
+      <tr><td>離職結清 permission denied</td><td>執行最新 db migration（權限補強）</td></tr>
+      <tr><td>班表手機太擠</td><td>「我的班表」可左右滑動；匯出圖片與電腦版相同</td></tr>
+    </table>
+  </section>
+
+  <footer style="margin-top:40px;padding-top:12px;border-top:1px solid var(--border);font-size:9pt;color:var(--muted);text-align:center;">
+    家禾體系排班系統 · 操作教學 SOP · 列印日期請自行填寫
+  </footer>
+</body>
+</html>
