@@ -37,13 +37,17 @@ export function toDbRole(role: string): string {
   if (role === "staff") return "employee";
   if (role === "owner") return "boss";
   if (role === "director") return "director";
+  if (role === "accountant") return "accountant";
   return role;
 }
 
-export function fromDbRole(role: string): "owner" | "manager" | "deputy" | "director" | "staff" {
+export function fromDbRole(
+  role: string
+): "owner" | "manager" | "deputy" | "director" | "accountant" | "staff" {
   if (role === "boss") return "owner";
   if (role === "manager") return "manager";
   if (role === "deputy") return "deputy";
   if (role === "director") return "director";
+  if (role === "accountant") return "accountant";
   return "staff";
 }

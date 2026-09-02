@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { useApp, type Employee } from "@/lib/context/AppContext";
 import { SITE_IDS, SITES, type SiteId } from "@/lib/sites";
-import { APP_ROLE_LABELS, isStaffLikeRole, type AppRole } from "@/lib/auth/roles";
+import { APP_ROLE_LABELS, isAccountantRole, isStaffLikeRole, type AppRole } from "@/lib/auth/roles";
 import {
   CAPABILITY_KEYS,
   CAPABILITY_LABELS,
@@ -13,6 +13,12 @@ import {
   describeCapabilityGrants,
   type UserCapabilities,
 } from "@/lib/auth/permissions";
+import {
+  GENDER_LABELS,
+  type EmergencyContact,
+  type EmployeeDependent,
+  type Gender,
+} from "@/lib/employees/profile";
 import {
   WORK_HOURS_REGIME_OPTIONS,
   type WorkHoursRegime,
@@ -27,6 +33,39 @@ const emptyCaps = (): UserCapabilities => ({
   store_settings: false,
   punch_admin: false,
 });
+
+const emptyContact = (): EmergencyContact => ({ name: "", phone: "", relationship: "" });
+const emptyDependent = (): EmployeeDependent => ({
+  name: "",
+  nationalId: "",
+  birthDate: "",
+  enrollmentDate: "",
+  relationship: "",
+});
+
+type EmployeeFormData = {
+  name: string;
+  role: AppRole;
+  username: string;
+  password: string;
+  hireDate: string;
+  endDate: string;
+  siteId: SiteId;
+  workHoursRegime: "" | WorkHoursRegime;
+  baselineShift: string;
+  leaveSelectionMode: "full_day" | "shift_rest";
+  halfDayWorkShift: string;
+  capabilities: UserCapabilities;
+  nationalId: string;
+  birthDate: string;
+  gender: "" | Gender;
+  registeredAddress: string;
+  mailingAddress: string;
+  mailingSameAsRegistered: boolean;
+  phone: string;
+  emergencyContacts: EmergencyContact[];
+  dependents: EmployeeDependent[];
+};
 
 export default function EmployeesPage() {
   const {
@@ -43,23 +82,35 @@ export default function EmployeesPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selfPassword, setSelfPassword] = useState({ newPassword: "", confirmPassword: "" });
   const [changingOwnPassword, setChangingOwnPassword] = useState(false);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<EmployeeFormData>({
     name: "",
-    role: "staff" as AppRole,
+    role: "staff",
     username: "",
     password: "",
     hireDate: new Date().toISOString().split('T')[0],
     endDate: "",
     siteId: activeSiteId as SiteId,
-    workHoursRegime: "" as "" | WorkHoursRegime,
+    workHoursRegime: "",
     baselineShift: "",
-    leaveSelectionMode: "full_day" as "full_day" | "shift_rest",
+    leaveSelectionMode: "full_day",
     halfDayWorkShift: "",
     capabilities: emptyCaps(),
+    nationalId: "",
+    birthDate: "",
+    gender: "",
+    registeredAddress: "",
+    mailingAddress: "",
+    mailingSameAsRegistered: false,
+    phone: "",
+    emergencyContacts: [emptyContact()],
+    dependents: [],
   });
   
   const loadEmployee = (employee: Employee) => {
     setEditingId(employee.id);
+    const contacts = employee.emergencyContacts?.length
+      ? employee.emergencyContacts.map((c) => ({ ...c }))
+      : [emptyContact()];
     setFormData({
       name: employee.name,
       role: employee.role,
@@ -73,6 +124,15 @@ export default function EmployeesPage() {
       leaveSelectionMode: employee.isHalfDayLeaveRule ? "shift_rest" : "full_day",
       halfDayWorkShift: employee.halfDayWorkShift ?? "",
       capabilities: { ...emptyCaps(), ...employee.capabilities },
+      nationalId: employee.nationalId ?? "",
+      birthDate: employee.birthDate ?? "",
+      gender: employee.gender ?? "",
+      registeredAddress: employee.registeredAddress ?? "",
+      mailingAddress: employee.mailingAddress ?? "",
+      mailingSameAsRegistered: employee.mailingSameAsRegistered ?? false,
+      phone: employee.phone ?? "",
+      emergencyContacts: contacts,
+      dependents: employee.dependents?.map((d) => ({ ...d })) ?? [],
     });
     setShowForm(true);
   };
@@ -91,6 +151,15 @@ export default function EmployeesPage() {
       leaveSelectionMode: "full_day",
       halfDayWorkShift: "",
       capabilities: emptyCaps(),
+      nationalId: "",
+      birthDate: "",
+      gender: "",
+      registeredAddress: "",
+      mailingAddress: "",
+      mailingSameAsRegistered: false,
+      phone: "",
+      emergencyContacts: [emptyContact()],
+      dependents: [],
     });
     setEditingId(null);
     setShowForm(false);
@@ -101,10 +170,25 @@ export default function EmployeesPage() {
     e.preventDefault();
     
     try {
-      const caps =
+      const filledContacts = formData.emergencyContacts.filter(
+        (c) => c.name.trim() && c.phone.trim()
+      );
+      if (filledContacts.length === 0) {
+        alert("請至少填寫一位緊急聯絡人（姓名與電話）");
+        return;
+      }
+      if (filledContacts.length > 2) {
+        alert("緊急聯絡人最多兩位");
+        return;
+      }
+
+      let caps =
         isStaffLikeRole(formData.role) || formData.role === "deputy"
-          ? formData.capabilities
+          ? { ...formData.capabilities }
           : emptyCaps();
+      if (isAccountantRole(formData.role)) {
+        caps = { ...caps, payroll: false };
+      }
 
       // 升為店長時：同店其他店長可選擇降為員工
       if (formData.role === "manager") {
@@ -143,6 +227,17 @@ export default function EmployeesPage() {
               ? formData.halfDayWorkShift.trim() || null
               : null,
           capabilities: caps,
+          nationalId: formData.nationalId.trim() || undefined,
+          birthDate: formData.birthDate || undefined,
+          gender: formData.gender || null,
+          registeredAddress: formData.registeredAddress.trim() || undefined,
+          mailingAddress: formData.mailingSameAsRegistered
+            ? undefined
+            : formData.mailingAddress.trim() || undefined,
+          mailingSameAsRegistered: formData.mailingSameAsRegistered,
+          phone: formData.phone.trim() || undefined,
+          emergencyContacts: filledContacts,
+          dependents: formData.dependents.filter((d) => d.name.trim()),
         };
         if (formData.password) {
           updates.password = formData.password;
@@ -176,6 +271,17 @@ export default function EmployeesPage() {
               ? formData.halfDayWorkShift.trim() || null
               : null,
           capabilities: caps,
+          nationalId: formData.nationalId.trim() || undefined,
+          birthDate: formData.birthDate || undefined,
+          gender: formData.gender || null,
+          registeredAddress: formData.registeredAddress.trim() || undefined,
+          mailingAddress: formData.mailingSameAsRegistered
+            ? undefined
+            : formData.mailingAddress.trim() || undefined,
+          mailingSameAsRegistered: formData.mailingSameAsRegistered,
+          phone: formData.phone.trim() || undefined,
+          emergencyContacts: filledContacts,
+          dependents: formData.dependents.filter((d) => d.name.trim()),
         });
         if (formData.siteId !== activeSiteId) {
           alert(
@@ -215,6 +321,7 @@ export default function EmployeesPage() {
       case "manager": return "bg-blue-100 text-blue-800";
       case "deputy": return "bg-cyan-100 text-cyan-800";
       case "director": return "bg-amber-100 text-amber-800";
+      case "accountant": return "bg-indigo-100 text-indigo-800";
       case "staff": return "bg-green-100 text-green-800";
     }
   };
@@ -243,7 +350,7 @@ export default function EmployeesPage() {
   };
   
   const grantableCapabilityKeys =
-    currentUser?.role === "owner"
+    currentUser?.role === "owner" || currentUser?.role === "manager" || currentUser?.role === "deputy"
       ? CAPABILITY_KEYS
       : MANAGER_GRANTABLE_CAPABILITIES;
 
@@ -291,7 +398,7 @@ export default function EmployeesPage() {
       </div>
       
       {/* 員工統計 */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <div className="app-panel p-4">
           <h3 className="app-meta mb-2">總員工數</h3>
           <p className="text-2xl font-semibold text-sky-600">
@@ -314,6 +421,12 @@ export default function EmployeesPage() {
           <h3 className="app-meta mb-2">主任</h3>
           <p className="text-2xl font-semibold text-amber-600">
             {employees.filter(e => e.role === "director").length}人
+          </p>
+        </div>
+        <div className="app-panel p-4">
+          <h3 className="app-meta mb-2">會計</h3>
+          <p className="text-2xl font-semibold text-indigo-600">
+            {employees.filter(e => e.role === "accountant").length}人
           </p>
         </div>
         <div className="app-panel p-4">
@@ -406,11 +519,12 @@ export default function EmployeesPage() {
                 >
                   <option value="staff">員工</option>
                   <option value="director">主任</option>
+                  <option value="accountant">會計</option>
                   <option value="deputy">副店</option>
                   <option value="manager">店長</option>
                 </select>
                 <p className="mt-1 text-xs text-gray-500">
-                  主任：權限同員工，但請用「管理端登入」；可勾選額外授權（如薪資、排班）。
+                  主任：權限同員工，請用「管理端登入」。會計：跨店薪資結算、仍屬單店上班，請用「管理端登入」。
                   換店長：把新任改成「店長」，儲存時可選擇把舊店長降為員工。
                   細部誰能排班／看薪資請到「店家設定 → 權限設定」。
                 </p>
@@ -474,16 +588,24 @@ export default function EmployeesPage() {
                   !storeConfig.policies.roleCapabilities.deputyLikeManager)) &&
                 storeConfig.policies.roleCapabilities.allowStaffGrants && (
                 <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                  <p className="text-sm font-medium text-slate-800">額外授權（員工／主任／非店長副店）</p>
+                  <p className="text-sm font-medium text-slate-800">額外授權</p>
                   <p className="text-xs text-slate-500">
-                    例如會計只開「薪資結算」、資深員工只開「排班」。店長僅能授權排班／打卡管理，薪資結算請由老闆設定。
+                    老闆／店長可勾選多項能力，讓員工具備接近店長的權限（排班、薪資、員工管理、店家設定、打卡管理）。
+                    {isAccountantRole(formData.role)
+                      ? " 會計職位已內建薪資結算與跨店檢視，無需再勾「薪資結算」。"
+                      : ""}
                   </p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     {grantableCapabilityKeys.map((key) => (
                       <label key={key} className="inline-flex items-center gap-2 text-sm">
                         <input
                           type="checkbox"
-                          checked={Boolean(formData.capabilities[key])}
+                          checked={
+                            isAccountantRole(formData.role) && key === "payroll"
+                              ? false
+                              : Boolean(formData.capabilities[key])
+                          }
+                          disabled={isAccountantRole(formData.role) && key === "payroll"}
                           onChange={(e) =>
                             setFormData({
                               ...formData,
@@ -495,6 +617,7 @@ export default function EmployeesPage() {
                           }
                         />
                         {CAPABILITY_LABELS[key]}
+                        {isAccountantRole(formData.role) && key === "payroll" ? "（職位內建）" : ""}
                       </label>
                     ))}
                   </div>
@@ -606,6 +729,240 @@ export default function EmployeesPage() {
                 </p>
               </div>
             </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-4 space-y-4">
+              <h4 className="text-sm font-semibold text-slate-900">基本資料</h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="block text-sm">
+                  <span className="font-medium text-gray-800">身分證字號</span>
+                  <input
+                    type="text"
+                    value={formData.nationalId}
+                    onChange={(e) => setFormData({ ...formData, nationalId: e.target.value.toUpperCase() })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg"
+                    placeholder="A123456789"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-gray-800">出生日期</span>
+                  <input
+                    type="date"
+                    value={formData.birthDate}
+                    onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg"
+                  />
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-gray-800">性別</span>
+                  <select
+                    value={formData.gender}
+                    onChange={(e) =>
+                      setFormData({ ...formData, gender: e.target.value as "" | Gender })
+                    }
+                    className="mt-1 w-full px-3 py-2 border rounded-lg"
+                  >
+                    <option value="">請選擇</option>
+                    {(Object.entries(GENDER_LABELS) as [Gender, string][]).map(([value, label]) => (
+                      <option key={value} value={value}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block text-sm">
+                  <span className="font-medium text-gray-800">聯絡電話</span>
+                  <input
+                    type="tel"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg"
+                  />
+                </label>
+                <label className="block text-sm md:col-span-2">
+                  <span className="font-medium text-gray-800">戶籍地址</span>
+                  <input
+                    type="text"
+                    value={formData.registeredAddress}
+                    onChange={(e) => setFormData({ ...formData, registeredAddress: e.target.value })}
+                    className="mt-1 w-full px-3 py-2 border rounded-lg"
+                  />
+                </label>
+                <label className="inline-flex items-center gap-2 text-sm md:col-span-2">
+                  <input
+                    type="checkbox"
+                    checked={formData.mailingSameAsRegistered}
+                    onChange={(e) =>
+                      setFormData({ ...formData, mailingSameAsRegistered: e.target.checked })
+                    }
+                  />
+                  通訊地址同戶籍
+                </label>
+                {!formData.mailingSameAsRegistered && (
+                  <label className="block text-sm md:col-span-2">
+                    <span className="font-medium text-gray-800">通訊地址</span>
+                    <input
+                      type="text"
+                      value={formData.mailingAddress}
+                      onChange={(e) => setFormData({ ...formData, mailingAddress: e.target.value })}
+                      className="mt-1 w-full px-3 py-2 border rounded-lg"
+                    />
+                  </label>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-800">緊急聯絡人（至少 1 位、最多 2 位）</p>
+                  {formData.emergencyContacts.length < 2 && (
+                    <button
+                      type="button"
+                      className="text-xs text-sky-700 hover:underline"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          emergencyContacts: [...formData.emergencyContacts, emptyContact()],
+                        })
+                      }
+                    >
+                      + 新增第二位
+                    </button>
+                  )}
+                </div>
+                {formData.emergencyContacts.map((contact, index) => (
+                  <div key={index} className="grid grid-cols-1 md:grid-cols-3 gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                    <input
+                      type="text"
+                      value={contact.name}
+                      onChange={(e) => {
+                        const next = [...formData.emergencyContacts];
+                        next[index] = { ...next[index], name: e.target.value };
+                        setFormData({ ...formData, emergencyContacts: next });
+                      }}
+                      className="px-3 py-2 border rounded-lg text-sm"
+                      placeholder="姓名"
+                    />
+                    <input
+                      type="text"
+                      value={contact.relationship ?? ""}
+                      onChange={(e) => {
+                        const next = [...formData.emergencyContacts];
+                        next[index] = { ...next[index], relationship: e.target.value };
+                        setFormData({ ...formData, emergencyContacts: next });
+                      }}
+                      className="px-3 py-2 border rounded-lg text-sm"
+                      placeholder="關係（選填）"
+                    />
+                    <input
+                      type="tel"
+                      value={contact.phone}
+                      onChange={(e) => {
+                        const next = [...formData.emergencyContacts];
+                        next[index] = { ...next[index], phone: e.target.value };
+                        setFormData({ ...formData, emergencyContacts: next });
+                      }}
+                      className="px-3 py-2 border rounded-lg text-sm"
+                      placeholder="電話"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-800">眷屬加保（健保，選填）</p>
+                  <button
+                    type="button"
+                    className="text-xs text-sky-700 hover:underline"
+                    onClick={() =>
+                      setFormData({
+                        ...formData,
+                        dependents: [...formData.dependents, emptyDependent()],
+                      })
+                    }
+                  >
+                    + 新增眷屬
+                  </button>
+                </div>
+                {formData.dependents.length === 0 ? (
+                  <p className="text-xs text-slate-500">若需眷屬加保，請按「新增眷屬」填寫加保日、身分證、生日等。</p>
+                ) : (
+                  formData.dependents.map((dep, index) => (
+                    <div key={index} className="rounded-lg border border-slate-200 bg-white p-3 space-y-3">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <input
+                          type="text"
+                          value={dep.name}
+                          onChange={(e) => {
+                            const next = [...formData.dependents];
+                            next[index] = { ...next[index], name: e.target.value };
+                            setFormData({ ...formData, dependents: next });
+                          }}
+                          className="px-3 py-2 border rounded-lg text-sm"
+                          placeholder="眷屬姓名"
+                        />
+                        <input
+                          type="text"
+                          value={dep.relationship ?? ""}
+                          onChange={(e) => {
+                            const next = [...formData.dependents];
+                            next[index] = { ...next[index], relationship: e.target.value };
+                            setFormData({ ...formData, dependents: next });
+                          }}
+                          className="px-3 py-2 border rounded-lg text-sm"
+                          placeholder="關係（選填）"
+                        />
+                        <input
+                          type="text"
+                          value={dep.nationalId ?? ""}
+                          onChange={(e) => {
+                            const next = [...formData.dependents];
+                            next[index] = { ...next[index], nationalId: e.target.value.toUpperCase() };
+                            setFormData({ ...formData, dependents: next });
+                          }}
+                          className="px-3 py-2 border rounded-lg text-sm"
+                          placeholder="身分證"
+                        />
+                        <input
+                          type="date"
+                          value={dep.birthDate ?? ""}
+                          onChange={(e) => {
+                            const next = [...formData.dependents];
+                            next[index] = { ...next[index], birthDate: e.target.value };
+                            setFormData({ ...formData, dependents: next });
+                          }}
+                          className="px-3 py-2 border rounded-lg text-sm"
+                          title="生日"
+                        />
+                        <input
+                          type="date"
+                          value={dep.enrollmentDate ?? ""}
+                          onChange={(e) => {
+                            const next = [...formData.dependents];
+                            next[index] = { ...next[index], enrollmentDate: e.target.value };
+                            setFormData({ ...formData, dependents: next });
+                          }}
+                          className="px-3 py-2 border rounded-lg text-sm md:col-span-2"
+                          title="加保日期"
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        className="text-xs text-rose-700 hover:underline"
+                        onClick={() =>
+                          setFormData({
+                            ...formData,
+                            dependents: formData.dependents.filter((_, i) => i !== index),
+                          })
+                        }
+                      >
+                        移除此眷屬
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 登入帳號

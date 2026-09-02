@@ -5,7 +5,7 @@ import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedTyp
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
 import { fromDbRole, canManageSite, managerPortalDbRoles, type AppRole } from "@/lib/auth/roles";
-import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll, canEditStoreSettings, canUsePunchAdmin } from "@/lib/auth/permissions";
+import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll, canEditStoreSettings, canUsePunchAdmin, resolvePayrollViewSite } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 import {
   approvalPendingLabel,
@@ -120,6 +120,11 @@ import {
 } from "@/lib/sites";
 import { assertWritableShiftCode, isLegacyShiftCode, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 import { filterBySiteEmployeeIds } from "@/lib/attendance/siteScope";
+import type {
+  EmergencyContact,
+  EmployeeDependent,
+  EmployeeProfileFields,
+} from "@/lib/employees/profile";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -144,9 +149,9 @@ export type Employee = {
   workHoursRegime?: import("@/lib/attendance/workHoursRegime").WorkHoursRegime | null;
   /** 本月基準班（播假用） */
   baselineShift?: string | null;
-  /** 員工額外授權（排班／薪資等）；店長副店仍以店規為主 */
+  /** 員工額外授權（排班／薪資等）；店長副店仍以店規為主；會計職位自帶薪資 */
   capabilities?: import("@/lib/auth/permissions").UserCapabilities;
-};
+} & EmployeeProfileFields;
 
 export type ShiftType = "A" | "B" | "C" | "D" | "E" | "X";
 /** 班表覆寫碼：竹山 A–E／X，集集可為目錄短碼 */
@@ -920,6 +925,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     work_hours_regime?: string | null;
     baseline_shift?: string | null;
     capabilities?: unknown;
+    national_id?: string | null;
+    birth_date?: string | null;
+    gender?: string | null;
+    registered_address?: string | null;
+    mailing_address?: string | null;
+    mailing_same_as_registered?: boolean | null;
+    phone?: string | null;
   }): Employee => ({
     id: r.id,
     name: r.name,
@@ -935,17 +947,75 @@ export function AppProvider({ children }: { children: ReactNode }) {
     workHoursRegime: isWorkHoursRegime(r.work_hours_regime) ? r.work_hours_regime : null,
     baselineShift: r.baseline_shift ?? null,
     capabilities: parseUserCapabilities(r.capabilities),
+    nationalId: r.national_id ?? undefined,
+    birthDate: r.birth_date ?? undefined,
+    gender:
+      r.gender === "male" || r.gender === "female" || r.gender === "other"
+        ? r.gender
+        : null,
+    registeredAddress: r.registered_address ?? undefined,
+    mailingAddress: r.mailing_address ?? undefined,
+    mailingSameAsRegistered: r.mailing_same_as_registered ?? false,
+    phone: r.phone ?? undefined,
   });
+
+  const USER_SESSION_SELECT =
+    "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities, national_id, birth_date, gender, registered_address, mailing_address, mailing_same_as_registered, phone";
+
+  const attachEmployeeProfiles = async (rows: Employee[]): Promise<Employee[]> => {
+    if (rows.length === 0) return rows;
+    const ids = rows.map((r) => r.id);
+    const [contactsRes, dependentsRes] = await Promise.all([
+      supabase
+        .from("employee_emergency_contacts")
+        .select("id, user_id, name, relationship, phone, sort_order")
+        .in("user_id", ids)
+        .order("sort_order"),
+      supabase
+        .from("employee_dependents")
+        .select("id, user_id, name, national_id, birth_date, enrollment_date, relationship")
+        .in("user_id", ids)
+        .order("created_at"),
+    ]);
+    const contactsByUser = new Map<string, EmergencyContact[]>();
+    for (const row of contactsRes.data ?? []) {
+      const list = contactsByUser.get(row.user_id) ?? [];
+      list.push({
+        id: row.id,
+        name: row.name,
+        relationship: row.relationship ?? undefined,
+        phone: row.phone,
+      });
+      contactsByUser.set(row.user_id, list);
+    }
+    const dependentsByUser = new Map<string, EmployeeDependent[]>();
+    for (const row of dependentsRes.data ?? []) {
+      const list = dependentsByUser.get(row.user_id) ?? [];
+      list.push({
+        id: row.id,
+        name: row.name,
+        nationalId: row.national_id ?? undefined,
+        birthDate: row.birth_date ?? undefined,
+        enrollmentDate: row.enrollment_date ?? undefined,
+        relationship: row.relationship ?? undefined,
+      });
+      dependentsByUser.set(row.user_id, list);
+    }
+    return rows.map((row) => ({
+      ...row,
+      emergencyContacts: contactsByUser.get(row.id) ?? [],
+      dependents: dependentsByUser.get(row.id) ?? [],
+    }));
+  };
 
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase
       .from("users")
-      .select(
-        "id, username, name, role, is_active, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities"
-      )
+      .select(`${USER_SESSION_SELECT}, username, is_active`)
       .eq("is_active", true);
     if (data) {
-      setAllEmployees(data.map((r) => mapUserRow(r)));
+      const mapped = data.map((r) => mapUserRow(r));
+      setAllEmployees(await attachEmployeeProfiles(mapped));
     }
   }, [supabase]);
 
@@ -1359,12 +1429,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
         storeConfig.policies
       )
     ) {
-      throw new Error("僅老闆或具薪資結算授權者可切換店別");
+      throw new Error("僅老闆、會計或具薪資結算授權者可切換店別");
     }
-    const isOwner = currentUser.role === "owner";
+    const persistsViewSite = canSwitchSiteForPayroll(
+      { role: currentUser.role, capabilities: currentUser.capabilities },
+      storeConfig.policies
+    );
     setActiveSiteIdState(siteId);
-    if (isOwner) {
+    if (persistsViewSite) {
       writeActiveSiteToStorage(siteId);
+    }
+    if (currentUser.role === "owner") {
       setBulletinItems([]);
       setGeofenceLocations(defaultGeofenceLocationsForSite(siteId));
       await Promise.all([
@@ -1374,7 +1449,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ]);
       return;
     }
-    // 會計：切店僅供薪資／工時檢視；排班、打卡、圍籬仍固定所屬店
+    // 會計／薪資授權：切店僅供薪資／工時檢視；排班、打卡、圍籬仍固定所屬店
     await loadBulletinItems(siteId);
   };
 
@@ -1656,19 +1731,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (mounted) {
             const { data: userRow } = await supabase
               .from("users")
-              .select(
-                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities"
-              )
+              .select(USER_SESSION_SELECT)
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[initAuth] userRow:", userRow);
             if (userRow && mounted) {
               const emp = mapUserRow(userRow);
               const homeSite = parseSiteId(userRow.site_id);
-              const viewSite =
-                emp.role === "owner"
-                  ? readActiveSiteFromStorage() ?? homeSite
-                  : homeSite;
+              const viewSite = resolvePayrollViewSite(
+                { role: emp.role, capabilities: emp.capabilities },
+                homeSite,
+                readActiveSiteFromStorage
+              );
               setCurrentUser(emp);
               setActiveSiteIdState(viewSite);
               await loadTodayPunchRecords(userRow.id);
@@ -1727,19 +1801,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
           try {
             const { data: userRow } = await supabase
               .from("users")
-              .select(
-                "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities"
-              )
+              .select(USER_SESSION_SELECT)
               .eq("id", session.user.id)
               .maybeSingle();
             console.log("[SIGNED_IN] userRow:", userRow);
             if (userRow && mounted) {
               const emp = mapUserRow(userRow);
               const homeSite = parseSiteId(userRow.site_id);
-              const viewSite =
-                emp.role === "owner"
-                  ? readActiveSiteFromStorage() ?? homeSite
-                  : homeSite;
+              const viewSite = resolvePayrollViewSite(
+                { role: emp.role, capabilities: emp.capabilities },
+                homeSite,
+                readActiveSiteFromStorage
+              );
               setCurrentUser(emp);
               setActiveSiteIdState(viewSite);
               await loadTodayPunchRecords(userRow.id);
@@ -1803,9 +1876,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const { data: profile, error: profileError } = await supabase
         .from("users")
-        .select(
-          "id, name, role, hire_date, end_date, is_active, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities"
-        )
+        .select(`${USER_SESSION_SELECT}, is_active`)
         .eq("id", data.user.id)
         .single();
 
@@ -1816,8 +1887,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const emp = mapUserRow(profile);
       const homeSite = parseSiteId(profile.site_id);
-      const viewSite =
-        emp.role === "owner" ? readActiveSiteFromStorage() ?? homeSite : homeSite;
+      const viewSite = resolvePayrollViewSite(
+        { role: emp.role, capabilities: emp.capabilities },
+        homeSite,
+        readActiveSiteFromStorage
+      );
       setCurrentUser(emp);
       setActiveSiteIdState(viewSite);
 
@@ -1865,6 +1939,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         is_half_day_leave_rule: employee.isHalfDayLeaveRule ?? false,
         half_day_work_shift: employee.halfDayWorkShift || null,
         capabilities: employee.capabilities ?? {},
+        national_id: employee.nationalId || null,
+        birth_date: employee.birthDate || null,
+        gender: employee.gender || null,
+        registered_address: employee.registeredAddress || null,
+        mailing_address: employee.mailingAddress || null,
+        mailing_same_as_registered: employee.mailingSameAsRegistered ?? false,
+        phone: employee.phone || null,
+        emergency_contacts: employee.emergencyContacts ?? [],
+        dependents: employee.dependents ?? [],
       }),
     });
     if (!res.ok) {
@@ -1896,6 +1979,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
           updates.workHoursRegime === undefined ? undefined : updates.workHoursRegime || null,
         baseline_shift: updates.baselineShift === undefined ? undefined : updates.baselineShift || null,
         capabilities: updates.capabilities,
+        national_id: updates.nationalId === undefined ? undefined : updates.nationalId || null,
+        birth_date: updates.birthDate === undefined ? undefined : updates.birthDate || null,
+        gender: updates.gender === undefined ? undefined : updates.gender || null,
+        registered_address:
+          updates.registeredAddress === undefined ? undefined : updates.registeredAddress || null,
+        mailing_address:
+          updates.mailingAddress === undefined ? undefined : updates.mailingAddress || null,
+        mailing_same_as_registered: updates.mailingSameAsRegistered,
+        phone: updates.phone === undefined ? undefined : updates.phone || null,
+        emergency_contacts: updates.emergencyContacts,
+        dependents: updates.dependents,
       }),
     });
     if (!res.ok) {

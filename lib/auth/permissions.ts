@@ -1,5 +1,5 @@
 import type { AppRole } from "@/lib/auth/roles";
-import { canManageSite, isStaffLikeRole } from "@/lib/auth/roles";
+import { canManageSite, isAccountantRole, isStaffLikeRole } from "@/lib/auth/roles";
 import type { StorePolicies } from "@/lib/store-policies";
 
 /** 可額外授權給員工的能力（店長／副店／老闆仍依店規） */
@@ -35,7 +35,7 @@ export type RoleCapabilityPolicy = {
   deputyLikeManager: boolean;
   /** 哪些職位可做排班（預設老闆／店長／副店） */
   scheduleRoles: ManageRole[];
-  /** 哪些職位可做薪資結算試算／發布（預設僅老闆；會計請用員工＋薪資結算授權） */
+  /** 哪些職位可做薪資結算試算／發布（預設僅老闆；另可指派「會計」職位） */
   payrollRoles: ManageRole[];
   /** 哪些職位可登錄本月獎金加扣項（店長依銷售報表填寫，不含試算發布） */
   bonusSubmitRoles: ManageRole[];
@@ -54,11 +54,8 @@ export const DEFAULT_ROLE_CAPABILITY_POLICY: RoleCapabilityPolicy = {
   allowStaffGrants: true,
 };
 
-/** 店長／副店可代為勾選的員工授權（不可含薪資結算、員工管理、店家設定） */
-export const MANAGER_GRANTABLE_CAPABILITIES: CapabilityKey[] = [
-  "schedule",
-  "punch_admin",
-];
+/** 店長／副店可代為勾選的員工授權（老闆／店長設定員工時可勾選全部） */
+export const MANAGER_GRANTABLE_CAPABILITIES: CapabilityKey[] = [...CAPABILITY_KEYS];
 
 /** 獎金登錄常用項目（仍可手打自訂名稱） */
 export const BONUS_ADJUSTMENT_PRESETS = [
@@ -150,6 +147,8 @@ export function hasCapability(
   const policy = roleCapabilityPolicyOf(policies);
   const role = actor.role;
 
+  if (key === "payroll" && isAccountantRole(role)) return true;
+
   if (key === "schedule") {
     if (roleListAllows(policy.scheduleRoles, role, policy)) return true;
   } else if (key === "payroll") {
@@ -193,13 +192,13 @@ export function canSubmitBonus(
   return roleListAllows(policy.bonusSubmitRoles, actor.role, policy);
 }
 
-/** 老闆可授權全部；店長／副店僅能授權排班等非薪資能力 */
+/** 老闆／店長／副店可授權全部員工能力 */
 export function filterDelegatableCapabilities(
   granter: PermissionActor | null | undefined,
   requested: UserCapabilities | null | undefined
 ): UserCapabilities {
   if (!requested) return {};
-  if (granter?.role === "owner") {
+  if (canManageSite(granter?.role)) {
     const next: UserCapabilities = {};
     for (const key of CAPABILITY_KEYS) {
       if (requested[key]) next[key] = true;
@@ -219,12 +218,12 @@ export function canEditPermissionPolicy(
   return actor?.role === "owner";
 }
 
-/** 老闆或具薪資結算授權者可切換店別（檢視／結算各店薪資） */
+/** 老闆、會計或具薪資結算授權者可切換店別（檢視／結算各店薪資） */
 export function canSwitchSiteForPayroll(
   actor: PermissionActor | null | undefined,
   policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
 ): boolean {
-  if (actor?.role === "owner") return true;
+  if (actor?.role === "owner" || isAccountantRole(actor?.role)) return true;
   return canManagePayroll(actor, policies);
 }
 
@@ -265,6 +264,22 @@ export function canManageAnything(
 ): boolean {
   if (canManageSite(actor?.role)) return true;
   return CAPABILITY_KEYS.some((k) => hasCapability(actor, k, policies));
+}
+
+/** 登入時決定薪資檢視店（老闆／會計／薪資授權可記住上次選店） */
+export function resolvePayrollViewSite(
+  actor: PermissionActor | null | undefined,
+  homeSite: import("@/lib/sites").SiteId,
+  readStored: () => import("@/lib/sites").SiteId | null
+): import("@/lib/sites").SiteId {
+  if (
+    canSwitchSiteForPayroll(actor, {
+      roleCapabilities: DEFAULT_ROLE_CAPABILITY_POLICY,
+    })
+  ) {
+    return readStored() ?? homeSite;
+  }
+  return homeSite;
 }
 
 export function describeCapabilityGrants(caps: UserCapabilities | null | undefined): string {
