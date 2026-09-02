@@ -40,6 +40,7 @@ import {
   canManagePayroll,
   canSubmitBonus,
   canUsePunchAdmin,
+  canViewTeamAttendance,
 } from '@/lib/auth/permissions';
 
 export default function DashboardLayout({
@@ -129,6 +130,7 @@ export default function DashboardLayout({
   const allowEmployees = canManageEmployees(actor, policies);
   const allowStoreSettings = canEditStoreSettings(actor, policies);
   const allowPunchAdmin = canUsePunchAdmin(actor, policies);
+  const allowTardinessView = allowPunchAdmin || canViewTeamAttendance(actor, policies);
   const allowTrainingManage = canManageSite(currentUser?.role);
   
   const unreadCount = notifications.filter(
@@ -160,7 +162,7 @@ export default function DashboardLayout({
     { href: '/applications/overtime', label: '加班申請', icon: Clock, allowed: true },
     { href: '/applications/punch-correction', label: '打卡補登', icon: ClipboardPen, allowed: true },
     { href: '/attendance', label: '工時統計', icon: TrendingUp, allowed: true },
-    { href: '/attendance/tardiness', label: '遲到管理', icon: Clock, allowed: allowPunchAdmin },
+    { href: '/attendance/tardiness', label: allowPunchAdmin ? '遲到管理' : '遲到查詢', icon: Clock, allowed: allowTardinessView },
     { href: '/employees', label: '員工管理', icon: UserPlus, allowed: allowEmployees },
     { href: '/employees/offboarding', label: '離職結清', icon: UserMinus, allowed: allowEmployees },
     { href: '/store-settings', label: '店家設定', icon: Settings, allowed: allowStoreSettings },
