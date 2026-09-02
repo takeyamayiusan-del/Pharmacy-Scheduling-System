@@ -36,15 +36,16 @@ import {
 } from "@/lib/attendance/overtimePolicy";
 import { MapPin, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import {
+  getRestDayPunchState,
+  isRestDayOvertimePunch,
+  restDaySegmentLabel,
+} from "@/lib/attendance/restDayPunch";
 
 type GpsState = "loading" | "denied" | "outside" | "inside";
 
 function punchKey(slot: PunchSlot) {
   return `${slot.action}-${slot.segmentIndex}`;
-}
-
-function isRestDayOvertimePunch(p: PunchRecord) {
-  return p.shift === "X" || (p.reason?.includes("無班表") ?? false);
 }
 
 function formatTodayLeaveLabel(info: DisplayedShiftInfo): string {
@@ -128,6 +129,7 @@ export default function PunchPage() {
   // 無班表打卡的加班詢問 Modal
   const [noShiftOvertimeModal, setNoShiftOvertimeModal] = useState<{
     action: "work_in" | "work_out";
+    segmentIndex: number;
   } | null>(null);
 
   // 提早下班兩層 modal
@@ -177,9 +179,11 @@ export default function PunchPage() {
   }, [shift, todayLeaveInfo, slots.length]);
 
   const todayPunches = currentUser ? getTodayPunchRecords(currentUser.id, today) : [];
+  const restDayState = useMemo(
+    () => getRestDayPunchState(todayPunches),
+    [todayPunches]
+  );
   const restDayPunches = todayPunches.filter(isRestDayOvertimePunch);
-  const restDayWorkIn = restDayPunches.find((p) => p.action === "work_in");
-  const restDayWorkOut = restDayPunches.find((p) => p.action === "work_out");
   const leaveLabel = todayLeaveInfo ? formatTodayLeaveLabel(todayLeaveInfo) : "";
   const onApprovedLeave = todayLeaveInfo?.hasLeave ?? false;
   const completedKeys = new Set(
@@ -311,7 +315,19 @@ export default function PunchPage() {
       );
       return;
     }
-    setNoShiftOvertimeModal({ action });
+    if (action === "work_in" && !restDayState.canWorkIn) {
+      alert("請先完成目前這一段的下班打卡，才能開始下一段。");
+      return;
+    }
+    if (action === "work_out" && !restDayState.canWorkOut) {
+      alert("請先打本段上班卡。");
+      return;
+    }
+    const segmentIndex =
+      action === "work_in"
+        ? restDayState.nextWorkInSegmentIndex!
+        : restDayState.workOutSegmentIndex!;
+    setNoShiftOvertimeModal({ action, segmentIndex });
   };
 
   // 確認無班表打卡為加班
@@ -319,7 +335,8 @@ export default function PunchPage() {
     if (!noShiftOvertimeModal || !currentUser || !coords || isPunching || !punchRecordsReady) return;
 
     const now = formatNowTime();
-    const action = noShiftOvertimeModal.action;
+    const { action, segmentIndex } = noShiftOvertimeModal;
+    const segmentLabel = restDaySegmentLabel(segmentIndex);
 
     setIsPunching(true);
     try {
@@ -328,7 +345,7 @@ export default function PunchPage() {
         employeeName: currentUser.name,
         date: today,
         action,
-        segmentIndex: 0,
+        segmentIndex,
         time: now,
         shift: "X",
         lateMinutes: 0,
@@ -340,28 +357,27 @@ export default function PunchPage() {
       setNoShiftOvertimeModal(null);
       const punchTime = now;
       if (action === "work_out") {
-        const lastIn = todayPunches
-          .filter((p) => p.action === "work_in")
-          .sort((a, b) => timeToMinutes(b.time) - timeToMinutes(a.time))[0];
+        const segmentIn = restDayState.openSegment?.workIn;
         setQuickOtComp("time_off");
         setQuickOvertime({
           date: today,
-          startTime: lastIn?.time || "",
+          startTime: segmentIn?.time || "",
           endTime: punchTime,
-          reason: lastIn
-            ? `無班表加班（上班 ${lastIn.time} ～ 下班 ${punchTime}）`
-            : `無班表加班（下班打卡 ${punchTime}）`,
+          reason: segmentIn
+            ? `無班表加班（${segmentLabel} ${segmentIn.time} ～ ${punchTime}）`
+            : `無班表加班（${segmentLabel} 下班 ${punchTime}）`,
           message:
-            "打卡成功！" +
-            (onApprovedLeave ? "今日已請假但需出勤。" : "今日無排班。") +
-            "已帶入打卡時間，請確認起迄並選擇補休或加班費後送出。",
-          segmentIndex: 0,
+            `${segmentLabel}下班打卡成功！` +
+            (onApprovedLeave ? "今日已請假但需出勤。" : "今日排休出勤。") +
+            "已帶入本段時間，請確認起迄並選擇補休或加班費後送出。若稍後再回店，可再按上班開始下一段。",
+          segmentIndex,
         });
       } else {
+        const hasMoreSegments = restDayState.segments.some((s) => s.workIn && s.workOut);
         setSuccessModal({
           message: onApprovedLeave
-            ? "上班打卡成功！今日已請假但需出勤，下班打卡後可一鍵申請加班。"
-            : "上班打卡成功！今日無排班，下班打卡後可一鍵申請加班。",
+            ? `${segmentLabel}上班打卡成功！今日已請假但需出勤，離店時請打下班；${hasMoreSegments ? "本日可分段多次加班打卡。" : "下班後可一鍵申請加班。"}`
+            : `${segmentLabel}上班打卡成功！今日排休出勤，離店時請打下班；${hasMoreSegments ? "中間離店後可再回店按下一段上班。" : "下班後可一鍵申請加班。"}`,
           askLeave: false,
           askOvertime: false,
         });
@@ -752,40 +768,55 @@ export default function PunchPage() {
             </p>
             <p className="text-sm text-slate-600 text-center mt-2 leading-relaxed">
               {onApprovedLeave
-                ? "若請假但仍需到店出勤，請使用下方「加班打卡」按鈕；下班後可一鍵申請加班。"
-                : "若臨時到店支援，請使用下方「加班打卡」按鈕。"}
+                ? "若請假但仍需到店出勤，請使用下方「加班打卡」；一天可分段多次（離店後再回店，請再按上班開始下一段）。"
+                : "若臨時到店支援，請使用下方「加班打卡」；一天可分段多次（離店後再回店，請再按上班開始下一段）。"}
             </p>
           </div>
 
-          {(restDayWorkIn || restDayWorkOut) && (
+          {restDayState.segments.length > 0 && (
             <div className="app-card p-4">
               <h3 className="app-section-title mb-3 text-sm">今日加班打卡進度</h3>
-              <ul className="space-y-2">
-                {[
-                  { label: "上班（加班）", punch: restDayWorkIn },
-                  { label: "下班（加班）", punch: restDayWorkOut },
-                ].map(({ label, punch }) => (
-                  <li
-                    key={label}
-                    className={`flex justify-between items-center rounded-xl px-3 py-2.5 text-sm ${
-                      punch ? "bg-emerald-50 text-emerald-800" : "bg-slate-50 text-slate-500"
-                    }`}
-                  >
-                    <span className="font-medium">{label}</span>
-                    <span className="font-mono tabular-nums">
-                      {punch ? punch.time : "尚未打卡"}
-                    </span>
-                  </li>
-                ))}
+              <ul className="space-y-3">
+                {restDayState.segments.map((segment) => {
+                  const label = restDaySegmentLabel(segment.segmentIndex);
+                  const complete = !!(segment.workIn && segment.workOut);
+                  return (
+                    <li
+                      key={segment.segmentIndex}
+                      className={`rounded-xl border px-3 py-2.5 ${
+                        complete
+                          ? "bg-emerald-50 border-emerald-100"
+                          : "bg-amber-50 border-amber-100"
+                      }`}
+                    >
+                      <p className="text-xs font-semibold text-slate-600 mb-1.5">{label}</p>
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        <div className="flex justify-between gap-2">
+                          <span className="text-slate-600">上班</span>
+                          <span className="font-mono tabular-nums font-medium">
+                            {segment.workIn?.time ?? "—"}
+                          </span>
+                        </div>
+                        <div className="flex justify-between gap-2">
+                          <span className="text-slate-600">下班</span>
+                          <span className="font-mono tabular-nums font-medium">
+                            {segment.workOut?.time ?? "—"}
+                          </span>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
               </ul>
-              {restDayWorkIn && !restDayWorkOut && (
+              {restDayState.openSegment && (
                 <p className="text-sm text-amber-800 mt-3 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
-                  已打上班卡（{restDayWorkIn.time}），離店時請按「下班打卡（加班）」。
+                  {restDaySegmentLabel(restDayState.openSegment.segmentIndex)}已上班（
+                  {restDayState.openSegment.workIn?.time}），離店時請按「下班打卡（加班）」。
                 </p>
               )}
-              {restDayWorkIn && restDayWorkOut && (
-                <p className="text-sm text-emerald-800 mt-3 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2">
-                  加班打卡已完成。若尚未申請加班，下班時應已跳出申請視窗。
+              {!restDayState.openSegment && restDayState.segments.length > 0 && (
+                <p className="text-sm text-sky-800 mt-3 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2">
+                  本段已完成。若稍後再回店，請按「上班打卡（加班）」開始下一段。
                 </p>
               )}
             </div>
@@ -794,28 +825,42 @@ export default function PunchPage() {
           <div className="app-card p-4">
             <p className="text-sm font-medium text-slate-800 mb-1">加班出勤打卡</p>
             <p className="text-sm text-slate-600 mb-3">
-              {!restDayWorkIn
-                ? "請先按上班，離店時再按下班。"
-                : !restDayWorkOut
-                  ? `已上班 ${restDayWorkIn.time}，請在離店時打下班。`
-                  : "今日加班上下班皆已打卡。"}
+              {restDayState.openSegment
+                ? `${restDaySegmentLabel(restDayState.openSegment.segmentIndex)}已上班 ${restDayState.openSegment.workIn?.time}，請在離店時打下班。`
+                : restDayState.segments.length > 0
+                  ? "目前無進行中的段落，若要再回店上班請按下方上班打卡。"
+                  : "請先按上班，離店時再按下班。"}
             </p>
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => handleNoShiftPunch("work_in")}
-                disabled={!canPunch || !!restDayWorkIn}
+                disabled={!canPunch || !restDayState.canWorkIn}
                 className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isPunching ? "打卡中..." : restDayWorkIn ? `已上班 ${restDayWorkIn.time}` : "上班打卡（加班）"}
+                {isPunching
+                  ? "打卡中..."
+                  : restDayState.canWorkIn
+                    ? restDayState.segments.length > 0
+                      ? "上班打卡（下一段）"
+                      : "上班打卡（加班）"
+                    : restDayState.openSegment
+                      ? `已上班 ${restDayState.openSegment.workIn?.time}`
+                      : "上班打卡（加班）"}
               </button>
               <button
                 type="button"
                 onClick={() => handleNoShiftPunch("work_out")}
-                disabled={!canPunch || !restDayWorkIn || !!restDayWorkOut}
+                disabled={!canPunch || !restDayState.canWorkOut}
                 className="flex-1 py-3 rounded-xl bg-sky-600 text-white font-medium hover:bg-sky-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isPunching ? "打卡中..." : restDayWorkOut ? `已下班 ${restDayWorkOut.time}` : "下班打卡（加班）"}
+                {isPunching
+                  ? "打卡中..."
+                  : restDayState.canWorkOut
+                    ? "下班打卡（加班）"
+                    : restDayState.segments.some((s) => s.workOut)
+                      ? "本段已下班"
+                      : "下班打卡（加班）"}
               </button>
             </div>
           </div>
@@ -831,6 +876,7 @@ export default function PunchPage() {
                   >
                     <div>
                       <span className="font-medium">
+                        {restDaySegmentLabel(p.segmentIndex)}{" "}
                         {p.action === "work_in" ? "上班（加班）" : "下班（加班）"}
                       </span>
                       {p.reason && (
@@ -1235,8 +1281,9 @@ export default function PunchPage() {
               <div>
                 <p className="font-bold">確認加班</p>
                 <p className="text-sm mt-1">
-                  {onApprovedLeave ? "今日已請假但你要" : "今日無排班但你要"}
-                  {noShiftOvertimeModal.action === "work_in" ? "上" : "下"}班，是否確認為加班？
+                  {onApprovedLeave ? "今日已請假但你要" : "今日排休但你要"}
+                  {noShiftOvertimeModal.action === "work_in" ? "上" : "下"}班（
+                  {restDaySegmentLabel(noShiftOvertimeModal.segmentIndex)}），是否確認為加班？
                 </p>
               </div>
             </div>
@@ -1244,12 +1291,13 @@ export default function PunchPage() {
               <button
                 type="button"
                 onClick={() => {
-                  const action = noShiftOvertimeModal.action;
+                  if (!noShiftOvertimeModal) return;
+                  const { action, segmentIndex } = noShiftOvertimeModal;
                   setNoShiftOvertimeModal(null);
                   setPunchCorrectionOffer({
                     date: today,
                     punchAction: action,
-                    segmentIndex: 0,
+                    segmentIndex,
                     requestedTime: formatNowTime(),
                     originalRecordId: null,
                     reason: "今日無排班／忘記打卡，申請補登",
