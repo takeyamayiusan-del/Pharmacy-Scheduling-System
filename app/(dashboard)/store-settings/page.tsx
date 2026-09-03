@@ -13,7 +13,7 @@ import {
   type CatalogShift,
   type ShiftCategory,
 } from "@/lib/shift-catalog";
-import { SITES } from "@/lib/sites";
+import { parseSiteId, SITES } from "@/lib/sites";
 import {
   ALL_SHIFT_CODES,
   getRotationShiftOptions,
@@ -28,7 +28,7 @@ import {
   type WorkHoursRegime,
 } from "@/lib/store-config";
 import { canEditPermissionPolicy, canEditStoreSettings } from "@/lib/auth/permissions";
-import { APPROVAL_STEP_LABELS, type ApprovalStepRole } from "@/lib/auth/roles";
+import { APP_ROLE_LABELS, APPROVAL_STEP_LABELS, type ApprovalStepRole } from "@/lib/auth/roles";
 import type { ManageRole, RoleCapabilityPolicy } from "@/lib/auth/permissions";
 import type { StorePolicies } from "@/lib/store-policies";
 import {
@@ -92,6 +92,39 @@ export default function StoreSettingsPage() {
     for (const s of storeConfig.shiftCatalog) map.set(s.id, s.code);
     return map;
   }, [storeConfig.shiftCatalog]);
+
+  /** 本店審核相關人員：職位關卡＋已贈與「審核申請」者 */
+  const approvalPeople = useMemo(() => {
+    const siteStaff = employees.filter((e) => {
+      if (e.role === "owner") return true;
+      return parseSiteId(e.siteId) === activeSiteId;
+    });
+    const byRole = (role: ApprovalStepRole) =>
+      siteStaff
+        .filter((e) => e.role === role)
+        .map((e) => e.name)
+        .sort((a, b) => a.localeCompare(b, "zh-Hant"));
+    const grantApprovers = siteStaff
+      .filter(
+        (e) =>
+          e.capabilities?.approve === true &&
+          e.role !== "owner" &&
+          e.role !== "manager" &&
+          e.role !== "deputy"
+      )
+      .map((e) => ({
+        id: e.id,
+        name: e.name,
+        roleLabel: APP_ROLE_LABELS[e.role] ?? e.role,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "zh-Hant"));
+    return {
+      manager: byRole("manager"),
+      deputy: byRole("deputy"),
+      owner: byRole("owner"),
+      grantApprovers,
+    };
+  }, [employees, activeSiteId]);
 
   if (!canManage) {
     return (
@@ -1204,8 +1237,56 @@ export default function StoreSettingsPage() {
               <p className="text-xs text-gray-500 mt-1">
                 目前：{draft.policies.approvalChain.map((r) => APPROVAL_STEP_LABELS[r]).join(" → ")}
               </p>
+              <p className="text-xs text-slate-500 mt-1">
+                具「審核申請」授權的員工可代「店長」關審核（仍依關卡順序推進）。
+              </p>
             </>
           )}
+
+          <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 space-y-2">
+            <p className="text-sm font-medium text-slate-800">本店目前可審核的人員</p>
+            <ul className="text-sm text-slate-700 space-y-1">
+              <li>
+                <span className="text-slate-500">店長：</span>
+                {approvalPeople.manager.length > 0
+                  ? approvalPeople.manager.join("、")
+                  : "（尚無）"}
+              </li>
+              <li>
+                <span className="text-slate-500">副店：</span>
+                {approvalPeople.deputy.length > 0
+                  ? approvalPeople.deputy.join("、")
+                  : "（尚無）"}
+              </li>
+              <li>
+                <span className="text-slate-500">老闆：</span>
+                {approvalPeople.owner.length > 0
+                  ? approvalPeople.owner.join("、")
+                  : "（尚無）"}
+              </li>
+              <li>
+                <span className="text-slate-500">授權審核（審核申請）：</span>
+                {approvalPeople.grantApprovers.length > 0 ? (
+                  approvalPeople.grantApprovers
+                    .map((p) => `${p.name}（${p.roleLabel}）`)
+                    .join("、")
+                ) : (
+                  <span className="text-slate-400">
+                    （尚無；請到「員工管理」由老闆勾選「審核申請」）
+                  </span>
+                )}
+              </li>
+            </ul>
+            {draft.policies.approvalMode === "any" ? (
+              <p className="text-xs text-slate-500">
+                竹山模式：上列任一有空即可審，審一關就結案。
+              </p>
+            ) : (
+              <p className="text-xs text-slate-500">
+                集集模式：依關卡順序審；授權審核者可代店長關。
+              </p>
+            )}
+          </div>
         </div>
       </section>
 
