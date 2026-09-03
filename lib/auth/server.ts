@@ -157,6 +157,19 @@ export async function assertManagerOrApprover(
   return { error: "此帳號沒有審核權限", status: 403 };
 }
 
+/** 授權審核者不可審自己的申請（老闆／店長／副店仍可代登後自審） */
+export function rejectSelfApprovalIfGrantedOnly(
+  auth: { callerId: string; role: string; capabilities?: UserCapabilities },
+  applicantUserId: string
+): { error: string; status: 403 } | null {
+  if (auth.callerId !== applicantUserId) return null;
+  if (["boss", "manager", "owner", "deputy"].includes(auth.role)) return null;
+  if (auth.capabilities?.approve === true) {
+    return { error: "不可審核自己的申請", status: 403 };
+  }
+  return null;
+}
+
 /** 老闆可跨店；店長僅能操作本店員工 */
 export async function assertManagerCanAccessEmployee(
   auth: ManagerAuthOk,

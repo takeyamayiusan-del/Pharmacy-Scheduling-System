@@ -103,7 +103,7 @@ export default function PunchPage() {
     askOvertime: boolean;
   } | null>(null);
 
-  /** 超時下班：一鍵申請加班（時間已帶入，只需選補休／加班費） */
+  /** 超時下班／提早到班／休假加班：一鍵申請加班 */
   const [quickOvertime, setQuickOvertime] = useState<{
     date: string;
     startTime: string;
@@ -111,6 +111,7 @@ export default function PunchPage() {
     reason: string;
     message: string;
     segmentIndex: number;
+    kind: "early_in" | "late_out" | "rest_day";
   } | null>(null);
   const [quickOtComp, setQuickOtComp] = useState<OvertimeCompensationType>("time_off");
   const [quickOtSubmitting, setQuickOtSubmitting] = useState(false);
@@ -372,6 +373,7 @@ export default function PunchPage() {
             (onApprovedLeave ? "今日已請假但需出勤。" : "今日排休出勤。") +
             "已帶入本段時間，請確認起迄並選擇補休或加班費後送出。若稍後再回店，可再按上班開始下一段。",
           segmentIndex,
+          kind: "rest_day",
         });
       } else {
         const hasMoreSegments = restDayState.segments.some((s) => s.workIn && s.workOut);
@@ -437,6 +439,7 @@ export default function PunchPage() {
               reason: `提早到班加班（實際 ${punchTime}，應上班 ${slot.scheduledTime}）`,
               message: `打卡成功！您提早到班，是否一鍵申請加班至應上班時間（${slot.scheduledTime}）？`,
               segmentIndex: slot.segmentIndex,
+              kind: "early_in",
             });
           } else {
             setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
@@ -483,6 +486,7 @@ export default function PunchPage() {
             reason: `下班打卡逾時（應下班 ${slot.scheduledTime}，實際 ${punchTime}，逾時 ${minutesPastEnd} 分鐘）`,
             message: `打卡成功！已超過下班時間 ${minutesPastEnd} 分鐘。時間已依打卡帶入，請選擇補休或加班費後一鍵送出。`,
             segmentIndex: slot.segmentIndex,
+            kind: "late_out",
           });
         } catch {
           // finalizePunch 已顯示錯誤訊息
@@ -593,6 +597,11 @@ export default function PunchPage() {
 
   const declineQuickOvertime = () => {
     if (!quickOvertime || !currentUser) {
+      setQuickOvertime(null);
+      return;
+    }
+    // 僅「逾時下班」拒絕加班時，才詢問是否補登回應下班時間
+    if (quickOvertime.kind !== "late_out") {
       setQuickOvertime(null);
       return;
     }

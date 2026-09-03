@@ -118,13 +118,17 @@ export async function POST(req: NextRequest) {
     if (work_hours_regime !== undefined) updates.work_hours_regime = work_hours_regime || null;
     if (baseline_shift !== undefined) updates.baseline_shift = baseline_shift || null;
     if (capabilities !== undefined) {
-      updates.capabilities = filterDelegatableCapabilities(
-        {
-          role: callerRole,
-          capabilities: parseUserCapabilities(callerProfile?.capabilities),
-        },
-        capabilities && typeof capabilities === "object" ? capabilities : {}
-      );
+      if (callerRole !== "owner") {
+        // 非老闆不可改授權，略過以免誤寫空物件清掉既有權限
+      } else {
+        updates.capabilities = filterDelegatableCapabilities(
+          {
+            role: callerRole,
+            capabilities: parseUserCapabilities(callerProfile?.capabilities),
+          },
+          capabilities && typeof capabilities === "object" ? capabilities : {}
+        );
+      }
     }
     Object.assign(updates, profileUpdatesFromBody(body as Record<string, unknown>));
 

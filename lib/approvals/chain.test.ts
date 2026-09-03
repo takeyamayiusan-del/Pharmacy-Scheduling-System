@@ -46,9 +46,22 @@ describe("approval chain", () => {
     });
     expect(rolesToNotify("manager", "any")).toEqual(["manager", "deputy", "owner"]);
     expect(rolesToNotify("manager", "sequential")).toEqual(["manager"]);
-    expect(approvalPendingLabel(["manager"], 0, "any")).toBe("待店長／副店／老闆審核");
+    expect(approvalPendingLabel(["manager"], 0, "any")).toBe(
+      "待店長／副店／老闆／授權審核者審核"
+    );
     expect(approvalPendingLabel(["manager", "deputy", "owner"], 1, "sequential")).toBe(
       "待副店審核"
     );
+  });
+
+  it("approve 授權可代店長關／any 模式審核", () => {
+    expect(
+      canActOnApprovalStep("staff", "manager", "sequential", { approve: true })
+    ).toBe(true);
+    expect(
+      canActOnApprovalStep("staff", "deputy", "sequential", { approve: true })
+    ).toBe(false);
+    expect(canActOnApprovalStep("staff", "manager", "any", { approve: true })).toBe(true);
+    expect(canActOnApprovalStep("staff", "manager", "any")).toBe(false);
   });
 });

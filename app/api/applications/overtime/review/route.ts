@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   assertManagerOrApprover,
   assertManagerCanAccessEmployee,
+  rejectSelfApprovalIfGrantedOnly,
 } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { calcOvertimeHours } from "@/lib/attendance/overtimeCompensation";
@@ -16,7 +17,7 @@ import {
   resolveApprovalDecision,
   rolesToNotify,
 } from "@/lib/approvals/chain";
-import { loadApprovalContext } from "@/lib/approvals/server";
+import { filterAdvanceNotifyRecipients, loadApprovalContext } from "@/lib/approvals/server";
 import { isPastDate } from "@/lib/schedule/monthAccess";
 import { parseSiteId } from "@/lib/sites";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
@@ -57,6 +58,10 @@ export async function PATCH(req: NextRequest) {
     const access = await assertManagerCanAccessEmployee(auth, row.user_id);
     if ("error" in access) {
       return NextResponse.json({ error: access.error }, { status: access.status });
+    }
+    const selfBlocked = rejectSelfApprovalIfGrantedOnly(auth, row.user_id);
+    if (selfBlocked) {
+      return NextResponse.json({ error: selfBlocked.error }, { status: selfBlocked.status });
     }
 
     const { data: empRow } = await admin
@@ -126,10 +131,12 @@ export async function PATCH(req: NextRequest) {
 
     if (decision.kind === "advance") {
       const nextRoles = rolesToNotify(decision.nextRole, approvalMode);
-      const recipients = employees.filter((e) => {
-        if (!nextRoles.includes(e.role)) return false;
-        if (e.role === "owner") return true;
-        return e.siteId === siteId;
+      const recipients = filterAdvanceNotifyRecipients({
+        employees,
+        siteId,
+        notifyRoles: nextRoles,
+        mode: approvalMode,
+        requiredRole: decision.nextRole,
       });
       if (recipients.length > 0) {
         await admin.from("notifications").insert(
