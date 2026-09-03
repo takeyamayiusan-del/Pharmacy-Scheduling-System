@@ -1220,7 +1220,7 @@ export default function StoreSettingsPage() {
         <p className="text-sm text-gray-500">
           控制誰能排班、誰能看薪資結算、誰能管員工。竹山換店長請到「員工管理」把新人改成店長（可一併把舊店長降職）。
           若要讓某人負責跨店薪資：到員工管理設「會計」職位；若只需部分能力，也可維持員工並勾選對應授權。
-          額外授權（含「審核申請」）僅老闆可設定與查看；店長、會計看不到各員工的授權勾選。
+          額外授權（含「審核申請」「店家設定」等）僅老闆可設定與查看；店長／副店本身仍可依下方角色清單改店家設定，沒問題。
         </p>
         <label className="flex items-start gap-3 text-sm">
           <input

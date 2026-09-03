@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  assertManagerAuth,
+  assertManagerOrApprover,
   assertManagerCanAccessEmployee,
 } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -23,7 +23,7 @@ function schemaSnapshotError(message: string) {
 // Body: { swapId, action, snapshot? }
 export async function POST(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrApprover(req);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }

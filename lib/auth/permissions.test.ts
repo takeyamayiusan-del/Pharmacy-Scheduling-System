@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   canEditSchedule,
   canEditStoreSettings,
+  canGrantCapabilities,
   canManageEmployees,
   canManagePayroll,
   canSubmitBonus,
   canSwitchSiteForPayroll,
+  canViewCapabilityGrants,
   canViewTeamAttendance,
+  filterDelegatableCapabilities,
   parseRoleCapabilityPolicy,
   parseUserCapabilities,
 } from "@/lib/auth/permissions";
@@ -106,5 +109,18 @@ describe("permissions", () => {
     expect(canManageEmployees({ role: "manager" }, restricted)).toBe(true);
     expect(canManageEmployees({ role: "deputy" }, restricted)).toBe(true);
     expect(canEditStoreSettings({ role: "manager" }, restricted)).toBe(false);
+  });
+
+  it("manager can edit store settings by default; owner alone grants capabilities", () => {
+    expect(canEditStoreSettings({ role: "manager" }, policies)).toBe(true);
+    expect(canGrantCapabilities({ role: "owner" })).toBe(true);
+    expect(canGrantCapabilities({ role: "manager" })).toBe(false);
+    expect(canViewCapabilityGrants({ role: "accountant" })).toBe(false);
+    expect(
+      filterDelegatableCapabilities({ role: "manager" }, { store_settings: true, approve: true })
+    ).toEqual({});
+    expect(
+      filterDelegatableCapabilities({ role: "owner" }, { store_settings: true, approve: true })
+    ).toEqual({ store_settings: true, approve: true });
   });
 });

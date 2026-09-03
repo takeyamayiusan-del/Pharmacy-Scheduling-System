@@ -3323,6 +3323,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     );
     const approvalMode = storeConfig.policies.approvalMode;
     if (request && canReviewApps && (status === "approved" || status === "rejected")) {
+      if (
+        request.employeeId === currentUser?.id &&
+        !canManageSite(currentUser?.role)
+      ) {
+        throw new Error("不可審核自己的申請");
+      }
       const required = currentApprovalRole(chain, request.approvalStep ?? 0);
       if (!canActOnApprovalStep(currentUser?.role, required, approvalMode, currentUser?.capabilities)) {
         throw new Error(
@@ -3338,7 +3344,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         approvalMode
       );
       if (decision.kind === "advance") {
-        await supabase
+        const { error: advanceError } = await supabase
           .from("leave_applications")
           .update({
             status: "pending",
@@ -3347,6 +3353,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
             reviewed_at: new Date().toISOString(),
           })
           .eq("id", id);
+        if (advanceError) {
+          throw new Error(`請假關卡更新失敗：${advanceError.message}`);
+        }
         const nextRoles = rolesToNotify(decision.nextRole, approvalMode);
         const recipients = allEmployees.filter((e) => {
           const sameSite = e.role === "owner" || parseSiteId(e.siteId) === activeSiteId;
@@ -3398,7 +3407,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
     }
 
-    await supabase
+    const { error: leaveUpdateError } = await supabase
       .from("leave_applications")
       .update({
         status,
@@ -3410,6 +3419,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(leaveSnapshot ? { schedule_snapshot: leaveSnapshot } : {}),
       })
       .eq("id", id);
+    if (leaveUpdateError) {
+      throw new Error(`請假審核更新失敗：${leaveUpdateError.message}`);
+    }
 
     if (request) {
       if (status === "approved" && prevStatus !== "approved") {
@@ -3696,11 +3708,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       (status === "approved" ||
         (status === "rejected" && prevStatus === "pending_approval"))
     ) {
+      if (
+        (request.requesterId === currentUser?.id ||
+          request.targetEmployeeId === currentUser?.id) &&
+        !canManageSite(currentUser?.role)
+      ) {
+        throw new Error("不可審核自己的申請");
+      }
       const required = currentApprovalRole(chain, request.approvalStep ?? 0);
       if (!canActOnApprovalStep(currentUser?.role, required, approvalMode, currentUser?.capabilities)) {
         throw new Error(
           approvalMode === "any"
-            ? "僅店長、副店或老闆可審核"
+            ? "僅店長、副店、老闆或具審核授權者可審核"
             : `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`
         );
       }
