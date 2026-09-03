@@ -9,8 +9,10 @@ describe("store-policies", () => {
     const z = defaultStorePoliciesForSite("zhushan");
     expect(z.earlyPunchMinutes).toBe(10);
     expect(z.overtimeRedirectMinutes).toBe(10);
-    expect(z.overtimeMinApplyMinutes).toBe(0);
-    expect(z.overtimeForceCompLeaveAfterMinutes).toBe(30);
+    expect(z.overtimeMinApplyMinutes).toBe(30);
+    expect(z.overtimeForceCompLeaveAfterMinutes).toBe(60);
+    expect(z.overtimeMealDeductAfterMinutes).toBe(240);
+    expect(z.overtimeMealDeductMinutes).toBe(30);
     expect(z.saturdayQuotaMode).toBe("fixed");
     expect(z.saturdayLeaveQuota).toBe(2);
     expect(z.weekdayLeaveQuota).toBe(2);
@@ -23,6 +25,15 @@ describe("store-policies", () => {
     expect(z.leaveRules["婚假"]?.daysLimit).toBe(8);
     expect(z.leaveRules["事假"]?.payKind).toBe("unpaid");
     expect(z.leaveRules["公假"]?.payKind).toBe("paid");
+  });
+
+  it("兩店加班規則預設相同", () => {
+    const z = defaultStorePoliciesForSite("zhushan");
+    const j = defaultStorePoliciesForSite("jiji");
+    expect(j.overtimeMinApplyMinutes).toBe(z.overtimeMinApplyMinutes);
+    expect(j.overtimeForceCompLeaveAfterMinutes).toBe(z.overtimeForceCompLeaveAfterMinutes);
+    expect(j.overtimeMealDeductAfterMinutes).toBe(z.overtimeMealDeductAfterMinutes);
+    expect(j.overtimeMealDeductMinutes).toBe(z.overtimeMealDeductMinutes);
   });
 
   it("竹山可改成集集那套規則（客製化）", () => {

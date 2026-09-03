@@ -118,9 +118,14 @@ export default function PersonSchedulePage() {
             先在員工管理設個人變形工時與本月預設班，再於此對單一員工逐日改班。集集班別多、無法全自動時用這頁。
           </p>
         </div>
-        <Link href="/schedule" className="app-btn-outline">
-          回月曆式班表
-        </Link>
+        <div className="flex gap-2">
+          <Link href={`/my-schedule`} className="app-btn-outline">
+            個人班表／匯出 PDF
+          </Link>
+          <Link href="/schedule" className="app-btn-outline">
+            回月曆式班表
+          </Link>
+        </div>
       </div>
 
       <div className="app-panel p-4 flex flex-wrap gap-3 items-end">

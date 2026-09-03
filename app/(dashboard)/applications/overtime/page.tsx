@@ -10,6 +10,7 @@ import {
   canChooseOvertimePayWithPolicy,
   overtimePolicyHint,
   resolveCompensationWithPolicy,
+  resolveOvertimeCreditedMinutes,
   validateOvertimeWithPolicy,
 } from "@/lib/attendance/overtimePolicy";
 import {
@@ -193,10 +194,15 @@ export default function OvertimePage() {
     }
   };
 
-  const overtimeMinutesPreview =
+  const overtimeCreditedPreview =
     formData.startTime && formData.endTime
-      ? calcOvertimeHours(formData.startTime, formData.endTime)
-      : 0;
+      ? resolveOvertimeCreditedMinutes(
+          formData.startTime,
+          formData.endTime,
+          storeConfig.policies
+        )
+      : null;
+  const overtimeMinutesPreview = overtimeCreditedPreview?.creditedHours ?? 0;
   const payAllowed = canChooseOvertimePayWithPolicy(
     formData.startTime,
     formData.endTime,
@@ -443,12 +449,25 @@ export default function OvertimePage() {
               </div>
             </div>
             {formData.startTime && formData.endTime && (
-              <p className="text-xs text-gray-500">
-                預估加班：{overtimeMinutesPreview} 小時
-                <span className="ml-2 text-amber-700">
+              <div className="space-y-1 text-xs">
+                <p className="text-gray-600">
+                  預估加班（計入）：{overtimeMinutesPreview} 小時
+                  {overtimeCreditedPreview && overtimeCreditedPreview.deductedMinutes > 0 ? (
+                    <span className="ml-1 text-slate-500">
+                      （時段 {overtimeCreditedPreview.rawMinutes} 分 − 用餐{" "}
+                      {overtimeCreditedPreview.deductedMinutes} 分）
+                    </span>
+                  ) : null}
+                </p>
+                {overtimeCreditedPreview?.reminder ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 font-medium">
+                    {overtimeCreditedPreview.reminder}
+                  </p>
+                ) : null}
+                <p className="text-amber-800">
                   {overtimePolicyHint(formData.startTime, formData.endTime, storeConfig.policies)}
-                </span>
-              </p>
+                </p>
+              </div>
             )}
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">加班原因</label>

@@ -44,7 +44,9 @@ import {
 import EmployeeSalaryItemsEditor from "@/components/payroll/EmployeeSalaryItemsEditor";
 import { buildPayslipWorksheet } from "@/lib/payroll/payslipExcelLayout";
 import { parseStoreConfig } from "@/lib/store-config";
-import { storeConfigSettingId } from "@/lib/sites";
+import { SITES, storeConfigSettingId } from "@/lib/sites";
+import { isEmployeeActiveInMonth } from "@/lib/schedule/employeeActivePeriod";
+import { APP_ROLE_LABELS } from "@/lib/auth/roles";
 import XLSX from "xlsx-js-style";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -245,7 +247,11 @@ export default function PayrollPage() {
   const actor = { role: currentUser?.role, capabilities: currentUser?.capabilities };
   const canSettle = canManagePayroll(actor, storeConfig.policies);
   const canBonus = canSubmitBonus(actor, storeConfig.policies);
-  const displayEmployees = employees.filter((e) => e.role !== "owner");
+  const displayEmployees = employees.filter(
+    (e) =>
+      e.role !== "owner" &&
+      isEmployeeActiveInMonth(e, year, month)
+  );
 
   // ─── Load data ─────────────────────────────────────────────────────────────
 
@@ -434,9 +440,9 @@ export default function PayrollPage() {
           r.employeeId === emp.id &&
           r.status === "approved" &&
           r.type !== "補休假" &&
-          r.endDate >= `${year}-${String(month).padStart(2, "0")}-01` &&
+          r.endDate >= `${year}-NT${String(month).padStart(2, "0")}-01` &&
           r.startDate <=
-            `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
+            `${year}-NT${String(month).padStart(2, "0")}-NT${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
       );
 
       let leaveHours = 0;
@@ -734,7 +740,7 @@ export default function PayrollPage() {
       setSalaryItemsByUser((prev) => ({
         ...prev,
         [userId]: rows.map((r, idx) =>
-          mapSalaryItemRow({ ...r, id: `local-${idx}` })
+          mapSalaryItemRow({ ...r, id: `local-NT${idx}` })
         ),
       }));
       // 重新載入以取得正式 id
@@ -1054,22 +1060,22 @@ export default function PayrollPage() {
         unionFee: p.unionFee,
         note: [
           p.overtimePay > 0 && p.overtimeHours > 0
-            ? `加班費 = ${p.overtimeHours.toFixed(2)} 小時 × ${(p.overtimePay / p.overtimeHours).toFixed(
+            ? `加班費 = NT${p.overtimeHours.toFixed(2)} 小時 × ${(p.overtimePay / p.overtimeHours).toFixed(
                 2
-              )} 元/小時 = ${p.overtimePay.toFixed(0)} 元`
+              )} 元/小時 = NT${p.overtimePay.toFixed(0)} 元`
             : "",
           p.leaveDeduction > 0 && p.leaveHours > 0
-            ? `請假扣款 = ${p.leaveHours.toFixed(2)} 小時 × ${(p.leaveDeduction / p.leaveHours).toFixed(
+            ? `請假扣款 = NT${p.leaveHours.toFixed(2)} 小時 × ${(p.leaveDeduction / p.leaveHours).toFixed(
                 2
-              )} 元/小時 = ${p.leaveDeduction.toFixed(0)} 元`
+              )} 元/小時 = NT${p.leaveDeduction.toFixed(0)} 元`
             : "",
           p.tardinessDeduction > 0 && p.tardinessMinutes > 0
-            ? `遲到扣款 = ${p.tardinessMinutes} 分鐘 × ${(
+            ? `遲到扣款 = NT${p.tardinessMinutes} 分鐘 × ${(
                 p.tardinessDeduction / p.tardinessMinutes
-              ).toFixed(2)} 元/分鐘 = ${p.tardinessDeduction.toFixed(0)} 元`
+              ).toFixed(2)} 元/分鐘 = NT${p.tardinessDeduction.toFixed(0)} 元`
             : "",
           p.bonusTotal !== 0
-            ? `其他加扣項淨額 = ${p.bonusTotal > 0 ? "+" : ""}${p.bonusTotal.toFixed(0)} 元（依本月異動項目）`
+            ? `其他加扣項淨額 = NT${p.bonusTotal > 0 ? "+" : ""}${p.bonusTotal.toFixed(0)} 元（依本月異動項目）`
             : "",
         ]
           .filter(Boolean)
@@ -1308,9 +1314,9 @@ export default function PayrollPage() {
                       (r) =>
                         r.employeeId === emp.id &&
                         r.status === "approved" &&
-                        r.endDate >= `${year}-${String(month).padStart(2, "0")}-01` &&
+                        r.endDate >= `${year}-NT${String(month).padStart(2, "0")}-01` &&
                         r.startDate <=
-                          `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
+                          `${year}-NT${String(month).padStart(2, "0")}-NT${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
                     )
                     .forEach((r) => {
                       const hours = getApprovedLeaveHoursInMonth({
@@ -1333,17 +1339,25 @@ export default function PayrollPage() {
                       asOfMonth: month,
                     }),
                   });
-                  faHint = `本月試算實發 $${preview.paidAmount.toLocaleString()}（設定 $${preview.configuredAmount.toLocaleString()}）`;
+                  faHint = `本月試算實發 NT$${preview.paidAmount.toLocaleString()}（設定 NT$${preview.configuredAmount.toLocaleString()}）`;
                   if (preview.notes[0]) faHint += ` · ${preview.notes[0]}`;
                 }
                 return (
                   <div key={emp.id} className="border rounded-lg overflow-hidden">
                     <div className="flex items-center justify-between px-4 py-3 bg-gray-50 gap-2 flex-wrap">
-                      <span className="font-medium text-gray-900">{emp.name}</span>
+                      <span className="font-medium text-gray-900">
+                        {emp.name}
+                        <span className="ml-2 text-xs font-normal text-slate-500">
+                          {APP_ROLE_LABELS[emp.role] ?? emp.role}
+                          {emp.username ? ` · ${emp.username}` : ""}
+                          {" · "}
+                          {SITES[emp.siteId ?? activeSiteId]?.name ?? ""}
+                        </span>
+                      </span>
                       <div className="flex items-center gap-3 text-sm text-gray-600 flex-wrap">
-                        <span>底薪 ${(cfg?.baseSalary ?? 0).toLocaleString()}</span>
-                        <span>加級 ${gradeTotal.toLocaleString()}</span>
-                        <span>時薪 ${cfg?.hourlyRate ?? 0}/hr</span>
+                        <span>底薪 NT${(cfg?.baseSalary ?? 0).toLocaleString()}</span>
+                        <span>加級 NT${gradeTotal.toLocaleString()}</span>
+                        <span>時薪 NT${cfg?.hourlyRate ?? 0}/hr</span>
                         <span>職位 {cfg?.position || "—"}</span>
                         {!isEditing && (
                           <button
@@ -1373,7 +1387,7 @@ export default function PayrollPage() {
                     {isEditing && (
                       <div className="p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                         <div className="col-span-2 md:col-span-4 rounded-lg bg-slate-50 border border-slate-100 px-3 py-2 text-xs text-slate-600">
-                          合約應給試算：底薪 ${(Number(salaryForm.baseSalary) || 0).toLocaleString()} + 職位加級 $
+                          合約應給試算：底薪 NT${(Number(salaryForm.baseSalary) || 0).toLocaleString()} + 職位加級 NT$
                           {sumSalaryItems(
                             editingItems.map((i) => ({
                               ...i,
@@ -1381,7 +1395,7 @@ export default function PayrollPage() {
                             })),
                             "position_grade"
                           ).toLocaleString()}{" "}
-                          = $
+                          = NT$
                           {contractualPay(
                             Number(salaryForm.baseSalary) || 0,
                             editingItems.map((i, idx) => ({
@@ -1751,7 +1765,7 @@ export default function PayrollPage() {
                             )}
                           </td>
                           <td className="px-3 py-3 text-right tabular-nums">
-                            <div>${p.contractualPay.toLocaleString()}</div>
+                            <div>NT${p.contractualPay.toLocaleString()}</div>
                             {p.positionGradeTotal > 0 ? (
                               <div className="text-[10px] text-gray-400">
                                 底薪 {p.baseSalary.toLocaleString()}+加級 {p.positionGradeTotal.toLocaleString()}
@@ -1761,7 +1775,7 @@ export default function PayrollPage() {
                           <td className="px-3 py-3 text-right tabular-nums text-green-700">
                             {p.fixedAllowanceTotal > 0 ? (
                               <>
-                                <div>+${p.fixedAllowanceTotal.toLocaleString()}</div>
+                                <div>+NT${p.fixedAllowanceTotal.toLocaleString()}</div>
                                 {p.fullAttendancePay > 0 ? (
                                   <div className="text-[10px] text-gray-400">
                                     含全勤 {p.fullAttendancePay.toLocaleString()}
@@ -1773,21 +1787,21 @@ export default function PayrollPage() {
                             )}
                           </td>
                           <td className="px-3 py-3 text-right text-red-600">
-                            {p.laborInsurance > 0 ? `-$${p.laborInsurance.toLocaleString()}` : "—"}
+                            {p.laborInsurance > 0 ? `-NT$${p.laborInsurance.toLocaleString()}` : "—"}
                           </td>
                           <td className="px-3 py-3 text-right text-red-600">
-                            {p.healthInsurance > 0 ? `-$${p.healthInsurance.toLocaleString()}` : "—"}
+                            {p.healthInsurance > 0 ? `-NT$${p.healthInsurance.toLocaleString()}` : "—"}
                           </td>
                           <td className="px-3 py-3 text-right text-red-600">
-                            {p.pensionDeduction > 0 ? `-$${p.pensionDeduction.toLocaleString()}` : "—"}
+                            {p.pensionDeduction > 0 ? `-NT$${p.pensionDeduction.toLocaleString()}` : "—"}
                           </td>
-                          <td className="px-3 py-3 text-right text-red-600">{p.leaveDeduction > 0 ? `-$${p.leaveDeduction}` : "—"}</td>
-                          <td className="px-3 py-3 text-right text-green-600">{p.overtimePay > 0 ? `+$${p.overtimePay}` : "—"}</td>
-                          <td className="px-3 py-3 text-right text-red-600">{p.tardinessDeduction > 0 ? `-$${p.tardinessDeduction}` : "—"}</td>
+                          <td className="px-3 py-3 text-right text-red-600">{p.leaveDeduction > 0 ? `-NT$${p.leaveDeduction}` : "—"}</td>
+                          <td className="px-3 py-3 text-right text-green-600">{p.overtimePay > 0 ? `+NT$${p.overtimePay}` : "—"}</td>
+                          <td className="px-3 py-3 text-right text-red-600">{p.tardinessDeduction > 0 ? `-NT$${p.tardinessDeduction}` : "—"}</td>
                           <td className="px-3 py-3 text-right">
-                            {p.bonusTotal !== 0 ? <span className={p.bonusTotal > 0 ? "text-green-600" : "text-red-600"}>{p.bonusTotal > 0 ? "+" : ""}${p.bonusTotal.toLocaleString()}</span> : "—"}
+                            {p.bonusTotal !== 0 ? <span className={p.bonusTotal > 0 ? "text-green-600" : "text-red-600"}>{p.bonusTotal > 0 ? "+" : ""}NT${p.bonusTotal.toLocaleString()}</span> : "—"}
                           </td>
-                          <td className="px-3 py-3 text-right font-bold text-blue-600">${p.finalPay.toLocaleString()}</td>
+                          <td className="px-3 py-3 text-right font-bold text-blue-600">NT${p.finalPay.toLocaleString()}</td>
                           <td className="px-3 py-3 text-right">
                             {isPublished ? (
                               <button

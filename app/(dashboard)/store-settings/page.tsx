@@ -906,10 +906,22 @@ export default function StoreSettingsPage() {
       <section className="app-panel p-6 space-y-4">
         <h2 className="font-semibold text-gray-900">店規（打卡／加班／排休／審核／播假）</h2>
         <p className="text-sm text-gray-500">
-          兩店同一套程式，這裡改的是「目前這家店」，沒有綁死店別。集集預設：未滿 30
-          分不可加班、週六依本月週六數、申請關卡店長→副店→老闆、播假可開。竹山預設維持原規則：半小時內可選加班費、週六／平日各
-          2 天、僅店長一關、不開播假；每一項都能改。
+          兩店同一套程式，這裡改的是「目前這家店」。加班建議兩店統一：滿半小時才算、一小時內可選加班費或補休、超過固定補休、逾四小時自動扣 30 分用餐。可按下方按鈕套用後再儲存。排休／審核／播假仍可依店別客製。
         </p>
+        <button
+          type="button"
+          className="app-btn-outline text-sm"
+          onClick={() =>
+            patchPolicies({
+              overtimeMinApplyMinutes: 30,
+              overtimeForceCompLeaveAfterMinutes: 60,
+              overtimeMealDeductAfterMinutes: 240,
+              overtimeMealDeductMinutes: 30,
+            })
+          }
+        >
+          套用兩店統一加班規則（半小時起算／1 小時內可選費／逾 4 小時扣 30 分）
+        </button>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <label className="block text-sm">
             <span className="text-gray-700">可提早打卡（分鐘）</span>
@@ -936,7 +948,7 @@ export default function StoreSettingsPage() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-gray-700">未滿幾分鐘不可申請加班</span>
+            <span className="text-gray-700">未滿幾分鐘不可申請加班（滿半小時＝30）</span>
             <input
               type="number"
               min={0}
@@ -948,7 +960,7 @@ export default function StoreSettingsPage() {
             />
           </label>
           <label className="block text-sm">
-            <span className="text-gray-700">超過幾分鐘強制補休（空白＝不強迫）</span>
+            <span className="text-gray-700">幾分鐘以內可選加班費（超過僅補休；空白＝不強迫）</span>
             <input
               type="number"
               min={0}
@@ -959,6 +971,34 @@ export default function StoreSettingsPage() {
                   overtimeForceCompLeaveAfterMinutes:
                     e.target.value === "" ? null : Number(e.target.value) || 0,
                 })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">加班超過幾分鐘自動扣用餐（空白＝不扣；建議 240＝4 小時）</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.policies.overtimeMealDeductAfterMinutes ?? ""}
+              placeholder="不自動扣除"
+              onChange={(e) =>
+                patchPolicies({
+                  overtimeMealDeductAfterMinutes:
+                    e.target.value === "" ? null : Number(e.target.value) || 0,
+                })
+              }
+              className="mt-1 w-full border rounded-lg px-3 py-2"
+            />
+          </label>
+          <label className="block text-sm">
+            <span className="text-gray-700">逾門檻扣除分鐘數（建議 30）</span>
+            <input
+              type="number"
+              min={0}
+              value={draft.policies.overtimeMealDeductMinutes}
+              onChange={(e) =>
+                patchPolicies({ overtimeMealDeductMinutes: Number(e.target.value) || 0 })
               }
               className="mt-1 w-full border rounded-lg px-3 py-2"
             />

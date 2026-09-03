@@ -236,10 +236,12 @@ export function canViewTeamAttendance(
   return canManagePayroll(actor, policies);
 }
 
+/** 員工管理：店長／副店／老闆永遠可管（不受 adminRoles 客製影響）；員工需額外授權 */
 export function canManageEmployees(
   actor: PermissionActor | null | undefined,
   policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
 ): boolean {
+  if (canManageSite(actor?.role)) return true;
   return hasCapability(actor, "employees", policies);
 }
 
@@ -250,10 +252,12 @@ export function canEditStoreSettings(
   return hasCapability(actor, "store_settings", policies);
 }
 
+/** 打卡管理：店長／副店／老闆永遠可管；員工需 punch_admin 授權 */
 export function canUsePunchAdmin(
   actor: PermissionActor | null | undefined,
   policies: Pick<StorePolicies, "roleCapabilities"> | StorePolicies | null | undefined
 ): boolean {
+  if (canManageSite(actor?.role)) return true;
   return hasCapability(actor, "punch_admin", policies);
 }
 

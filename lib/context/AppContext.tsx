@@ -76,6 +76,7 @@ import {
 } from "@/lib/attendance/compLeaveDebit";
 import {
   resolveCompensationWithPolicy,
+  resolveOvertimeCreditedMinutes,
   validateOvertimeWithPolicy,
 } from "@/lib/attendance/overtimePolicy";
 import { buildSwapShiftsAndChanges, swapSnapshotCells } from "@/lib/schedule/swapSchedule";
@@ -2920,6 +2921,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Leave requests (Supabase) ───────────────────────────────────────────────
 
   const overtimeHoursBetween = (startTime: string, endTime: string) => {
+    const credited = resolveOvertimeCreditedMinutes(
+      startTime,
+      endTime,
+      storeConfig.policies
+    );
+    if (credited.creditedHours > 0 || credited.deductedMinutes > 0) {
+      return credited.creditedHours;
+    }
     const [sh, sm] = startTime.split(":").map(Number);
     const [eh, em] = endTime.split(":").map(Number);
     return Math.round((((eh * 60 + em) - (sh * 60 + sm)) / 60) * 100) / 100;

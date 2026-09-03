@@ -32,6 +32,7 @@ import {
   canChooseOvertimePayWithPolicy,
   overtimePolicyHint,
   resolveCompensationWithPolicy,
+  resolveOvertimeCreditedMinutes,
   validateOvertimeWithPolicy,
 } from "@/lib/attendance/overtimePolicy";
 import { MapPin, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
@@ -512,9 +513,14 @@ export default function PunchPage() {
         storeConfig.policies
       )
     : false;
-  const quickOtHours = quickOvertime
-    ? calcOvertimeHours(quickOvertime.startTime, quickOvertime.endTime)
-    : 0;
+  const quickOtCredited = quickOvertime
+    ? resolveOvertimeCreditedMinutes(
+        quickOvertime.startTime,
+        quickOvertime.endTime,
+        storeConfig.policies
+      )
+    : null;
+  const quickOtHours = quickOtCredited?.creditedHours ?? 0;
 
   useEffect(() => {
     if (quickOvertime && !quickOtPayAllowed && quickOtComp === "pay") {
@@ -1120,14 +1126,21 @@ export default function PunchPage() {
                   />
                 </label>
               </div>
-              <p className="text-xs text-gray-600">
-                加班約 {quickOtHours} 小時。
-                {overtimePolicyHint(
-                  quickOvertime.startTime,
-                  quickOvertime.endTime,
-                  storeConfig.policies
-                )}
-              </p>
+              <div className="space-y-1 text-xs">
+                <p className="text-gray-600">加班計入約 {quickOtHours} 小時。</p>
+                {quickOtCredited?.reminder ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 text-amber-900 font-medium">
+                    {quickOtCredited.reminder}
+                  </p>
+                ) : null}
+                <p className="text-amber-800">
+                  {overtimePolicyHint(
+                    quickOvertime.startTime,
+                    quickOvertime.endTime,
+                    storeConfig.policies
+                  )}
+                </p>
+              </div>
               <div>
                 <p className="text-xs text-gray-500 mb-2">補償方式</p>
                 <div className="flex gap-2">

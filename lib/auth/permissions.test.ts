@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canEditSchedule,
+  canEditStoreSettings,
+  canManageEmployees,
   canManagePayroll,
   canSubmitBonus,
   canSwitchSiteForPayroll,
@@ -92,5 +94,17 @@ describe("permissions", () => {
         policies
       )
     ).toBe(true);
+  });
+
+  it("manager can always manage employees even if adminRoles only owner", () => {
+    const restricted = {
+      ...policies,
+      roleCapabilities: parseRoleCapabilityPolicy({
+        adminRoles: ["owner"],
+      }),
+    };
+    expect(canManageEmployees({ role: "manager" }, restricted)).toBe(true);
+    expect(canManageEmployees({ role: "deputy" }, restricted)).toBe(true);
+    expect(canEditStoreSettings({ role: "manager" }, restricted)).toBe(false);
   });
 });
