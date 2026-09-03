@@ -14,6 +14,7 @@ import {
   effectiveApprovalChain,
   resolveApprovalDecision,
   rolesToNotify,
+  shouldNotifyApprover,
 } from "@/lib/approvals/chain";
 import {
   countMonthPoolUsed,
@@ -1694,11 +1695,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       const approvalMode = storeConfig.policies.approvalMode;
       const nextRoles = rolesToNotify(chain[0] ?? "manager", approvalMode);
-      // sequential：只通知當前關卡；any：店長／副店／老闆都通知。老闆跨店仍收得到。
+      const requiredRole = chain[0] ?? "manager";
+      // sequential：當前關卡＋approve 授權；any：店長／副店／老闆＋授權。老闆跨店仍收得到。
       const recipients = allEmployees.filter((e) => {
-        if (!nextRoles.includes(e.role)) return false;
-        if (e.role === "owner") return true;
-        return parseSiteId(e.siteId) === activeSiteId;
+        const sameSite = e.role === "owner" || parseSiteId(e.siteId) === activeSiteId;
+        if (!sameSite) return false;
+        return shouldNotifyApprover({
+          employee: e,
+          notifyRoles: nextRoles,
+          mode: approvalMode,
+          requiredRole,
+        });
       });
       await Promise.all(
         recipients.map((m) =>
@@ -3295,15 +3302,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ) => {
     const request = leaveRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
-    const isManagerActor =
-      canManageSite(currentUser?.role);
+    const canReviewApps =
+      canManageSite(currentUser?.role) ||
+      currentUser?.capabilities?.approve === true;
 
-    // 員工不可改過去月份；店長／副店／老闆仍可審核，以便月底結薪
+    // 員工不可改過去月份；店長／副店／老闆／授權審核者仍可審核，以便月底結薪
     if (
       request &&
       status !== prevStatus &&
       hasPastMonthInRange(request.startDate, request.endDate) &&
-      !isManagerActor
+      !canReviewApps
     ) {
       throw new Error("已過去的月份無法變更請假申請");
     }
@@ -3314,12 +3322,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       activeSiteId
     );
     const approvalMode = storeConfig.policies.approvalMode;
-    if (request && isManagerActor && (status === "approved" || status === "rejected")) {
+    if (request && canReviewApps && (status === "approved" || status === "rejected")) {
       const required = currentApprovalRole(chain, request.approvalStep ?? 0);
-      if (!canActOnApprovalStep(currentUser?.role, required, approvalMode)) {
+      if (!canActOnApprovalStep(currentUser?.role, required, approvalMode, currentUser?.capabilities)) {
         throw new Error(
           approvalMode === "any"
-            ? "僅店長、副店或老闆可審核"
+            ? "僅店長、副店、老闆或具審核授權者可審核"
             : `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`
         );
       }
@@ -3341,9 +3349,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           .eq("id", id);
         const nextRoles = rolesToNotify(decision.nextRole, approvalMode);
         const recipients = allEmployees.filter((e) => {
-          if (!nextRoles.includes(e.role)) return false;
-          if (e.role === "owner") return true;
-          return parseSiteId(e.siteId) === activeSiteId;
+          const sameSite = e.role === "owner" || parseSiteId(e.siteId) === activeSiteId;
+          if (!sameSite) return false;
+          return shouldNotifyApprover({
+            employee: e,
+            notifyRoles: nextRoles,
+            mode: approvalMode,
+            requiredRole: decision.nextRole,
+          });
         });
         await Promise.all(
           recipients.map((m) =>
@@ -3652,14 +3665,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const request = swapRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
     const dbStatus = mapSwapStatusToDb(status);
-    const isManagerActor =
-      canManageSite(currentUser?.role);
+    const canReviewApps =
+      canManageSite(currentUser?.role) ||
+      currentUser?.capabilities?.approve === true;
 
     if (
       request &&
       status !== prevStatus &&
       (isPastDate(request.requesterDate) || isPastDate(request.targetDate)) &&
-      !isManagerActor
+      !canReviewApps
     ) {
       throw new Error("已過去的月份無法變更換班申請");
     }
@@ -3683,7 +3697,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         (status === "rejected" && prevStatus === "pending_approval"))
     ) {
       const required = currentApprovalRole(chain, request.approvalStep ?? 0);
-      if (!canActOnApprovalStep(currentUser?.role, required, approvalMode)) {
+      if (!canActOnApprovalStep(currentUser?.role, required, approvalMode, currentUser?.capabilities)) {
         throw new Error(
           approvalMode === "any"
             ? "僅店長、副店或老闆可審核"
@@ -3716,9 +3730,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const required = currentApprovalRole(chain, request.approvalStep ?? 0);
         const nextRoles = rolesToNotify(decision.nextRole, approvalMode);
         const recipients = allEmployees.filter((e) => {
-          if (!nextRoles.includes(e.role)) return false;
-          if (e.role === "owner") return true;
-          return parseSiteId(e.siteId) === activeSiteId;
+          const sameSite = e.role === "owner" || parseSiteId(e.siteId) === activeSiteId;
+          if (!sameSite) return false;
+          return shouldNotifyApprover({
+            employee: e,
+            notifyRoles: nextRoles,
+            mode: approvalMode,
+            requiredRole: decision.nextRole,
+          });
         });
         await Promise.all(
           recipients.map((m) =>
@@ -3966,15 +3985,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   ) => {
     const request = overtimeRequests.find((item) => item.id === id);
     const prevStatus = request?.status;
-    const isManagerActor =
-      canManageSite(currentUser?.role);
+    const canReviewApps =
+      canManageSite(currentUser?.role) ||
+      currentUser?.capabilities?.approve === true;
 
-    // 員工不可改過去月份；店長／老闆仍可審核，以便月底結薪
-    if (request && status !== prevStatus && isPastDate(request.date) && !isManagerActor) {
+    // 員工不可改過去月份；店長／老闆／授權審核者仍可審核，以便月底結薪
+    if (request && status !== prevStatus && isPastDate(request.date) && !canReviewApps) {
       throw new Error("已過去的月份無法變更加班申請");
     }
 
-    if (isManagerActor) {
+    if (canReviewApps) {
       const res = await fetch("/api/applications/overtime/review", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -4010,7 +4030,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (request) {
       const hours = overtimeHoursBetween(request.startTime, request.endTime);
       if (
-        !isManagerActor &&
+        !canReviewApps &&
         status === "approved" &&
         prevStatus !== "approved" &&
         request.compensationType === "time_off"
@@ -4028,7 +4048,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (error) throw error;
       }
       if (
-        !isManagerActor &&
+        !canReviewApps &&
         prevStatus === "approved" &&
         status !== "approved" &&
         request.compensationType === "time_off"

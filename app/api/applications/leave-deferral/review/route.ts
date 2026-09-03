@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  assertManagerAuth,
+  assertManagerOrApprover,
   assertManagerCanAccessEmployee,
 } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -57,7 +57,7 @@ async function applyApprovedDeferral(
 
 export async function PATCH(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrApprover(req);
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
@@ -101,12 +101,12 @@ export async function PATCH(req: NextRequest) {
     const actorRole = fromDbRole(auth.role);
     const currentStep = Number(row.approval_step ?? 0) || 0;
     const required = currentApprovalRole(chain, currentStep);
-    if (status !== "pending" && !canActOnApprovalStep(actorRole, required, approvalMode)) {
+    if (status !== "pending" && !canActOnApprovalStep(actorRole, required, approvalMode, auth.capabilities)) {
       return NextResponse.json(
         {
           error:
             approvalMode === "any"
-              ? "僅店長、副店或老闆可審核"
+              ? "僅店長、副店、老闆或授權審核者可審核"
               : `目前關卡為「${APPROVAL_STEP_LABELS[required]}」，您無法審核`,
         },
         { status: 403 }

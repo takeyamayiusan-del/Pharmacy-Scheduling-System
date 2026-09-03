@@ -1,5 +1,6 @@
 import type { AppRole, ApprovalMode, ApprovalStepRole } from "@/lib/auth/roles";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
+import type { UserCapabilities } from "@/lib/auth/permissions";
 
 export type ApprovalDecision =
   | { kind: "reject" }
@@ -39,25 +40,34 @@ export function approvalPendingLabel(
   step: number,
   mode: ApprovalMode = "sequential"
 ): string {
-  if (mode === "any") return "待店長／副店／老闆審核";
+  if (mode === "any") return "待店長／副店／老闆／授權審核者審核";
   const role = currentApprovalRole(chain, step);
+  if (role === "manager") return "待店長／授權審核者審核";
   return `待${APPROVAL_STEP_LABELS[role]}審核`;
 }
 
 /**
- * sequential：老闆可代任何關卡，其餘須對應當前關卡。
- * any：店長／副店／老闆誰來都能審。
+ * sequential：老闆可代任何關卡；對應職位可審；具 approve 授權者可代店長關。
+ * any：店長／副店／老闆或具 approve 授權者誰來都能審。
  */
 export function canActOnApprovalStep(
   actorRole: AppRole | string | null | undefined,
   required: ApprovalStepRole,
-  mode: ApprovalMode = "sequential"
+  mode: ApprovalMode = "sequential",
+  capabilities?: UserCapabilities | null
 ): boolean {
+  const hasApproveGrant = capabilities?.approve === true;
   if (mode === "any") {
-    return actorRole === "owner" || actorRole === "manager" || actorRole === "deputy";
+    if (actorRole === "owner" || actorRole === "manager" || actorRole === "deputy") {
+      return true;
+    }
+    return hasApproveGrant;
   }
   if (actorRole === "owner") return true;
-  return actorRole === required;
+  if (actorRole === required) return true;
+  // 額外授權審核者可代「店長」關卡
+  if (required === "manager" && hasApproveGrant) return true;
+  return false;
 }
 
 export function resolveApprovalDecision(
@@ -87,4 +97,18 @@ export function rolesToNotify(
   if (role === "owner") return ["owner"];
   if (role === "deputy") return ["deputy"];
   return ["manager"];
+}
+
+/** 是否應通知此員工當前審核關卡（含 approve 授權代店長關／any 模式） */
+export function shouldNotifyApprover(input: {
+  employee: { role?: string | null; capabilities?: UserCapabilities | null };
+  notifyRoles: AppRole[];
+  mode: ApprovalMode;
+  requiredRole: ApprovalStepRole;
+}): boolean {
+  const role = input.employee.role;
+  if (role && input.notifyRoles.includes(role as AppRole)) return true;
+  if (input.employee.capabilities?.approve !== true) return false;
+  if (input.mode === "any") return true;
+  return input.requiredRole === "manager";
 }

@@ -36,7 +36,8 @@ const KIND_LABEL: Record<DeferralKind, string> = {
 export default function LeaveDeferralPage() {
   const { currentUser, employees, storeConfig, activeSiteId } = useApp();
   const supabase = createClient();
-  const isManager = canManageSite(currentUser?.role);
+  const isManager =
+    canManageSite(currentUser?.role) || currentUser?.capabilities?.approve === true;
   const [rows, setRows] = useState<DeferralRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [rejectModal, setRejectModal] = useState<{ id: string; reason: string } | null>(
@@ -255,7 +256,8 @@ export default function LeaveDeferralPage() {
                     canActOnApprovalStep(
                       currentUser?.role,
                       currentApprovalRole(approvalChain, row.approval_step ?? 0),
-                      approvalMode
+                      approvalMode,
+                      currentUser?.capabilities
                     );
                   const statusText =
                     row.status === "pending"

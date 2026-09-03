@@ -8,8 +8,9 @@ import { APP_ROLE_LABELS, isAccountantRole, isStaffLikeRole, type AppRole } from
 import {
   CAPABILITY_KEYS,
   CAPABILITY_LABELS,
-  MANAGER_GRANTABLE_CAPABILITIES,
+  canGrantCapabilities,
   canManageEmployees,
+  canViewCapabilityGrants,
   describeCapabilityGrants,
   type UserCapabilities,
 } from "@/lib/auth/permissions";
@@ -32,6 +33,7 @@ const emptyCaps = (): UserCapabilities => ({
   employees: false,
   store_settings: false,
   punch_admin: false,
+  approve: false,
 });
 
 const emptyContact = (): EmergencyContact => ({ name: "", phone: "", relationship: "" });
@@ -189,6 +191,8 @@ export default function EmployeesPage() {
       if (isAccountantRole(formData.role)) {
         caps = { ...caps, payroll: false };
       }
+      // 非老闆不可改授權：更新時不送 capabilities，避免清掉老闆已設權限
+      const canGrant = canGrantCapabilities({ role: currentUser?.role });
 
       // 升為店長時：同店其他店長可選擇降為員工
       if (formData.role === "manager") {
@@ -226,7 +230,6 @@ export default function EmployeesPage() {
             formData.leaveSelectionMode === "shift_rest"
               ? formData.halfDayWorkShift.trim() || null
               : null,
-          capabilities: caps,
           nationalId: formData.nationalId.trim() || undefined,
           birthDate: formData.birthDate || undefined,
           gender: formData.gender || null,
@@ -239,6 +242,9 @@ export default function EmployeesPage() {
           emergencyContacts: filledContacts,
           dependents: formData.dependents.filter((d) => d.name.trim()),
         };
+        if (canGrant) {
+          updates.capabilities = caps;
+        }
         if (formData.password) {
           updates.password = formData.password;
         }
@@ -270,7 +276,7 @@ export default function EmployeesPage() {
             formData.leaveSelectionMode === "shift_rest"
               ? formData.halfDayWorkShift.trim() || null
               : null,
-          capabilities: caps,
+          capabilities: canGrant ? caps : emptyCaps(),
           nationalId: formData.nationalId.trim() || undefined,
           birthDate: formData.birthDate || undefined,
           gender: formData.gender || null,
@@ -349,10 +355,9 @@ export default function EmployeesPage() {
     }
   };
   
-  const grantableCapabilityKeys =
-    currentUser?.role === "owner" || currentUser?.role === "manager" || currentUser?.role === "deputy"
-      ? CAPABILITY_KEYS
-      : MANAGER_GRANTABLE_CAPABILITIES;
+  const canGrant = canGrantCapabilities({ role: currentUser?.role });
+  const canViewGrants = canViewCapabilityGrants({ role: currentUser?.role });
+  const grantableCapabilityKeys = CAPABILITY_KEYS;
 
   // 店長／老闆／有員工管理授權者
   if (
@@ -586,11 +591,12 @@ export default function EmployeesPage() {
               {(isStaffLikeRole(formData.role) ||
                 (formData.role === "deputy" &&
                   !storeConfig.policies.roleCapabilities.deputyLikeManager)) &&
-                storeConfig.policies.roleCapabilities.allowStaffGrants && (
+                storeConfig.policies.roleCapabilities.allowStaffGrants &&
+                canGrant && (
                 <div className="col-span-2 rounded-xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                  <p className="text-sm font-medium text-slate-800">額外授權</p>
+                  <p className="text-sm font-medium text-slate-800">額外授權（僅老闆可見／可設）</p>
                   <p className="text-xs text-slate-500">
-                    老闆／店長可勾選多項能力，讓員工具備接近店長的權限（排班、薪資、員工管理、店家設定、打卡管理）。
+                    可讓員工接近店長能力，並可單獨開「審核申請」。審核順序請到「店家設定 → 審核關卡」（依關卡順序，或竹山式擇一人即可）。
                     {isAccountantRole(formData.role)
                       ? " 會計職位已內建薪資結算與跨店檢視，無需再勾「薪資結算」。"
                       : ""}
@@ -922,28 +928,36 @@ export default function EmployeesPage() {
                           className="px-3 py-2 border rounded-lg text-sm"
                           placeholder="身分證"
                         />
-                        <input
-                          type="date"
-                          value={dep.birthDate ?? ""}
-                          onChange={(e) => {
-                            const next = [...formData.dependents];
-                            next[index] = { ...next[index], birthDate: e.target.value };
-                            setFormData({ ...formData, dependents: next });
-                          }}
-                          className="px-3 py-2 border rounded-lg text-sm"
-                          title="生日"
-                        />
-                        <input
-                          type="date"
-                          value={dep.enrollmentDate ?? ""}
-                          onChange={(e) => {
-                            const next = [...formData.dependents];
-                            next[index] = { ...next[index], enrollmentDate: e.target.value };
-                            setFormData({ ...formData, dependents: next });
-                          }}
-                          className="px-3 py-2 border rounded-lg text-sm md:col-span-2"
-                          title="加保日期"
-                        />
+                        <label className="block text-sm">
+                          <span className="font-medium text-gray-800">生日（眷屬出生日期）</span>
+                          <input
+                            type="date"
+                            value={dep.birthDate ?? ""}
+                            onChange={(e) => {
+                              const next = [...formData.dependents];
+                              next[index] = { ...next[index], birthDate: e.target.value };
+                              setFormData({ ...formData, dependents: next });
+                            }}
+                            className="mt-1 w-full px-3 py-2 border rounded-lg text-sm"
+                          />
+                          <span className="text-[11px] text-slate-500">請填眷屬的出生年月日</span>
+                        </label>
+                        <label className="block text-sm md:col-span-2">
+                          <span className="font-medium text-gray-800">加保日期（健保生效日）</span>
+                          <input
+                            type="date"
+                            value={dep.enrollmentDate ?? ""}
+                            onChange={(e) => {
+                              const next = [...formData.dependents];
+                              next[index] = { ...next[index], enrollmentDate: e.target.value };
+                              setFormData({ ...formData, dependents: next });
+                            }}
+                            className="mt-1 w-full px-3 py-2 border rounded-lg text-sm"
+                          />
+                          <span className="text-[11px] text-slate-500">
+                            請填此眷屬開始加入健保的日期（不是生日）
+                          </span>
+                        </label>
                       </div>
                       <button
                         type="button"
@@ -1048,7 +1062,7 @@ export default function EmployeesPage() {
                     <span className={`inline-block px-2 py-1 rounded-full text-xs font-medium ${getRoleColor(employee.role)}`}>
                       {getRoleLabel(employee.role)}
                     </span>
-                    {describeCapabilityGrants(employee.capabilities) ? (
+                    {canViewGrants && describeCapabilityGrants(employee.capabilities) ? (
                       <p className="text-[11px] text-slate-500 mt-1">
                         授權：{describeCapabilityGrants(employee.capabilities)}
                       </p>

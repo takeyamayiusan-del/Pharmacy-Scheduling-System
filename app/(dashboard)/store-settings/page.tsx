@@ -1134,6 +1134,8 @@ export default function StoreSettingsPage() {
           <p className="text-xs text-gray-500 mb-2">
             僅用於申請類：請假、加班、換班、特休／補休遞延、打卡補登。
             排班、超時播假、薪資結算權限改由下方「權限設定」控制。
+            若要讓一般員工也能審核：請由老闆到「員工管理」勾選「審核申請」授權；
+            竹山店可選「任一即可」，集集店可設關卡順序。
           </p>
           <div className="flex flex-col gap-2 mb-3">
             <label className="inline-flex items-start gap-2 text-sm">
@@ -1166,8 +1168,8 @@ export default function StoreSettingsPage() {
                 onChange={() => patchPolicies({ approvalMode: "any" })}
               />
               <span>
-                店長／副店／老闆任一即可（竹山）
-                <span className="block text-xs text-slate-500">誰有空誰審，審一關就結案</span>
+                店長／副店／老闆／授權審核者任一即可（竹山）
+                <span className="block text-xs text-slate-500">誰有空誰審，審一關就結案（含老闆贈與「審核申請」者）</span>
               </span>
             </label>
           </div>
@@ -1218,6 +1220,7 @@ export default function StoreSettingsPage() {
         <p className="text-sm text-gray-500">
           控制誰能排班、誰能看薪資結算、誰能管員工。竹山換店長請到「員工管理」把新人改成店長（可一併把舊店長降職）。
           若要讓某人負責跨店薪資：到員工管理設「會計」職位；若只需部分能力，也可維持員工並勾選對應授權。
+          額外授權（含「審核申請」）僅老闆可設定與查看；店長、會計看不到各員工的授權勾選。
         </p>
         <label className="flex items-start gap-3 text-sm">
           <input
