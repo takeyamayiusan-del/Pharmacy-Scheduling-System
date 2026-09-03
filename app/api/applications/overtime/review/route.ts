@@ -5,7 +5,10 @@ import {
 } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { calcOvertimeHours } from "@/lib/attendance/overtimeCompensation";
-import { canChooseOvertimePayWithPolicy } from "@/lib/attendance/overtimePolicy";
+import {
+  canChooseOvertimePayWithPolicy,
+  resolveOvertimeCreditedMinutes,
+} from "@/lib/attendance/overtimePolicy";
 import { fromDbRole } from "@/lib/auth/roles";
 import {
   canActOnApprovalStep,
@@ -144,7 +147,15 @@ export async function PATCH(req: NextRequest) {
     }
 
     if (compensation === "time_off") {
-      const hours = calcOvertimeHours(startTime, endTime);
+      const credited = resolveOvertimeCreditedMinutes(
+        startTime,
+        endTime,
+        storeConfig.policies
+      );
+      const hours = credited.creditedHours || calcOvertimeHours(startTime, endTime);
+      const mealNote = credited.deductedMinutes > 0
+        ? `（已扣用餐 ${credited.deductedMinutes} 分）`
+        : "";
       if (isFinalApprove && prevStatus !== "approved") {
         const expiresAt = new Date();
         expiresAt.setMonth(expiresAt.getMonth() + 6);
@@ -155,8 +166,8 @@ export async function PATCH(req: NextRequest) {
           source_id: id,
           expires_at: expiresAt.toISOString(),
           note: forceCompLeave
-            ? `加班逾門檻改補休 ${row.overtime_date}`
-            : `加班轉補休 ${row.overtime_date}`,
+            ? `加班逾門檻改補休 ${row.overtime_date}${mealNote}`
+            : `加班轉補休 ${row.overtime_date}${mealNote}`,
         });
         if (creditError) {
           return NextResponse.json({ error: creditError.message }, { status: 500 });

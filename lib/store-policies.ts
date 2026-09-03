@@ -21,13 +21,20 @@ export type StorePolicies = {
   earlyPunchMinutes: number;
   /** 下班後幾分鐘起導向加班申請（竹山 10） */
   overtimeRedirectMinutes: number;
-  /** 加班時數未滿此分鐘不可送出申請（集集 30） */
+  /** 加班時數未滿此分鐘不可送出申請（兩店預設 30＝滿半小時才算） */
   overtimeMinApplyMinutes: number;
   /**
    * 超過此分鐘強制只能補休；null = 不強迫（員工／店長自選加班費或補休）。
-   * 竹山 30；集集 null。
+   * 兩店預設 60＝一小時內可選加班費或補休，超過固定補休。
    */
   overtimeForceCompLeaveAfterMinutes: number | null;
+  /**
+   * 加班超過此分鐘自動扣除用餐／休息；null＝不扣。
+   * 兩店預設 240（4 小時）。
+   */
+  overtimeMealDeductAfterMinutes: number | null;
+  /** 逾門檻時扣除的分鐘數（兩店預設 30） */
+  overtimeMealDeductMinutes: number;
   /** 員工每月打卡補登申請上限；null = 不限。店長打卡管理代改不計入。 */
   monthlyPunchCorrectionLimit: number | null;
   saturdayQuotaMode: SaturdayQuotaMode;
@@ -72,8 +79,11 @@ export function defaultStorePoliciesForSite(siteId: SiteId | string): StorePolic
   return {
     earlyPunchMinutes: isJiji ? 15 : 10,
     overtimeRedirectMinutes: isJiji ? 30 : 10,
-    overtimeMinApplyMinutes: isJiji ? 30 : 0,
-    overtimeForceCompLeaveAfterMinutes: isJiji ? null : 30,
+    // 兩店統一：滿半小時才算、1 小時內可選加班費／補休、逾 4 小時扣 30 分
+    overtimeMinApplyMinutes: 30,
+    overtimeForceCompLeaveAfterMinutes: 60,
+    overtimeMealDeductAfterMinutes: 240,
+    overtimeMealDeductMinutes: 30,
     monthlyPunchCorrectionLimit: isJiji ? 2 : null,
     saturdayQuotaMode: isJiji ? "month_pool" : "fixed",
     saturdayLeaveQuota: 2,
@@ -172,6 +182,16 @@ export function parseStorePolicies(
     overtimeForceCompLeaveAfterMinutes: asNullableInt(
       o.overtimeForceCompLeaveAfterMinutes,
       defaults.overtimeForceCompLeaveAfterMinutes
+    ),
+    overtimeMealDeductAfterMinutes: asNullableInt(
+      o.overtimeMealDeductAfterMinutes,
+      defaults.overtimeMealDeductAfterMinutes
+    ),
+    overtimeMealDeductMinutes: asInt(
+      o.overtimeMealDeductMinutes,
+      defaults.overtimeMealDeductMinutes,
+      0,
+      180
     ),
     monthlyPunchCorrectionLimit: asNullableInt(
       o.monthlyPunchCorrectionLimit,

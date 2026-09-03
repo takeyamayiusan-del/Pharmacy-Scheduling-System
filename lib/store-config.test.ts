@@ -39,14 +39,15 @@ describe("store-config", () => {
     expect(getActiveRuleTags(c).map((t) => t.id)).toContain("half_day_leave");
     expect(c.workHoursRegime).toBe("eight_week");
     expect(c.policies.overtimeMinApplyMinutes).toBe(30);
-    expect(c.policies.overtimeForceCompLeaveAfterMinutes).toBeNull();
+    expect(c.policies.overtimeForceCompLeaveAfterMinutes).toBe(60);
+    expect(c.policies.overtimeMealDeductAfterMinutes).toBe(240);
     expect(c.policies.saturdayQuotaMode).toBe("month_pool");
     expect(c.policies.approvalChain).toEqual(["manager", "deputy", "owner"]);
     expect(c.policies.approvalMode).toBe("sequential");
     expect(defaultStoreConfigForSite("zhushan").policies.approvalMode).toBe("any");
     expect(c.policies.autoRestSuggestEnabled).toBe(true);
     expect(defaultStoreConfigForSite("zhushan").workHoursRegime).toBe("two_week");
-    expect(defaultStoreConfigForSite("zhushan").policies.overtimeForceCompLeaveAfterMinutes).toBe(30);
+    expect(defaultStoreConfigForSite("zhushan").policies.overtimeForceCompLeaveAfterMinutes).toBe(60);
   });
 
   it("buildJijiStoreConfigWithTemplate loads head-store catalog and defaults", () => {
