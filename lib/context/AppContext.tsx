@@ -964,7 +964,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const USER_SESSION_SELECT =
     "id, name, role, hire_date, end_date, is_wednesday_rotation, is_weekday_off_rule, is_half_day_leave_rule, half_day_work_shift, site_id, work_hours_regime, baseline_shift, capabilities, national_id, birth_date, gender, registered_address, mailing_address, mailing_same_as_registered, phone";
 
-  const attachEmployeeProfiles = async (rows: Employee[]): Promise<Employee[]> => {
+  const attachEmployeeProfiles = useCallback(async (rows: Employee[]): Promise<Employee[]> => {
     if (rows.length === 0) return rows;
     const ids = rows.map((r) => r.id);
     const [contactsRes, dependentsRes] = await Promise.all([
@@ -1008,7 +1008,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       emergencyContacts: contactsByUser.get(row.id) ?? [],
       dependents: dependentsByUser.get(row.id) ?? [],
     }));
-  };
+  }, [supabase]);
 
   const loadEmployees = useCallback(async () => {
     const { data } = await supabase
@@ -1019,7 +1019,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const mapped = data.map((r) => mapUserRow(r));
       setAllEmployees(await attachEmployeeProfiles(mapped));
     }
-  }, [supabase]);
+  }, [supabase, attachEmployeeProfiles]);
 
   const formatDbTime = (value: string | null | undefined, fallback: string) => {
     if (!value) return fallback;

@@ -180,7 +180,10 @@ export default function PunchPage() {
     return slots.length === 0;
   }, [shift, todayLeaveInfo, slots.length]);
 
-  const todayPunches = currentUser ? getTodayPunchRecords(currentUser.id, today) : [];
+  const todayPunches = useMemo(
+    () => (currentUser ? getTodayPunchRecords(currentUser.id, today) : []),
+    [currentUser, getTodayPunchRecords, today]
+  );
   const restDayState = useMemo(
     () => getRestDayPunchState(todayPunches),
     [todayPunches]

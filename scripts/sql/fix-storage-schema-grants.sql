@@ -1,35 +1,40 @@
--- 立即修復：permission denied for schema storage
--- 適用時機：上傳請假／獎金／訓練附件失敗，或 db push 寫入 storage.buckets 失敗
+-- 立即修復／診斷：permission denied for schema storage
 --
--- 本機 Supabase：
---   cd ~/Pharmacy-Scheduling-System
---   supabase db execute -f scripts/sql/fix-storage-schema-grants.sql
--- 或：
---   docker exec -i $(docker ps -qf name=supabase_db) psql -U postgres < scripts/sql/fix-storage-schema-grants.sql
+-- 重要：storage schema 由 supabase_storage_admin 擁有。
+-- 以 postgres 執行 GRANT 常會出現：
+--   WARNING (01007): no privileges were granted for "storage"
+-- 這表示「沒授出新權限」（已有、或無權授出），db push 仍算成功，可忽略。
+-- 附件上傳走 Storage API + service_role；請確認 bucket 存在。
 --
--- 之後再執行：supabase db push --local
+-- Windows PowerShell：
+--   $db = docker ps -qf "name=supabase_db"
+--   Get-Content .\scripts\sql\ensure-storage-buckets.sql | docker exec -i $db psql -U postgres
+--
+-- 或 Studio → Storage 手動建立（Private）：
+--   leave-attachments / payroll-bonus-attachments / training-materials
+
+\echo '=== storage schema owner / usage ==='
+SELECT current_user AS whoami,
+       has_schema_privilege(current_user, 'storage', 'USAGE') AS has_storage_usage;
+
+SELECT n.nspname AS schema, r.rolname AS owner
+FROM pg_namespace n
+JOIN pg_roles r ON r.oid = n.nspowner
+WHERE n.nspname = 'storage';
 
 DO $grant$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'storage') THEN
-    RAISE EXCEPTION 'schema storage 不存在：請先 supabase start 並確認 Storage 服務正常';
+    RAISE EXCEPTION 'schema storage 不存在：請先 supabase start';
   END IF;
 
-  GRANT USAGE ON SCHEMA storage TO postgres;
-  GRANT USAGE ON SCHEMA storage TO anon, authenticated, service_role;
+  BEGIN
+    GRANT USAGE ON SCHEMA storage TO postgres, anon, authenticated, service_role;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'GRANT USAGE 略過：%', SQLERRM;
+  END;
 
-  GRANT ALL ON ALL TABLES IN SCHEMA storage TO postgres, service_role;
-  GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA storage TO authenticated;
-  GRANT ALL ON ALL SEQUENCES IN SCHEMA storage TO postgres, service_role, authenticated;
-
-  ALTER DEFAULT PRIVILEGES IN SCHEMA storage
-    GRANT ALL ON TABLES TO postgres, service_role;
-  ALTER DEFAULT PRIVILEGES IN SCHEMA storage
-    GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO authenticated;
-  ALTER DEFAULT PRIVILEGES IN SCHEMA storage
-    GRANT ALL ON SEQUENCES TO postgres, service_role, authenticated;
-
-  RAISE NOTICE 'storage schema grants OK';
+  RAISE NOTICE '若出現 01007 no privileges were granted，多半可忽略；請確認 buckets';
 END
 $grant$;
 
@@ -70,12 +75,7 @@ VALUES (
 )
 ON CONFLICT (id) DO NOTHING;
 
--- 驗證
-SELECT
-  has_schema_privilege('postgres', 'storage', 'USAGE') AS postgres_usage,
-  has_schema_privilege('authenticated', 'storage', 'USAGE') AS authenticated_usage,
-  has_schema_privilege('service_role', 'storage', 'USAGE') AS service_role_usage;
-
-SELECT id, name, public FROM storage.buckets
+SELECT id, name, public
+FROM storage.buckets
 WHERE id IN ('leave-attachments', 'payroll-bonus-attachments', 'training-materials')
 ORDER BY id;
