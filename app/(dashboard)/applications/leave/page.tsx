@@ -129,7 +129,8 @@ export default function LeaveApplicationPage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState('');
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
-  const isManager = canManageSite(currentUser?.role);
+  const isManager =
+    canManageSite(currentUser?.role) || currentUser?.capabilities?.approve === true;
   const staffEmployees = useMemo(
     () => employees.filter((e) => e.role !== 'owner'),
     [employees]
@@ -820,7 +821,8 @@ export default function LeaveApplicationPage() {
                             canActOnApprovalStep(
                               currentUser?.role,
                               currentApprovalRole(approvalChain, req.approvalStep ?? 0),
-                              approvalMode
+                              approvalMode,
+                              currentUser?.capabilities
                             ) && (
                             <>
                               <button

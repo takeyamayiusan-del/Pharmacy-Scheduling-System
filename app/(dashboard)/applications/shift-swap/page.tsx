@@ -108,7 +108,8 @@ export default function ShiftSwapPage() {
     }
   };
 
-  const isManager = canManageSite(currentUser?.role);
+  const isManager =
+    canManageSite(currentUser?.role) || currentUser?.capabilities?.approve === true;
   const approvalChain = effectiveApprovalChain(
     storeConfig.policies.approvalChain,
     employees,
@@ -281,7 +282,8 @@ export default function ShiftSwapPage() {
               canActOnApprovalStep(
                 currentUser?.role,
                 currentApprovalRole(approvalChain, req.approvalStep ?? 0),
-                approvalMode
+                approvalMode,
+                currentUser?.capabilities
               );
             const waitingTarget = isRequester && req.status === "pending_confirmation" && !isSelfSwap;
 

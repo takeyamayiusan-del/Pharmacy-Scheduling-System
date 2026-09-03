@@ -129,6 +129,34 @@ export async function assertManagerOrCapability(
   return { error: "此帳號沒有管理權限", status: 403 };
 }
 
+/** 可審核申請：店長／副店／老闆，或具 approve 授權 */
+export async function assertManagerOrApprover(
+  req: NextRequest
+): Promise<ManagerAuthResult & { capabilities?: UserCapabilities }> {
+  const auth = await readSessionProfile(req);
+  if ("error" in auth) return auth;
+
+  if (["boss", "manager", "owner", "deputy"].includes(auth.role)) {
+    return {
+      callerId: auth.callerId,
+      role: auth.role,
+      siteId: auth.siteId,
+      capabilities: auth.capabilities,
+    };
+  }
+
+  if (auth.capabilities?.approve === true) {
+    return {
+      callerId: auth.callerId,
+      role: auth.role,
+      siteId: auth.siteId,
+      capabilities: auth.capabilities,
+    };
+  }
+
+  return { error: "此帳號沒有審核權限", status: 403 };
+}
+
 /** 老闆可跨店；店長僅能操作本店員工 */
 export async function assertManagerCanAccessEmployee(
   auth: ManagerAuthOk,

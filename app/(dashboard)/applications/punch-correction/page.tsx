@@ -49,7 +49,8 @@ export default function PunchCorrectionPage() {
   const searchParams = useSearchParams();
   const { currentUser, employees, storeConfig, punchRecords, activeSiteId } = useApp();
   const supabase = createClient();
-  const isManager = canManageSite(currentUser?.role);
+  const isManager =
+    canManageSite(currentUser?.role) || currentUser?.capabilities?.approve === true;
   const [rows, setRows] = useState<CorrectionRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -368,7 +369,8 @@ export default function PunchCorrectionPage() {
                     canActOnApprovalStep(
                       currentUser?.role,
                       currentApprovalRole(approvalChain, row.approval_step ?? 0),
-                      approvalMode
+                      approvalMode,
+                      currentUser?.capabilities
                     );
                   const statusText =
                     row.status === "pending"

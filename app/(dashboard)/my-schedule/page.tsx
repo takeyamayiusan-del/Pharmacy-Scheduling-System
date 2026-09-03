@@ -92,7 +92,7 @@ export default function MySchedulePage() {
           disabled={exportingPdf}
           onClick={() => void exportPdf()}
         >
-          {exportingPdf ? "匯出中…" : "匯出 PDF"}
+          {exportingPdf ? "匯出中…" : "匯出班表 PDF"}
         </button>
       </div>
 
@@ -128,16 +128,24 @@ export default function MySchedulePage() {
         />
       </div>
 
-      {/* 桌面預覽 */}
-      <div className="hidden sm:block overflow-x-auto">
-        <div className="min-w-[56rem]">
-          <PersonalMonthScheduleGrid
-            year={year}
-            month={month}
-            employeeId={target.id}
-            employeeName={target.name}
-          />
+      {/* 桌面：班表格 + 打卡一日一日（可匯出 PDF） */}
+      <div className="hidden sm:block space-y-6">
+        <div className="overflow-x-auto">
+          <div className="min-w-[56rem]">
+            <PersonalMonthScheduleGrid
+              year={year}
+              month={month}
+              employeeId={target.id}
+              employeeName={target.name}
+            />
+          </div>
         </div>
+        <PersonalAttendanceCalendar
+          year={year}
+          month={month}
+          employeeId={target.id}
+          employeeName={target.name}
+        />
       </div>
 
       {/* 專供 PDF 擷取（螢幕外） */}

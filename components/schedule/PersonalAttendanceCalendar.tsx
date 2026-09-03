@@ -5,6 +5,7 @@ import { useApp, type PunchRecord, type ScheduleShiftCode } from "@/lib/context/
 import { resolveShiftDisplay, resolveShiftTimeRanges } from "@/lib/shift-catalog/resolve";
 import { getDisplayedShiftInfo } from "@/lib/schedule/leaveSchedule";
 import { getShiftName } from "@/lib/store-config";
+import { exportPersonalMonthlyPunchPdf } from "@/lib/schedule/exportMonthlyPunchPdf";
 
 const DAY_LABELS = ["日", "一", "二", "三", "四", "五", "六"];
 
@@ -127,6 +128,35 @@ export function PersonalAttendanceCalendar({
     return rows;
   }, [dayDetails, daysInMonth]);
 
+  const [exportingPunchPdf, setExportingPunchPdf] = useState(false);
+
+  const exportPunchPdf = async () => {
+    if (exportingPunchPdf) return;
+    setExportingPunchPdf(true);
+    try {
+      await exportPersonalMonthlyPunchPdf({
+        employeeName,
+        year,
+        month,
+        days: punchDays.map((d) => ({
+          dateStr: d.dateStr,
+          day: d.day,
+          weekdayLabel: DAY_LABELS[new Date(d.dateStr).getDay()] || "",
+          shiftLabel: d.shiftLabel,
+          isRest: d.isRest,
+          punches: d.punches,
+          leaveLabels: d.leaveLabels,
+          overtimeLabels: d.overtimeLabels,
+        })),
+      });
+    } catch (err) {
+      console.error("[personal-attendance] punch pdf failed", err);
+      alert("匯出打卡 PDF 失敗，請稍後再試");
+    } finally {
+      setExportingPunchPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden shadow-sm">
@@ -226,9 +256,19 @@ export function PersonalAttendanceCalendar({
       )}
 
       <div className="rounded-2xl border border-slate-200 bg-white overflow-hidden">
-        <div className="px-4 py-3 border-b border-slate-100">
-          <h3 className="font-semibold text-slate-900">本月打卡紀錄（一日一日）</h3>
-          <p className="text-xs text-slate-500 mt-0.5">手機請往下捲動閱讀，較方便對照班表。</p>
+        <div className="px-4 py-3 border-b border-slate-100 flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-semibold text-slate-900">本月打卡紀錄（一日一日）</h3>
+            <p className="text-xs text-slate-500 mt-0.5">手機請往下捲動閱讀，較方便對照班表。</p>
+          </div>
+          <button
+            type="button"
+            className="app-btn-outline text-xs shrink-0"
+            disabled={exportingPunchPdf}
+            onClick={() => void exportPunchPdf()}
+          >
+            {exportingPunchPdf ? "匯出中…" : "匯出打卡 PDF"}
+          </button>
         </div>
         <div className="divide-y divide-slate-100">
           {punchDays.length === 0 ? (

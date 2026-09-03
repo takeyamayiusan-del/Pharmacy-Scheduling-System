@@ -425,8 +425,22 @@ export default function PunchPage() {
       // 已核准請假覆蓋此時段：不計遲到（含超過 30 分鐘情境）
       if (lateMinutes <= 0) {
         try {
+          const punchTime = formatNowTime();
           await finalizePunch(slot);
-          setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
+          // 提早到班（應上班前）：詢問是否一鍵加班至應上班時間
+          if (actual < scheduled) {
+            setQuickOtComp("time_off");
+            setQuickOvertime({
+              date: today,
+              startTime: punchTime,
+              endTime: slot.scheduledTime,
+              reason: `提早到班加班（實際 ${punchTime}，應上班 ${slot.scheduledTime}）`,
+              message: `打卡成功！您提早到班，是否一鍵申請加班至應上班時間（${slot.scheduledTime}）？`,
+              segmentIndex: slot.segmentIndex,
+            });
+          } else {
+            setSuccessModal({ message: "上班打卡成功！", askLeave: false, askOvertime: false });
+          }
         } catch {
           // finalizePunch 已顯示錯誤訊息
         }
@@ -753,7 +767,10 @@ export default function PunchPage() {
         )}
         {shift !== "X" && !onApprovedLeave && (
           <p className="text-xs text-slate-500 mt-2 leading-relaxed">
-            可提早 10 分鐘打卡；遲到第 6 分鐘起算；遲到 30 分鐘仍可打卡但建議請假；下班後第 10 分鐘起建議申請加班
+            可提早 {earlyPunchMinutes} 分鐘打卡；提早到班可一鍵加班至應上班時間。遲到第 6
+            分鐘起算並需填理由；遲到達 30 分鐘仍可打卡但會建議請假（跳轉請假頁，不代填）。下班後第{" "}
+            {overtimeRedirectMinutes}{" "}
+            分鐘起可一鍵申請加班。加班逾 4 小時依店規自動扣 30 分用餐／休息。
           </p>
         )}
       </div>

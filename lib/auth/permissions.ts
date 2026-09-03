@@ -2,13 +2,14 @@ import type { AppRole } from "@/lib/auth/roles";
 import { canManageSite, isAccountantRole, isStaffLikeRole } from "@/lib/auth/roles";
 import type { StorePolicies } from "@/lib/store-policies";
 
-/** 可額外授權給員工的能力（店長／副店／老闆仍依店規） */
+/** 可額外授權給員工的能力（僅老闆可贈與） */
 export type CapabilityKey =
   | "schedule"
   | "payroll"
   | "employees"
   | "store_settings"
-  | "punch_admin";
+  | "punch_admin"
+  | "approve";
 
 export const CAPABILITY_KEYS: CapabilityKey[] = [
   "schedule",
@@ -16,6 +17,7 @@ export const CAPABILITY_KEYS: CapabilityKey[] = [
   "employees",
   "store_settings",
   "punch_admin",
+  "approve",
 ];
 
 export const CAPABILITY_LABELS: Record<CapabilityKey, string> = {
@@ -24,6 +26,7 @@ export const CAPABILITY_LABELS: Record<CapabilityKey, string> = {
   employees: "員工管理",
   store_settings: "店家設定",
   punch_admin: "打卡管理／遲到管理",
+  approve: "審核申請（請假／加班／換班等）",
 };
 
 export type UserCapabilities = Partial<Record<CapabilityKey, boolean>>;
@@ -54,8 +57,8 @@ export const DEFAULT_ROLE_CAPABILITY_POLICY: RoleCapabilityPolicy = {
   allowStaffGrants: true,
 };
 
-/** 店長／副店可代為勾選的員工授權（老闆／店長設定員工時可勾選全部） */
-export const MANAGER_GRANTABLE_CAPABILITIES: CapabilityKey[] = [...CAPABILITY_KEYS];
+/** 店長／副店不可代為勾選員工授權（僅老闆可贈與） */
+export const MANAGER_GRANTABLE_CAPABILITIES: CapabilityKey[] = [];
 
 /** 獎金登錄常用項目（仍可手打自訂名稱） */
 export const BONUS_ADJUSTMENT_PRESETS = [
@@ -192,24 +195,30 @@ export function canSubmitBonus(
   return roleListAllows(policy.bonusSubmitRoles, actor.role, policy);
 }
 
-/** 老闆／店長／副店可授權全部員工能力 */
+/** 僅老闆可授權員工能力；店長／會計等不可贈與 */
 export function filterDelegatableCapabilities(
   granter: PermissionActor | null | undefined,
   requested: UserCapabilities | null | undefined
 ): UserCapabilities {
   if (!requested) return {};
-  if (canManageSite(granter?.role)) {
-    const next: UserCapabilities = {};
-    for (const key of CAPABILITY_KEYS) {
-      if (requested[key]) next[key] = true;
-    }
-    return next;
-  }
+  if (granter?.role !== "owner") return {};
   const next: UserCapabilities = {};
-  for (const key of MANAGER_GRANTABLE_CAPABILITIES) {
+  for (const key of CAPABILITY_KEYS) {
     if (requested[key]) next[key] = true;
   }
   return next;
+}
+
+export function canGrantCapabilities(
+  actor: PermissionActor | null | undefined
+): boolean {
+  return actor?.role === "owner";
+}
+
+export function canViewCapabilityGrants(
+  actor: PermissionActor | null | undefined
+): boolean {
+  return actor?.role === "owner";
 }
 
 export function canEditPermissionPolicy(

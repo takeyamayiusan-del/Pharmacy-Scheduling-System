@@ -94,7 +94,11 @@ export default function OvertimePage() {
   const [filterEmployeeId, setFilterEmployeeId] = useState("");
   const storageScope = `${currentUser?.id ?? "guest"}:${activeSiteId}`;
 
-  const isManager = currentUser?.role === "owner" || currentUser?.role === "manager" || currentUser?.role === "deputy";
+  const isManager =
+    currentUser?.role === "owner" ||
+    currentUser?.role === "manager" ||
+    currentUser?.role === "deputy" ||
+    currentUser?.capabilities?.approve === true;
   const staffEmployees = useMemo(
     () => employees.filter((e) => e.role !== "owner"),
     [employees]
@@ -800,7 +804,8 @@ export default function OvertimePage() {
                             canActOnApprovalStep(
                               currentUser?.role,
                               currentApprovalRole(approvalChain, req.approvalStep ?? 0),
-                              approvalMode
+                              approvalMode,
+                              currentUser?.capabilities
                             ) && (
                             <>
                               <button onClick={() => handleReviewOvertime(req.id, "approved")}
