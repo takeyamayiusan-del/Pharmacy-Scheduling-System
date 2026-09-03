@@ -27,7 +27,7 @@ import {
   getDisplayedShiftInfo,
   type DisplayedShiftInfo,
 } from "@/lib/schedule/leaveSchedule";
-import { calcOvertimeHours, type OvertimeCompensationType } from "@/lib/attendance/overtimeCompensation";
+import { type OvertimeCompensationType } from "@/lib/attendance/overtimeCompensation";
 import {
   canChooseOvertimePayWithPolicy,
   overtimePolicyHint,
