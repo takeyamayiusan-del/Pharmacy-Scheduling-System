@@ -1189,6 +1189,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const baseQuota = getAnnualLeaveQuota(emp, year);
     const adjustmentDays = getTotalAdjustmentDays(employeeId, year);
     const quota = baseQuota + adjustmentDays;
+    const hoursPerDay = Math.max(1, storeConfig.policies.leaveHoursPerDay || 8);
     
     const used = leaveRequests
       .filter(r => 
@@ -1199,8 +1200,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       )
       .reduce((acc, r) => acc + r.leaveHours, 0);
       
-    return Math.max(0, quota - (used / 8)); // 假設一天 8 小時，特休以天為單位
-  }, [employees, leaveRequests, getAnnualLeaveQuota, getTotalAdjustmentDays]);
+    return Math.max(0, quota - used / hoursPerDay);
+  }, [employees, leaveRequests, getAnnualLeaveQuota, getTotalAdjustmentDays, storeConfig.policies.leaveHoursPerDay]);
 
   const loadLeaveRequests = useCallback(async () => {
     const { data } = await supabase

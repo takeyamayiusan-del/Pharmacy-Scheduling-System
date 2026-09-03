@@ -6,6 +6,9 @@ import { canViewTeamAttendance } from '@/lib/auth/permissions';
 import { SITES } from '@/lib/sites';
 import { formatCompLeaveHours } from '@/lib/attendance/compLeaveDisplay';
 import {
+  summarizeAnnualLeaveHours,
+} from '@/lib/attendance/annualLeave';
+import {
   buildApprovedCompOvertimeInMonth,
   buildCompLeaveMonthSummary,
   buildLeaveBreakdownInMonth,
@@ -29,6 +32,8 @@ export default function AttendancePage() {
     punchRecords,
     compLeaveLedger,
     getCompLeaveBalance,
+    getAnnualLeaveQuota,
+    getTotalAdjustmentDays,
     storeConfig,
     activeSiteId,
     canSwitchSite,
@@ -115,6 +120,26 @@ export default function AttendancePage() {
       const compLeaveTaken =
         leaveBreakdown.byType.find((x) => x.type === "補休假")?.hours ?? 0;
       const compLeaveItems = leaveBreakdown.items.filter((x) => x.type === "補休假");
+      const annualMonthHours =
+        leaveBreakdown.byType.find((x) => x.type === "特休")?.hours ?? 0;
+      const hoursPerDay = Math.max(1, storeConfig.policies.leaveHoursPerDay || 8);
+      const quotaDays =
+        getAnnualLeaveQuota(emp, year) + getTotalAdjustmentDays(emp.id, year);
+      const annualUsedHours = leaveRequests
+        .filter(
+          (r) =>
+            r.employeeId === emp.id &&
+            r.type === "特休" &&
+            r.status === "approved" &&
+            new Date(r.startDate).getFullYear() === year
+        )
+        .reduce((acc, r) => acc + Number(r.leaveHours || 0), 0);
+      const annualLeave = summarizeAnnualLeaveHours({
+        quotaDays,
+        usedHours: annualUsedHours,
+        monthUsedHours: annualMonthHours,
+        hoursPerDay,
+      });
 
       const tardy = effectiveTardinessRecords
         .filter((item) => item.employeeId === emp.id)
@@ -138,6 +163,13 @@ export default function AttendancePage() {
         compHint: comp.hint,
         tardyCount: tardy.length,
         tardyMinutes: tardy.reduce((sum, item) => sum + item.minutes, 0),
+        annualLeaveQuotaDays: annualLeave.quotaDays,
+        annualLeaveQuotaHours: annualLeave.quotaHours,
+        annualLeaveUsedHours: annualLeave.usedHours,
+        annualLeaveBalanceHours: annualLeave.balanceHours,
+        annualLeaveBalanceDays: annualLeave.balanceDays,
+        annualLeaveMonthHours: annualLeave.monthUsedHours,
+        annualLeaveHoursPerDay: annualLeave.hoursPerDay,
       };
     });
     } catch (err) {
@@ -157,6 +189,8 @@ export default function AttendancePage() {
     punchRecords,
     compLeaveLedger,
     getCompLeaveBalance,
+    getAnnualLeaveQuota,
+    getTotalAdjustmentDays,
     storeConfig,
   ]);
 
@@ -193,6 +227,11 @@ export default function AttendancePage() {
       '本月加班轉補休',
       '本月請補休',
       '補休餘額',
+      '特休配額天',
+      '特休配額時數',
+      '特休已用時數(年)',
+      '特休剩餘時數',
+      '本月特休時數',
       '請假總時數',
       '請假明細',
       '遲到次數',
@@ -208,6 +247,11 @@ export default function AttendancePage() {
       item.compensatoryEarnedFromOt,
       item.compLeaveTaken,
       item.compBalance,
+      item.annualLeaveQuotaDays,
+      item.annualLeaveQuotaHours,
+      item.annualLeaveUsedHours,
+      item.annualLeaveBalanceHours,
+      item.annualLeaveMonthHours,
       item.leaveHours,
       item.leaveText,
       item.tardyCount,
@@ -467,8 +511,18 @@ export default function AttendancePage() {
                         ? `（共 ${formatCompLeaveHours(stat.leaveHours)} h）`
                         : ''}
                     </p>
+                    <p className="text-sm text-teal-800 mt-1">
+                      <span className="font-medium">特休</span>
+                      ：剩餘 {formatCompLeaveHours(stat.annualLeaveBalanceHours)} h
+                      （配額 {stat.annualLeaveQuotaDays} 天＝
+                      {formatCompLeaveHours(stat.annualLeaveQuotaHours)} h，一日{' '}
+                      {stat.annualLeaveHoursPerDay} 小時）
+                      {stat.annualLeaveMonthHours > 0
+                        ? `｜本月 −${formatCompLeaveHours(stat.annualLeaveMonthHours)} h`
+                        : ''}
+                    </p>
                     {!isExpanded && (
-                      <p className="text-xs text-gray-500 mt-2">點此展開請假／補休明細</p>
+                      <p className="text-xs text-gray-500 mt-2">點此展開請假／補休／特休明細</p>
                     )}
                   </div>
                 </div>
@@ -484,6 +538,9 @@ export default function AttendancePage() {
                   >
                     補休餘額 {formatCompLeaveHours(stat.compBalance)} h
                     {stat.compBalance < 0 ? '（借支）' : ''}
+                  </p>
+                  <p className="text-sm font-semibold text-teal-700 mt-1">
+                    特休剩餘 {formatCompLeaveHours(stat.annualLeaveBalanceHours)} h
                   </p>
                   <p className="text-xs text-gray-500 mt-1">
                     本月加班 +{formatCompLeaveHours(stat.compensatoryEarnedFromOt)}／請補休 −
@@ -526,6 +583,27 @@ export default function AttendancePage() {
                     ))}
                   </ul>
                 )}
+                <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50/70 px-3 py-2 space-y-1">
+                  <p className="font-medium text-teal-900">特休時數（{year} 年度）</p>
+                  <p className="text-teal-900">
+                    配額 {stat.annualLeaveQuotaDays} 天＝
+                    {formatCompLeaveHours(stat.annualLeaveQuotaHours)} 小時
+                    <span className="text-teal-700/80">
+                      （一日 {stat.annualLeaveHoursPerDay} 小時）
+                    </span>
+                  </p>
+                  <p className="text-teal-900">
+                    已用 {formatCompLeaveHours(stat.annualLeaveUsedHours)} 小時｜剩餘{' '}
+                    <span className="font-semibold">
+                      {formatCompLeaveHours(stat.annualLeaveBalanceHours)} 小時
+                    </span>
+                    （約 {stat.annualLeaveBalanceDays.toFixed(2)} 天）
+                  </p>
+                  <p className="text-teal-800">
+                    本月特休 {formatCompLeaveHours(stat.annualLeaveMonthHours)} 小時
+                    （請假以實際班表時段／分鐘換算成時數扣減）
+                  </p>
+                </div>
               </div>
               <div>
                 <p className="font-medium text-gray-900 mb-2">補休（本月名目）</p>

@@ -9,6 +9,7 @@ import { HelpTip } from '@/components/ui/HelpTip';
 import { useRouter } from 'next/navigation';
 import { Settings, Plus, Trash2, Save } from 'lucide-react';
 import {
+  annualLeaveDaysToHours,
   getMonthsOfService,
   hasCustomAnnualLeaveLadder,
   statutoryAnnualLeaveDays,
@@ -23,8 +24,9 @@ export default function AnnualLeaveSummaryPage() {
     loadAnnualLeaveConfigs, loadAnnualLeaveAdjustments,
     updateAnnualLeaveConfig, applyStatutoryAnnualLeaveTiers,
     addAnnualLeaveAdjustment, deleteAnnualLeaveAdjustment,
-    getTotalAdjustmentDays, activeSiteId
+    getTotalAdjustmentDays, activeSiteId, storeConfig
   } = useApp();
+  const hoursPerDay = Math.max(1, storeConfig.policies.leaveHoursPerDay || 8);
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
   const [showConfigPanel, setShowConfigPanel] = useState(false);
   const [showAdjustmentModal, setShowAdjustmentModal] = useState<string | null>(null);
@@ -113,7 +115,7 @@ export default function AnnualLeaveSummaryPage() {
         <div>
           <h1 className="app-page-title">年度特休總表</h1>
           <p className="app-meta mt-1">
-            特休依入職日自動套勞基法第38條，不必自設級距。未休完應排休或折算工資；個別加減天數用「調整」。
+            特休依入職日自動套勞基法第38條，不必自設級距。配額以天數給、請假以時數扣（預設一日 {hoursPerDay} 小時）。未休完應排休或折算工資；個別加減天數用「調整」。
           </p>
         </div>
         <div className="flex items-center gap-3 flex-wrap">
@@ -272,8 +274,8 @@ export default function AnnualLeaveSummaryPage() {
                 <th className="px-6 py-4 font-semibold text-gray-700">入職日期</th>
                 <th className="px-6 py-4 font-semibold text-gray-700">基本配額</th>
                 <th className="px-6 py-4 font-semibold text-gray-700">調整</th>
-                <th className="px-6 py-4 font-semibold text-gray-700">已休天數</th>
-                <th className="px-6 py-4 font-semibold text-gray-700">剩餘天數</th>
+                <th className="px-6 py-4 font-semibold text-gray-700">已休（天／時）</th>
+                <th className="px-6 py-4 font-semibold text-gray-700">剩餘（天／時）</th>
                 <th className="px-6 py-4 font-semibold text-gray-700">備註</th>
                 {isManager && <th className="px-6 py-4 font-semibold text-gray-700">操作</th>}
               </tr>
@@ -285,6 +287,9 @@ export default function AnnualLeaveSummaryPage() {
                 const totalQuota = baseQuota + adjustment;
                 const balance = getAnnualLeaveBalance(emp.id, selectedYear);
                 const used = totalQuota - balance;
+                const usedHours = annualLeaveDaysToHours(used, hoursPerDay);
+                const balanceHours = annualLeaveDaysToHours(balance, hoursPerDay);
+                const quotaHours = annualLeaveDaysToHours(totalQuota, hoursPerDay);
                 const empAdjustments = annualLeaveAdjustments.filter(a => a.userId === emp.id && a.year === selectedYear);
                 
                 return (
@@ -293,7 +298,7 @@ export default function AnnualLeaveSummaryPage() {
                     <td className="px-6 py-4 text-gray-600">{emp.hireDate}</td>
                     <td className="px-6 py-4">
                       <span className="px-2.5 py-1 bg-blue-50 text-blue-700 rounded-full font-medium">
-                        {baseQuota} 天
+                        {baseQuota} 天（{annualLeaveDaysToHours(baseQuota, hoursPerDay)} h）
                       </span>
                     </td>
                     <td className="px-6 py-4">
@@ -312,6 +317,7 @@ export default function AnnualLeaveSummaryPage() {
                                 <button 
                                   onClick={() => deleteAnnualLeaveAdjustment(a.id)}
                                   className="text-red-500 hover:text-red-700 ml-1"
+                                  type="button"
                                 >
                                   <Trash2 className="h-3 w-3" />
                                 </button>
@@ -321,11 +327,16 @@ export default function AnnualLeaveSummaryPage() {
                         </div>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-orange-600 font-medium">{used.toFixed(1)} 天</td>
+                    <td className="px-6 py-4 text-orange-600 font-medium">
+                      {used.toFixed(2)} 天／{usedHours} h
+                    </td>
                     <td className="px-6 py-4">
                       <span className={`font-bold ${balance > 0 ? 'text-green-600' : 'text-red-500'}`}>
-                        {balance.toFixed(1)} 天
+                        {balance.toFixed(2)} 天／{balanceHours} h
                       </span>
+                      <div className="text-xs text-gray-400 mt-0.5">
+                        配額合計 {totalQuota} 天＝{quotaHours} h（一日 {hoursPerDay} h）
+                      </div>
                     </td>
                     <td className="px-6 py-4 text-xs text-gray-400">
                       {(() => {
