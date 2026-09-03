@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  annualLeaveDaysToHours,
+  annualLeaveHoursToDays,
   getAsOfDateForYear,
   getMonthsOfService,
   resolveAnnualLeaveQuotaDays,
+  summarizeAnnualLeaveHours,
 } from "@/lib/attendance/annualLeave";
 import type { AnnualLeaveConfig, Employee } from "@/lib/context/AppContext";
 
@@ -89,5 +92,27 @@ describe("annualLeave", () => {
     const tenYears = { ...employee, hireDate: "2016-01-01" };
     expect(resolveAnnualLeaveQuotaDays(fiveYears, 2026, [], new Date(2026, 6, 1))).toBe(15);
     expect(resolveAnnualLeaveQuotaDays(tenYears, 2026, [], new Date(2026, 6, 1))).toBe(16);
+  });
+
+  it("特休天數換算時數：一日 8 小時", () => {
+    expect(annualLeaveDaysToHours(3, 8)).toBe(24);
+    expect(annualLeaveHoursToDays(4, 8)).toBe(0.5);
+    expect(
+      summarizeAnnualLeaveHours({
+        quotaDays: 3,
+        usedHours: 4,
+        monthUsedHours: 4,
+        hoursPerDay: 8,
+      })
+    ).toEqual({
+      hoursPerDay: 8,
+      quotaDays: 3,
+      quotaHours: 24,
+      usedHours: 4,
+      usedDays: 0.5,
+      balanceDays: 2.5,
+      balanceHours: 20,
+      monthUsedHours: 4,
+    });
   });
 });

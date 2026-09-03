@@ -91,3 +91,54 @@ export function resolveAnnualLeaveQuotaDays(
   const tier = yearConfigs.find((c) => months >= c.seniorityMonths);
   return tier?.days ?? statutoryAnnualLeaveDays(months);
 }
+
+/** 特休天數 → 時數（預設一日 8 小時，與店規 leaveHoursPerDay 對齊） */
+export function annualLeaveDaysToHours(days: number, hoursPerDay = 8): number {
+  const perDay = Math.max(1, Number(hoursPerDay) || 8);
+  return Math.round(days * perDay * 100) / 100;
+}
+
+/** 特休時數 → 天數 */
+export function annualLeaveHoursToDays(hours: number, hoursPerDay = 8): number {
+  const perDay = Math.max(1, Number(hoursPerDay) || 8);
+  if (hours <= 0) return 0;
+  return Math.round((hours / perDay) * 1000) / 1000;
+}
+
+export type AnnualLeaveHoursSummary = {
+  hoursPerDay: number;
+  quotaDays: number;
+  quotaHours: number;
+  usedHours: number;
+  usedDays: number;
+  balanceDays: number;
+  balanceHours: number;
+  monthUsedHours: number;
+};
+
+/** 特休以「時數」結算：配額天 × 一日工時 − 已核准請假時數 */
+export function summarizeAnnualLeaveHours(input: {
+  quotaDays: number;
+  usedHours: number;
+  monthUsedHours?: number;
+  hoursPerDay?: number;
+}): AnnualLeaveHoursSummary {
+  const hoursPerDay = Math.max(1, Number(input.hoursPerDay) || 8);
+  const quotaDays = Math.max(0, Number(input.quotaDays) || 0);
+  const usedHours = Math.max(0, Number(input.usedHours) || 0);
+  const monthUsedHours = Math.max(0, Number(input.monthUsedHours) || 0);
+  const quotaHours = annualLeaveDaysToHours(quotaDays, hoursPerDay);
+  const usedDays = annualLeaveHoursToDays(usedHours, hoursPerDay);
+  const balanceHours = Math.max(0, Math.round((quotaHours - usedHours) * 100) / 100);
+  const balanceDays = annualLeaveHoursToDays(balanceHours, hoursPerDay);
+  return {
+    hoursPerDay,
+    quotaDays,
+    quotaHours,
+    usedHours: Math.round(usedHours * 100) / 100,
+    usedDays,
+    balanceDays,
+    balanceHours,
+    monthUsedHours: Math.round(monthUsedHours * 100) / 100,
+  };
+}

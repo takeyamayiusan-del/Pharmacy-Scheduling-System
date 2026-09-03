@@ -172,9 +172,11 @@ export default function LeaveApplicationPage() {
   }, [formEmployeeId, formData, previewShiftForCalc, getShiftForDate, shiftTimeConfig, storeConfig]);
 
   const compBalance = formEmployeeId ? getCompLeaveBalance(formEmployeeId) : 0;
+  const hoursPerDay = Math.max(1, storeConfig.policies.leaveHoursPerDay || 8);
   const annualBalance = formEmployeeId
     ? getAnnualLeaveBalance(formEmployeeId, new Date().getFullYear())
     : 0;
+  const annualBalanceHours = Math.round(annualBalance * hoursPerDay * 100) / 100;
 
   const applyPeriodPreset = (period: LeavePeriod) => {
     const times = periodToTimes(period, previewShiftForCalc, shiftTimeConfig, storeConfig);
@@ -217,10 +219,13 @@ export default function LeaveApplicationPage() {
     }
     if (formData.type === '特休') {
       const year = new Date(formData.startDate).getFullYear();
-      const balance = getAnnualLeaveBalance(formEmployeeId, year);
-      if (balance < estimatedHours / 8) {
+      const balanceDays = getAnnualLeaveBalance(formEmployeeId, year);
+      const balanceHours = Math.round(balanceDays * hoursPerDay * 100) / 100;
+      if (balanceHours < estimatedHours) {
+        const needDays = estimatedHours / hoursPerDay;
         const ok = window.confirm(
-          `特休餘額不足（剩餘 ${balance.toFixed(1)} 天，本次需要 ${(estimatedHours / 8).toFixed(1)} 天）。\n` +
+          `特休餘額不足（剩餘 ${balanceHours} 小時／約 ${balanceDays.toFixed(2)} 天，` +
+            `本次需要 ${estimatedHours} 小時／約 ${needDays.toFixed(2)} 天；一日 ${hoursPerDay} 小時）。\n` +
             `僅警示、不硬擋。確定仍要送出？`
         );
         if (!ok) return;
@@ -457,8 +462,10 @@ export default function LeaveApplicationPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-900">
             <div className="font-semibold mb-2">年度特休時數</div>
-            <div className="text-3xl font-bold text-blue-600">{annualBalance.toFixed(1)}</div>
-            <div className="text-xs text-blue-700 mt-1">天數</div>
+            <div className="text-3xl font-bold text-blue-600">{annualBalanceHours}</div>
+            <div className="text-xs text-blue-700 mt-1">
+              小時（約 {annualBalance.toFixed(2)} 天｜一日 {hoursPerDay} 小時）
+            </div>
           </div>
           <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 text-sm text-emerald-900">
             <div className="font-semibold mb-2">可用補休時數</div>
@@ -619,7 +626,11 @@ export default function LeaveApplicationPage() {
               </p>
               {formData.type === '特休' && (
                 <p className="text-xs text-amber-700 mt-1">
-                  目前特休剩餘 {annualBalance.toFixed(1)} 天（依年資配額）。
+                  目前特休剩餘 {annualBalanceHours} 小時（約 {annualBalance.toFixed(2)} 天；
+                  一日 {hoursPerDay} 小時，請假依實際班表時段扣時數）。
+                  {estimatedHours > 0
+                    ? ` 本次預估 ${estimatedHours} 小時。`
+                    : ''}
                 </p>
               )}
               {formData.type === '補休假' && (
