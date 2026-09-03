@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { formatStoragePermissionError } from "@/lib/storage/errors";
 
 const BUCKET = "training-materials";
 const MAX_BYTES = 50 * 1024 * 1024;
@@ -88,7 +89,10 @@ export async function POST(req: NextRequest) {
       upsert: false,
     });
     if (uploadError) {
-      return NextResponse.json({ error: uploadError.message }, { status: 500 });
+      return NextResponse.json(
+        { error: formatStoragePermissionError(uploadError.message) },
+        { status: 500 }
+      );
     }
 
     const { count } = await admin

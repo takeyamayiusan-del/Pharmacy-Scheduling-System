@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { fromDbRole } from "@/lib/auth/roles";
 import { parseUserCapabilities } from "@/lib/auth/permissions";
+import { formatStoragePermissionError } from "@/lib/storage/errors";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "application/pdf"]);
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -130,7 +131,10 @@ export async function POST(req: NextRequest) {
         upsert: false,
       });
     if (uploadError) {
-      return NextResponse.json({ error: uploadError.message }, { status: 500 });
+      return NextResponse.json(
+        { error: formatStoragePermissionError(uploadError.message) },
+        { status: 500 }
+      );
     }
 
     const expiresAt = new Date();
