@@ -1,10 +1,17 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { formatStoragePermissionError } from "@/lib/storage/errors";
+import {
+  isLocalStoragePath,
+  readLocalAttachment,
+  removeAttachmentObject,
+  resolveAttachmentAccessUrl,
+  uploadAttachmentObject,
+} from "@/lib/storage/fileStore";
 
 const ALLOWED_MIME = new Set(["image/jpeg", "image/png", "application/pdf"]);
 const MAX_BYTES = 10 * 1024 * 1024;
+const BUCKET = "leave-attachments";
 
 async function getCaller(req: NextRequest) {
   const supabase = createServerClient(
@@ -74,18 +81,21 @@ export async function POST(req: NextRequest) {
     }
 
     const safeName = file.name.replace(/[^\w.\u4e00-\u9fff-]+/g, "_").slice(0, 120);
-    const storagePath = `${leave.user_id}/${applicationId}/${Date.now()}_${safeName}`;
+    const objectPath = `${leave.user_id}/${applicationId}/${Date.now()}_${safeName}`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    const { error: uploadError } = await admin.storage
-      .from("leave-attachments")
-      .upload(storagePath, buffer, {
+    let uploaded;
+    try {
+      uploaded = await uploadAttachmentObject({
+        admin,
+        bucket: BUCKET,
+        objectPath,
+        buffer,
         contentType: file.type,
-        upsert: false,
       });
-    if (uploadError) {
+    } catch (err) {
       return NextResponse.json(
-        { error: formatStoragePermissionError(uploadError.message) },
+        { error: err instanceof Error ? err.message : "上傳失敗" },
         { status: 500 }
       );
     }
@@ -94,7 +104,7 @@ export async function POST(req: NextRequest) {
       .from("leave_attachments")
       .insert({
         application_id: applicationId,
-        storage_path: storagePath,
+        storage_path: uploaded.storagePath,
         file_name: file.name.slice(0, 200),
         file_size: file.size,
         mime_type: file.type,
@@ -104,14 +114,18 @@ export async function POST(req: NextRequest) {
       .single();
 
     if (insertError || !row) {
-      await admin.storage.from("leave-attachments").remove([storagePath]);
+      await removeAttachmentObject({
+        admin,
+        bucket: BUCKET,
+        storagePath: uploaded.storagePath,
+      });
       return NextResponse.json(
         { error: insertError?.message || "寫入附件失敗" },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ attachment: row });
+    return NextResponse.json({ attachment: row, driver: uploaded.driver });
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "上傳失敗" },
@@ -120,7 +134,7 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/** 取得附件簽名網址以便預覽／下載 */
+/** 取得附件預覽／下載（本機檔直接串流；否則簽名網址） */
 export async function GET(req: NextRequest) {
   try {
     const caller = await getCaller(req);
@@ -157,19 +171,45 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "附件已失效" }, { status: 410 });
     }
 
-    const { data: signed, error: signError } = await admin.storage
-      .from("leave-attachments")
-      .createSignedUrl(row.storage_path, 60 * 10);
-
-    if (signError || !signed?.signedUrl) {
-      return NextResponse.json({ error: signError?.message || "產生連結失敗" }, { status: 500 });
+    const wantRaw = req.nextUrl.searchParams.get("raw") === "1";
+    if (isLocalStoragePath(row.storage_path)) {
+      if (wantRaw) {
+        const buf = await readLocalAttachment(row.storage_path);
+        return new NextResponse(new Uint8Array(buf), {
+          headers: {
+            "Content-Type": row.mime_type || "application/octet-stream",
+            "Content-Disposition": `inline; filename*=UTF-8''${encodeURIComponent(
+              row.file_name || "file"
+            )}`,
+            "Cache-Control": "private, max-age=60",
+          },
+        });
+      }
+      return NextResponse.json({
+        url: `${req.nextUrl.pathname}?id=${encodeURIComponent(attachmentId)}&raw=1`,
+        fileName: row.file_name,
+        mimeType: row.mime_type,
+      });
     }
 
-    return NextResponse.json({
-      url: signed.signedUrl,
-      fileName: row.file_name,
-      mimeType: row.mime_type,
-    });
+    try {
+      const url = await resolveAttachmentAccessUrl({
+        admin,
+        bucket: BUCKET,
+        storagePath: row.storage_path,
+        apiRawUrl: `${req.nextUrl.pathname}?id=${encodeURIComponent(attachmentId)}&raw=1`,
+      });
+      return NextResponse.json({
+        url,
+        fileName: row.file_name,
+        mimeType: row.mime_type,
+      });
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message : "產生連結失敗" },
+        { status: 500 }
+      );
+    }
   } catch (err) {
     return NextResponse.json(
       { error: err instanceof Error ? err.message : "取得附件失敗" },
