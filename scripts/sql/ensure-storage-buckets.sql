@@ -1,16 +1,11 @@
--- 診斷／補建 Storage buckets（GRANT 常因非 storage 擁有者而無效，屬預期）
+-- 診斷／補建 Storage buckets
+-- 注意：PowerShell 會把 $xxx$ 當變數，本檔改用 $$ 避免被吃掉。
 --
--- db push 出現：
---   WARNING (01007): no privileges were granted for "storage"
--- 表示目前角色無法對 storage schema 授權（由 supabase_storage_admin 擁有）。
--- 附件上傳走 Storage API + service_role，通常仍可用；重點是 bucket 要存在。
---
--- Windows PowerShell（本機 Supabase）：
+-- Windows PowerShell（先設 $db 再執行）：
 --   $db = docker ps -qf "name=supabase_db"
---   Get-Content .\scripts\sql\ensure-storage-buckets.sql | docker exec -i $db psql -U postgres
+--   Get-Content .\scripts\sql\ensure-storage-buckets.sql -Raw | docker exec -i $db psql -U postgres
 --
--- 或到 Studio → Storage 手動建立：
---   leave-attachments / payroll-bonus-attachments / training-materials（皆設 Private）
+-- 你目前三個 bucket 多半已存在；若上傳仍失敗，請改用本機附件（程式已預設 data/storage）。
 
 SELECT current_user AS whoami,
        has_schema_privilege(current_user, 'storage', 'USAGE') AS has_storage_usage;
@@ -21,8 +16,7 @@ FROM pg_namespace n
 JOIN pg_roles r ON r.oid = n.nspowner
 WHERE n.nspname = 'storage';
 
--- 以 postgres 嘗試建 bucket（多數本機環境可寫入 storage.buckets）
-DO $buckets$
+DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'storage') THEN
     RAISE NOTICE 'schema storage 不存在';
@@ -68,11 +62,11 @@ BEGIN
 
   RAISE NOTICE 'buckets ensure OK';
 EXCEPTION WHEN insufficient_privilege THEN
-  RAISE NOTICE '無法寫入 storage.buckets，請改用 Studio → Storage 手動建立三個 Private bucket';
+  RAISE NOTICE '無法寫入 storage.buckets，請改用 Studio → Storage 手動建立';
 WHEN OTHERS THEN
   RAISE NOTICE 'ensure buckets: %', SQLERRM;
 END
-$buckets$;
+$$;
 
 SELECT id, name, public
 FROM storage.buckets
