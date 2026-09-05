@@ -33,6 +33,6 @@ describe("punch correction monthly limit", () => {
       friendlyPunchCorrectionDbError(
         "Could not find the table 'public.punch_correction_requests' in the schema cache"
       )
-    ).toMatch(/資料表尚未建立/);
+    ).toMatch(/還沒讀到打卡補登表/);
   });
 });
