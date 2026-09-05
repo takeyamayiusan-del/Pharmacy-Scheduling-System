@@ -44,6 +44,18 @@ export async function POST(req: NextRequest) {
     const admin = createAdminClient();
     const dbRole = toDbRole(role);
 
+    const { data: existingByUsername } = await admin
+      .from("users")
+      .select("id")
+      .eq("username", normalizedUsername)
+      .maybeSingle();
+    if (existingByUsername) {
+      return NextResponse.json(
+        { error: `登入帳號「${normalizedUsername}」已存在，請改用其他帳號` },
+        { status: 409 }
+      );
+    }
+
     const { data: callerProfile } = await admin
       .from("users")
       .select("role, capabilities")
@@ -58,6 +70,13 @@ export async function POST(req: NextRequest) {
     });
 
     if (authError) {
+      const msg = authError.message || "";
+      if (/already|registered|exists|duplicate/i.test(msg)) {
+        return NextResponse.json(
+          { error: `登入帳號「${normalizedUsername}」已存在，請改用其他帳號` },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ error: authError.message }, { status: 400 });
     }
 
@@ -96,6 +115,30 @@ export async function POST(req: NextRequest) {
 
     if (insertError) {
       await admin.auth.admin.deleteUser(authData.user.id);
+      const code = insertError.code || "";
+      const msg = insertError.message || "";
+      // 23505 = unique_violation；users_name_key = 姓名唯一（舊 schema）
+      if (code === "23505" || /unique|duplicate/i.test(msg)) {
+        if (/users_name_key|user_name_key|\(name\)/i.test(msg)) {
+          return NextResponse.json(
+            {
+              error:
+                "此姓名已存在於系統（舊版資料庫限制同名）。請先執行最新資料庫 migration 後再試，或暫時在姓名後加區分字（例如店別）。",
+            },
+            { status: 409 }
+          );
+        }
+        if (/username|users_username/i.test(msg)) {
+          return NextResponse.json(
+            { error: `登入帳號「${normalizedUsername}」已存在，請改用其他帳號` },
+            { status: 409 }
+          );
+        }
+        return NextResponse.json(
+          { error: "資料與現有員工衝突（重複鍵值），請確認帳號是否已使用" },
+          { status: 409 }
+        );
+      }
       return NextResponse.json({ error: insertError.message }, { status: 500 });
     }
 
