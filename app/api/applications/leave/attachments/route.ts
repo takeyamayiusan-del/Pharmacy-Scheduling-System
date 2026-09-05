@@ -36,7 +36,7 @@ async function getCaller(req: NextRequest) {
   const admin = createAdminClient();
   const { data: profile } = await admin
     .from("users")
-    .select("id, role, is_active")
+    .select("id, role, is_active, capabilities")
     .eq("id", user.id)
     .single();
   if (!profile?.is_active) return null;
@@ -75,7 +75,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "找不到請假申請" }, { status: 404 });
     }
 
-    const isManager = ["boss", "manager", "owner", "deputy"].includes(caller.role);
+    const caps =
+      caller.capabilities && typeof caller.capabilities === "object"
+        ? (caller.capabilities as Record<string, unknown>)
+        : {};
+    const isManager =
+      ["boss", "manager", "owner", "deputy"].includes(caller.role) ||
+      caps.approve === true;
     if (leave.user_id !== caller.id && !isManager) {
       return NextResponse.json({ error: "無權上傳此申請的附件" }, { status: 403 });
     }
@@ -162,7 +168,13 @@ export async function GET(req: NextRequest) {
 
     const leaveRel = row.leave_applications as { user_id?: string } | { user_id?: string }[] | null;
     const leaveUserId = Array.isArray(leaveRel) ? leaveRel[0]?.user_id : leaveRel?.user_id;
-    const isManager = ["boss", "manager", "owner", "deputy"].includes(caller.role);
+    const caps =
+      caller.capabilities && typeof caller.capabilities === "object"
+        ? (caller.capabilities as Record<string, unknown>)
+        : {};
+    const isManager =
+      ["boss", "manager", "owner", "deputy"].includes(caller.role) ||
+      caps.approve === true;
     if (leaveUserId !== caller.id && !isManager) {
       return NextResponse.json({ error: "無權查看此附件" }, { status: 403 });
     }

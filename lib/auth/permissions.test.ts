@@ -9,6 +9,7 @@ import {
   canSwitchSiteForPayroll,
   canViewCapabilityGrants,
   canViewTeamAttendance,
+  canApproveApplications,
   filterDelegatableCapabilities,
   parseRoleCapabilityPolicy,
   parseUserCapabilities,
@@ -109,6 +110,14 @@ describe("permissions", () => {
     expect(canManageEmployees({ role: "manager" }, restricted)).toBe(true);
     expect(canManageEmployees({ role: "deputy" }, restricted)).toBe(true);
     expect(canEditStoreSettings({ role: "manager" }, restricted)).toBe(false);
+  });
+
+  it("approve capability allows application approval", () => {
+    expect(canApproveApplications({ role: "staff" })).toBe(false);
+    expect(
+      canApproveApplications({ role: "staff", capabilities: { approve: true } })
+    ).toBe(true);
+    expect(canApproveApplications({ role: "manager" })).toBe(true);
   });
 
   it("manager can edit store settings by default; owner alone grants capabilities", () => {

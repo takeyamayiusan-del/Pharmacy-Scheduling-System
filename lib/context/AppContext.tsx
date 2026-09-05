@@ -5,7 +5,7 @@ import { mapSwapStatusFromDb, mapSwapStatusToDb, notificationRouteFromRelatedTyp
 import { createClient } from "@/lib/supabase/client";
 import { toAuthEmail } from "@/lib/auth/constants";
 import { fromDbRole, canManageSite, managerPortalDbRoles, type AppRole } from "@/lib/auth/roles";
-import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll, canEditStoreSettings, canUsePunchAdmin, resolvePayrollViewSite } from "@/lib/auth/permissions";
+import { parseUserCapabilities, canEditSchedule, canSwitchSiteForPayroll, canEditStoreSettings, canUsePunchAdmin, canApproveApplications, resolvePayrollViewSite } from "@/lib/auth/permissions";
 import { APPROVAL_STEP_LABELS } from "@/lib/auth/roles";
 import {
   approvalPendingLabel,
@@ -2316,8 +2316,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     mode: HolidayOneClickMode,
     options?: { workShiftChoice?: HolidayWorkShiftChoice }
   ): Promise<{ updated: number; preservedLeave: number }> => {
-    if (!currentUser || !canManageSite(currentUser.role)) {
-      throw new Error("僅店長、副店或老闆可一鍵設定國定假日班表");
+    if (
+      !currentUser ||
+      !canEditSchedule(
+        { role: currentUser.role, capabilities: currentUser.capabilities },
+        storeConfig.policies
+      )
+    ) {
+      throw new Error("您沒有排班權限，無法一鍵設定國定假日班表");
     }
     if (isPastDate(date)) {
       throw new Error("已過去的日期無法修改班表");
@@ -3200,9 +3206,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     request: Omit<LeaveRequest, "id" | "createdAt" | "attachments">,
     files: File[] = []
   ) => {
-    const isManagerActor =
-      canManageSite(currentUser?.role);
-    // 員工不可申請過去月份；店長／老闆可手動補登（月底結薪）
+    const isManagerActor = canApproveApplications(currentUser);
+    // 員工不可申請過去月份；店長／老闆／授權審核者可手動補登（月底結薪）
     if (hasPastMonthInRange(request.startDate, request.endDate) && !isManagerActor) {
       throw new Error("已過去的月份無法再提出請假申請");
     }
@@ -3932,8 +3937,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Overtime requests (Supabase) ────────────────────────────────────────────
 
   const addOvertimeRequest = async (request: Omit<OvertimeRequest, "id" | "createdAt">) => {
-    const isManagerActor = canManageSite(currentUser?.role);
-    // 員工不可申請過去月份；店長／副店／老闆可手動補登（月底結薪）
+    const isManagerActor = canApproveApplications(currentUser);
+    // 員工不可申請過去月份；店長／副店／老闆／授權審核者可手動補登（月底結薪）
     if (isPastDate(request.date) && !isManagerActor) {
       throw new Error("已過去的月份無法再提出加班申請");
     }
@@ -4161,10 +4166,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     id: string,
     compensationType: "pay" | "time_off"
   ) => {
-    const isManagerActor =
-      canManageSite(currentUser?.role);
+    const isManagerActor = canApproveApplications(currentUser);
     if (!isManagerActor) {
-      throw new Error("僅店長、副店或老闆可調整加班補償方式");
+      throw new Error("您沒有審核權限，無法調整加班補償方式");
     }
 
     const res = await fetch("/api/applications/overtime/compensation", {
@@ -4332,8 +4336,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const grantCompLeaveHours = async (employeeId: string, hours: number, note?: string) => {
     if (!currentUser) throw new Error("請先登入");
-    if (!canManageSite(currentUser.role)) {
-      throw new Error("僅店長、副店或老闆可調整補休時數");
+    if (!canApproveApplications(currentUser)) {
+      throw new Error("您沒有審核權限，無法調整補休時數");
     }
     if (!Number.isFinite(hours) || hours === 0) {
       throw new Error("請輸入有效的時數");
@@ -4446,8 +4450,10 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
       throw new Error("此時段已打卡，請勿重複打卡");
     }
 
-    const isManagerActor =
-      canManageSite(currentUser?.role);
+    const isManagerActor = canUsePunchAdmin(
+      { role: currentUser?.role, capabilities: currentUser?.capabilities },
+      storeConfig.policies
+    );
     const isForOtherEmployee =
       !!currentUser && record.employeeId !== currentUser.id;
 
@@ -4497,8 +4503,10 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   };
 
   const updatePunchRecord = async (id: string, updates: PunchRecordUpdate) => {
-    const isManagerActor =
-      canManageSite(currentUser?.role);
+    const isManagerActor = canUsePunchAdmin(
+      { role: currentUser?.role, capabilities: currentUser?.capabilities },
+      storeConfig.policies
+    );
     const target = punchRecords.find((p) => p.id === id);
     const isForOtherEmployee =
       !!currentUser && !!target && target.employeeId !== currentUser.id;
@@ -4551,8 +4559,10 @@ const addPunchRecord = async (record: Omit<PunchRecord, "id" | "createdAt">) => 
   };
 
   const deletePunchRecord = async (id: string) => {
-    const isManagerActor =
-      canManageSite(currentUser?.role);
+    const isManagerActor = canUsePunchAdmin(
+      { role: currentUser?.role, capabilities: currentUser?.capabilities },
+      storeConfig.policies
+    );
     const target = punchRecords.find((p) => p.id === id);
     const isForOtherEmployee =
       !!currentUser && !!target && target.employeeId !== currentUser.id;
