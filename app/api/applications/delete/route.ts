@@ -27,7 +27,8 @@ export async function POST(req: NextRequest) {
     }
 
     const admin = createAdminClient();
-    const manager = isManagerRole(auth.role);
+    const manager =
+      isManagerRole(auth.role) || auth.capabilities?.approve === true;
 
     if (type === "leave") {
       const { data: row } = await admin

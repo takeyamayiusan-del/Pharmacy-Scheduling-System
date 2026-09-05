@@ -131,7 +131,7 @@ export default function StoreSettingsPage() {
       <div className="min-h-full flex items-center justify-center">
         <div className="text-center">
           <h2 className="text-xl font-bold text-gray-800 mb-2">權限不足</h2>
-          <p className="text-gray-600">僅店長、副店與老闆可以調整店家設定</p>
+          <p className="text-gray-600">您沒有「店家設定」權限。請請老闆在員工管理中授權後再試。</p>
         </div>
       </div>
     );

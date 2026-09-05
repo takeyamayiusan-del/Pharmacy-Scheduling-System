@@ -209,13 +209,12 @@ export default function LeaveApplicationPage() {
       setSubmitError('請假時數為 0，請確認日期、班別與時段（休假或未與上班時段重疊）');
       return;
     }
+    const softWarnings: string[] = [];
     if (formData.type === '補休假' && compBalance < estimatedHours) {
       const after = Math.round((compBalance - estimatedHours) * 100) / 100;
-      const ok = window.confirm(
-        `補休餘額不足（目前 ${compBalance} 小時，本次 ${estimatedHours} 小時）。\n` +
-          `核准後餘額將為 ${after} 小時（可先請後補，之後加班選「補休」會加回）。\n\n確定送出？`
+      softWarnings.push(
+        `補休餘額不足（目前 ${compBalance} 小時，本次 ${estimatedHours} 小時；核准後約 ${after} 小時，可先請後補）。`
       );
-      if (!ok) return;
     }
     if (formData.type === '特休') {
       const year = new Date(formData.startDate).getFullYear();
@@ -223,15 +222,11 @@ export default function LeaveApplicationPage() {
       const balanceHours = Math.round(balanceDays * hoursPerDay * 100) / 100;
       if (balanceHours < estimatedHours) {
         const needDays = estimatedHours / hoursPerDay;
-        const ok = window.confirm(
-          `特休餘額不足（剩餘 ${balanceHours} 小時／約 ${balanceDays.toFixed(2)} 天，` +
-            `本次需要 ${estimatedHours} 小時／約 ${needDays.toFixed(2)} 天；一日 ${hoursPerDay} 小時）。\n` +
-            `僅警示、不硬擋。確定仍要送出？`
+        softWarnings.push(
+          `特休餘額不足（剩餘 ${balanceHours} 小時／約 ${balanceDays.toFixed(2)} 天，本次 ${estimatedHours} 小時／約 ${needDays.toFixed(2)} 天；僅警示不硬擋）。`
         );
-        if (!ok) return;
       }
     }
-
     const capWarnings = leaveLimitWarnings({
       type: formData.type,
       employeeId: formEmployeeId,
@@ -241,9 +236,12 @@ export default function LeaveApplicationPage() {
       overrides: storeConfig.policies.leaveRules,
       hoursPerDay: storeConfig.policies.leaveHoursPerDay,
     });
-    if (capWarnings.length > 0) {
+    for (const w of capWarnings) {
+      softWarnings.push(`${w.title}：${w.detail}`);
+    }
+    if (softWarnings.length > 0) {
       const ok = window.confirm(
-        capWarnings.map((w) => `${w.title}\n${w.detail}`).join('\n\n') + '\n\n確定仍要送出？'
+        softWarnings.join('\n') + '\n\n以上為警示，確定仍要送出？'
       );
       if (!ok) return;
     }

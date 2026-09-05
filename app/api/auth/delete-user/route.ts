@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import { assertManagerOrCapability, assertManagerCanAccessEmployee } from "@/lib/auth/server";
 import { PROTECTED_USERNAMES } from "@/lib/auth/constants";
 
 // POST /api/auth/delete-user
 // Body: { userId }
 export async function POST(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrCapability(req, "employees");
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
@@ -21,6 +21,11 @@ export async function POST(req: NextRequest) {
 
     if (userId === auth.callerId) {
       return NextResponse.json({ error: "無法刪除自己的帳號" }, { status: 403 });
+    }
+
+    const access = await assertManagerCanAccessEmployee(auth, userId);
+    if ("error" in access) {
+      return NextResponse.json({ error: access.error }, { status: access.status });
     }
 
     const admin = createAdminClient();

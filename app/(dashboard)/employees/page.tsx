@@ -81,6 +81,7 @@ export default function EmployeesPage() {
     storeConfig,
   } = useApp();
   const [showForm, setShowForm] = useState(false);
+  const [pageMessage, setPageMessage] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [selfPassword, setSelfPassword] = useState({ newPassword: "", confirmPassword: "" });
   const [changingOwnPassword, setChangingOwnPassword] = useState(false);
@@ -136,7 +137,7 @@ export default function EmployeesPage() {
       emergencyContacts: contacts,
       dependents: employee.dependents?.map((d) => ({ ...d })) ?? [],
     });
-    setShowForm(true);
+    setPageMessage(""); setShowForm(true);
   };
   
   const resetForm = () => {
@@ -170,6 +171,7 @@ export default function EmployeesPage() {
   // 提交表單
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setPageMessage("");
     
     try {
       const filledContacts = formData.emergencyContacts.filter(
@@ -250,11 +252,9 @@ export default function EmployeesPage() {
         }
         await updateEmployee(editingId, updates);
         if (formData.siteId !== activeSiteId) {
-          alert(
-            `已更新。此人員屬於「${SITES[formData.siteId].name}」，請用上方選店切換後查看。`
-          );
+          setPageMessage(`已更新。此人員屬於「${SITES[formData.siteId].name}」，請用上方選店切換後查看。`);
         } else {
-          alert("員工資料已更新！");
+          setPageMessage("員工資料已更新");
         }
       } else {
         if (!formData.username.trim() || !formData.password) {
@@ -290,11 +290,9 @@ export default function EmployeesPage() {
           dependents: formData.dependents.filter((d) => d.name.trim()),
         });
         if (formData.siteId !== activeSiteId) {
-          alert(
-            `員工已新增至「${SITES[formData.siteId].name}」。請用上方選店切換後查看。`
-          );
+          setPageMessage(`員工已新增至「${SITES[formData.siteId].name}」。請用上方選店切換後查看。`);
         } else {
-          alert("員工已新增！");
+          setPageMessage("員工已新增");
         }
       }
       
@@ -347,7 +345,7 @@ export default function EmployeesPage() {
     try {
       await updateEmployee(currentUser.id, { password: selfPassword.newPassword });
       setSelfPassword({ newPassword: "", confirmPassword: "" });
-      alert("您的密碼已更新！");
+      setPageMessage("您的密碼已更新");
     } catch (err) {
       alert(err instanceof Error ? err.message : "密碼更新失敗");
     } finally {
@@ -378,6 +376,12 @@ export default function EmployeesPage() {
   
   return (
     <div className="space-y-6">
+      {pageMessage && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          {pageMessage}
+        </div>
+      )}
+
       {/* 頁頭 */}
       <div className="app-toolbar justify-between">
         <div>
@@ -504,13 +508,13 @@ export default function EmployeesPage() {
                 onChange={e => setFormData({ ...formData, name: e.target.value })}
                 className="w-full px-3 py-2 border rounded-lg"
                 placeholder={formData.role === "manager" ? "請輸入店長真實姓名（班表只顯示此姓名）" : "請輸入員工姓名"}
+                maxLength={50}
                 required
               />
-              {formData.role === "manager" && (
-                <p className="mt-1 text-xs text-gray-500">
-                  班表列名只顯示此姓名，不會再加「店長」字樣；請勿把角色寫進姓名。
-                </p>
-              )}
+              <p className="mt-1 text-xs text-gray-500">
+                允許同名；登入請用下方「帳號」區分。
+                {formData.role === "manager" ? " 班表列名只顯示此姓名，請勿把角色寫進姓名。" : ""}
+              </p>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div>

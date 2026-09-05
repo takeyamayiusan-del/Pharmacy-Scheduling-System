@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import { assertManagerOrCapability } from "@/lib/auth/server";
 import { toAuthEmail, toDbRole } from "@/lib/auth/constants";
 
 // GET /api/admin/users — list all active users
 export async function GET(req: NextRequest) {
-  const auth = await assertManagerAuth(req);
+  const auth = await assertManagerOrCapability(req, "employees");
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
 
 // POST /api/admin/users — create new employee
 export async function POST(req: NextRequest) {
-  const auth = await assertManagerAuth(req);
+  const auth = await assertManagerOrCapability(req, "employees");
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

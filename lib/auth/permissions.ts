@@ -270,6 +270,17 @@ export function canUsePunchAdmin(
   return hasCapability(actor, "punch_admin", policies);
 }
 
+/**
+ * 可審核／代登申請（請假、加班、換班等）：
+ * 傳統店長級，或個人被勾選「審核申請」授權。
+ */
+export function canApproveApplications(
+  actor: PermissionActor | null | undefined
+): boolean {
+  if (canManageSite(actor?.role)) return true;
+  return actor?.capabilities?.approve === true;
+}
+
 /** 與舊行為相容：有任一管理能力或傳統 canManageSite */
 export function canManageAnything(
   actor: PermissionActor | null | undefined,

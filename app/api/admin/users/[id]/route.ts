@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import { assertManagerOrCapability } from "@/lib/auth/server";
 import { PROTECTED_USERNAMES, toAuthEmail, toDbRole } from "@/lib/auth/constants";
 
 // PATCH /api/admin/users/[id] — update employee
@@ -8,7 +8,7 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const auth = await assertManagerAuth(req);
+  const auth = await assertManagerOrCapability(req, "employees");
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }
@@ -82,7 +82,7 @@ export async function DELETE(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
-  const auth = await assertManagerAuth(req);
+  const auth = await assertManagerOrCapability(req, "employees");
   if ("error" in auth) {
     return NextResponse.json({ error: auth.error }, { status: auth.status });
   }

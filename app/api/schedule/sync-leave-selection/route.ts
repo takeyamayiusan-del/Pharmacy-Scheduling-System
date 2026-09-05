@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { assertManagerAuth } from "@/lib/auth/server";
+import { assertManagerOrCapability } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/server";
 
 type SyncAction = "add" | "remove";
@@ -8,7 +8,7 @@ type SyncAction = "add" | "remove";
 // Body: { employeeId, date, action: "add" | "remove" }
 export async function POST(req: NextRequest) {
   try {
-    const auth = await assertManagerAuth(req);
+    const auth = await assertManagerOrCapability(req, "schedule");
     if ("error" in auth) {
       return NextResponse.json({ error: auth.error }, { status: auth.status });
     }
