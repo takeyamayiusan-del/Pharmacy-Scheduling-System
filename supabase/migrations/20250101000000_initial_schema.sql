@@ -7,7 +7,7 @@
 -- ============================================================
 CREATE TABLE public.users (
   id          UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-  name        VARCHAR(10) NOT NULL UNIQUE,
+  name        VARCHAR(50) NOT NULL,
   role        VARCHAR(10) NOT NULL CHECK (role IN ('boss', 'manager', 'employee')),
   is_active   BOOLEAN NOT NULL DEFAULT TRUE,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
